@@ -44,7 +44,10 @@ fn check(
     let document = config_version_document_with_operations(vec![bump]);
     admit_and_assemble_with_body(&document, UNIT_BODY)
         .expect("the package assembles")
-        .check(CheckingLimits::default())
+        .check(
+            CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
 }
 
 fn bump_node() -> String {

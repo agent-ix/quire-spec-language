@@ -196,7 +196,7 @@ fn deep_option_keys(stack: usize) -> Vec<KeyShape> {
                     qsl_foundation::IdentityLimits::default(),
                 )
             }
-            .check(limits)
+            .check(limits, quire_semantic_value::checking::CheckMode::Linked)
             .unwrap_or_else(|refusals| panic!("the deep option parameter checks: {refusals:?}"));
             let options = checked
                 .semantic_graph()
@@ -304,7 +304,10 @@ fn equality_and_contains_over_a_recursive_record_without_text_have_no_leaves() {
             qsl_foundation::IdentityLimits::default(),
         )
     }
-    .check(CheckingLimits::default())
+    .check(
+        CheckingLimits::default(),
+        quire_semantic_value::checking::CheckMode::Linked,
+    )
     .expect("equality and contains over List check");
     for identity in ["quire.op.structural.eq", "quire.op.collection.contains"] {
         let node = application(checked.semantic_graph(), identity);
@@ -422,7 +425,10 @@ fn keying_a_recursion_group_is_charged_to_the_work_budget() {
                 qsl_foundation::IdentityLimits::default(),
             )
         }
-        .check(CheckingLimits::default().with_work_budget(budget))
+        .check(
+            CheckingLimits::default().with_work_budget(budget),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
     };
     assert!(checked(u64::MAX).is_ok(), "the ring checks unbounded");
     let declared = declaration_work(&ring(k));
@@ -533,7 +539,10 @@ fn check_under(
         functions,
         ..PackageDeclarations::new(source, "fixture", qsl_foundation::IdentityLimits::default())
     }
-    .check(CheckingLimits::default())
+    .check(
+        CheckingLimits::default(),
+        quire_semantic_value::checking::CheckMode::Linked,
+    )
 }
 
 fn check(functions: Vec<FunctionDeclaration>) -> Result<CheckedGraph, Vec<CheckRefusal>> {
@@ -663,7 +672,10 @@ fn a_text_equality_carries_the_text_profile_law() {
             qsl_foundation::IdentityLimits::default(),
         )
     }
-    .check(CheckingLimits::default())
+    .check(
+        CheckingLimits::default(),
+        quire_semantic_value::checking::CheckMode::Linked,
+    )
     .expect("the text equality checks");
     let equality = application(graph.semantic_graph(), "quire.op.text.eq");
     let operation = &equality["body"]["operation"];
@@ -1384,7 +1396,10 @@ fn parameter_type(form: TypeForm, aliases: Vec<(String, ValueType)>) -> NodeKey 
             qsl_foundation::IdentityLimits::default(),
         )
     }
-    .check(CheckingLimits::default())
+    .check(
+        CheckingLimits::default(),
+        quire_semantic_value::checking::CheckMode::Linked,
+    )
     .expect("g checks");
     parameter_named(graph.semantic_graph(), "x")
         .semantic_type()
@@ -1470,7 +1485,10 @@ fn an_alias_introduces_no_type_node() {
             qsl_foundation::IdentityLimits::default(),
         )
     }
-    .check(CheckingLimits::default())
+    .check(
+        CheckingLimits::default(),
+        quire_semantic_value::checking::CheckMode::Linked,
+    )
     .expect("g checks");
     let parameter = parameter_named(graph.semantic_graph(), "x");
     assert_eq!(
@@ -1904,7 +1922,10 @@ fn record_projection_and_record_values_name_their_record_node() {
             qsl_foundation::IdentityLimits::default(),
         )
     }
-    .check(CheckingLimits::default())
+    .check(
+        CheckingLimits::default(),
+        quire_semantic_value::checking::CheckMode::Linked,
+    )
     .expect("the record fixtures check");
     let semantic = graph.semantic_graph();
     let record = only_node_of_form(semantic, "record");

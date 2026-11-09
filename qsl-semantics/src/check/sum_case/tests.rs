@@ -425,7 +425,10 @@ fn nesting_is_bounded_only_by_the_node_ceiling() {
     // Through the whole check, the denied node has a region of the source.
     let refusals = unit
         .package
-        .check(CheckingLimits::default().with_nodes(needed - 1))
+        .check(
+            CheckingLimits::default().with_nodes(needed - 1),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
         .expect_err("one node short");
     let [refusal] = refusals.as_slice() else {
         panic!("one refusal, not {refusals:?}")

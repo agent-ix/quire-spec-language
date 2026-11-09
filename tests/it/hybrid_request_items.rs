@@ -56,7 +56,10 @@ fn graph() -> CheckedGraph {
     .expect("the model is admitted");
     PackageDeclarations::assemble(raw, "fixture".to_string(), unit, models, Vec::new())
         .expect("the unit assembles")
-        .check(CheckingLimits::default())
+        .check(
+            CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
         .expect("the unit checks")
 }
 

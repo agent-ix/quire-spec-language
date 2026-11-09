@@ -36,12 +36,14 @@ fn a_100000_node_cycle_emits_and_reads_back_under_supplied_limits() {
     let mut declarations =
         PackageDeclarations::new(source(), "pkg", qsl_foundation::IdentityLimits::default());
     declarations.types = types;
-    let checked = declarations.check(limits).unwrap_or_else(|refusals| {
-        panic!(
-            "caller budget admits the cycle; checker returned {} refusals",
-            refusals.len()
-        )
-    });
+    let checked = declarations
+        .check(limits, quire_semantic_value::checking::CheckMode::Linked)
+        .unwrap_or_else(|refusals| {
+            panic!(
+                "caller budget admits the cycle; checker returned {} refusals",
+                refusals.len()
+            )
+        });
     let group_size = checked
         .semantic_graph()
         .nodes()

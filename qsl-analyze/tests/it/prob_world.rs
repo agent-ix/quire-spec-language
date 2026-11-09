@@ -369,7 +369,10 @@ impl World {
             Vec::new(),
         )
         .expect("the unit assembles")
-        .check(CheckingLimits::default())?;
+        .check(
+            CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )?;
 
         let header = json!({"identity": model.package});
         let mut snapshots = BTreeMap::new();

@@ -35,7 +35,10 @@ fn checked(body: &str) -> CheckedGraph {
     let declarations = admit_and_assemble_with_body(&document(), body)
         .unwrap_or_else(|refusal| panic!("{body}: the unit assembles: {refusal:?}"));
     declarations
-        .check(CheckingLimits::default())
+        .check(
+            CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
         .unwrap_or_else(|refusals| panic!("{body}: the unit checks: {refusals:?}"))
 }
 
@@ -119,7 +122,10 @@ fn refusals_of(declarations: &str) -> Vec<CheckRefusal> {
     let declarations =
         admit_and_assemble_with_body(&document(), declarations).expect("the unit assembles");
     declarations
-        .check(CheckingLimits::default())
+        .check(
+            CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
         .expect_err("the unit refuses")
 }
 
@@ -214,7 +220,10 @@ fn terminal_any_on_a_model_with_no_object_type_is_refused_at_the_declaration() {
     let declarations = admit_and_assemble_with_body(&bare, ANY).expect("the unit assembles");
     let regions = declarations.regions();
     let refusals = declarations
-        .check(CheckingLimits::default())
+        .check(
+            CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
         .expect_err("a terminal declaration with no model node is refused");
     assert_eq!(
         code_and_cause(&refusals),

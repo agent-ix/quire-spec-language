@@ -230,7 +230,10 @@ fn world(
         Vec::new(),
     )
     .expect("the unit assembles")
-    .check(CheckingLimits::default())
+    .check(
+        CheckingLimits::default(),
+        quire_semantic_value::checking::CheckMode::Linked,
+    )
     .unwrap_or_else(|refusals| panic!("{unit}: the unit checks: {refusals:?}"));
     let clauses: Vec<CheckedTemporalClause> = graph
         .temporal_clauses()

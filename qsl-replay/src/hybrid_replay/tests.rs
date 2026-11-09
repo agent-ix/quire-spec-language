@@ -107,7 +107,10 @@ fn check(declarations: &str) -> Unit {
         Vec::new(),
     )
     .unwrap_or_else(|refusal| panic!("{text}: the unit assembles: {refusal:?}"))
-    .check(CheckingLimits::default())
+    .check(
+        CheckingLimits::default(),
+        quire_semantic_value::checking::CheckMode::Linked,
+    )
     .unwrap_or_else(|refusals| panic!("{text}: the unit checks: {refusals:?}"));
     let claims = text
         .lines()

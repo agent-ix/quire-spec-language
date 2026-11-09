@@ -796,7 +796,10 @@ pub(super) fn map_record_package() -> CheckedPackage {
     declarations.package_name = "pkg".to_owned();
     declarations.types = TypeEnvironment::new([record], []).expect("R is admitted");
     let graph = declarations
-        .check(CheckingLimits::default())
+        .check(
+            CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
         .unwrap_or_else(|refusals| panic!("the package checks: {refusals:?}"));
     CheckedPackage::link(graph)
 }

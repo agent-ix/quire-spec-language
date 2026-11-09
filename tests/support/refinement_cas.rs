@@ -606,7 +606,10 @@ pub fn check_with_internals(
         None => declarations.with_unwritten_refinements(),
     };
     declarations
-        .check(CheckingLimits::default())
+        .check(
+            CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
         .map_err(|refusals| format!("{refusals:?}"))
 }
 

@@ -141,7 +141,10 @@ fn check_over(
         .with_unwritten_protocols();
     let regions = declarations.regions();
     declarations
-        .check(CheckingLimits::default())
+        .check(
+            CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
         .map_err(|refusals| {
             refusals
                 .into_iter()

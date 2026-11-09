@@ -54,7 +54,10 @@ fn with_routes<R>(
     )
     .expect("the unit assembles");
     let graph = declarations
-        .check(CheckingLimits::default())
+        .check(
+            CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
         .expect("the aggregate clause checks");
     let selection = graph
         .temporal_clauses()

@@ -60,7 +60,7 @@ fn check(text: &str, limits: CheckingLimits) -> Result<CheckedGraph, Vec<CheckRe
         Vec::new(),
     )
     .unwrap_or_else(|refusal| panic!("{text}: the assembler refuses: {refusal:?}"))
-    .check(limits)
+    .check(limits, quire_semantic_value::checking::CheckMode::Linked)
 }
 
 /// Builds the limits that cap one dimension at a value.

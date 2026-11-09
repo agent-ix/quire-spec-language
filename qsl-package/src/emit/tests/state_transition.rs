@@ -141,7 +141,10 @@ fn check(
     let (unit, packages) = unit(clauses, protocol);
     let graph = assemble_with_models(unit.as_bytes(), &packages)
         .expect("the unit assembles")
-        .check(CheckingLimits::default())
+        .check(
+            CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
         .unwrap_or_else(|refusals| panic!("the package checks: {refusals:?}\n{unit}"));
     (CheckedPackage::link(graph), packages)
 }
@@ -864,7 +867,10 @@ fn an_execution_point_on_a_clause_of_the_operation_gives_no_transition() {
             },
         )
         .expect("the unit assembles")
-        .check(CheckingLimits::default())
+        .check(
+            CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
         .unwrap_or_else(|refusals| panic!("{clause}: the package checks: {refusals:?}"));
         let emission = emit_checked(&CheckedPackage::link(graph)).expect("the package emits");
         let rows = emission.selected_operation_member_rows();

@@ -364,7 +364,10 @@ fn build_world_document(
         Vec::new(),
     )
     .expect("the unit assembles");
-    let graph = declarations.check(CheckingLimits::default())?;
+    let graph = declarations.check(
+        CheckingLimits::default(),
+        quire_semantic_value::checking::CheckMode::Linked,
+    )?;
     Ok(World {
         extras,
         enum_mode,

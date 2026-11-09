@@ -66,10 +66,11 @@ fn check_with_limits(
     // lowering stage, whose contract is its own. Any other refusal is the
     // check's answer; when emission refusals are all there are, the graph
     // is read through the per-protocol results.
-    let refusals = match assembled().check(limits) {
-        Ok(graph) => return Ok(graph),
-        Err(refusals) => refusals,
-    };
+    let refusals =
+        match assembled().check(limits, quire_semantic_value::checking::CheckMode::Linked) {
+            Ok(graph) => return Ok(graph),
+            Err(refusals) => refusals,
+        };
     let checked: Vec<CheckRefusal> = refusals
         .into_iter()
         .filter(|refusal| {
@@ -83,7 +84,8 @@ fn check_with_limits(
     if !checked.is_empty() {
         return Err(checked);
     }
-    assembled().check_with_protocol_results(limits)
+    assembled()
+        .check_with_protocol_results(limits, quire_semantic_value::checking::CheckMode::Linked)
 }
 
 /// The one channel's checked ordering.

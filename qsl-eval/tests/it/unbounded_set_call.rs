@@ -52,7 +52,10 @@ fn package() -> CheckedPackage {
     .expect("the unit assembles");
     CheckedPackage::link(
         declarations
-            .check(CheckingLimits::default())
+            .check(
+                CheckingLimits::default(),
+                quire_semantic_value::checking::CheckMode::Linked,
+            )
             .expect("the package checks"),
     )
 }

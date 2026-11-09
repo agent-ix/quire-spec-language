@@ -45,7 +45,10 @@ fn check(declarations: &str) -> Result<CheckedGraph, Vec<CheckRefusal>> {
         Vec::new(),
     )
     .unwrap_or_else(|refusal| panic!("assembly succeeds: {refusal:?}"))
-    .check(CheckingLimits::default())
+    .check(
+        CheckingLimits::default(),
+        quire_semantic_value::checking::CheckMode::Linked,
+    )
 }
 
 fn nodes(graph: &CheckedGraph) -> Vec<&SemanticNode> {

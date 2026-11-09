@@ -102,7 +102,10 @@ fn linked() -> (Vec<u8>, CheckedPackage) {
     );
     let graph = assemble_with_models(unit.as_bytes(), &packages)
         .expect("the unit assembles")
-        .check(CheckingLimits::default())
+        .check(
+            CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
         .unwrap_or_else(|refusals| panic!("the package checks: {refusals:?}"));
     (document, CheckedPackage::link(graph))
 }

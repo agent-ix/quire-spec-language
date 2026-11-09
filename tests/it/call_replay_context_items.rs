@@ -73,7 +73,10 @@ fn a_members_item_bounds_build_a_request_that_replays() {
     .expect("the model is admitted");
     let graph = PackageDeclarations::assemble(raw, "fixture".to_string(), unit, models, Vec::new())
         .expect("the unit assembles")
-        .check(CheckingLimits::default())
+        .check(
+            CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
         .expect("the unit checks");
     let items = items_from_requirements(graph.requirements(), &Registry::new(), None);
 

@@ -21,7 +21,10 @@ fn empty_graph() -> CheckedGraph {
     .reference()
     .clone();
     PackageDeclarations::new(source, "pkg", qsl_foundation::IdentityLimits::default())
-        .check(CheckingLimits::default())
+        .check(
+            CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
         .expect("an empty package checks")
 }
 

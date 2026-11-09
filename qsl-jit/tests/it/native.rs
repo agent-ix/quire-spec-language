@@ -10,7 +10,9 @@ use quire_eval::{CallFailure, FamilyOutcome};
 use quire_exact::{AdmittedCharge, Cancel, CancelCause, Integer, Meter, Outcome, Value};
 use quire_semantic_value::supplied_stop::{SuppliedLimits, SuppliedRun};
 
-use crate::common::{int, interpreted, name, package_with_division, prepare, UNLIMITED};
+use crate::common::{
+    int, interpreted, name, package_kernel, package_with_division, prepare, UNLIMITED,
+};
 
 const SOURCE: &str = "\
  type Q = Rational[-10, 10; 1, 10];\n\
@@ -526,4 +528,30 @@ fn division_under_every_law_agrees_with_the_interpreter() {
             );
         }
     }
+}
+
+/// Checked under `CheckMode::Kernel` the result bound of `s` is a run-time
+/// obligation: the addition records no kernel call, and a sum outside the
+/// bound returns the interpreter's outcome, cause and location.
+#[trace("TC-1384", "FR-562-AC-6")]
+#[test]
+fn a_result_bound_checked_under_kernel_mode_is_the_interpreters_outcome() {
+    let package = package_kernel(
+        " function s using v(a: Int[0, 9], b: Int[0, 9]): Int[0, 9] pure { a + b }\n",
+    );
+    let prepared = prepare(&package, &["s"]);
+    for arguments in [[int(5), int(5)], [int(4), int(5)]] {
+        let got = run(&prepared, "s", &arguments);
+        assert!(names(&got).is_empty(), "{arguments:?}");
+        let want = interpreted(&package, "s", &arguments, UNLIMITED);
+        assert_eq!(got.result, want.result, "{arguments:?}");
+        assert_eq!(got.charges, want.charges, "{arguments:?}");
+    }
+    let over = run(&prepared, "s", &[int(5), int(5)]);
+    assert!(matches!(over.outcome, Ok(None)), "{}", over.result);
+    let within = run(&prepared, "s", &[int(4), int(5)]);
+    assert!(matches!(
+        within.outcome,
+        Ok(Some(Value::Integer(ref sum))) if *sum == Integer::from(9_i64)
+    ));
 }

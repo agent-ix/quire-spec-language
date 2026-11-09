@@ -151,7 +151,10 @@ fn source_declared_nodes_carry_their_source_owner() {
     declarations.functions = vec![keep];
     let package = CheckedPackage::link(
         declarations
-            .check(CheckingLimits::default())
+            .check(
+                CheckingLimits::default(),
+                quire_semantic_value::checking::CheckMode::Linked,
+            )
             .expect("the package checks"),
     );
     let emission = emit(&package);
@@ -344,7 +347,10 @@ fn acme_dispatch_package(root: &str) -> CheckedPackage {
     declarations.functions.push(held);
     CheckedPackage::link(
         declarations
-            .check(CheckingLimits::default())
+            .check(
+                CheckingLimits::default(),
+                quire_semantic_value::checking::CheckMode::Linked,
+            )
             .unwrap_or_else(|refusals| panic!("{root} checks: {refusals:?}")),
     )
 }

@@ -66,7 +66,10 @@ fn package() -> CheckedPackage {
     declarations.types = types;
     CheckedPackage::link(
         declarations
-            .check(CheckingLimits::default())
+            .check(
+                CheckingLimits::default(),
+                quire_semantic_value::checking::CheckMode::Linked,
+            )
             .expect("the package checks"),
     )
 }

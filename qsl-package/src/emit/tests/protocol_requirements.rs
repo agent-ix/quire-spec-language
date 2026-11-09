@@ -878,8 +878,10 @@ fn refusals_of(profiles: &str, clauses: &str) -> Vec<qsl_semantics::check::Check
     );
     match assemble_with_models(unit.as_bytes(), &packages)
         .expect("the unit assembles")
-        .check(CheckingLimits::default())
-    {
+        .check(
+            CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        ) {
         Ok(_) => Vec::new(),
         Err(refusals) => refusals,
     }

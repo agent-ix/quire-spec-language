@@ -28,7 +28,10 @@ pub(super) fn emit_unit(unit_body: &str) -> (Emission, Value, Read) {
     );
     let graph = assemble_with_models(unit.as_bytes(), &packages)
         .expect("the unit assembles")
-        .check(CheckingLimits::default())
+        .check(
+            CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
         .expect("the package checks");
     let emission = emit_checked(&CheckedPackage::link(graph)).expect("the package emits");
     assert_eq!(emission.omitted, []);
@@ -121,7 +124,10 @@ fn selected_record_and_inherited_field_rows_join_ir_projection() {
     );
     let graph = assemble_with_models(unit.as_bytes(), &packages)
         .expect("the unit assembles")
-        .check(CheckingLimits::default())
+        .check(
+            CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
         .expect("the unit checks");
     let declaration_rows = graph.selected_exact_declaration_rows().to_vec();
     let checked = CheckedPackage::link(graph);

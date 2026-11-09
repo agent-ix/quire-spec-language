@@ -43,7 +43,10 @@ fn check(declarations: &str) -> Checked {
         Vec::new(),
     )
     .expect("the unit assembles")
-    .check(CheckingLimits::default())
+    .check(
+        CheckingLimits::default(),
+        quire_semantic_value::checking::CheckMode::Linked,
+    )
     .unwrap_or_else(|refusals| panic!("{declarations}: {refusals:?}"));
     Checked { text, graph }
 }

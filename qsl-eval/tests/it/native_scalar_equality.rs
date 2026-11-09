@@ -81,7 +81,10 @@ fn fixture() -> Fixture {
     let types = declarations.types.clone();
     let package = CheckedPackage::link(
         declarations
-            .check(CheckingLimits::default())
+            .check(
+                CheckingLimits::default(),
+                quire_semantic_value::checking::CheckMode::Linked,
+            )
             .expect("the unit checks"),
     );
     Fixture { package, types }

@@ -241,7 +241,10 @@ fn model_package_with(
         Vec::new(),
     )
     .expect("M15 source assembles");
-    let graph = declarations.check(CheckingLimits::default())?;
+    let graph = declarations.check(
+        CheckingLimits::default(),
+        quire_semantic_value::checking::CheckMode::Linked,
+    )?;
     Ok((CheckedPackage::link(graph), view, packages))
 }
 
@@ -546,7 +549,10 @@ fn package_with_types(
             declarations.function_selections = function_selections;
             declarations
         }
-        .check(CheckingLimits::default())
+        .check(
+            CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
         .unwrap(),
     )
 }
@@ -828,7 +834,10 @@ fn unresolved_object_reference_refuses_at_input_admission() {
             declarations.types = types;
             declarations
         }
-        .check(CheckingLimits::default())
+        .check(
+            CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
         .unwrap(),
     );
     let reference = ObjectReference::new(
@@ -1260,7 +1269,10 @@ fn lifecycle_receiver_and_parameter_boolean_components() {
             declarations.types = types;
             declarations
         }
-        .check(CheckingLimits::default())
+        .check(
+            CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
         .unwrap(),
     );
     let receiver = ObjectReference::new(

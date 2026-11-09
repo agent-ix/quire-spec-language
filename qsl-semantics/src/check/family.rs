@@ -82,7 +82,7 @@ use quire_exact::RoundingMode;
 use quire_exact::TextProfile;
 use quire_exact::ValueType;
 use quire_exact::{UnitDomain, UnitId};
-use quire_semantic_value::checking::CheckingLimits;
+use quire_semantic_value::checking::{CheckMode, CheckingLimits};
 use quire_semantic_value::declaration::CompositeShape;
 use quire_semantic_value::location::ExpressionLocation as CheckLocation;
 use quire_semantic_value::location::ExpressionOwner as CheckOrigin;
@@ -1586,7 +1586,8 @@ pub(crate) fn check_declaration_body(
         parameters.len(),
         input.dispatch_tables,
         &input.scope.dispatch_operations,
-    );
+    )
+    .with_mode(input.mode);
     definedness.check(body.root())?;
     // The measure's own definedness is checked, but (unchanged from the
     // pre-migration behavior) its calls are not folded into `calls` below:
@@ -1598,6 +1599,7 @@ pub(crate) fn check_declaration_body(
             input.dispatch_tables,
             &input.scope.dispatch_operations,
         )
+        .with_mode(input.mode)
         .check(measure.root())?;
     }
     Ok(CheckedDeclarationBody {
@@ -2001,6 +2003,10 @@ pub struct ValueDeclarations<'a> {
     pub(crate) own_signature: &'a Signature,
     pub(crate) dispatch_tables: &'a [DispatchTable],
     pub(crate) checking_limits: CheckingLimits,
+    /// The check mode (FR-495): under `CheckMode::Kernel` a result bound or
+    /// other unproved definedness obligation is left to the kernel
+    /// evaluation.
+    pub(crate) mode: CheckMode,
     pub(crate) complete_value: bool,
     /// The derived StateModel body family and its population-name scope.
     /// `None` for a value-only function body.
@@ -2518,6 +2524,7 @@ pub mod fixtures {
             own_signature,
             dispatch_tables,
             checking_limits,
+            mode: CheckMode::Linked,
             complete_value: false,
             model_scope: None,
             derived_model_family: false,
@@ -3774,7 +3781,10 @@ pub(crate) mod checking_tests {
                     qsl_foundation::IdentityLimits::default(),
                 )
             }
-            .check(CheckingLimits::default())
+            .check(
+                CheckingLimits::default(),
+                quire_semantic_value::checking::CheckMode::Linked,
+            )
             .expect("the fixture checks")
             .function_identity(name)
             .expect("the fixture declares its function")
@@ -3894,7 +3904,10 @@ pub(crate) mod checking_tests {
                 qsl_foundation::IdentityLimits::default(),
             )
         }
-        .check(CheckingLimits::default())
+        .check(
+            CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
         .expect_err("repeated names are refused");
         let at = |index: usize| {
             BodyLocation::root(BodyOrigin::Body {
@@ -4120,7 +4133,12 @@ mod locus_tests {
         let end = usize::try_from(region.end()).unwrap();
         assert_eq!(&text[start..end], "1", "the node whose entry failed");
         let (unit, _) = sum_unit();
-        assert!(unit.check(CheckingLimits::new(5_000)).is_ok());
+        assert!(unit
+            .check(
+                CheckingLimits::new(5_000),
+                quire_semantic_value::checking::CheckMode::Linked
+            )
+            .is_ok());
     }
 
     /// TC-727 step 3: the same sum, through package checking, under a work
@@ -4245,7 +4263,7 @@ mod locus_tests {
     ) -> (StageLimitCause, Option<SourceRegion>) {
         let regions = unit.regions();
         let refusals = unit
-            .check(limits)
+            .check(limits, quire_semantic_value::checking::CheckMode::Linked)
             .expect_err("the limit stops package checking");
         let [refusal] = refusals.as_slice() else {
             panic!("one refusal, got {refusals:?}");

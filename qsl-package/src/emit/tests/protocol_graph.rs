@@ -615,7 +615,10 @@ pub(super) fn checked_package(
     } else {
         assembled
     };
-    assembled.check(CheckingLimits::default())
+    assembled.check(
+        CheckingLimits::default(),
+        quire_semantic_value::checking::CheckMode::Linked,
+    )
 }
 
 /// FR-092-AC-18, FR-383: every construct whose node is still not written
@@ -1036,7 +1039,10 @@ fn checked_protocols_with_budget(
     );
     assemble_with_models(unit.as_bytes(), &packages)
         .expect("the unit assembles")
-        .check_with_protocol_results(CheckingLimits::default().with_work_budget(work_budget))
+        .check_with_protocol_results(
+            CheckingLimits::default().with_work_budget(work_budget),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
 }
 
 fn minimum_protocol_work_budget(protocols: &str) -> u64 {
@@ -1082,7 +1088,10 @@ fn protocol_results_preserve_independent_emission_when_a_join_is_refused() {
             .expect("the test model admits");
         assemble_with_models(unit(protocols).as_bytes(), &packages)
             .expect("the unit assembles")
-            .check_with_protocol_results(CheckingLimits::default())
+            .check_with_protocol_results(
+                CheckingLimits::default(),
+                quire_semantic_value::checking::CheckMode::Linked,
+            )
             .expect("unit-level checks succeed")
     };
     let standalone = CheckedPackage::link(check(&good));

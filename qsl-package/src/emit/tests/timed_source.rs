@@ -65,7 +65,10 @@ fn a_checked_time_source_emits_and_reads_back_its_resolved_nodes() {
     );
     let graph = assemble_with_models(unit.as_bytes(), &packages)
         .expect("the unit assembles")
-        .check(CheckingLimits::default())
+        .check(
+            CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
         .unwrap_or_else(|refusals| panic!("the time source checks: {refusals:?}"));
     let [checked_source] = graph.time_sources() else {
         panic!("one checked time source");
@@ -248,7 +251,10 @@ fn a_source_time_nominal_is_located_at_its_own_declaration() {
     );
     let graph = assemble_with_models(unit.as_bytes(), &packages)
         .expect("the unit assembles")
-        .check(CheckingLimits::default())
+        .check(
+            CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
         .unwrap_or_else(|refusals| panic!("the time source checks: {refusals:?}"));
     let [checked_source] = graph.time_sources() else {
         panic!("one checked time source");
@@ -293,7 +299,10 @@ fn a_package_dimension_a_function_names_is_written_model_owned() {
     );
     let graph = assemble_with_models(unit.as_bytes(), &packages)
         .expect("the unit assembles")
-        .check(CheckingLimits::default())
+        .check(
+            CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
         .unwrap_or_else(|refusals| panic!("the unit checks: {refusals:?}"));
     let emission = emit_checked(&CheckedPackage::link(graph)).expect("the package emits");
     assert_eq!(emission.omitted, []);
@@ -371,7 +380,10 @@ fn a_package_owned_time_unit_emits_its_model_owned_nominal_nodes() {
     let unit = format!("{unit}time Config dense unit Config::ms;\n");
     let graph = assemble_with_models(unit.as_bytes(), &packages)
         .expect("the unit assembles")
-        .check(CheckingLimits::default())
+        .check(
+            CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
         .unwrap_or_else(|refusals| panic!("the package time source checks: {refusals:?}"));
     let [checked_source] = graph.time_sources() else {
         panic!("one checked time source");
@@ -422,7 +434,10 @@ fn an_authentic_selected_model_unit_round_trips_in_required_identity_handoff() {
     let unit = format!("{unit}time Config dense unit Config::ms;\n");
     let graph = assemble_with_models(unit.as_bytes(), &packages)
         .unwrap()
-        .check(CheckingLimits::default())
+        .check(
+            CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
         .unwrap();
     let emission = emit_checked(&CheckedPackage::link(graph)).unwrap();
     let mut evidence = emission.evidence().clone();
@@ -518,7 +533,10 @@ fn a_tick_time_source_emits_its_exact_period_and_operation_anchor() {
     );
     let graph = assemble_with_models(unit.as_bytes(), &packages)
         .expect("the unit assembles")
-        .check(CheckingLimits::default())
+        .check(
+            CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
         .unwrap_or_else(|refusals| panic!("the tick source checks: {refusals:?}"));
     let emission = emit_checked(&CheckedPackage::link(graph)).expect("the tick model emits");
     let wire = wire(&emission);
@@ -589,7 +607,10 @@ fn three_time_dimensions_have_distinct_structural_keys() {
         );
         let graph = assemble_with_models(text.as_bytes(), &packages)
             .expect("the unit assembles")
-            .check(CheckingLimits::default())
+            .check(
+                CheckingLimits::default(),
+                quire_semantic_value::checking::CheckMode::Linked,
+            )
             .unwrap_or_else(|refusals| panic!("{unit}: {refusals:?}"));
         let dimension = graph.time_sources()[0].time_dimension.clone();
         let emission = emit_checked(&CheckedPackage::link(graph))

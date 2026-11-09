@@ -22,7 +22,10 @@ fn refusals(unit: &str, documents: &[Vec<u8>]) -> Vec<CheckRefusal> {
         qsl_semantics::model::intake::package_input(documents.iter().map(Vec::as_slice)).unwrap();
     assemble_with_models(unit.as_bytes(), &packages)
         .expect("the unit assembles")
-        .check(CheckingLimits::default())
+        .check(
+            CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
         .map(|_| ())
         .expect_err("the unit refuses")
 }
