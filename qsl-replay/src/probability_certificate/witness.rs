@@ -11,6 +11,8 @@ use qsl_package::CheckedPackage;
 use quire_exact::Value as SemanticValue;
 use quire_semantic_value::model_transition::ModelTransition;
 
+mod bounded;
+
 /// A semantic operation, draw and resulting state in a finite witness.
 #[derive(Clone, Debug)]
 pub struct ProbabilityWitnessStep {
@@ -114,6 +116,9 @@ impl From<ExactProbabilityGraphError> for ProbabilityWitnessError {
 /// Replay a typed path set against the exact package and admitted system.
 /// The claim, binding, predicates, probabilities and terminal leaves are all
 /// independently derived. This entry accepts no analyzer graph or wire data.
+/// It admits acyclic unbounded reachability and origin event-position
+/// `eventually[0,h] holds(P)`. The latter uses qualified monitor keys and
+/// terminal false extension and permits raw model cycles within its horizon.
 #[allow(clippy::too_many_arguments)]
 pub fn replay_probabilistic_witness(
     package: &CheckedPackage,
@@ -133,6 +138,9 @@ pub fn replay_probabilistic_witness(
             _ => ProbabilityWitnessError::Graph(error),
         },
     )?;
+    if matches!(claim.form, ProbForm::Probability { .. }) {
+        return bounded::replay(system, claim, witness, limits, cancel);
+    }
     let ProbForm::Reach {
         bound,
         target: ReachTarget::Eventually(predicate),

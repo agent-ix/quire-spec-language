@@ -3,6 +3,7 @@
 
 mod analyze;
 mod bounded_closure;
+mod bounded_probabilistic_replay;
 mod claim_family;
 mod clause_item;
 mod clause_route;

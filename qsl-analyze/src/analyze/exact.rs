@@ -351,9 +351,26 @@ fn run(
     };
     let reference = binding.as_ref().map(|bound| &bound.reference);
     if !holds {
-        if bounded_formula.is_some() {
-            return not_yet();
-        }
+        let bounded_monitor = match (bounded_formula, monitor) {
+            (Some(formula), Some(monitor)) => {
+                let context =
+                    match qsl_replay::probabilistic_formula_monitor_context(claim, reference) {
+                        Ok(context) => context,
+                        Err(_) => return not_yet(),
+                    };
+                match qsl_eval::automaton::QualifiedBoundedMonitor::from_monitor(
+                    formula.formula(),
+                    &context,
+                    monitor,
+                    limits.model.max_automaton_states,
+                ) {
+                    Ok(monitor) => Some(monitor),
+                    Err(_) => return not_yet(),
+                }
+            }
+            (None, _) => None,
+            (Some(_), None) => return broken(),
+        };
         return replay_refutation(
             &system,
             claim,
@@ -362,6 +379,7 @@ fn run(
             *start,
             &target,
             reference,
+            bounded_monitor.as_ref(),
             &limits,
             cancel,
             subject,
@@ -540,7 +558,6 @@ fn bounded_certificate_of(
     io: qsl_replay::ProbabilityDocumentIoLimits,
     cancel: &Cancel,
 ) -> Result<ExactProbabilityCertificate, ProbabilityDocumentError> {
-    use crate::exact_probabilistic::{FormulaState, MonitorState, MonitorVerdict};
     if values.len() != product.states.len() {
         return Err(ExactProbabilityGraphError::MissingSuccessor.into());
     }
@@ -552,22 +569,8 @@ fn bounded_certificate_of(
         let ExtRational::Finite(value) = value else {
             return Err(ExactProbabilityGraphError::ExpansionRefused.into());
         };
-        let key = match state.monitor {
-            Some(MonitorState::Formula(FormulaState::Running(state))) => monitor.key(state),
-            Some(MonitorState::Formula(FormulaState::Decided(verdict))) => {
-                monitor.decision_key(verdict == MonitorVerdict::Accept)
-            }
-            _ => return Err(ExactProbabilityGraphError::UnsupportedClaimForm.into()),
-        }
-        .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?;
         entries.push(ExactProbabilityValue {
-            state: ProbabilityProductKey::for_formula_state(
-                binding,
-                &state.model,
-                &key,
-                io,
-                cancel,
-            )?,
+            state: bounded_product_key(state, binding, monitor, io, cancel)?,
             value: value.clone(),
         });
     }
@@ -579,6 +582,25 @@ fn bounded_certificate_of(
         return Err(ExactProbabilityGraphError::ExpansionRefused.into());
     }
     Ok(ExactProbabilityCertificate { values: entries })
+}
+
+fn bounded_product_key(
+    state: &crate::exact_probabilistic::ProbKey,
+    binding: Option<&ObjectReference>,
+    monitor: &qsl_eval::automaton::QualifiedBoundedMonitor,
+    io: qsl_replay::ProbabilityDocumentIoLimits,
+    cancel: &Cancel,
+) -> Result<ProbabilityProductKey, ProbabilityDocumentError> {
+    use crate::exact_probabilistic::{FormulaState, MonitorState, MonitorVerdict};
+    let key = match state.monitor {
+        Some(MonitorState::Formula(FormulaState::Running(state))) => monitor.key(state),
+        Some(MonitorState::Formula(FormulaState::Decided(verdict))) => {
+            monitor.decision_key(verdict == MonitorVerdict::Accept)
+        }
+        _ => return Err(ExactProbabilityGraphError::UnsupportedClaimForm.into()),
+    }
+    .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?;
+    ProbabilityProductKey::for_formula_state(binding, &state.model, &key, io, cancel)
 }
 
 fn build_refusal(refusal: ProductRefusal, subject: SubjectLimits<'_>) -> EngineReport {
@@ -629,13 +651,42 @@ fn replay_refutation(
     initial: crate::exact_probabilistic::ProbStateId,
     target: &[bool],
     binding: Option<&ObjectReference>,
+    monitor: Option<&qsl_eval::automaton::QualifiedBoundedMonitor>,
     limits: &crate::exact_probabilistic::ExactProbLimits,
     cancel: &Cancel,
     subject: SubjectLimits<'_>,
     tamper: Option<&dyn Fn(&mut ProbabilisticCounterexample)>,
 ) -> EngineReport {
-    use crate::exact_probabilistic::{produce_witness, ProductAction, WitnessScope};
+    use crate::exact_probabilistic::{
+        produce_witness, FormulaState, MonitorState, MonitorVerdict, ProductAction, WitnessScope,
+    };
     let (accepting, past) = match &claim.form {
+        ProbForm::Probability { bound, .. } if monitor.is_some() => (
+            product
+                .states
+                .iter()
+                .map(|state| {
+                    matches!(
+                        (bound, state.monitor),
+                        (
+                            Bound::AtMost(_),
+                            Some(MonitorState::Formula(FormulaState::Decided(
+                                MonitorVerdict::Accept
+                            )))
+                        ) | (
+                            Bound::AtLeast(_),
+                            Some(MonitorState::Formula(FormulaState::Decided(
+                                MonitorVerdict::Reject
+                            )))
+                        )
+                    )
+                })
+                .collect(),
+            match bound {
+                Bound::AtMost(threshold) => threshold.clone(),
+                Bound::AtLeast(threshold) => Rational::from_integer(1_i64.into()).sub(threshold),
+            },
+        ),
         ProbForm::Reach {
             bound: Bound::AtMost(threshold),
             ..
@@ -686,12 +737,20 @@ fn replay_refutation(
     let [first] = initials.as_slice() else {
         return not_yet();
     };
-    let key_of = |state: &qsl_eval::simulation::model::ModelSimState| {
-        let (bytes, _) = system.state_key(state).map_err(|_| ())?;
-        ProbabilityProductKey::for_model_state(binding, &bytes).map_err(|_| ())
+    let key_of = |state: &crate::exact_probabilistic::ProbKey| {
+        if let Some(monitor) = monitor {
+            bounded_product_key(state, binding, monitor, limits.document, cancel)
+        } else {
+            ProbabilityProductKey::for_model_state(binding, &state.model)
+                .map_err(ProbabilityDocumentError::from)
+        }
     };
-    let Ok(initial_key) = key_of(first) else {
+    let Some(initial_state) = product.states.get(initial.index()) else {
         return broken();
+    };
+    let initial_key = match key_of(initial_state) {
+        Ok(key) => key,
+        Err(error) => return document_failure(error, subject),
     };
     let mut scheduler = Vec::new();
     for (state, action) in produced.entries {
@@ -706,8 +765,9 @@ fn replay_refutation(
         let Some(state) = product.states.get(state.index()) else {
             return broken();
         };
-        let Ok(key) = ProbabilityProductKey::for_model_state(binding, &state.model) else {
-            return broken();
+        let key = match key_of(state) {
+            Ok(key) => key,
+            Err(error) => return document_failure(error, subject),
         };
         scheduler.push((key, action));
     }
@@ -721,14 +781,20 @@ fn replay_refutation(
                     return settled(&ExactProbBuildIssue::Cancelled(cause), subject);
                 }
             }
+            if monitor.is_some() && matches!(step.action, ProductAction::TerminalStutter) {
+                // Qualified replay derives false extension at an actual leaf;
+                // closure consumes no model step or draw.
+                continue;
+            }
             let ProductAction::Identity(identity) = step.action else {
                 return not_yet();
             };
             let Some(to) = product.states.get(step.to.index()) else {
                 return broken();
             };
-            let Ok(post_key) = ProbabilityProductKey::for_model_state(binding, &to.model) else {
-                return broken();
+            let post_key = match key_of(to) {
+                Ok(key) => key,
+                Err(error) => return document_failure(error, subject),
             };
             let mut next = Vec::new();
             for (state, steps) in partials {
@@ -747,7 +813,9 @@ fn replay_refutation(
                             continue;
                         }
                         for (transition, post) in draw.successors {
-                            if key_of(&post).ok().as_ref() == Some(&post_key) {
+                            if system.state_key(&post).ok().map(|key| key.0).as_ref()
+                                == Some(&to.model)
+                            {
                                 candidates.push(ProbabilityWitnessStep {
                                     action: identity.clone(),
                                     transition,
@@ -788,6 +856,19 @@ fn replay_refutation(
                 .into_iter()
                 .map(|(_, steps)| ProbabilityWitnessPath { steps }),
         );
+    }
+    if monitor.is_some() {
+        // A finite-horizon policy only needs entries for represented choices.
+        // The unbounded producer retains its continuation policy contract.
+        let mut used = std::collections::BTreeSet::new();
+        for path in &paths {
+            let mut key = &initial_key;
+            for step in &path.steps {
+                used.insert(key.clone());
+                key = &step.post_key;
+            }
+        }
+        scheduler.retain(|(key, _)| used.contains(key));
     }
     let mut witness = ProbabilisticCounterexample {
         item: item.clone(),

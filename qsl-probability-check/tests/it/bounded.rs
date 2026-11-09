@@ -141,6 +141,31 @@ fn request(source: &str, snapshot: &[u8], exact: ExactProbLimits) -> (Option<Val
     let Some(terminal) = record.terminal() else {
         return (None, record.settlement);
     };
+    if terminal.value() == &qsl_replay::TerminalValue::Refuted {
+        let token = record
+            .probabilistic_counterexample
+            .as_ref()
+            .expect("a native bounded refutation retains its reproduced path evidence");
+        let evidence = token.evidence();
+        assert_eq!(
+            evidence.item,
+            qsl_replay::probabilistic_claim_identity(claim).unwrap()
+        );
+        let qsl_replay::ProbabilityWitnessReplay::Reproduced(replayed) =
+            qsl_replay::replay_probabilistic_witness(
+                package,
+                &system,
+                &evidence.item,
+                evidence,
+                &exact,
+                &cancel,
+            )
+            .expect("the retained native evidence independently replays")
+        else {
+            panic!("native refutation evidence must reproduce");
+        };
+        assert_eq!(replayed.mass(), token.mass());
+    }
     let Some(bytes) = terminal.exact_certificate_document() else {
         return (None, record.settlement);
     };
@@ -523,10 +548,10 @@ fn bounded_wrong_source_and_nonexact_rows_never_produce_an_accepted_document() {
     );
     assert!(
         evidence.is_none(),
-        "bounded misses have no unbounded witness-replay certificate"
+        "a replayed bounded refutation is not a proof certificate document"
     );
     assert!(
-        matches!(&missed, Settlement::Disposed(disposed) if disposed.kind == DispositionKind::Unsupported),
+        matches!(&missed, Settlement::Terminal(terminal) if terminal.value() == &qsl_replay::TerminalValue::Refuted),
         "{missed:?}"
     );
     let mut original = proof(&cyclic_source(2, "0.75"), SNAPSHOT);
