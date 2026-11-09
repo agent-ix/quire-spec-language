@@ -44,3 +44,12 @@ ADR-029 hunk) and FND-003 (delete the negative sentence) before merge. FND-002
 needs one Behavior line and one AC in FR-279 (or FR-296) for `run_with_backends`
 that the existing tests at execution_tests.rs:1097 and :1396 can trace to.
 FND-004 is a wording fix.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | ADR-029 hunk reverted in 77db1ebc0; ADR-029 is no longer in the diff against main. |
+| FND-002 | fixed | FR-279 Behavior adds a `run_with_backends` line; FR-279-AC-4 and FR-296-AC-4 gain `run_with_backends` clauses that `the_calls_prepare_limits_reach_the_supplied_backend` and `only_the_chosen_supplied_backend_prepares` assert, and each fails if `prepare` or the chosen backend is ignored. |
+| FND-003 | fixed | The negative sentence and the FR-088-AC-6 citation are removed from the FR-294 `EntrySelection` row. |
+| FND-004 | fixed | FR-279 now says "the function run entries". |
