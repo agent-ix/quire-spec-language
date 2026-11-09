@@ -558,7 +558,6 @@ fn bounded_certificate_of(
     io: qsl_replay::ProbabilityDocumentIoLimits,
     cancel: &Cancel,
 ) -> Result<ExactProbabilityCertificate, ProbabilityDocumentError> {
-    use crate::exact_probabilistic::{FormulaState, MonitorState, MonitorVerdict};
     if values.len() != product.states.len() {
         return Err(ExactProbabilityGraphError::MissingSuccessor.into());
     }
@@ -570,22 +569,8 @@ fn bounded_certificate_of(
         let ExtRational::Finite(value) = value else {
             return Err(ExactProbabilityGraphError::ExpansionRefused.into());
         };
-        let key = match state.monitor {
-            Some(MonitorState::Formula(FormulaState::Running(state))) => monitor.key(state),
-            Some(MonitorState::Formula(FormulaState::Decided(verdict))) => {
-                monitor.decision_key(verdict == MonitorVerdict::Accept)
-            }
-            _ => return Err(ExactProbabilityGraphError::UnsupportedClaimForm.into()),
-        }
-        .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?;
         entries.push(ExactProbabilityValue {
-            state: ProbabilityProductKey::for_formula_state(
-                binding,
-                &state.model,
-                &key,
-                io,
-                cancel,
-            )?,
+            state: bounded_product_key(state, binding, monitor, io, cancel)?,
             value: value.clone(),
         });
     }
@@ -597,6 +582,22 @@ fn bounded_certificate_of(
         return Err(ExactProbabilityGraphError::ExpansionRefused.into());
     }
     Ok(ExactProbabilityCertificate { values: entries })
+}
+
+fn bounded_product_key(
+    state: &crate::exact_probabilistic::ProbKey,
+    binding: Option<&ObjectReference>,
+    monitor: &qsl_eval::automaton::QualifiedBoundedMonitor,
+    io: qsl_replay::ProbabilityDocumentIoLimits,
+    cancel: &Cancel,
+) -> Result<ProbabilityProductKey, ProbabilityDocumentError> {
+    use crate::exact_probabilistic::{FormulaState, MonitorState, MonitorVerdict};
+    let key = match state.monitor {
+        Some(MonitorState::Formula(FormulaState::Running(state))) => monitor.key(state),
+        Some(MonitorState::Formula(FormulaState::Decided(verdict))) => monitor.decision_key(verdict == MonitorVerdict::Accept),
+        _ => return Err(ExactProbabilityGraphError::UnsupportedClaimForm.into()),
+    }.map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?;
+    ProbabilityProductKey::for_formula_state(binding, &state.model, &key, io, cancel)
 }
 
 fn build_refusal(refusal: ProductRefusal, subject: SubjectLimits<'_>) -> EngineReport {
@@ -735,21 +736,7 @@ fn replay_refutation(
     };
     let key_of = |state: &crate::exact_probabilistic::ProbKey| {
         if let Some(monitor) = monitor {
-            let key = match state.monitor {
-                Some(MonitorState::Formula(FormulaState::Running(state))) => monitor.key(state),
-                Some(MonitorState::Formula(FormulaState::Decided(verdict))) => {
-                    monitor.decision_key(verdict == MonitorVerdict::Accept)
-                }
-                _ => return Err(ProbabilityDocumentError::Unsupported),
-            }
-            .map_err(|_| ProbabilityDocumentError::Unsupported)?;
-            ProbabilityProductKey::for_formula_state(
-                binding,
-                &state.model,
-                &key,
-                limits.document,
-                cancel,
-            )
+            bounded_product_key(state, binding, monitor, limits.document, cancel)
         } else {
             ProbabilityProductKey::for_model_state(binding, &state.model)
                 .map_err(ProbabilityDocumentError::from)

@@ -567,3 +567,32 @@ fn interval_bounds_and_precision_budget_cannot_be_cast_into_bounded_refutations(
         assert!(record.exact_probabilistic.is_none());
     }
 }
+
+#[trace("TC-637", "FR-202-AC-13")]
+#[test]
+fn one_admitted_over_binding_uses_the_actual_s3_parameter_node() {
+    use qsl_eval::automaton::{ContextBinding,QualifiedBoundedMonitor};
+    use qsl_semantics::check::{ProbForm,Event};
+    let world = World::with_universe(&model(CLAIMS),&["m","other"]);
+    let mut request = world.request("Min",ModelCheckLimits::default());
+    request.subject.simulation.universes[0].keys.retain(|key| key == "m");
+    let system = ModelSystem::new(request.subject.simulation.clone()).unwrap();
+    let record = analyze_items(&Engines::qsl().unwrap(),vec![exact_probabilistic_item(RequestIndex::new(0),request)],&Cancel::new()).remove(0);
+    assert_eq!(record.terminal().unwrap().value(),&TerminalValue::Refuted);
+    let witness = record.probabilistic_counterexample.as_ref().unwrap().evidence();
+    assert!(matches!(replay_probabilistic_witness(system.package(),&system,&witness.item,witness,&ExactProbLimits::default(),&Cancel::new()),Ok(ProbabilityWitnessReplay::Reproduced(_))));
+    let claim = world.claim("Min");
+    let parameter = claim.over.as_ref().unwrap().node().unwrap();
+    let context = qsl_replay::probabilistic_formula_monitor_context(claim,witness.binding.as_ref()).unwrap();
+    assert_eq!(context.binding,vec![ContextBinding::instance(parameter.clone(),"m")]);
+    let ProbForm::Probability {event:Event::Formula {formula,..},..} = &claim.form else {panic!("bounded formula")};
+    for binding in [ContextBinding::instance(witness.item.node().clone(),"m"),ContextBinding::instance(parameter.clone(),"other")] {
+        let mut altered = context.clone();
+        altered.binding = vec![binding];
+        let mut monitor = QualifiedBoundedMonitor::new(formula.formula(),&altered,1000).unwrap();
+        let root = monitor.start(false).unwrap();
+        let mut counterfeit = witness.clone();
+        counterfeit.initial_key = ProbabilityProductKey::for_formula_state(witness.binding.as_ref(),&system.state_key(&witness.initial).unwrap().0,&monitor.key(root).unwrap(),ExactProbLimits::default().document,&Cancel::new()).unwrap();
+        assert!(matches!(replay_probabilistic_witness(system.package(),&system,&counterfeit.item,&counterfeit,&ExactProbLimits::default(),&Cancel::new()),Err(ProbabilityWitnessError::Refused)));
+    }
+}
