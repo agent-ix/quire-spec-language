@@ -622,3 +622,43 @@ fn merged_draws_expand_into_actual_vectors_with_a_witness_storage_limit() {
     );
     assert!(record.probabilistic_counterexample.is_none());
 }
+
+#[trace("TC-637", "FR-202-AC-10")]
+#[test]
+fn fix_round_poisoned_model_and_ordinal_in_both_copies_are_refused() {
+    let world = World::new(&prob_world::link(CLAIMS));
+    let original = evidence(&world,"TooMuch");
+    let system = ModelSystem::new(world.subject().simulation).unwrap();
+    for (model,ordinal) in [(Some(qsl_replay::ModelIdentity::new("wrong-model")),0),(None,123),(Some(qsl_replay::ModelIdentity::new("wrong-model")),123)] {
+        let mut witness = original.clone();
+        let poisoned = qsl_replay::ObligationIdentity::new(original.item.node().clone(),model,ordinal);
+        witness.item = poisoned.clone();
+        assert!(matches!(replay_probabilistic_witness(system.package(),&system,&poisoned,&witness,&ExactProbLimits::default(),&Cancel::new()),Err(ProbabilityWitnessError::Refused)),"two agreeing caller-owned identities cannot authorize a different checked obligation");
+    }
+}
+
+#[trace("TC-637", "FR-202-AC-11")]
+#[test]
+fn fix_round_producer_path_exhaustion_settles_incomplete_without_evidence() {
+    let world = World::new(&prob_world::link(CLAIMS));
+    let engines = Engines::qsl().unwrap();
+    let mut request = world.request("TooMuch",ModelCheckLimits::default());
+    request.limits.max_witness_paths = 0;
+    let record = analyze_items(&engines,vec![exact_probabilistic_item(RequestIndex::new(0),request)],&Cancel::new()).remove(0);
+    assert_eq!(record.terminal().expect("producer exhaustion must settle an incomplete terminal record").value(),&TerminalValue::Incomplete(IncompleteCause::LimitReached { limit: ModelCheckLimit::ExactProbMaxWitnessPaths, value: 0 }));
+    assert!(record.probabilistic_counterexample.is_none());
+    assert!(record.exact_probabilistic.is_none());
+}
+
+#[trace("TC-637", "FR-202-AC-11")]
+#[test]
+fn fix_round_fanout_checks_state_storage_before_queuing_successors() {
+    let world = World::new(&prob_world::link(CLAIMS));
+    let witness = evidence(&world,"TooMuch");
+    for maximum in [0,1] {
+        let mut limits = ExactProbLimits::default();
+        limits.model.limits.max_states = maximum;
+        limits.model.limits.max_transitions = maximum;
+        assert!(matches!(replay(&world,&witness,&limits,&Cancel::new()),Err(ProbabilityWitnessError::Graph(ExactProbabilityGraphError::LimitReached))),"state admission must stop before another fanout edge can exhaust the transition budget");
+    }
+}
