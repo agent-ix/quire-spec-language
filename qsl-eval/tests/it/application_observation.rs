@@ -71,6 +71,7 @@ fn package_with(
     CheckedPackage::link(
         declarations
             .check(
+                quire_semantic_value::checking::CheckMode::Linked,
                 CheckingLimits::default()
                     .with_nodes(1 << 30)
                     .with_input_bytes(1 << 30)

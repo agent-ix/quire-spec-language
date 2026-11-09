@@ -108,7 +108,10 @@ fn fixture(delivery: &str, capacity: u64, overflow: &str, run: &str) -> Fixture 
             Vec::new(),
         )
         .expect("unit assembled")
-        .check(CheckingLimits::default())
+        .check(
+            quire_semantic_value::checking::CheckMode::Linked,
+            CheckingLimits::default(),
+        )
         .unwrap_or_else(|refusals| panic!("protocol checks: {refusals:?}")),
     );
 

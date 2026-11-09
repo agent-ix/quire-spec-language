@@ -130,7 +130,10 @@ pub(crate) fn checked_clause_on(
         });
     }
     let graph = declarations
-        .check(quire_semantic_value::checking::CheckingLimits::default())
+        .check(
+            quire_semantic_value::checking::CheckMode::Linked,
+            quire_semantic_value::checking::CheckingLimits::default(),
+        )
         .unwrap_or_else(|refusals| panic!("S3: {refusals:?}"));
     assert_eq!(graph.temporal_clauses().len(), 1);
     let atom_count = graph.temporal_clauses()[0]

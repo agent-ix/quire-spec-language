@@ -258,7 +258,10 @@ fn compile_parsed(unit: &str, packages: &Packages) -> Compiled {
         Vec::new(),
     )
     .expect("the unit assembles");
-    match declarations.check(CheckingLimits::default()) {
+    match declarations.check(
+        quire_semantic_value::checking::CheckMode::Linked,
+        CheckingLimits::default(),
+    ) {
         Ok(graph) => Compiled::Checked(Box::new(graph)),
         Err(refusals) => Compiled::Refused(refusals),
     }

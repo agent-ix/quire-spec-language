@@ -78,7 +78,10 @@ fn check(text: &str, packages: &qsl_semantics::model::intake::PackageInput) -> C
     .expect("the model is admitted");
     PackageDeclarations::assemble(raw, "fixture".to_string(), unit, models, Vec::new())
         .expect("the unit assembles")
-        .check(CheckingLimits::default())
+        .check(
+            quire_semantic_value::checking::CheckMode::Linked,
+            CheckingLimits::default(),
+        )
         .expect("the unit checks")
 }
 

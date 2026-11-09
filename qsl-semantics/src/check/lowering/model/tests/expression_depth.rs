@@ -100,7 +100,11 @@ impl ModelForm {
     fn check(self, levels: usize, limits: CheckingLimits) -> Result<(), Vec<CheckRefusal>> {
         std::thread::Builder::new()
             .stack_size(STACK)
-            .spawn(move || self.declarations(levels).check(limits).map(drop))
+            .spawn(move || {
+                self.declarations(levels)
+                    .check(quire_semantic_value::checking::CheckMode::Linked, limits)
+                    .map(drop)
+            })
             .expect("the check thread spawns")
             .join()
             .expect("the check completes on a 512 KiB stack")

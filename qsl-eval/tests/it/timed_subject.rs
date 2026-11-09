@@ -282,7 +282,10 @@ fn try_world_of(
     )
     .expect("the unit assembles")
     .with_unwritten_timed_members()
-    .check(CheckingLimits::default())?;
+    .check(
+        quire_semantic_value::checking::CheckMode::Linked,
+        CheckingLimits::default(),
+    )?;
     let header = json!({"identity": PACKAGE});
     let document = json!({
         "format": "quire.state.snapshot/v1",

@@ -34,7 +34,10 @@ fn check(
         Vec::new(),
     )
     .unwrap_or_else(|refusal| panic!("assembly succeeds: {refusal:?}"))
-    .check(CheckingLimits::default())
+    .check(
+        quire_semantic_value::checking::CheckMode::Linked,
+        CheckingLimits::default(),
+    )
 }
 
 /// TC-1273's S3 negative vector: Some(Integer) does not match Option<Boolean>.

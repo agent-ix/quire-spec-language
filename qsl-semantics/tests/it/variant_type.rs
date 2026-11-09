@@ -538,7 +538,10 @@ fn a_unit_naming_a_variant_type_leaves_the_declaration_and_exports_unchanged() {
     let body = "function pick using v(t: Config::Tier): Config::Tier pure { t }";
     admit_and_assemble_with_body(&bytes, body)
         .expect("a function typed by the variant type assembles")
-        .check(CheckingLimits::default())
+        .check(
+            quire_semantic_value::checking::CheckMode::Linked,
+            CheckingLimits::default(),
+        )
         .expect("the variant parameter and result pass declared-type checking");
 
     let step_one = admitted(&document);
@@ -1108,7 +1111,10 @@ fn the_assembler_declares_variant_types_in_the_type_environment() {
     // The checked scope holds them too, found by effective identity.
     let expected = declarations.variant_types.clone();
     let graph = declarations
-        .check(CheckingLimits::default())
+        .check(
+            quire_semantic_value::checking::CheckMode::Linked,
+            CheckingLimits::default(),
+        )
         .expect("the unit checks");
     let scope = graph.scope();
     assert_eq!(scope.variant_types(), expected.as_slice());

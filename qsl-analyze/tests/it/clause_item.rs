@@ -203,7 +203,10 @@ fn a_package_of_two_source_units_is_refused() {
         &Cancel::new(),
     )
     .expect("the units assemble")
-    .check(CheckingLimits::default())
+    .check(
+        quire_semantic_value::checking::CheckMode::Linked,
+        CheckingLimits::default(),
+    )
     .unwrap_or_else(|refusals| panic!("the units check: {refusals:?}"));
     assert_eq!(graph.sources().len(), 2);
     let package = qsl_package::CheckedPackage::link(graph);

@@ -178,7 +178,10 @@ fn package(types: TypeEnvironment, functions: Vec<FunctionDeclaration>) -> Check
         )];
         declarations
     }
-    .check(CheckingLimits::default())
+    .check(
+        quire_semantic_value::checking::CheckMode::Linked,
+        CheckingLimits::default(),
+    )
     .unwrap();
     // ADR-013 T-1 (FR-087): the S4 link step, over an empty
     // dependency closure -- this fixture declares no import.
@@ -552,7 +555,10 @@ fn q04_empty_fold_uses_identity_and_empty_reduce_is_undefined_or_refused() {
         )];
         declarations
     }
-    .check(CheckingLimits::default())
+    .check(
+        quire_semantic_value::checking::CheckMode::Linked,
+        CheckingLimits::default(),
+    )
     .unwrap_err();
     assert_eq!(linked.len(), 1);
     let refusal = &linked[0];

@@ -240,7 +240,10 @@ fn bounded_quantity_ordering_keeps_dimension_and_unit_refusals() {
         )
     };
     let refusals = declarations
-        .check(CheckingLimits::default())
+        .check(
+            quire_semantic_value::checking::CheckMode::Linked,
+            CheckingLimits::default(),
+        )
         .expect_err("distinct dimensions refuse");
     assert!(
         refusals.iter().any(|refusal| refusal.cause
@@ -278,7 +281,10 @@ fn bounded_quantity_negation_is_operator_ineligible() {
         )
     };
     let refusals = declarations
-        .check(CheckingLimits::default())
+        .check(
+            quire_semantic_value::checking::CheckMode::Linked,
+            CheckingLimits::default(),
+        )
         .expect_err("a bounded operand refuses");
     assert_eq!(refusals.len(), 1, "{refusals:?}");
     assert_eq!(

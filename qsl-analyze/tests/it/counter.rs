@@ -244,7 +244,10 @@ fn declarations_from_text(document: &[u8], text: String) -> PackageDeclarations 
 /// The checked package of `body` over `document`.
 pub(crate) fn package(document: &[u8], body: &str) -> CheckedPackage {
     let graph = declarations(document, body)
-        .check(CheckingLimits::default())
+        .check(
+            quire_semantic_value::checking::CheckMode::Linked,
+            CheckingLimits::default(),
+        )
         .unwrap_or_else(|refusals| panic!("{body}: the unit checks: {refusals:?}"));
     CheckedPackage::link(graph)
 }
@@ -257,7 +260,10 @@ pub(crate) fn timed_package(document: &[u8], body: &str) -> CheckedPackage {
         "profile t0 = \"quire.temporal.complete/v1\";",
     );
     let graph = declarations_from_text(document, text)
-        .check(CheckingLimits::default())
+        .check(
+            quire_semantic_value::checking::CheckMode::Linked,
+            CheckingLimits::default(),
+        )
         .unwrap_or_else(|refusals| panic!("{body}: the unit checks: {refusals:?}"));
     CheckedPackage::link(graph)
 }
@@ -278,7 +284,10 @@ pub(crate) fn bounded_package_with_clauses(
             "quire.temporal.event-position.false-extension/v1",
         );
     let graph = declarations_from_text(document, text)
-        .check(CheckingLimits::default())
+        .check(
+            quire_semantic_value::checking::CheckMode::Linked,
+            CheckingLimits::default(),
+        )
         .unwrap_or_else(|refusals| panic!("the unit checks: {refusals:?}"));
     CheckedPackage::link(graph)
 }
@@ -305,7 +314,10 @@ pub(crate) fn package_with_clauses(
             text + &clause_text(name, fairness, formula)
         });
     let graph = declarations(document, &body)
-        .check(CheckingLimits::default())
+        .check(
+            quire_semantic_value::checking::CheckMode::Linked,
+            CheckingLimits::default(),
+        )
         .unwrap_or_else(|refusals| panic!("{body}: the unit checks: {refusals:?}"));
     let clauses = graph
         .temporal_clauses()
@@ -529,7 +541,10 @@ pub(crate) fn package_from_text(document: &[u8], text: &str) -> CheckedPackage {
         Vec::new(),
     )
     .expect("the unit assembles")
-    .check(CheckingLimits::default())
+    .check(
+        quire_semantic_value::checking::CheckMode::Linked,
+        CheckingLimits::default(),
+    )
     .unwrap_or_else(|refusals| panic!("the unit checks: {refusals:?}"));
     CheckedPackage::link(graph)
 }

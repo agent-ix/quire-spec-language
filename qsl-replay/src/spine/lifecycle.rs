@@ -3735,9 +3735,17 @@ impl<'a> Resolution<'a> {
         let regions = declarations.regions();
         let graph = charged(cancel, &mut self.work.s3, || {
             if frame.raw == self.continuation_source {
-                declarations.check_with_protocol_continuation_and_cancel(limits.checking, cancel)
+                declarations.check_with_protocol_continuation_and_cancel(
+                    quire_semantic_value::checking::CheckMode::Linked,
+                    limits.checking,
+                    cancel,
+                )
             } else {
-                declarations.check_with_cancel(limits.checking, cancel)
+                declarations.check_with_cancel(
+                    quire_semantic_value::checking::CheckMode::Linked,
+                    limits.checking,
+                    cancel,
+                )
             }
         })
         .map_err(|refusals| {

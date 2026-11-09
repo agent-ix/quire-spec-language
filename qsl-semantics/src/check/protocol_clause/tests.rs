@@ -123,7 +123,10 @@ fn check_refusals(declarations: &str) -> (String, Result<CheckedGraph, Vec<Check
         if matches!(**cause, crate::check::refusal::ProtocolReferenceCause::NotEmitted { .. })
                 )
     };
-    let result = match assembled.check_with_protocol_results(CheckingLimits::default()) {
+    let result = match assembled.check_with_protocol_results(
+        quire_semantic_value::checking::CheckMode::Linked,
+        CheckingLimits::default(),
+    ) {
         Ok(graph) => {
             let refusals: Vec<CheckRefusal> = graph
                 .protocol_refusals()

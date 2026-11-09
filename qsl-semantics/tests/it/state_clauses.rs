@@ -62,7 +62,10 @@ fn check(document: &[u8], body: &str) -> Result<CheckedGraph, Vec<(Code, Option<
         }
     };
     declarations
-        .check(CheckingLimits::default())
+        .check(
+            quire_semantic_value::checking::CheckMode::Linked,
+            CheckingLimits::default(),
+        )
         .map_err(|refusals| {
             refusals
                 .iter()
@@ -79,7 +82,10 @@ fn check(document: &[u8], body: &str) -> Result<CheckedGraph, Vec<(Code, Option<
 fn check_refusals(document: &[u8], body: &str) -> Result<CheckedGraph, Vec<CheckRefusal>> {
     let declarations = admit_and_assemble_with_body(document, body)
         .unwrap_or_else(|refusal| panic!("assembly refused: {refusal:?}"));
-    declarations.check(CheckingLimits::default())
+    declarations.check(
+        quire_semantic_value::checking::CheckMode::Linked,
+        CheckingLimits::default(),
+    )
 }
 
 /// Like [`check`], but keeps every assembly-stage refusal's raw
@@ -423,7 +429,10 @@ fn a_complete_function_does_not_enable_integer_operators_in_a_state_only_clause(
     assert_eq!(declarations.state_clauses.len(), 1);
     declarations.state_clauses[0].selection.identity = "quire.state.finite/v1".to_owned();
     let refusals = declarations
-        .check(CheckingLimits::default())
+        .check(
+            quire_semantic_value::checking::CheckMode::Linked,
+            CheckingLimits::default(),
+        )
         .expect_err("the state-only clause refuses");
     assert_eq!(refusals.len(), 1, "{refusals:?}");
     assert_eq!(refusals[0].cause.code(), Code::UnsupportedConstruct);
@@ -1582,7 +1591,10 @@ fn run_frame_clause_labeled(
     let declarations = admit_and_assemble_with_body(&document, FRAME_CLAUSES)
         .unwrap_or_else(|refusal| panic!("assembly refused: {refusal:?}"));
     let graph = declarations
-        .check(CheckingLimits::default())
+        .check(
+            quire_semantic_value::checking::CheckMode::Linked,
+            CheckingLimits::default(),
+        )
         .unwrap_or_else(|refusals| panic!("check refused: {refusals:?}"));
     let clause = graph
         .state_clause(input.clause_name)
@@ -2949,7 +2961,10 @@ fn run_tc465_with_clauses_under(
     let declarations = admit_and_assemble_with_body(input.document, input.clauses)
         .unwrap_or_else(|refusal| panic!("assembly refused: {refusal:?}"));
     let graph = declarations
-        .check(CheckingLimits::default())
+        .check(
+            quire_semantic_value::checking::CheckMode::Linked,
+            CheckingLimits::default(),
+        )
         .unwrap_or_else(|refusals| panic!("check refused: {refusals:?}"));
     let clause = graph
         .state_clause(input.clause_name)
@@ -4344,7 +4359,10 @@ fn a_field_reference_to_an_admitted_subtype_object_admits() {
         .expect("a Sub object admits into a Reference<ConfigVersion> field");
     let graph = admit_and_assemble_with_body(&document, TC465_CLAUSES)
         .expect("the package assembles")
-        .check(CheckingLimits::default())
+        .check(
+            quire_semantic_value::checking::CheckMode::Linked,
+            CheckingLimits::default(),
+        )
         .expect("the package checks");
     let types = graph.scope().types();
     let current = observations.current.expect("one current observation");
@@ -5485,7 +5503,10 @@ fn tc465_check_frame(
     let declarations = admit_and_assemble_with_body(document, TC465_CLAUSES)
         .unwrap_or_else(|refusal| panic!("assembly refused: {refusal:?}"));
     let graph = declarations
-        .check(CheckingLimits::default())
+        .check(
+            quire_semantic_value::checking::CheckMode::Linked,
+            CheckingLimits::default(),
+        )
         .unwrap_or_else(|refusals| panic!("check refused: {refusals:?}"));
     let selection = graph
         .resolve_operation(

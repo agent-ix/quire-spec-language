@@ -226,7 +226,10 @@ fn with_population_package<T>(
     let mut declarations = assemble(&packages)?;
     declarations.functions.extend([pop]);
     let graph = declarations
-        .check(CheckingLimits::default())
+        .check(
+            quire_semantic_value::checking::CheckMode::Linked,
+            CheckingLimits::default(),
+        )
         .map_err(|refusal| Error::Check(format!("{refusal:?}")))?;
     with(&CheckedPackage::link(graph))
 }

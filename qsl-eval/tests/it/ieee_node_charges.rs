@@ -151,7 +151,10 @@ fn evaluate(
         Some(admit_ieee_profile(&[DefinitionRole::IeeeProfile.reference()], &[]).unwrap());
     let package = CheckedPackage::link(
         declarations
-            .check(CheckingLimits::default())
+            .check(
+                quire_semantic_value::checking::CheckMode::Linked,
+                CheckingLimits::default(),
+            )
             .unwrap_or_else(|refusal| panic!("{body}: {refusal:?}")),
     );
     let mut meter = Meter::new(limits);
@@ -1197,7 +1200,10 @@ fn ordering_over_a_cross_width_argument_is_refused_at_the_call() {
         Some(admit_ieee_profile(&[DefinitionRole::IeeeProfile.reference()], &[]).unwrap());
     let package = CheckedPackage::link(
         declarations
-            .check(CheckingLimits::default())
+            .check(
+                quire_semantic_value::checking::CheckMode::Linked,
+                CheckingLimits::default(),
+            )
             .expect("the unit checks"),
     );
     let mut meter = Meter::new(big);

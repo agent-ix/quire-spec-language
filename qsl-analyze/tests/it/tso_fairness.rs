@@ -851,7 +851,10 @@ fn refusal_of(fairness: &str) -> qsl_semantics::check::CheckRefusal {
         Vec::new(),
     )
     .expect("the unit assembles")
-    .check(quire_semantic_value::checking::CheckingLimits::default())
+    .check(
+        quire_semantic_value::checking::CheckMode::Linked,
+        quire_semantic_value::checking::CheckingLimits::default(),
+    )
     .expect_err("the unit refuses");
     assert_eq!(refusals.len(), 1, "{refusals:?}");
     refusals.remove(0)

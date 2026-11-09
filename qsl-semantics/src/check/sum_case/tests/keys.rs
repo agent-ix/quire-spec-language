@@ -24,7 +24,10 @@ const RECT: &str = "function rect using v(): Shape pure { Shape::Rect(2, 3) }\n"
 fn graph(declarations: &str) -> CheckedGraph {
     unit(declarations)
         .package
-        .check(CheckingLimits::default())
+        .check(
+            quire_semantic_value::checking::CheckMode::Linked,
+            CheckingLimits::default(),
+        )
         .unwrap_or_else(|refusals| panic!("the package checks: {refusals:?}"))
 }
 

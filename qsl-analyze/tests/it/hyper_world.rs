@@ -597,7 +597,10 @@ impl World {
             };
         let base = unit_text(other, vault, reset, &ieee_package_clause);
         let graph = declarations(&documents, &base)
-            .check(CheckingLimits::default())
+            .check(
+                quire_semantic_value::checking::CheckMode::Linked,
+                CheckingLimits::default(),
+            )
             .unwrap_or_else(|refusals| panic!("{base}: the unit checks: {refusals:?}"));
         let package = CheckedPackage::link(graph);
         let text = unit_text(other, vault, reset, &format!("{declaration}\n"));

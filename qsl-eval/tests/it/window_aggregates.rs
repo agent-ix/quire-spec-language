@@ -822,7 +822,10 @@ impl Observed {
         .expect("the unit assembles");
         declarations.types = types.clone();
         let graph = declarations
-            .check(CheckingLimits::default())
+            .check(
+                quire_semantic_value::checking::CheckMode::Linked,
+                CheckingLimits::default(),
+            )
             .expect("the package checks");
         let over = ObjectReference::new(
             crate::support::ids::universe_id([0x42]),

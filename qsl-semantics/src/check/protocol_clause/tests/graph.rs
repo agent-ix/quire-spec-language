@@ -502,7 +502,10 @@ fn an_await_matches_an_event_in_a_closed_window_under_a_temporal_profile() {
     );
     let (text, assembled) = assemble_with(&header, &source);
     let found = assembled
-        .check(quire_semantic_value::checking::CheckingLimits::default())
+        .check(
+            quire_semantic_value::checking::CheckMode::Linked,
+            quire_semantic_value::checking::CheckingLimits::default(),
+        )
         .expect_err("an await under no temporal profile refuses");
     // `flow`'s protocol input is a Boolean, which the lowering stage reports
     // as `NoOwnerModel`; that emission refusal is not this check's subject.

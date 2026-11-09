@@ -1599,7 +1599,8 @@ pub(crate) fn check_declaration_body(
         parameters.len(),
         input.dispatch_tables,
         &input.scope.dispatch_operations,
-    );
+    )
+    .with_check_mode(input.mode);
     definedness.check(body.root())?;
     // The measure's own definedness is checked, but (unchanged from the
     // pre-migration behavior) its calls are not folded into `calls` below:
@@ -1611,6 +1612,7 @@ pub(crate) fn check_declaration_body(
             input.dispatch_tables,
             &input.scope.dispatch_operations,
         )
+        .with_check_mode(input.mode)
         .check(measure.root())?;
     }
     Ok(CheckedDeclarationBody {
@@ -2015,6 +2017,8 @@ pub struct ValueDeclarations<'a> {
     pub(crate) dispatch_tables: &'a [DispatchTable],
     pub(crate) checking_limits: CheckingLimits,
     pub(crate) complete_value: bool,
+    /// The check mode (FR-495): `Kernel` records no definedness obligation.
+    pub(crate) mode: quire_semantic_value::checking::CheckMode,
     /// The derived StateModel body family and its population-name scope.
     /// `None` for a value-only function body.
     pub(crate) model_scope: Option<super::check::NamedScope>,
@@ -2532,6 +2536,7 @@ pub mod fixtures {
             dispatch_tables,
             checking_limits,
             complete_value: false,
+            mode: quire_semantic_value::checking::CheckMode::Linked,
             model_scope: None,
             derived_model_family: false,
             location,
@@ -2774,10 +2779,7 @@ pub(crate) mod checking_tests {
         );
         let checked = check_application(&mut typer, callee, arguments, &root_location())
             .expect("the call is admitted");
-        let super::NodeKind::Call {
-            arguments: ids, ..
-        } = checked.root().kind()
-        else {
+        let super::NodeKind::Call { arguments: ids, .. } = checked.root().kind() else {
             panic!("a call node");
         };
         let argument = checked.root().at(ids[0]);
@@ -2808,7 +2810,10 @@ pub(crate) mod checking_tests {
         let (converts, coerces, _) = argument_of("same", std::slice::from_ref(&source));
         assert!(!converts && !coerces, "an identical type takes no node");
         let (converts, coerces, _) = argument_of("narrow", std::slice::from_ref(&source));
-        assert!(!converts && coerces, "a narrowing is a Coerce, not a conversion");
+        assert!(
+            !converts && coerces,
+            "a narrowing is a Coerce, not a conversion"
+        );
     }
 
     /// TC-376/FR-065-AC-9: a literal argument is typed from its parameter, so
@@ -3879,7 +3884,10 @@ pub(crate) mod checking_tests {
                     qsl_foundation::IdentityLimits::default(),
                 )
             }
-            .check(CheckingLimits::default())
+            .check(
+                quire_semantic_value::checking::CheckMode::Linked,
+                CheckingLimits::default(),
+            )
             .expect("the fixture checks")
             .function_identity(name)
             .expect("the fixture declares its function")
@@ -3999,7 +4007,10 @@ pub(crate) mod checking_tests {
                 qsl_foundation::IdentityLimits::default(),
             )
         }
-        .check(CheckingLimits::default())
+        .check(
+            quire_semantic_value::checking::CheckMode::Linked,
+            CheckingLimits::default(),
+        )
         .expect_err("repeated names are refused");
         let at = |index: usize| {
             BodyLocation::root(BodyOrigin::Body {
@@ -4225,7 +4236,12 @@ mod locus_tests {
         let end = usize::try_from(region.end()).unwrap();
         assert_eq!(&text[start..end], "1", "the node whose entry failed");
         let (unit, _) = sum_unit();
-        assert!(unit.check(CheckingLimits::new(5_000)).is_ok());
+        assert!(unit
+            .check(
+                quire_semantic_value::checking::CheckMode::Linked,
+                CheckingLimits::new(5_000)
+            )
+            .is_ok());
     }
 
     /// TC-727 step 3: the same sum, through package checking, under a work
@@ -4350,7 +4366,7 @@ mod locus_tests {
     ) -> (StageLimitCause, Option<SourceRegion>) {
         let regions = unit.regions();
         let refusals = unit
-            .check(limits)
+            .check(quire_semantic_value::checking::CheckMode::Linked, limits)
             .expect_err("the limit stops package checking");
         let [refusal] = refusals.as_slice() else {
             panic!("one refusal, got {refusals:?}");

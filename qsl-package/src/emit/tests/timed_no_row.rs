@@ -55,7 +55,10 @@ fn checked(
     let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     assemble_with_models(unit.as_bytes(), &packages)
         .expect("the unit assembles")
-        .check(CheckingLimits::default())
+        .check(
+            quire_semantic_value::checking::CheckMode::Linked,
+            CheckingLimits::default(),
+        )
 }
 
 fn evidence_for(wire: &Value) -> CheckedPackageEvidence {

@@ -113,7 +113,10 @@ fn package(
 /// `eq`, each joined by `/`, with its mode or `recursion`.
 fn equality_leaves(records: Vec<CompositeDeclaration>, compared: &str) -> Vec<String> {
     let checked = package(records, vec![equality("eq", ("a", "b"), named(compared))])
-        .check(CheckingLimits::default())
+        .check(
+            quire_semantic_value::checking::CheckMode::Linked,
+            CheckingLimits::default(),
+        )
         .unwrap_or_else(|refusals| panic!("eq over {compared} checks: {refusals:?}"));
     let node = application(checked.semantic_graph(), "quire.op.structural.eq");
     node["body"]["operation"]["leaves"]
@@ -209,7 +212,10 @@ fn leaf_paths_follow_fr093_text_leaves() {
         Expression::contains(name_expr("s"), name_expr("b")),
     );
     let checked = package(vec![list()], vec![has])
-        .check(CheckingLimits::default())
+        .check(
+            quire_semantic_value::checking::CheckMode::Linked,
+            CheckingLimits::default(),
+        )
         .expect("contains over List checks");
     let contains = application(checked.semantic_graph(), "quire.op.collection.contains");
     assert_eq!(contains["body"]["operation"]["leaves"], json!([]));
@@ -335,7 +341,8 @@ fn eq_over(
     compared: &str,
     limits: CheckingLimits,
 ) -> Result<CheckedGraph, Vec<CheckRefusal>> {
-    package(records, vec![equality("eq", ("a", "b"), named(compared))]).check(limits)
+    package(records, vec![equality("eq", ("a", "b"), named(compared))])
+        .check(quire_semantic_value::checking::CheckMode::Linked, limits)
 }
 
 fn eq_over_node(limits: CheckingLimits) -> Result<CheckedGraph, Vec<CheckRefusal>> {
@@ -573,7 +580,10 @@ fn recursive_text_leaf_functions_check_and_key_in_either_order() {
         vec![node_record(), record_b(), record_a()],
     ] {
         let checked = package(records, recursive_functions())
-            .check(CheckingLimits::default())
+            .check(
+                quire_semantic_value::checking::CheckMode::Linked,
+                CheckingLimits::default(),
+            )
             .unwrap_or_else(|refusals| panic!("the recursive functions check: {refusals:?}"));
         keys.push(
             checked
@@ -594,7 +604,10 @@ fn recursive_text_leaf_functions_check_and_key_in_either_order() {
 fn an_in_group_type_is_its_member_in_every_declaration_order() {
     let keys_of = |functions: Vec<FunctionDeclaration>| {
         let checked = package(vec![node_record(), record_a(), record_b()], functions)
-            .check(CheckingLimits::default())
+            .check(
+                quire_semantic_value::checking::CheckMode::Linked,
+                CheckingLimits::default(),
+            )
             .unwrap_or_else(|refusals| panic!("the functions check: {refusals:?}"));
         let graph = checked.semantic_graph();
         let node_record = graph

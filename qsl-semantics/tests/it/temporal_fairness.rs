@@ -89,7 +89,10 @@ fn node_identity(body: &str) -> quire_exact::NodeKey {
     )
     .unwrap_or_else(|refusal| panic!("{body}: the unit assembles: {refusal:?}"));
     let graph = package
-        .check(quire_semantic_value::checking::CheckingLimits::default())
+        .check(
+            quire_semantic_value::checking::CheckMode::Linked,
+            quire_semantic_value::checking::CheckingLimits::default(),
+        )
         .unwrap_or_else(|refusals| panic!("{body}: the package checks: {refusals:?}"));
     let [clause] = graph.temporal_clauses() else {
         panic!("{body}: one emitted clause");

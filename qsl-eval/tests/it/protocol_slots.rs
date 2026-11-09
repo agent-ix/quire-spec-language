@@ -83,7 +83,10 @@ fn package_from_source(source: &str) -> CheckedPackage {
             Vec::new(),
         )
         .expect("the unit assembles")
-        .check(CheckingLimits::default())
+        .check(
+            quire_semantic_value::checking::CheckMode::Linked,
+            CheckingLimits::default(),
+        )
         .expect("the package checks"),
     )
 }
@@ -145,7 +148,10 @@ fn compensation_package() -> CheckedPackage {
             Vec::new(),
         )
         .expect("the compensation unit assembles")
-        .check(CheckingLimits::default())
+        .check(
+            quire_semantic_value::checking::CheckMode::Linked,
+            CheckingLimits::default(),
+        )
         .expect("the compensation unit checks"),
     )
 }

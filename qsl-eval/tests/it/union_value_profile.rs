@@ -35,7 +35,10 @@ fn package(declarations: &str) -> CheckedPackage {
     .expect("the assembler admits the declarations");
     CheckedPackage::link(
         declarations
-            .check(CheckingLimits::default())
+            .check(
+                quire_semantic_value::checking::CheckMode::Linked,
+                CheckingLimits::default(),
+            )
             .unwrap_or_else(|refusals| panic!("the unit checks: {refusals:?}")),
     )
 }

@@ -52,7 +52,10 @@ fn refusals(text: &str) -> Vec<CheckRefusal> {
     let packages = qsl_semantics::model::intake::package_input([SPINE_MODEL_DOCUMENT]).unwrap();
     assemble_with_models(text.as_bytes(), &packages)
         .expect("the unit assembles")
-        .check(CheckingLimits::default())
+        .check(
+            quire_semantic_value::checking::CheckMode::Linked,
+            CheckingLimits::default(),
+        )
         .expect_err("the unit refuses")
 }
 
@@ -205,7 +208,10 @@ fn a_later_attempt_protocol_lowers_after_an_earlier_refusal() {
         Vec::new(),
     )
     .expect("the declarations assemble")
-    .check_with_protocol_results(CheckingLimits::default())
+    .check_with_protocol_results(
+        quire_semantic_value::checking::CheckMode::Linked,
+        CheckingLimits::default(),
+    )
     .expect("protocol-local S3 refusal is retained");
     assert_eq!(checked.protocol_refusals().len(), 1);
     assert_eq!(checked.protocol_refusals()[0].declaration, "Broken");
@@ -673,7 +679,10 @@ fn a_whole_model_role_is_emitted_and_admitted() {
             .unwrap();
     let graph = assemble_with_models(text.as_bytes(), &models)
         .expect("the unit assembles")
-        .check(CheckingLimits::default())
+        .check(
+            quire_semantic_value::checking::CheckMode::Linked,
+            CheckingLimits::default(),
+        )
         .unwrap_or_else(|refusals| panic!("whole-model role should be admitted: {refusals:?}"));
     let emission = emit_checked(&CheckedPackage::link(graph)).expect("the package emits");
     assert_eq!(emission.omitted, []);
@@ -990,7 +999,10 @@ fn a_reference_bound_to_a_key_no_node_carries_refuses_missing_name() {
     let packages = qsl_semantics::model::intake::package_input([SPINE_MODEL_DOCUMENT]).unwrap();
     let mut graph = assemble_with_models(text.as_bytes(), &packages)
         .expect("the unit assembles")
-        .check(CheckingLimits::default())
+        .check(
+            quire_semantic_value::checking::CheckMode::Linked,
+            CheckingLimits::default(),
+        )
         .expect("the package checks");
     let key_of = |form: &str| {
         graph

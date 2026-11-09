@@ -538,7 +538,9 @@ impl<'r> Callee<'r> {
 fn integer_widens(source: &ValueType, target: &ValueType) -> bool {
     match (source, target) {
         (ValueType::Integer | ValueType::Int(_), ValueType::Integer) => source != target,
-        (ValueType::Int(from), ValueType::Int(to)) => from != to && to.lower() <= from.lower() && from.upper() <= to.upper(),
+        (ValueType::Int(from), ValueType::Int(to)) => {
+            from != to && to.lower() <= from.lower() && from.upper() <= to.upper()
+        }
         _ => false,
     }
 }

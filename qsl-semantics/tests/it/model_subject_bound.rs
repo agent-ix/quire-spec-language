@@ -59,7 +59,10 @@ fn reaches_two(declarations: &str) -> (Vec<u8>, CheckedTemporalClause) {
 fn graph(document: &[u8]) -> CheckedGraph {
     admit_and_assemble(document)
         .expect("the unit assembles")
-        .check(CheckingLimits::default())
+        .check(
+            quire_semantic_value::checking::CheckMode::Linked,
+            CheckingLimits::default(),
+        )
         .expect("the unit checks")
 }
 
@@ -163,7 +166,10 @@ fn two_populations_of_the_over_type_are_both_domains_of_the_clause() {
         .try_into()
         .expect("one claim");
     let graph = package
-        .check(CheckingLimits::default())
+        .check(
+            quire_semantic_value::checking::CheckMode::Linked,
+            CheckingLimits::default(),
+        )
         .expect("the unit checks");
     let keys: Vec<DomainKey> = ["config_history", "archive"]
         .iter()
@@ -276,7 +282,10 @@ fn subtype_populations_overlap_temporal_domains_but_unrelated_ones_do_not() {
         .try_into()
         .expect("one claim");
     let graph = package
-        .check(CheckingLimits::default())
+        .check(
+            quire_semantic_value::checking::CheckMode::Linked,
+            CheckingLimits::default(),
+        )
         .expect("the unit checks");
     let keys: Vec<DomainKey> = ["archive", "config_history"]
         .iter()

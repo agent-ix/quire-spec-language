@@ -94,7 +94,10 @@ fn compile_with(unit: &str, documents: &[Value]) -> Result<CheckedPackage, Failu
     let assembled = PackageDeclarations::assemble(raw, "pkg".to_owned(), built, models, Vec::new())
         .map_err(Failure::Assembly)?;
     assembled
-        .check(CheckingLimits::default())
+        .check(
+            quire_semantic_value::checking::CheckMode::Linked,
+            CheckingLimits::default(),
+        )
         .map(CheckedPackage::link)
         .map_err(Failure::Check)
 }

@@ -64,7 +64,10 @@ fn a_function_compiled_from_source_is_called_by_name() {
     assert_eq!(names, ["inc", "two"]);
     let package = CheckedPackage::link(
         declarations
-            .check(CheckingLimits::default())
+            .check(
+                quire_semantic_value::checking::CheckMode::Linked,
+                CheckingLimits::default(),
+            )
             .expect("the package checks"),
     );
     let mut meter = Meter::new(UNLIMITED);
@@ -114,7 +117,10 @@ fn package_of(declarations: &str) -> CheckedPackage {
     .expect("the assembler builds the package declarations");
     CheckedPackage::link(
         declarations
-            .check(CheckingLimits::default())
+            .check(
+                quire_semantic_value::checking::CheckMode::Linked,
+                CheckingLimits::default(),
+            )
             .expect("the package checks"),
     )
 }
@@ -172,7 +178,10 @@ fn integer_operator(operator: &str, profile: Option<DivisionProfile>) -> Checked
     }
     CheckedPackage::link(
         declarations
-            .check(CheckingLimits::default())
+            .check(
+                quire_semantic_value::checking::CheckMode::Linked,
+                CheckingLimits::default(),
+            )
             .expect("the operator checks"),
     )
 }
@@ -296,7 +305,10 @@ fn integer_division_zero_and_signed_minimum_remain_exact() {
 
 fn one_check_refusal(declarations: PackageDeclarations) -> qsl_semantics::check::CheckRefusal {
     let mut refusals = declarations
-        .check(CheckingLimits::default())
+        .check(
+            quire_semantic_value::checking::CheckMode::Linked,
+            CheckingLimits::default(),
+        )
         .expect_err("check refuses");
     assert_eq!(refusals.len(), 1, "{refusals:?}");
     refusals.remove(0)
@@ -368,7 +380,10 @@ fn integer_slash_needs_complete_value_and_a_rational_result_type() {
     ));
     assert!(refusal.location.path().is_empty());
     operator_declarations("7 / 3", "", "Rational[0,7;1,3]")
-        .check(CheckingLimits::default())
+        .check(
+            quire_semantic_value::checking::CheckMode::Linked,
+            CheckingLimits::default(),
+        )
         .expect("complete value with an expected rational admits integer slash");
 }
 
@@ -398,7 +413,10 @@ fn lowered_division_nodes_keep_the_selected_law_in_their_identity() {
             operator_declarations("a div b", "a: Integer, b: Integer", "Integer");
         declarations.integer_division = Some(admitted_integer_division(profile));
         let graph = declarations
-            .check(CheckingLimits::default())
+            .check(
+                quire_semantic_value::checking::CheckMode::Linked,
+                CheckingLimits::default(),
+            )
             .expect("div checks");
         let (operation, _) = application(&graph, "quire.op.integer.div");
         let laws = operation.laws();
@@ -409,7 +427,12 @@ fn lowered_division_nodes_keep_the_selected_law_in_their_identity() {
 
     let mut rem = operator_declarations("a rem b", "a: Integer, b: Integer", "Integer");
     rem.integer_division = Some(admitted_integer_division(DivisionProfile::Floor));
-    let rem = rem.check(CheckingLimits::default()).expect("rem checks");
+    let rem = rem
+        .check(
+            quire_semantic_value::checking::CheckMode::Linked,
+            CheckingLimits::default(),
+        )
+        .expect("rem checks");
     let (operation, _) = application(&rem, "quire.op.integer.rem");
     assert_eq!(
         operation.laws()[0].definition.identity,
@@ -417,7 +440,10 @@ fn lowered_division_nodes_keep_the_selected_law_in_their_identity() {
     );
 
     let modulo = operator_declarations("a mod b", "a: Integer, b: Integer", "Integer")
-        .check(CheckingLimits::default())
+        .check(
+            quire_semantic_value::checking::CheckMode::Linked,
+            CheckingLimits::default(),
+        )
         .expect("mod checks without division law");
     let (operation, _) = application(&modulo, "quire.op.integer.mod");
     assert!(operation.laws().is_empty());

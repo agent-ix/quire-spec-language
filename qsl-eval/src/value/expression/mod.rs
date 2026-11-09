@@ -2269,7 +2269,10 @@ mod tests {
             declarations.functions = vec![identity_function()];
             declarations
         }
-        .check(CheckingLimits::default())
+        .check(
+            quire_semantic_value::checking::CheckMode::Linked,
+            CheckingLimits::default(),
+        )
         .expect("id(x: Integer[0,10]): Integer[0,10] = x checks cleanly");
         let identity = graph
             .function_identity("id")
@@ -2376,7 +2379,10 @@ mod tests {
             )];
             declarations
         }
-        .check(CheckingLimits::default())
+        .check(
+            quire_semantic_value::checking::CheckMode::Linked,
+            CheckingLimits::default(),
+        )
         .expect("flip(x: Boolean): Boolean = not x checks cleanly");
         let flip = graph.function_identity("flip").expect("flip is declared");
         let package = qsl_package::CheckedPackage::link(graph);
@@ -2486,7 +2492,10 @@ mod tests {
                 "fixture".to_owned(),
                 qsl_foundation::IdentityLimits::default(),
             )
-            .check(CheckingLimits::default())
+            .check(
+                quire_semantic_value::checking::CheckMode::Linked,
+                CheckingLimits::default(),
+            )
             .expect("an empty package checks cleanly"),
         );
         let objects = ObjectEnvironment::default();
@@ -2545,7 +2554,10 @@ mod tests {
             declarations.functions = vec![identity_function()];
             declarations
         }
-        .check(CheckingLimits::default())
+        .check(
+            quire_semantic_value::checking::CheckMode::Linked,
+            CheckingLimits::default(),
+        )
         .expect("id(x: Integer[0,10]): Integer[0,10] = x checks cleanly");
         let identity = graph
             .function_identity("id")

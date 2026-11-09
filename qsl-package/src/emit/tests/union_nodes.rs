@@ -347,7 +347,10 @@ fn a_function_naming_an_omitted_node_is_omitted_and_the_other_is_written() {
     declarations.enums = vec![foreign];
     declarations.functions = vec![area, keep];
     let graph = declarations
-        .check(CheckingLimits::default())
+        .check(
+            quire_semantic_value::checking::CheckMode::Linked,
+            CheckingLimits::default(),
+        )
         .expect("the two functions check");
     let package = CheckedPackage::link(graph);
     let emission = emit_checked(&package)

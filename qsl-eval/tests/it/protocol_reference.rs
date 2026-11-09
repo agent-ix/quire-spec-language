@@ -69,7 +69,10 @@ fn evaluating_a_protocol_reference_refuses_unsupported_feature() {
             Vec::new(),
         )
         .expect("the unit assembles")
-        .check(CheckingLimits::default())
+        .check(
+            quire_semantic_value::checking::CheckMode::Linked,
+            CheckingLimits::default(),
+        )
         .expect("the package checks"),
     );
     let mut meter = Meter::new(UNLIMITED);

@@ -1776,8 +1776,17 @@ impl PackageDeclarations {
     /// definedness and termination, in that order. Every refusal is made
     /// before any charge; a reached checking limit is `stage_limit_exceeded`
     /// and yields no admission verdict.
-    pub fn check(self, limits: CheckingLimits) -> Result<CheckedGraph, Vec<CheckRefusal>> {
-        self.check_with_cancel(limits, &Cancel::new())
+    ///
+    /// `mode` is `CheckMode::Linked` (every definedness obligation proved at
+    /// check) or `CheckMode::Kernel` (FR-495: function bodies and measures
+    /// record no range, nonzero or presence obligation; the evaluator meets
+    /// it at run time).
+    pub fn check(
+        self,
+        mode: CheckMode,
+        limits: CheckingLimits,
+    ) -> Result<CheckedGraph, Vec<CheckRefusal>> {
+        self.check_with_cancel(mode, limits, &Cancel::new())
     }
 
     /// Check the unit while preserving refusals that belong to individual
@@ -1786,9 +1795,10 @@ impl PackageDeclarations {
     /// returned.
     pub fn check_with_protocol_results(
         self,
+        mode: CheckMode,
         limits: CheckingLimits,
     ) -> Result<CheckedGraph, Vec<CheckRefusal>> {
-        self.check_with_protocol_results_and_cancel(limits, &Cancel::new())
+        self.check_with_protocol_results_and_cancel(mode, limits, &Cancel::new())
     }
 
     /// [`Self::check`] under a caller-owned [`Cancel`] handle (FR-276): the
@@ -1799,12 +1809,19 @@ impl PackageDeclarations {
     /// handle reads [`Cancel::tripped`] to tell the two apart.
     pub fn check_with_cancel(
         self,
+        mode: CheckMode,
         limits: CheckingLimits,
         cancel: &Cancel,
     ) -> Result<CheckedGraph, Vec<CheckRefusal>> {
         let mut protocol_refusals = Vec::new();
-        let outcome =
-            self.check_retaining_protocols(limits, cancel, false, false, &mut protocol_refusals);
+        let outcome = self.check_retaining_protocols(
+            mode,
+            limits,
+            cancel,
+            false,
+            false,
+            &mut protocol_refusals,
+        );
         let flatten = |results: &[ProtocolCheckRefusal]| -> Vec<CheckRefusal> {
             results
                 .iter()
@@ -1830,10 +1847,11 @@ impl PackageDeclarations {
     /// [`Cancel`] handle.
     pub fn check_with_protocol_results_and_cancel(
         self,
+        mode: CheckMode,
         limits: CheckingLimits,
         cancel: &Cancel,
     ) -> Result<CheckedGraph, Vec<CheckRefusal>> {
-        self.check_retaining_protocols(limits, cancel, true, false, &mut Vec::new())
+        self.check_retaining_protocols(mode, limits, cancel, true, false, &mut Vec::new())
     }
 
     /// Continue through a unit-level state-clause refusal so independent
@@ -1842,10 +1860,11 @@ impl PackageDeclarations {
     /// established stop behavior.
     pub fn check_with_protocol_continuation_and_cancel(
         self,
+        mode: CheckMode,
         limits: CheckingLimits,
         cancel: &Cancel,
     ) -> Result<CheckedGraph, Vec<CheckRefusal>> {
-        self.check_retaining_protocols(limits, cancel, true, true, &mut Vec::new())
+        self.check_retaining_protocols(mode, limits, cancel, true, true, &mut Vec::new())
     }
 
     /// The check proper. `protocol_check_refusals` receives every refusal a
@@ -1858,6 +1877,7 @@ impl PackageDeclarations {
     /// unkeyed reference to the protocol, a work budget it already spent).
     fn check_retaining_protocols(
         mut self,
+        mode: CheckMode,
         limits: CheckingLimits,
         cancel: &Cancel,
         independent_protocols: bool,
@@ -3030,6 +3050,7 @@ impl PackageDeclarations {
                     .function_selections
                     .get(&index)
                     .is_some_and(state_clause::is_complete_value),
+                mode,
                 model_scope: model_function_bodies
                     .get(index)
                     .copied()
@@ -9345,7 +9366,10 @@ mod tests {
     fn protocol_population_types_debug_joins_the_shared_node_table() {
         use quire_exact::{NodeKey, PathSegment};
         let mut graph = depth_forms::declarations(depth_forms::Form::Add, 2)
-            .check(CheckingLimits::default())
+            .check(
+                quire_semantic_value::checking::CheckMode::Linked,
+                CheckingLimits::default(),
+            )
             .unwrap();
         let leaf = NodeKey::new(
             "population_scope",
@@ -9481,7 +9505,10 @@ mod tests {
                 qsl_foundation::IdentityLimits::default(),
             )
         }
-        .check(CheckingLimits::default())
+        .check(
+            quire_semantic_value::checking::CheckMode::Linked,
+            CheckingLimits::default(),
+        )
         .expect("one record declaration checks cleanly");
 
         let nodes: Vec<&CheckedTypeNode> = graph.checked_type_nodes().collect();
@@ -9540,7 +9567,10 @@ mod tests {
                 qsl_foundation::IdentityLimits::default(),
             )
         }
-        .check(CheckingLimits::default())
+        .check(
+            quire_semantic_value::checking::CheckMode::Linked,
+            CheckingLimits::default(),
+        )
         .expect("a package-qualified declared name checks cleanly");
 
         let nodes: Vec<&CheckedTypeNode> = graph.checked_type_nodes().collect();
@@ -9643,7 +9673,10 @@ mod tests {
                 qsl_foundation::IdentityLimits::default(),
             )
         }
-        .check(CheckingLimits::default())
+        .check(
+            quire_semantic_value::checking::CheckMode::Linked,
+            CheckingLimits::default(),
+        )
         .expect("one enum declaration checks cleanly");
 
         let mut checked_nodes = 0;
@@ -9726,7 +9759,10 @@ mod tests {
             literal_function("caller_one", call_helper()),
             literal_function("caller_two", call_helper()),
         ])
-        .check(CheckingLimits::default())
+        .check(
+            quire_semantic_value::checking::CheckMode::Linked,
+            CheckingLimits::default(),
+        )
         .expect("two callers of one no-argument function check cleanly");
 
         // Steps 2-3: both call sites mint the same identity, but distinct
@@ -9779,7 +9815,10 @@ mod tests {
             literal_function("renamed_caller_one", call_helper()),
             literal_function("renamed_caller_two", call_helper()),
         ])
-        .check(CheckingLimits::default())
+        .check(
+            quire_semantic_value::checking::CheckMode::Linked,
+            CheckingLimits::default(),
+        )
         .expect("renaming the callers changes no checking outcome");
         assert!(
             renamed.occurrence(call_identity.clone(), &first).is_some(),
@@ -9829,7 +9868,10 @@ mod tests {
                 ),
             ),
         ])
-        .check(CheckingLimits::default())
+        .check(
+            quire_semantic_value::checking::CheckMode::Linked,
+            CheckingLimits::default(),
+        )
         .expect("a caller of a one-parameter function checks");
         let mut nodes = 0;
         for node in graph.semantic_graph().nodes() {
@@ -9858,7 +9900,10 @@ mod tests {
                 qsl_foundation::IdentityLimits::default(),
             )
         }
-        .check(CheckingLimits::default())
+        .check(
+            quire_semantic_value::checking::CheckMode::Linked,
+            CheckingLimits::default(),
+        )
         .expect_err("index 0 names no function");
         assert!(matches!(
             refusals.as_slice(),

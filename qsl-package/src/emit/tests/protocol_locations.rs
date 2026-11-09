@@ -21,7 +21,10 @@ fn checked_and_emitted(source: &str) -> (CheckedPackage, Value) {
     let packages = qsl_semantics::model::intake::package_input([domain().as_slice()]).unwrap();
     let graph = assemble_with_models(source.as_bytes(), &packages)
         .expect("fixture assembles")
-        .check(CheckingLimits::default())
+        .check(
+            quire_semantic_value::checking::CheckMode::Linked,
+            CheckingLimits::default(),
+        )
         .expect("fixture checks");
     let package = CheckedPackage::link(graph);
     let emission = emit_checked(&package).expect("fixture emits");
@@ -1032,6 +1035,7 @@ fn deep_projection(
             let graph = assemble_with_models(source.as_bytes(), &packages)
                 .expect("the deep unit assembles")
                 .check(
+                    quire_semantic_value::checking::CheckMode::Linked,
                     CheckingLimits::new(u64::MAX)
                         .with_input_bytes(u64::MAX)
                         .with_work_budget(u64::MAX),

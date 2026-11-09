@@ -262,7 +262,10 @@ fn run_unit(
         Vec::new(),
     )
     .unwrap_or_else(|refusal| panic!("assembly succeeds: {:?}", refusal.errors))
-    .check(CheckingLimits::default())
+    .check(
+        quire_semantic_value::checking::CheckMode::Linked,
+        CheckingLimits::default(),
+    )
     .map(|_| ());
     Run { n, outcome }
 }

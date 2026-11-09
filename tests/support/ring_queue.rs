@@ -425,7 +425,10 @@ pub fn check_over(queue: &[u8], body: &str) -> Result<Checked, Vec<Refused>> {
     .unwrap_or_else(|refusal| panic!("{body}: the unit assembles: {refusal:?}"))
     .with_unwritten_refinements();
     let regions = declarations.regions();
-    match declarations.check(CheckingLimits::default()) {
+    match declarations.check(
+        quire_semantic_value::checking::CheckMode::Linked,
+        CheckingLimits::default(),
+    ) {
         Ok(graph) => Ok(Checked { graph, packages }),
         Err(refusals) => Err(refusals
             .into_iter()

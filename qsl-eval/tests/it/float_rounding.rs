@@ -63,7 +63,10 @@ fn add(float: &str, left: u64, right: u64) -> Outcome<Value> {
     declarations.ieee_profile = Some(ieee_profile());
     let package = CheckedPackage::link(
         declarations
-            .check(CheckingLimits::default())
+            .check(
+                quire_semantic_value::checking::CheckMode::Linked,
+                CheckingLimits::default(),
+            )
             .expect("the package checks"),
     );
     let mut meter = Meter::new(UNLIMITED);
@@ -112,7 +115,10 @@ fn sqrt(float: &str, operand: u64) -> Outcome<Value> {
     declarations.ieee_profile = Some(ieee_profile());
     let package = CheckedPackage::link(
         declarations
-            .check(CheckingLimits::default())
+            .check(
+                quire_semantic_value::checking::CheckMode::Linked,
+                CheckingLimits::default(),
+            )
             .expect("the package checks"),
     );
     let mut meter = Meter::new(UNLIMITED);
@@ -157,7 +163,10 @@ fn equal(left: u64, right: u64, operator: &str) -> Outcome<Value> {
     declarations.ieee_profile = Some(ieee_profile());
     let package = CheckedPackage::link(
         declarations
-            .check(CheckingLimits::default())
+            .check(
+                quire_semantic_value::checking::CheckMode::Linked,
+                CheckingLimits::default(),
+            )
             .expect("the package checks"),
     );
     let mut meter = Meter::new(UNLIMITED);
@@ -307,7 +316,10 @@ fn assert_mixed_mode_mismatch(result: &str, body: &str) {
     .expect("the assembler admits both types");
     declarations.ieee_profile = Some(ieee_profile());
     let refusals = declarations
-        .check(CheckingLimits::default())
+        .check(
+            quire_semantic_value::checking::CheckMode::Linked,
+            CheckingLimits::default(),
+        )
         .expect_err("mixed-mode operands refuse");
     assert!(
         refusals.iter().any(|refusal| matches!(

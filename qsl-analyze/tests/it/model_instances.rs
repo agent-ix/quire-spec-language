@@ -171,7 +171,10 @@ struct World {
 fn world(populations: &[(&str, &[&str])], held: &[Held<'_>]) -> World {
     let document = document(populations);
     let graph = declarations_in(PACKAGE, &document, "")
-        .check(CheckingLimits::default())
+        .check(
+            quire_semantic_value::checking::CheckMode::Linked,
+            CheckingLimits::default(),
+        )
         .unwrap_or_else(|refusals| panic!("the unit checks: {refusals:?}"));
     let package = CheckedPackage::link(graph);
     let populations: Vec<Json> = held
@@ -260,7 +263,10 @@ impl World {
             "temporal C using t0 over (x: M::{over}) clock \"model-steps\" on origin {{ always holds(true) }}\n"
         );
         let graph = declarations_in(PACKAGE, &self.document, &body)
-            .check(CheckingLimits::default())
+            .check(
+                quire_semantic_value::checking::CheckMode::Linked,
+                CheckingLimits::default(),
+            )
             .unwrap_or_else(|refusals| panic!("{body}: the unit checks: {refusals:?}"));
         let [node] = graph.temporal_clauses() else {
             panic!("one declared clause");
@@ -317,7 +323,10 @@ impl World {
     ) -> Result<Vec<String>, ModelCheckRefusal> {
         let body = format!("possible Reach using v over (x: M::{over}) {{ true }}\n");
         let graph = declarations_in(PACKAGE, &self.document, &body)
-            .check(CheckingLimits::default())
+            .check(
+                quire_semantic_value::checking::CheckMode::Linked,
+                CheckingLimits::default(),
+            )
             .unwrap_or_else(|refusals| panic!("{body}: the unit checks: {refusals:?}"));
         let package = CheckedPackage::link(graph);
         let [claim] = package.graph().state_graph_claims() else {
@@ -687,7 +696,10 @@ impl World {
             "temporal C using t0 over (x: {over}) clock \"model-steps\" {activation} {{ {formula} }}\n"
         );
         let graph = declarations_in(PACKAGE, &self.document, &body)
-            .check(CheckingLimits::default())
+            .check(
+                quire_semantic_value::checking::CheckMode::Linked,
+                CheckingLimits::default(),
+            )
             .unwrap_or_else(|refusals| panic!("{body}: the unit checks: {refusals:?}"));
         CheckedPackage::link(graph)
     }
@@ -1208,7 +1220,10 @@ fn absent_key_guard_provenance_flows_through_let_aliases_and_helpers() {
         );
         CheckedPackage::link(
             declarations_with_model_profile(PACKAGE, &world.document, &body)
-                .check(CheckingLimits::default())
+                .check(
+                    quire_semantic_value::checking::CheckMode::Linked,
+                    CheckingLimits::default(),
+                )
                 .unwrap_or_else(|refusals| panic!("{body}: the unit checks: {refusals:?}")),
         )
     };
@@ -1297,7 +1312,10 @@ impl World {
         );
         CheckedPackage::link(
             declarations_with_model_profile(PACKAGE, &self.document, &body)
-                .check(CheckingLimits::default())
+                .check(
+                    quire_semantic_value::checking::CheckMode::Linked,
+                    CheckingLimits::default(),
+                )
                 .unwrap_or_else(|refusals| panic!("{body}: the unit checks: {refusals:?}")),
         )
     }

@@ -178,7 +178,10 @@ fn replay_with(document: Value, base: Vec<(String, Value)>, declarations: &str) 
     };
     let declarations = assemble();
     let graph = assemble()
-        .check(CheckingLimits::default())
+        .check(
+            quire_semantic_value::checking::CheckMode::Linked,
+            CheckingLimits::default(),
+        )
         .unwrap_or_else(|refusals| panic!("the unit checks: {refusals:?}"));
     let model = json!({
         "identity": fixture::PACKAGE, "version": "1",

@@ -16,6 +16,7 @@ const TEST_PACKAGE_NAME: &str = "qsl-semantics-integration-tests";
 mod bare_native_members;
 #[cfg(feature = "test-support")]
 mod business_meanings;
+mod check_mode;
 mod child_composite;
 #[cfg(feature = "test-support")]
 mod clock_places;

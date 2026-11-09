@@ -57,7 +57,10 @@ fn run(result: &str, body: &str) -> (Outcome<Value>, Vec<ValueLoss>) {
         Some(admit_ieee_profile(&[DefinitionRole::IeeeProfile.reference()], &[]).unwrap());
     let package = CheckedPackage::link(
         declarations
-            .check(CheckingLimits::default())
+            .check(
+                quire_semantic_value::checking::CheckMode::Linked,
+                CheckingLimits::default(),
+            )
             .unwrap_or_else(|refusal| panic!("{body}: {refusal:?}")),
     );
     let evaluation = package
@@ -434,7 +437,10 @@ fn spend(result: &str, body: &str, p: u64, q: u64, limits: ScalarLimits) -> (Out
         Some(admit_ieee_profile(&[DefinitionRole::IeeeProfile.reference()], &[]).unwrap());
     let package = CheckedPackage::link(
         declarations
-            .check(CheckingLimits::default())
+            .check(
+                quire_semantic_value::checking::CheckMode::Linked,
+                CheckingLimits::default(),
+            )
             .unwrap_or_else(|refusal| panic!("{body}: {refusal:?}")),
     );
     let mut meter = Meter::new(limits);

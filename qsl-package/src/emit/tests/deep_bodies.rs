@@ -126,6 +126,7 @@ fn a_100000_deep_body_checks_lowers_and_emits_on_a_small_stack() {
             .spawn(move || {
                 let graph = deep_declarations(&deep_source(label))
                     .check(
+                        quire_semantic_value::checking::CheckMode::Linked,
                         CheckingLimits::new(u64::MAX)
                             .with_input_bytes(u64::MAX)
                             .with_work_budget(u64::MAX),
@@ -188,6 +189,7 @@ fn a_100000_term_sum_reads_back_verifies_clones_compares_and_drops_on_a_small_st
         .spawn(|| {
             let graph = deep_declarations(&deep_source("sum"))
                 .check(
+                    quire_semantic_value::checking::CheckMode::Linked,
                     CheckingLimits::new(u64::MAX)
                         .with_input_bytes(u64::MAX)
                         .with_work_budget(u64::MAX),
@@ -241,7 +243,10 @@ fn every_nested_form_emits_in_the_stratified_grammar_at_2_and_1000_levels() {
             std::thread::Builder::new()
                 .stack_size(STACK)
                 .spawn(move || {
-                    let checked = declarations(form, levels).check(CheckingLimits::default());
+                    let checked = declarations(form, levels).check(
+                        quire_semantic_value::checking::CheckMode::Linked,
+                        CheckingLimits::default(),
+                    );
                     if matches!(form, Form::Field) {
                         assert!(checked.is_err(), "an unguarded `value` is unproved");
                         return;
@@ -325,7 +330,10 @@ fn the_longest_and_chain_s1_admits_checks_and_emits_at_the_defaults() {
             }
             let unit = and_chain(admitted).expect("the longest admitted chain assembles");
             let graph = unit
-                .check(CheckingLimits::default())
+                .check(
+                    quire_semantic_value::checking::CheckMode::Linked,
+                    CheckingLimits::default(),
+                )
                 .unwrap_or_else(|refusals| panic!("{admitted} levels check: {refusals:?}"));
             let package = CheckedPackage::link(graph);
             let emission = emit_checked(&package)
@@ -371,6 +379,7 @@ fn json_depth(value: &Value) -> usize {
 fn emitted_sum_node_ids(terms: usize) -> (usize, usize, usize) {
     let graph = deep_declarations(&sum_source(terms))
         .check(
+            quire_semantic_value::checking::CheckMode::Linked,
             CheckingLimits::new(u64::MAX)
                 .with_input_bytes(u64::MAX)
                 .with_work_budget(u64::MAX),

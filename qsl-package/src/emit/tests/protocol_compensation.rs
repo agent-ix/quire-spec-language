@@ -65,7 +65,10 @@ fn emitted_text(unit: &str) -> Result<(Emission, Value, Read), Vec<CheckRefusal>
     let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     let graph = assemble_with_models(unit.as_bytes(), &packages)
         .expect("unit assembles")
-        .check(CheckingLimits::default())?;
+        .check(
+            quire_semantic_value::checking::CheckMode::Linked,
+            CheckingLimits::default(),
+        )?;
     let selections = graph
         .protocols()
         .iter()

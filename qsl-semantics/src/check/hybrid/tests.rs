@@ -84,7 +84,10 @@ fn check(declarations: &str) -> Result<CheckedGraph, Refusals> {
     let (text, package) = assemble(declarations);
     let regions = package.regions();
     package
-        .check(CheckingLimits::default())
+        .check(
+            quire_semantic_value::checking::CheckMode::Linked,
+            CheckingLimits::default(),
+        )
         .map_err(|refusals| {
             refusals
                 .into_iter()

@@ -394,7 +394,10 @@ pub(crate) fn package_of(declarations: &str) -> CheckedPackage {
     );
     CheckedPackage::link(
         declarations
-            .check(CheckingLimits::default())
+            .check(
+                quire_semantic_value::checking::CheckMode::Linked,
+                CheckingLimits::default(),
+            )
             .unwrap_or_else(|e| panic!("the package checks: {e:?}\n{text}")),
     )
 }

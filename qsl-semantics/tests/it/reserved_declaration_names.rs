@@ -35,7 +35,10 @@ fn checks(profile: &str, body: &str) {
         Vec::new(),
     )
     .unwrap_or_else(|refusal| panic!("{text}: assembly: {refusal:?}"))
-    .check(CheckingLimits::default())
+    .check(
+        quire_semantic_value::checking::CheckMode::Linked,
+        CheckingLimits::default(),
+    )
     .unwrap_or_else(|refusals| panic!("{text}: the unit checks: {refusals:?}"));
 }
 

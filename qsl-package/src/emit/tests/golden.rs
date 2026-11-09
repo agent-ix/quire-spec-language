@@ -156,7 +156,10 @@ fn linked(types: TypeEnvironment, functions: Vec<FunctionDeclaration>) -> Checke
     declarations.ieee_profile = Some(ieee_profile());
     CheckedPackage::link(
         declarations
-            .check(CheckingLimits::default())
+            .check(
+                quire_semantic_value::checking::CheckMode::Linked,
+                CheckingLimits::default(),
+            )
             .expect("the fixture functions check"),
     )
 }
@@ -228,7 +231,10 @@ fn decimal_sum() -> CheckedPackage {
     )];
     CheckedPackage::link(
         declarations
-            .check(CheckingLimits::default())
+            .check(
+                quire_semantic_value::checking::CheckMode::Linked,
+                CheckingLimits::default(),
+            )
             .expect("the fixture functions check"),
     )
 }
@@ -502,7 +508,10 @@ fn float_sum() -> Result<CheckedPackage, Vec<CheckRefusal>> {
         ),
     )];
     declarations
-        .check(CheckingLimits::default())
+        .check(
+            quire_semantic_value::checking::CheckMode::Linked,
+            CheckingLimits::default(),
+        )
         .map(CheckedPackage::link)
 }
 
