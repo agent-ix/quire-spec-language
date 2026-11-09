@@ -23,14 +23,11 @@ fn parity_smoke_over_the_first_200_generated_units() {
     );
 }
 
-/// The gate at 300 units is red: unit 555's `f6` multiplies two call results
-/// whose product does not fit 64 bits, an operation the coverage lists and
-/// FR-562 sends to the kernel through a value handle, which this backend does
-/// not have yet. FR-560 forbids listing such an entry unsupported, so this is
-/// a coverage gap of the backend; the test states the gate's verdict and stays
-/// ignored until the handle path closes it.
+/// The gate at 300 units, which includes unit 555: its `f6` multiplies two
+/// call results whose product exceeds 64 bits, which the handle path
+/// (QSL-1825) computes through the kernel as the interpreter does. Untagged:
+/// TC-1386 verifies the runner itself, in `qsl-conformance`.
 #[test]
-#[ignore = "QSL-1825: kernel-handle path for unbounded values; make parity stays red until it lands"]
 fn the_jit_passes_the_parity_gate_over_300_generated_units() {
     let report = gate(300);
     assert_eq!(

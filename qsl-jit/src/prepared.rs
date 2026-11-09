@@ -25,7 +25,7 @@ use quire_semantic_value::supplied_stop::SuppliedRun;
 
 use crate::coverage::coverage;
 use crate::exec::{Entry, EntryFrame, EntryRefusal, Halt, Machine, Status};
-use crate::translate::{integer_to_i64, register_kind, Compiler, Failure, Op};
+use crate::translate::{carried, integer_to_i64, Carried, Compiler, Failure, Op};
 use qsl_eval::execution::{first_outside, Outside};
 
 /// The just-in-time backend (ADR-029 EB-1): it translates the entries inside
@@ -36,11 +36,10 @@ pub struct Jit;
 /// One translated function.
 struct Compiled {
     entry: Entry,
-    /// Per parameter: `Some(true)` for a `Boolean`, `Some(false)` for an
-    /// `Integer` carried in a register, `None` for a parameter the function
-    /// body does not read through a register.
-    parameters: Vec<Option<bool>>,
-    result_is_boolean: bool,
+    /// Per parameter: how it is carried, or `None` for a parameter the
+    /// function body does not read through a register or handle.
+    parameters: Vec<Option<Carried>>,
+    result: Carried,
     /// Where an evaluation that stops before the body reports: the body root.
     site: ExpressionLocation,
 }
@@ -201,9 +200,9 @@ impl ExecutionBackend for Jit {
                     parameters: callable
                         .parameters
                         .iter()
-                        .map(|(_, ty)| register_kind(ty))
+                        .map(|(_, ty)| carried(ty))
                         .collect(),
-                    result_is_boolean: entry.result_is_boolean,
+                    result: entry.result,
                     site: function.body.location().clone(),
                 },
             );
@@ -416,11 +415,12 @@ impl<'p> PreparedJit<'p> {
                 losses: Vec::new(),
             });
         }
-        let registers = registers(compiled, arguments)?;
-        let mut frame = EntryFrame::new(meter, &self.ops, graph.scope().types());
+        let mut arena = Vec::new();
+        let registers = registers(compiled, arguments, &mut arena)?;
+        let mut frame = EntryFrame::new(meter, &self.ops, graph.scope().types(), arena);
         let status = compiled.entry.call(&mut frame, &registers);
         let value = frame.result();
-        let halt = frame.into_halt();
+        let (halt, arena) = frame.into_parts();
         let status = status.map_err(|refusal| {
             CallFailure::Fault(InternalFault::new(
                 "FR-568",
@@ -435,17 +435,24 @@ impl<'p> PreparedJit<'p> {
             return Err(CallFailure::Cancelled(cause));
         }
         match (status, halt) {
-            (Status::Completed, None) => Ok(Evaluation {
-                outcome: FamilyOutcome::Evaluated(Outcome::Completed(
-                    if compiled.result_is_boolean {
-                        Value::Boolean(value != 0)
-                    } else {
-                        Value::Integer(value.into())
-                    },
-                )),
-                location: None,
-                losses: Vec::new(),
-            }),
+            (Status::Completed, None) => {
+                let result = match compiled.result {
+                    Carried::Boolean => Value::Boolean(value != 0),
+                    Carried::Register => Value::Integer(value.into()),
+                    Carried::Handle => usize::try_from(value)
+                        .ok()
+                        .and_then(|index| arena.get(index))
+                        .cloned()
+                        .ok_or_else(|| {
+                            CallFailure::Fault(InternalFault::new("FR-560", "jit-result-handle"))
+                        })?,
+                };
+                Ok(Evaluation {
+                    outcome: FamilyOutcome::Evaluated(Outcome::Completed(result)),
+                    location: None,
+                    losses: Vec::new(),
+                })
+            }
             (Status::Stopped, Some(Halt::Stop(stop, location))) => stopped(stop, Some(location)),
             (_, Some(Halt::Fault(invariant))) => {
                 Err(CallFailure::Fault(InternalFault::new("FR-560", invariant)))
@@ -458,16 +465,28 @@ impl<'p> PreparedJit<'p> {
     }
 }
 
-/// The 64-bit register image of `arguments` for `compiled`.
-fn registers(compiled: &Compiled, arguments: &[Value]) -> Result<Vec<i64>, CallFailure> {
+/// The 64-bit register image of `arguments` for `compiled`: a handle
+/// parameter's value is placed in `arena` and passed as its index.
+fn registers(
+    compiled: &Compiled,
+    arguments: &[Value],
+    arena: &mut Vec<Value>,
+) -> Result<Vec<i64>, CallFailure> {
     let broken = || CallFailure::Fault(InternalFault::new("FR-560", "jit-argument-kind"));
     compiled
         .parameters
         .iter()
         .zip(arguments)
         .map(|(kind, argument)| match (kind, argument) {
-            (Some(true), Value::Boolean(value)) => Ok(i64::from(*value)),
-            (Some(false), Value::Integer(value)) => integer_to_i64(value).ok_or_else(broken),
+            (Some(Carried::Boolean), Value::Boolean(value)) => Ok(i64::from(*value)),
+            (Some(Carried::Register), Value::Integer(value)) => {
+                integer_to_i64(value).ok_or_else(broken)
+            }
+            (Some(Carried::Handle), Value::Integer(_)) => {
+                let handle = i64::try_from(arena.len()).map_err(|_| broken())?;
+                arena.push(argument.clone());
+                Ok(handle)
+            }
             (None, _) => Ok(0),
             _ => Err(broken()),
         })

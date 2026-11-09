@@ -48,10 +48,11 @@ fn a_parameter_of_an_unlisted_type_is_listed_with_that_type_and_the_rest_are_pre
     assert!(jitted_call(&prepared, "ok", &[int(4)]).is_ok());
 }
 
-#[trace("TC-1381")]
+/// QSL-1825: a sum whose result needs more than 64 bits is no longer listed
+/// unsupported; the kernel computes it on a handle.
 #[test]
-fn an_operation_whose_result_does_not_fit_64_bits_is_listed_unsupported() {
+fn an_operation_whose_result_does_not_fit_64_bits_is_prepared_on_a_handle() {
     let package = package_of(SOURCE);
     let prepared = prepare(&package, &["wide"]);
-    assert_eq!(unsupported_names(&prepared), vec!["wide".to_owned()]);
+    assert_eq!(unsupported_names(&prepared), Vec::<String>::new());
 }

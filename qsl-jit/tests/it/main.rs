@@ -6,5 +6,6 @@ mod clause;
 mod common;
 mod coverage;
 mod differential;
+mod handle;
 mod lifecycle;
 mod parity;
