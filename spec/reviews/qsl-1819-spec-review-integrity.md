@@ -100,3 +100,9 @@ Round 1, head b8ff9646e.
 | FND-010 | fixed | - |
 | FND-011 | fixed | - |
 | FND-012 | still-open | The Unsupported* wildcard is gone (AC-8 rewritten, FR-201 applies every condition). FR-201-AC-8 still sits between AC-7 and AC-6 (FR-201:203-204). Move it after AC-7. |
+| FND-003 | fixed | Round 2, head 7686b40c4. EN-4 now advertises (probabilistic-satisfaction, unbounded) with {statistical} (FR-280:144-147, FR-280-AC-4, TC-761 step 3). Supported(en-4) in FR-280-AC-5, FR-281-AC-12 and FR-564's timeout and cancellation cells is now what FR-290-AC-6 gives. No spec text still says EN-4 is bounded. |
+| FND-012 | fixed | Round 2, head 7686b40c4. AC-8 is now the last row, after AC-6. The AC-7/AC-6 order predates this batch. |
+| FND-013 | fixed | Round 2, head 7686b40c4. EN-1 now lists bounded and unbounded, matching ADR-018:308, FR-134:28 and FR-126:565; FR-280-AC-7, FR-281-AC-11 and TC-761 step 6 / TC-763 step 7 follow. |
+| FND-014 | fixed | Round 2, head 7686b40c4. |
+| FND-015 | fixed | Round 2, head 7686b40c4. |
+| FND-016 | fixed | Round 2, head 7686b40c4. Dropped from FR-282:48 and FR-201:142-143; no 'every EN-5 subject' text remains in spec/. |

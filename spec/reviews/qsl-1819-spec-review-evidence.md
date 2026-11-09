@@ -69,3 +69,5 @@ Round 1, head b8ff9646e.
 | FND-002 | fixed | UnnamedClause dropped. That is acceptable: the lexer admits only ASCII identifiers (qsl-cst/src/cst.rs:25), so the case cannot be built. ClauseItemRefusal::UnnamedClause on main (qsl-analyze/src/analyze/clause_item.rs:86) becomes unreachable and the coder should remove it. |
 | FND-003 | fixed | - |
 | FND-004 | fixed | - |
+| FND-005 | fixed | Round 2, head 7686b40c4. |
+| FND-006 | fixed | Round 2, head 7686b40c4. FR-567-AC-6 is deleted; AC-2 covers the rule; nothing in spec/ or the code tags FR-567-AC-6. |
