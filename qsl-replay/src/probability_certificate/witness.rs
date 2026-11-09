@@ -164,6 +164,7 @@ pub fn replay_probabilistic_witness(
         system,
         predicate,
         reference,
+        None,
         limits.model.limits.max_states,
         limits.model.limits.max_transitions,
         cancel,

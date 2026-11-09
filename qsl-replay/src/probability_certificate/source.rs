@@ -105,8 +105,10 @@ pub fn check_probability_certificate_source(
     cancel: &Cancel,
 ) -> Result<ExactProbabilityCertificateCheck, ProbabilitySourceError> {
     // Refuse a foreign claim before compiler/model work as well as enumeration.
-    let document =
-        super::read_probability_certificate(request.certificate, limits.document, cancel)?;
+    let document = match super::read_probability_certificate(request.certificate, limits.document, cancel) {
+        Ok(document) => document,
+        Err(error) => return super::document::document_admission_error(error).map_err(Into::into),
+    };
     if &document.identity != request.item {
         return Err(ProbabilityDocumentError::IdentityMismatch.into());
     }
@@ -196,16 +198,7 @@ pub fn check_probability_certificate_source(
     let claims = checked.package().graph().probabilistic_model().claims();
     let claim =
         super::bind_claim(claims, request.item, cancel).map_err(ProbabilityDocumentError::from)?;
-    if request.item
-        != &ObligationIdentity::new(
-            claim
-                .occurrence()
-                .ok_or(ProbabilityDocumentError::IdentityMismatch)?
-                .node()
-                .clone(),
-            None,
-            0,
-        )
+    if request.item != &super::probabilistic_claim_identity(claim).map_err(ProbabilityDocumentError::from)?
     {
         return Err(ProbabilityDocumentError::IdentityMismatch.into());
     }

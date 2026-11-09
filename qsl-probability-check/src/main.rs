@@ -174,6 +174,8 @@ fn check(request: Request, cancel: &Cancel) -> Result<Value, String> {
                 qsl_replay::ProbabilityCertificateRule::Malformed => {
                     qsl_replay::CertificateRule::Malformed
                 }
+                qsl_replay::ProbabilityCertificateRule::RankMissing => qsl_replay::CertificateRule::RankMissing,
+                qsl_replay::ProbabilityCertificateRule::RankBroken => qsl_replay::CertificateRule::RankBroken,
             };
             let at = match rejection.at {
                 qsl_replay::ProbabilityCertificateLocus::ProductState(key) => {
@@ -191,9 +193,6 @@ fn source_failure(error: ProbabilitySourceError) -> Value {
     use ProbabilityDocumentError as Document;
     let status = match &error {
         ProbabilitySourceError::Document(Document::Unsupported) => "unsupported",
-        ProbabilitySourceError::Document(
-            Document::RankBroken(_) | Document::RankMissing(_) | Document::MissingMember("ranking"),
-        ) => "rejected",
         ProbabilitySourceError::Document(
             Document::Malformed
             | Document::MissingMember(_)

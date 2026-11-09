@@ -12,7 +12,7 @@ use qsl_eval::model_subject::ModelInstance;
 use qsl_eval::simulation::model::{ModelSimState, ModelSystem};
 use qsl_eval::simulation::TransitionSystem;
 use qsl_semantics::check::{
-    CheckedProbabilisticClaim, ProbForm, ProbScheduler, ReachTarget, StatePredicate,
+    CheckedProbabilisticClaim, ProbForm, ProbScheduler, ReachTarget, StatePredicate, Workload,
 };
 use quire_exact::ObjectReference;
 use serde_json::{json, Value};
@@ -277,6 +277,10 @@ pub enum ProbabilityCertificateRule {
     ThresholdMissed,
     /// A certificate omits, duplicates, or adds a state value.
     Malformed,
+    /// A positive non-target state has no required progress rank.
+    RankMissing,
+    /// A positive non-target state has no positive lower-rank successor.
+    RankBroken,
 }
 
 /// The locus of an exact-certificate rejection.
@@ -386,6 +390,7 @@ fn enumerate_model_graph<P: StatePredicate>(
     system: &ModelSystem<'_>,
     target: &P,
     binding: Option<&ObjectReference>,
+    workload: Option<&Workload>,
     max_states: usize,
     max_edges: usize,
     cancel: &Cancel,
@@ -440,17 +445,8 @@ fn enumerate_model_graph<P: StatePredicate>(
         let choices = if terminal.is_some() && stop_at_target {
             Vec::new()
         } else {
-            let actions = system
-                .actions(&state)
-                .map_err(|stop| {
-                    failure(crate::ExactProbBuildIssue::Expansion(stop));
-                    ExactProbabilityGraphError::ExpansionRefused
-                })?
-                .map_err(|_| {
-                    failure(crate::ExactProbBuildIssue::UndecidedSuccessor);
-                    ExactProbabilityGraphError::ExpansionRefused
-                })?;
-            if actions.is_empty() {
+            let distributions = model_distributions(system, &state, workload, cancel, failure)?;
+            if distributions.is_empty() {
                 states.insert(
                     key,
                     CheckerState {
@@ -460,23 +456,15 @@ fn enumerate_model_graph<P: StatePredicate>(
                 );
                 continue;
             }
-            let mut choices = Vec::with_capacity(actions.len());
-            for action in actions {
+            let mut choices = Vec::with_capacity(distributions.len());
+            for distribution in distributions {
                 poll_cancel(cancel)?;
                 let mut choice = Vec::new();
-                for draw in action.draws {
+                for (probability, successor) in distribution {
                     poll_cancel(cancel)?;
-                    if draw.probability == rational(0) {
+                    if probability == rational(0) {
                         continue;
                     }
-                    if draw.successors.len() != 1 {
-                        return Err(ExactProbabilityGraphError::UnsupportedDraw);
-                    }
-                    let (_, successor) = draw
-                        .successors
-                        .into_iter()
-                        .next()
-                        .ok_or(ExactProbabilityGraphError::UnsupportedDraw)?;
                     let target_key = key_of(&successor)?;
                     edge_count = edge_count
                         .checked_add(1)
@@ -486,7 +474,7 @@ fn enumerate_model_graph<P: StatePredicate>(
                     }
                     choice.push(ProbabilityEdge {
                         target: target_key.clone(),
-                        probability: draw.probability,
+                        probability,
                     });
                     if !seen.contains(&target_key) {
                         if seen.len() >= max_states {
@@ -536,6 +524,51 @@ fn product_key(
     Ok(ProbabilityProductKey(bytes))
 }
 
+fn model_distributions(
+    system: &ModelSystem<'_>, state: &ModelSimState, workload: Option<&Workload>, cancel: &Cancel,
+    failure: &mut impl FnMut(crate::ExactProbBuildIssue),
+) -> Result<Vec<Vec<(Rational, ModelSimState)>>, ExactProbabilityGraphError> {
+    let mut expansion = |stop| {
+        failure(crate::ExactProbBuildIssue::Expansion(stop));
+        ExactProbabilityGraphError::ExpansionRefused
+    };
+    if let Some(workload) = workload {
+        let steps = system.weighted_steps(state, workload).map_err(&mut expansion)?
+            .map_err(|_| ExactProbabilityGraphError::UnsupportedDraw)?;
+        if steps.iter().any(|step| matches!(step.transition, qsl_eval::simulation::model::TransitionId::Stutter)) {
+            return if steps.len() == 1 { Ok(Vec::new()) } else { Err(ExactProbabilityGraphError::UnsupportedDraw) };
+        }
+        return Ok(vec![steps.into_iter().map(|step| (step.probability, step.post)).collect()]);
+    }
+    let actions = system.actions(state).map_err(&mut expansion)?.map_err(|_| {
+        failure(crate::ExactProbBuildIssue::UndecidedSuccessor);
+        ExactProbabilityGraphError::ExpansionRefused
+    })?;
+    let mut distributions = Vec::with_capacity(actions.len());
+    for action in actions {
+        poll_cancel(cancel)?;
+        let mut distribution = Vec::with_capacity(action.draws.len());
+        for draw in action.draws {
+            poll_cancel(cancel)?;
+            if draw.probability == rational(0) { continue; }
+            if draw.successors.len() != 1 { return Err(ExactProbabilityGraphError::UnsupportedDraw); }
+            let (_, successor) = draw.successors.into_iter().next().ok_or(ExactProbabilityGraphError::UnsupportedDraw)?;
+            distribution.push((draw.probability, successor));
+        }
+        distributions.push(distribution);
+    }
+    Ok(distributions)
+}
+
+fn claim_workload<'a>(system: &ModelSystem<'a>, claim: &CheckedProbabilisticClaim) -> Result<Option<&'a Workload>, ExactProbabilityGraphError> {
+    match &claim.scheduler {
+        ProbScheduler::Every => Ok(None),
+        ProbScheduler::Workload(name) => system.package().graph().probabilistic_model().workload(name)
+            .filter(|workload| workload.model() == claim.subject.alias)
+            .map(Some).ok_or(ExactProbabilityGraphError::UnsupportedClaimForm),
+    }
+}
+
 /// Independently enumerate and check a bounded unbound exact reachability
 /// certificate against the supplied checked model system.
 ///
@@ -548,6 +581,7 @@ pub(crate) fn check_model_exact_reachability<P: StatePredicate>(
     system: &ModelSystem<'_>,
     target: &P,
     binding: Option<&ObjectReference>,
+    workload: Option<&Workload>,
     certificate: &ExactProbabilityCertificate,
     objective: ProbabilityObjective,
     bound: &Bound,
@@ -558,6 +592,7 @@ pub(crate) fn check_model_exact_reachability<P: StatePredicate>(
         system,
         target,
         binding,
+        workload,
         max_states,
         max_edges,
         cancel,
@@ -599,6 +634,7 @@ pub fn check_claim_exact_reachability(
         system,
         predicate,
         instance.as_ref().map(|bound| &bound.reference),
+        claim_workload(system, claim)?,
         certificate,
         objective,
         bound,

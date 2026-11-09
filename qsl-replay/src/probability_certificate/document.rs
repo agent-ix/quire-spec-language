@@ -85,18 +85,13 @@ pub enum ProbabilityDocumentError {
     /// Subject expansion or predicate admission retained its actual stop cause.
     #[error("probability certificate subject stopped: {0:?}")]
     Build(Box<crate::ExactProbBuildIssue>),
-    /// Required ranks fail their independently checked progress condition.
-    #[error("probability certificate rank broken at {0:?}")]
-    RankBroken(ProbabilityProductKey),
-    /// A rebuilt state has no required rank row.
-    #[error("probability certificate rank missing at {0:?}")]
-    RankMissing(ProbabilityProductKey),
 }
 
 impl From<ExactProbabilityGraphError> for ProbabilityDocumentError {
     fn from(error: ExactProbabilityGraphError) -> Self {
         match error {
             ExactProbabilityGraphError::Cancelled(cause) => Self::Cancelled(cause),
+            ExactProbabilityGraphError::ClaimNotBound => Self::IdentityMismatch,
             ExactProbabilityGraphError::Cycle
             | ExactProbabilityGraphError::UnsupportedDraw
             | ExactProbabilityGraphError::UnsupportedInitial
@@ -466,6 +461,7 @@ fn subject_graph(
         system,
         predicate,
         binding.as_ref().map(|bound| &bound.reference),
+        claim_workload(system, claim)?,
         limits.states,
         limits.edges,
         cancel,
@@ -566,7 +562,10 @@ pub fn check_probability_certificate_document(
     limits: ProbabilityDocumentLimits,
     cancel: &Cancel,
 ) -> Result<ExactProbabilityCertificateCheck, ProbabilityDocumentError> {
-    let document = read_probability_certificate(bytes, limits, cancel)?;
+    let document = match read_probability_certificate(bytes, limits, cancel) {
+        Ok(document) => document,
+        Err(error) => return document_admission_error(error),
+    };
     if &document.identity != item {
         return Err(ProbabilityDocumentError::IdentityMismatch);
     }
@@ -575,14 +574,6 @@ pub fn check_probability_certificate_document(
         return Err(ProbabilityDocumentError::ObjectiveMismatch);
     }
     let ranks: BTreeMap<_, _> = document.ranking.into_iter().collect();
-    for key in graph.states.keys() {
-        if !ranks.contains_key(key) {
-            return Err(ProbabilityDocumentError::RankMissing(key.clone()));
-        }
-    }
-    if ranks.len() != graph.states.len() {
-        return Err(ProbabilityDocumentError::Malformed);
-    }
     let certificate = ExactProbabilityCertificate {
         values: document.values,
     };
@@ -592,6 +583,14 @@ pub fn check_probability_certificate_document(
             return Ok(ExactProbabilityCertificateCheck::Rejected(rejection))
         }
     };
+    for (key, state) in &graph.states {
+        if !ranks.contains_key(key) {
+            return Ok(if state.terminal.is_none() && values.get(key).is_some_and(|value| *value > rational(0)) {
+                rejected(ProbabilityCertificateRule::RankMissing, key.clone())
+            } else { malformed_ranking() });
+        }
+    }
+    if ranks.len() != graph.states.len() { return Ok(malformed_ranking()); }
     for (key, state) in &graph.states {
         poll(cancel)?;
         if state.terminal.is_some() || values.get(key).is_some_and(|value| *value == rational(0)) {
@@ -608,10 +607,24 @@ pub fn check_probability_certificate_document(
                     .is_some_and(|successor| successor < rank)
         });
         if !progress {
-            return Err(ProbabilityDocumentError::RankBroken(key.clone()));
+            return Ok(rejected(ProbabilityCertificateRule::RankBroken, key.clone()));
         }
     }
     check_document_equalities(&graph, &values, objective, &bound, limits, cancel)
+}
+
+fn malformed_ranking() -> ExactProbabilityCertificateCheck {
+    ExactProbabilityCertificateCheck::Rejected(ProbabilityCertificateRejection {
+        rule: ProbabilityCertificateRule::Malformed,
+        at: ProbabilityCertificateLocus::Member("ranking"),
+    })
+}
+
+pub(super) fn document_admission_error(error: ProbabilityDocumentError) -> Result<ExactProbabilityCertificateCheck, ProbabilityDocumentError> {
+    match error {
+        ProbabilityDocumentError::MissingMember("ranking") => Ok(malformed_ranking()),
+        other => Err(other),
+    }
 }
 
 fn check_scalar(
