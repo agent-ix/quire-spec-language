@@ -161,7 +161,7 @@ fn inline_literals_have_no_expression_key_and_locals_name_their_parameter() {
 
 #[trace("TC-415", "FR-093-AC-62")]
 #[test]
-fn a_cloned_body_cannot_silently_reuse_keys_from_another_lowering_owner() {
+fn a_cloned_body_cannot_silently_reuse_keys_from_another_package() {
     let graph = source("function f using v(): Boolean pure { true and false }");
     let body = graph.function_state(0).expect("f").body.body().clone();
     let original = body
@@ -184,7 +184,7 @@ fn a_cloned_body_cannot_silently_reuse_keys_from_another_lowering_owner() {
         0,
         &mut occurrences,
         &mut meter,
-        "fixture",
+        "different-package",
     );
     lowering
         .expression(body.root(), &mut Binders::new(&[], &[]))
