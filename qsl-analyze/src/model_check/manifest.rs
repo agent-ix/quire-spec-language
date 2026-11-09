@@ -4,8 +4,8 @@
 //! `qsl-route`, which holds the registry and FR-288's conversion and no
 //! engine's manifest.
 //!
-//! EN-1 settles one (kind, mode) pair, `temporal-satisfaction` over a
-//! `bounded` domain: the reachable invariants, bounded clauses, liveness and
+//! EN-1 advertises `temporal-satisfaction` in both `bounded` and `unbounded`
+//! modes: the reachable invariants, bounded clauses, liveness and
 //! deadlock-freedom items its explicit-state search decides over a finite
 //! subject (ADR-018). It decides under weak and strong fairness. Its
 //! `domains` are the boundable domains the subject's universes bound:
@@ -24,7 +24,7 @@ use qsl_semantics::check::Capability;
 /// EN-1's backend identity, the identity its terminal records name.
 pub const BACKEND_ID: &str = "en-1";
 
-/// The (kind, mode) pairs EN-1 advertises: exactly one.
+/// The (kind, mode) pairs EN-1 advertises: both temporal extent modes.
 pub const ADVERTISED: [(Option<&str>, Option<&str>); 2] = [
     (
         Some(Capability::TemporalSatisfaction.to_wire()),
