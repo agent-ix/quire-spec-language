@@ -269,17 +269,26 @@ fn exceeded(limit: ProbabilityDocumentLimit, bound: u64, actual: u64) -> Probabi
     }
 }
 
-fn decode_key(text: &str, limits: ProbabilityDocumentLimits) -> Result<ProbabilityProductKey, ProbabilityDocumentError> {
+fn decode_key(
+    text: &str,
+    limits: ProbabilityDocumentLimits,
+) -> Result<ProbabilityProductKey, ProbabilityDocumentError> {
     let bytes = URL_SAFE_NO_PAD
         .decode(text)
         .map_err(|_| ProbabilityDocumentError::Malformed)?;
     if URL_SAFE_NO_PAD.encode(&bytes) != text {
         return Err(ProbabilityDocumentError::Malformed);
     }
-    let key = quire_canonical::read_bounded(&bytes, limits.bytes, limits.storage_bytes).map_err(|error| match error {
-        quire_canonical::ReadError::Limit(limit) => exceeded(ProbabilityDocumentLimit::StorageBytes, limit.bound, limit.required),
-        _ => ProbabilityDocumentError::Malformed,
-    })?;
+    let key = quire_canonical::read_bounded(&bytes, limits.bytes, limits.storage_bytes).map_err(
+        |error| match error {
+            quire_canonical::ReadError::Limit(limit) => exceeded(
+                ProbabilityDocumentLimit::StorageBytes,
+                limit.bound,
+                limit.required,
+            ),
+            _ => ProbabilityDocumentError::Malformed,
+        },
+    )?;
     if quire_canonical::to_vec(&key, quire_canonical::Limits::new(limits.bytes))
         .map_err(|_| ProbabilityDocumentError::Malformed)?
         != bytes
@@ -289,7 +298,9 @@ fn decode_key(text: &str, limits: ProbabilityDocumentLimits) -> Result<Probabili
     let quire_canonical::Node::Array(parts) = key.root().node() else {
         return Err(ProbabilityDocumentError::Malformed);
     };
-    if parts.len() != 6 { return Err(ProbabilityDocumentError::Unsupported); }
+    if parts.len() != 6 {
+        return Err(ProbabilityDocumentError::Unsupported);
+    }
     let parts = parts.collect::<Vec<_>>();
     if parts.len() != 6
         || !parts.first().is_some_and(|part| {
@@ -1084,23 +1095,46 @@ mod tests {
                 decimal_digits: 100_001
             })
         );
-        let mut admission = ProbabilityDocumentLimits { storage_bytes: 0, ..limits() };
+        let mut admission = ProbabilityDocumentLimits {
+            storage_bytes: 0,
+            ..limits()
+        };
         let large_key = ProbabilityProductKey::for_model_state(None, &vec![0; 375_000]).unwrap();
-        let valid = mutate(|value| { value["values"][0]["state"] = json!(URL_SAFE_NO_PAD.encode(large_key.as_bytes())); });
+        let valid = mutate(|value| {
+            value["values"][0]["state"] = json!(URL_SAFE_NO_PAD.encode(large_key.as_bytes()));
+        });
         loop {
             match read_probability_certificate(&valid, admission, &Cancel::new()) {
                 Ok(_) => break,
-                Err(ProbabilityDocumentError::Limit { limit: ProbabilityDocumentLimit::StorageBytes, bound, actual }) => {
+                Err(ProbabilityDocumentError::Limit {
+                    limit: ProbabilityDocumentLimit::StorageBytes,
+                    bound,
+                    actual,
+                }) => {
                     assert_eq!(bound, admission.storage_bytes);
-                    assert!(actual > bound && actual <= limits().storage_bytes, "actual reservation must advance within this fixture's finite ceiling");
+                    assert!(
+                        actual > bound && actual <= limits().storage_bytes,
+                        "actual reservation must advance within this fixture's finite ceiling"
+                    );
                     admission.storage_bytes = actual;
-                },
+                }
                 Err(error) => panic!("the valid flat-key control must admit: {error:?}"),
             }
         }
         let inner = serde_json::to_vec(&vec![Value::Null; 100_000]).unwrap();
-        let offered = mutate(|value| { value["values"][0]["state"] = json!(URL_SAFE_NO_PAD.encode(inner)); });
-        assert!(matches!(read_probability_certificate(&offered, admission, &Cancel::new()), Err(ProbabilityDocumentError::Limit { limit: ProbabilityDocumentLimit::StorageBytes, .. })), "decoded key JSON must pass the same bounded admission before its tree is retained");
+        let offered = mutate(|value| {
+            value["values"][0]["state"] = json!(URL_SAFE_NO_PAD.encode(inner));
+        });
+        assert!(
+            matches!(
+                read_probability_certificate(&offered, admission, &Cancel::new()),
+                Err(ProbabilityDocumentError::Limit {
+                    limit: ProbabilityDocumentLimit::StorageBytes,
+                    ..
+                })
+            ),
+            "decoded key JSON must pass the same bounded admission before its tree is retained"
+        );
     }
 
     #[trace("FR-201-AC-9")]
