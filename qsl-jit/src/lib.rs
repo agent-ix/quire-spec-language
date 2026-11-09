@@ -24,3 +24,5 @@ mod translate;
 
 pub use coverage::coverage;
 pub use prepared::{CallableEntry, Jit, PreparedJit};
+#[cfg(feature = "test-support")]
+pub use prepared::{KernelCall, KernelRecorder};

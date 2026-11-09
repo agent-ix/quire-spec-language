@@ -17,6 +17,7 @@
 
 use std::collections::HashMap;
 
+use cranelift_codegen::ir::condcodes::IntCC;
 use cranelift_codegen::ir::{
     types, AbiParam, Block, InstBuilder, MemFlagsData, StackSlotData, StackSlotKind, Value as Clif,
 };
@@ -30,11 +31,13 @@ use quire_checked::integer_division::AdmittedIntegerDivision;
 use quire_checked::node::{Arithmetic, Connective, IntegerDivisionOperator, NodeKind, OrderedKind};
 use quire_checked::node::{RecordField, RecordSlot, Visit};
 use quire_exact::{
-    ArithmeticOperator, CollectionType, DecimalType, DivisionMember, Integer, IntegerDomain,
-    IntegerInterval, Meter, NodeKey, OrderingOperator, Outcome, RationalDomain, ScalarLimits,
-    Value, ValueType,
+    ArithmeticOperator, CollectionType, DecimalType, DivisionMember, DivisionProfile, Integer,
+    IntegerDomain, IntegerInterval, Meter, NativeIntegerInterval, NativeIntegerOperation,
+    NativeIntegerPlan, NodeKey, OrderingOperator, Outcome, RationalDomain, ScalarLimits, Value,
+    ValueType,
 };
 use quire_semantic_value::declaration::CheckedEquality;
+use quire_semantic_value::declaration::EqualityOperator;
 use quire_semantic_value::location::ExpressionLocation;
 
 use crate::exec::{Shim, Signature, ARGUMENTS_OFFSET, FAILED_OFFSET, RESULT_OFFSET};
@@ -65,8 +68,30 @@ impl IterSpec {
     }
 }
 
+/// The charge schedule of a fast-path `Integer` operation: the kernel's
+/// charge-only entry (FR-562), run on the operands the machine operation
+/// then computes.
+#[derive(Clone, Copy)]
+pub(crate) enum NativeCharge {
+    /// `+`, binary `-` or unary `-`, over the plan its operand intervals give.
+    Arithmetic(NativeIntegerPlan, bool),
+    /// `*`.
+    Multiply,
+    /// `div` or `rem`.
+    Division,
+    /// `mod`.
+    Modulus,
+    /// `<`, `<=`, `>` or `>=`.
+    Ordering,
+    /// `=` or `!=`.
+    Equality,
+}
+
 /// What one shim call computes.
 pub(crate) enum OpKind {
+    /// The charges of the fast-path operation whose arithmetic the generated
+    /// code computes itself; no kernel value operation runs.
+    ChargeNative(NativeCharge),
     Arithmetic(Arithmetic),
     Negate,
     Divide {
@@ -714,6 +739,29 @@ impl Emitter<'_, '_, '_> {
                 };
                 let ty = interval.map_or(Ty::Wide, |(low, high)| Ty::Int(low, high));
                 let operands = [(a, left_ty), (b, right_ty)];
+                if let (Ty::Int(..), (Ty::Int(al, ah), Ty::Int(bl, bh))) = (ty, (left_ty, right_ty))
+                {
+                    let (left, right) = (native_interval(al, ah)?, native_interval(bl, bh)?);
+                    let charge = match operator {
+                        Arithmetic::Multiply => NativeCharge::Multiply,
+                        Arithmetic::Add => NativeCharge::Arithmetic(
+                            native_plan(NativeIntegerOperation::Add { left, right })?,
+                            false,
+                        ),
+                        Arithmetic::Subtract => NativeCharge::Arithmetic(
+                            native_plan(NativeIntegerOperation::Subtract { left, right })?,
+                            false,
+                        ),
+                    };
+                    self.shim_call(node, OpKind::ChargeNative(charge), operands, Repr::Register);
+                    let ins = self.builder.ins();
+                    let value = match operator {
+                        Arithmetic::Add => ins.iadd(a, b),
+                        Arithmetic::Subtract => ins.isub(a, b),
+                        Arithmetic::Multiply => ins.imul(a, b),
+                    };
+                    return Ok((value, ty));
+                }
                 let result =
                     self.shim_call(node, OpKind::Arithmetic(*operator), operands, ty.repr());
                 Ok((result, ty))
@@ -732,6 +780,15 @@ impl Emitter<'_, '_, '_> {
                 };
                 let zero = self.builder.ins().iconst(types::I64, 0);
                 let operands = [(a, operand_ty), (zero, Ty::Boolean)];
+                if let (Ty::Int(..), Ty::Int(low, high)) = (ty, operand_ty) {
+                    let operation = NativeIntegerOperation::Negate {
+                        operand: native_interval(low, high)?,
+                    };
+                    let charge = NativeCharge::Arithmetic(native_plan(operation)?, true);
+                    self.shim_call(node, OpKind::ChargeNative(charge), operands, Repr::Register);
+                    let value = self.builder.ins().ineg(a);
+                    return Ok((value, ty));
+                }
                 let result = self.shim_call(node, OpKind::Negate, operands, ty.repr());
                 Ok((result, ty))
             }
@@ -764,11 +821,30 @@ impl Emitter<'_, '_, '_> {
                     _ => None,
                 };
                 let ty = interval.map_or(Ty::Wide, |(low, high)| Ty::Int(low, high));
+                let operands = [(a, left_ty), (b, right_ty)];
+                if let (Ty::Int(..), Ty::Int(..), Ty::Int(..)) = (ty, left_ty, right_ty) {
+                    let charge = match operator {
+                        IntegerDivisionOperator::Mod => NativeCharge::Modulus,
+                        _ => NativeCharge::Division,
+                    };
+                    self.shim_call(node, OpKind::ChargeNative(charge), operands, Repr::Register);
+                    let (profile, member) = match (operator, selection) {
+                        (IntegerDivisionOperator::Mod, _) => {
+                            (DivisionProfile::Euclidean, DivisionMember::Remainder)
+                        }
+                        (IntegerDivisionOperator::Div, Some(law)) => {
+                            (law.profile(), DivisionMember::Quotient)
+                        }
+                        (_, Some(law)) => (law.profile(), DivisionMember::Remainder),
+                        (_, None) => return Err(self.unsupported(node)),
+                    };
+                    let value = self.machine_division(profile, member, a, b);
+                    return Ok((value, ty));
+                }
                 let kind = OpKind::Divide {
                     operator: *operator,
                     selection: *selection,
                 };
-                let operands = [(a, left_ty), (b, right_ty)];
                 let result = self.shim_call(node, kind, operands, ty.repr());
                 Ok((result, ty))
             }
@@ -786,6 +862,25 @@ impl Emitter<'_, '_, '_> {
                     return Err(self.unsupported(node));
                 }
                 let operands = [(a, left_ty), (b, right_ty)];
+                if matches!((left_ty, right_ty), (Ty::Int(..), Ty::Int(..)))
+                    && *kind == OrderedKind::Integers
+                {
+                    self.shim_call(
+                        node,
+                        OpKind::ChargeNative(NativeCharge::Ordering),
+                        operands,
+                        Repr::Register,
+                    );
+                    let condition = match operator {
+                        OrderingOperator::Less => IntCC::SignedLessThan,
+                        OrderingOperator::LessOrEqual => IntCC::SignedLessThanOrEqual,
+                        OrderingOperator::Greater => IntCC::SignedGreaterThan,
+                        OrderingOperator::GreaterOrEqual => IntCC::SignedGreaterThanOrEqual,
+                    };
+                    let held = self.builder.ins().icmp(condition, a, b);
+                    let value = self.builder.ins().uextend(types::I64, held);
+                    return Ok((value, Ty::Boolean));
+                }
                 let order = OpKind::Order((*operator, *kind));
                 let result = self.shim_call(node, order, operands, Repr::Register);
                 Ok((result, Ty::Boolean))
@@ -1070,7 +1165,7 @@ impl Emitter<'_, '_, '_> {
                 );
                 Ok((result, narrowed))
             }
-            NodeKind::Equality(_, checked, left, right) => {
+            NodeKind::Equality(operator, checked, left, right) => {
                 let (a, left_ty) = self.emit(node.at(*left), depth + 1)?;
                 let (b, right_ty) = self.emit(node.at(*right), depth + 1)?;
                 let operands_boolean = match (left_ty, right_ty) {
@@ -1079,11 +1174,26 @@ impl Emitter<'_, '_, '_> {
                     (l, r) if l == r && l.repr() == Repr::Handle => false,
                     _ => return Err(self.unsupported(node)),
                 };
+                let operands = [(a, left_ty), (b, right_ty)];
+                if matches!((left_ty, right_ty), (Ty::Int(..), Ty::Int(..))) {
+                    self.shim_call(
+                        node,
+                        OpKind::ChargeNative(NativeCharge::Equality),
+                        operands,
+                        Repr::Register,
+                    );
+                    let condition = match operator {
+                        EqualityOperator::Equal => IntCC::Equal,
+                        EqualityOperator::NotEqual => IntCC::NotEqual,
+                    };
+                    let held = self.builder.ins().icmp(condition, a, b);
+                    let value = self.builder.ins().uextend(types::I64, held);
+                    return Ok((value, Ty::Boolean));
+                }
                 let kind = OpKind::Equality {
                     checked: checked.clone(),
                     operands_boolean,
                 };
-                let operands = [(a, left_ty), (b, right_ty)];
                 let result = self.shim_call(node, kind, operands, Repr::Register);
                 Ok((result, Ty::Boolean))
             }
@@ -1487,6 +1597,78 @@ impl Emitter<'_, '_, '_> {
         Ok((finished, result_ty))
     }
 
+    /// The `div`, `rem` or `mod` of two registers the checked bounds prove
+    /// have a nonzero divisor and a result that fits, under `profile`.
+    fn machine_division(
+        &mut self,
+        profile: DivisionProfile,
+        member: DivisionMember,
+        a: Clif,
+        b: Clif,
+    ) -> Clif {
+        // `sdiv` traps on a zero divisor and on `i64::MIN / -1`, and the
+        // generated code has no trap handler. Both are excluded for a
+        // quotient by the interval proof: the divisor's interval excludes 0,
+        // and an interval that excludes 0 and holds -1 has -1 as an end, so
+        // the pair of ends the result interval was computed from includes
+        // `MIN / -1` whenever `a` can be `MIN`, and that result (2^63) does
+        // not fit, so the operation is not translated. A remainder needs no
+        // quotient, so it emits no `sdiv`; `srem` returns 0 for `MIN % -1`.
+        let remainder = self.builder.ins().srem(a, b);
+        let quotient = (member == DivisionMember::Quotient).then(|| self.builder.ins().sdiv(a, b));
+        let zero = self.builder.ins().iconst(types::I64, 0);
+        let one = self.builder.ins().iconst(types::I64, 1);
+        let negative_remainder = self
+            .builder
+            .ins()
+            .icmp(IntCC::SignedLessThan, remainder, zero);
+        let negative_divisor = self.builder.ins().icmp(IntCC::SignedLessThan, b, zero);
+        let (q, r) = match profile {
+            DivisionProfile::Truncating => (quotient, remainder),
+            DivisionProfile::Floor => {
+                // A nonzero remainder of the opposite sign to the divisor
+                // moves one step.
+                let opposite = self
+                    .builder
+                    .ins()
+                    .bxor(negative_remainder, negative_divisor);
+                let nonzero = self.builder.ins().icmp(IntCC::NotEqual, remainder, zero);
+                let step = self.builder.ins().band(opposite, nonzero);
+                let shifted = self.builder.ins().iadd(remainder, b);
+                let q = quotient.map(|quotient| {
+                    let lowered = self.builder.ins().isub(quotient, one);
+                    self.builder.ins().select(step, lowered, quotient)
+                });
+                (q, self.builder.ins().select(step, shifted, remainder))
+            }
+            DivisionProfile::Euclidean => {
+                // A negative remainder moves toward the divisor's sign.
+                let positive_divisor = self.builder.ins().icmp(IntCC::SignedGreaterThan, b, zero);
+                let plus = self.builder.ins().iadd(remainder, b);
+                let minus = self.builder.ins().isub(remainder, b);
+                let moved_r = self.builder.ins().select(positive_divisor, plus, minus);
+                let q = quotient.map(|quotient| {
+                    let down = self.builder.ins().isub(quotient, one);
+                    let up = self.builder.ins().iadd(quotient, one);
+                    let moved_q = self.builder.ins().select(positive_divisor, down, up);
+                    self.builder
+                        .ins()
+                        .select(negative_remainder, moved_q, quotient)
+                });
+                (
+                    q,
+                    self.builder
+                        .ins()
+                        .select(negative_remainder, moved_r, remainder),
+                )
+            }
+        };
+        match (member, q) {
+            (DivisionMember::Quotient, Some(q)) => q,
+            _ => r,
+        }
+    }
+
     /// Stage an operand value for the record or tuple construction that
     /// follows.
     fn stage(&mut self, node: CheckedNode<'_>, (value, ty): (Clif, Ty)) {
@@ -1570,6 +1752,16 @@ impl Emitter<'_, '_, '_> {
         self.builder.ins().brif(failed, self.exit, &[], next, &[]);
         self.builder.switch_to_block(next);
     }
+}
+
+/// The native interval `[low, high]` of a register operand.
+fn native_interval(low: i128, high: i128) -> Result<NativeIntegerInterval, Failure> {
+    NativeIntegerInterval::new(low, high).map_err(|_| fault("jit-native-interval"))
+}
+
+/// The plan of a fast-path arithmetic operation over its operand intervals.
+fn native_plan(operation: NativeIntegerOperation) -> Result<NativeIntegerPlan, Failure> {
+    NativeIntegerPlan::new(operation, None).map_err(|_| fault("jit-native-plan"))
 }
 
 /// `bound` clamped into `[low, high]`, as an `i128`.

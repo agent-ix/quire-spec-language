@@ -28,16 +28,23 @@ pub const UNLIMITED: ScalarLimits = ScalarLimits {
 
 /// `declarations` compiled as one complete-V1 unit into a checked package.
 pub fn package_of(declarations: &str) -> CheckedPackage {
-    package_with(declarations, false)
+    package_with(declarations, None)
 }
 
 /// [`package_of`] with the floor integer-division law admitted, so `div` and
 /// `rem` check.
 pub fn package_with_division(declarations: &str) -> CheckedPackage {
-    package_with(declarations, true)
+    package_with(declarations, Some(DefinitionRole::IntegerDivisionFloor))
 }
 
-fn package_with(declarations: &str, division: bool) -> CheckedPackage {
+/// [`package_of`] with the integer-division law `law` admitted
+/// (`IntegerDivisionFloor`, `IntegerDivisionTruncating` or
+/// `IntegerDivisionEuclidean`).
+pub fn package_with_law(declarations: &str, law: DefinitionRole) -> CheckedPackage {
+    package_with(declarations, Some(law))
+}
+
+fn package_with(declarations: &str, division: Option<DefinitionRole>) -> CheckedPackage {
     let text = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n{declarations}"
@@ -63,11 +70,9 @@ fn package_with(declarations: &str, division: bool) -> CheckedPackage {
         Vec::new(),
     )
     .expect("the unit assembles");
-    if division {
-        declarations.integer_division = Some(
-            admit_integer_division(&[DefinitionRole::IntegerDivisionFloor.reference()], None)
-                .expect("the floor law is admitted"),
-        );
+    if let Some(law) = division {
+        declarations.integer_division =
+            Some(admit_integer_division(&[law.reference()], None).expect("the law is admitted"));
     }
     CheckedPackage::link(
         declarations

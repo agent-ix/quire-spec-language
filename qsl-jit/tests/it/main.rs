@@ -10,6 +10,7 @@ mod coverage;
 mod differential;
 mod handle;
 mod lifecycle;
+mod native;
 mod parity;
 mod records;
 mod values;
