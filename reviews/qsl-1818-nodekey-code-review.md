@@ -114,3 +114,52 @@ Plan completion: not assessed
   ]
 }
 ```
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Round 1: Retention queues only pending references. Settlement drains that queue and directly indexes each retained occurrence; it does not iterate old bodies or admitted entries. Every queue iteration calls the observed resolver once, so the tests count actual loop visits: zero for admitted maps and 16/32 for new pending entries, with no second-pass revisits. Existing SCC and clone controls remain; all 79 lowering tests and fmt/test-inclusive Clippy pass. |
+
+## Disposition Verdict
+
+PASS for the corrected PR delta at 1218dbb25d3c6293c6a895f1b8bb848b93b640b0. No new or still-open findings. Original finding and review history above remain unchanged; this is the current disposition. Mergeable after latest artifact custody and the lead-owned final gate. The gap-analysis artifact remains byte-identical: whole-repository computed audit NOT COMPLETED, with no whole-repository PASS or baseline equivalence asserted.
+
+No Cargo, test rerun, matrix/coverage probe or aggregate gate was performed in this disposition pass. Focused results were read from /tmp/l5-nodekey-fix1-{fmt,lint,tests}.log and /tmp/l5-nodekey-fix1.time.
+
+## Disposition Data
+
+```json
+{
+  "scope": [
+    {
+      "id": "FR-093-AC-62",
+      "path": "spec/functional/FR-093-lower-checked-value-expressions-to-fr-322-terms.md",
+      "role": "examined",
+      "excerpt": "For `function w using v(a: Integer, b: Integer): Integer pure { (a + b) * (a + b) }`, the checked unit's accessor returns for the multiplication the `NodeKey` of its `expression` node in the checked graph, and for both `a + b` operations the one `NodeKey` of their shared `expression` node, with two different `Location`s; a function whose body holds `a * b` returns a key different from all three."
+    },
+    {
+      "id": "NFR-011",
+      "path": "spec/non-functional/NFR-011-bound-value-checking-work.md",
+      "role": "examined",
+      "excerpt": "If the next checking charge would exceed a selected checking ceiling, then the\nchecker shall stop with a stage limit, reported as `stage_limit_exceeded`\nwith the ceiling's kind and its selected bound, without performing that\ncharge. The ceilings are stage limits, not a caller work budget\n(`quire.native.diagnostics/v1` `stage_limit_exceeded` row; [FR-096](../functional/FR-096-stage-limits-refusal-records-and-readers-carry-a-locus.md))."
+    },
+    {
+      "id": "FR-258",
+      "path": "spec/functional/FR-258-check-and-lower-expressions-at-any-depth.md",
+      "role": "context_only",
+      "excerpt": "The S3 checker SHALL type, check obligations for, lower and key expressions\nand types of any depth, bounded only by the checking node limit, the\nper-declaration preimage byte limit and the checking work budget (ADR-030\nD-4.3, NFR-011). QSpec FR-146 defines no expression depth or nesting limit\nfor checking; this requirement carries that rule through QSL's checker."
+    }
+  ],
+  "dispositions": [
+    {
+      "fnd": "FND-001",
+      "outcome": "fixed",
+      "path": "qsl-semantics/src/check/lowering.rs",
+      "after_excerpt": "        for (owner, index) in std::mem::take(&mut self.pending_checked_node_keys) {\n            let Some(body) = self.checked_body_keys.get_mut(&owner) else {\n                return Err(fault(&generated_location(), KeyFault::UnresolvedDraft));\n            };\n            let Some((_, Some(node))) = body.nodes.get_mut(index) else {\n                return Err(fault(&body.location, KeyFault::UnresolvedDraft));\n            };\n            *node = resolve(node).map_err(|()| fault(&body.location, KeyFault::UnresolvedDraft))?;\n        }",
+      "evidence": "Round 1: Retention queues only pending references. Settlement drains that queue and directly indexes each retained occurrence; it does not iterate old bodies or admitted entries. Every queue iteration calls the observed resolver once, so the tests count actual loop visits: zero for admitted maps and 16/32 for new pending entries, with no second-pass revisits. Existing SCC and clone controls remain; all 79 lowering tests and fmt/test-inclusive Clippy pass."
+    }
+  ],
+  "new_findings": []
+}
+```
