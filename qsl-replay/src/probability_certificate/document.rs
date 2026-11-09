@@ -110,7 +110,7 @@ impl From<ExactProbabilityGraphError> for ProbabilityDocumentError {
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct WireIdentity {
-    node_id: Value,
+    node_id: Box<serde_json::value::RawValue>,
     model: Option<String>,
     ordinal: u32,
 }
@@ -155,8 +155,9 @@ fn poll(cancel: &Cancel) -> Result<(), ProbabilityDocumentError> {
 }
 
 fn canonical<T: Serialize>(value: &T, bytes: u64) -> Result<Vec<u8>, ProbabilityDocumentError> {
-    let value = serde_json::to_value(value).map_err(|_| ProbabilityDocumentError::Malformed)?;
-    quire_canonical::to_vec(&value, quire_canonical::Limits::new(bytes)).map_err(
+    let encoded = serde_json::to_vec(value).map_err(|_| ProbabilityDocumentError::Malformed)?;
+    let parsed = quire_canonical::read(&encoded, u64::MAX).map_err(|_| ProbabilityDocumentError::Malformed)?;
+    quire_canonical::to_vec(&parsed, quire_canonical::Limits::new(bytes)).map_err(
         |error| match error {
             quire_canonical::Error::Limit(limit) => {
                 exceeded("certificate.bytes", limit.bound, limit.required)
@@ -181,24 +182,19 @@ fn decode_key(text: &str) -> Result<ProbabilityProductKey, ProbabilityDocumentEr
     if URL_SAFE_NO_PAD.encode(&bytes) != text {
         return Err(ProbabilityDocumentError::Malformed);
     }
-    quire_canonical::read(&bytes, u64::MAX).map_err(|_| ProbabilityDocumentError::Malformed)?;
-    let key: Value =
-        serde_json::from_slice(&bytes).map_err(|_| ProbabilityDocumentError::Malformed)?;
-    if canonical(&key, u64::MAX)? != bytes {
+    let key = quire_canonical::read(&bytes, u64::MAX).map_err(|_| ProbabilityDocumentError::Malformed)?;
+    if quire_canonical::to_vec(&key, quire_canonical::Limits::new(u64::MAX)).map_err(|_| ProbabilityDocumentError::Malformed)? != bytes {
         return Err(ProbabilityDocumentError::Noncanonical);
     }
-    let parts = key.as_array().ok_or(ProbabilityDocumentError::Malformed)?;
+    let quire_canonical::Node::Array(parts) = key.root().node() else { return Err(ProbabilityDocumentError::Malformed); };
+    let parts = parts.collect::<Vec<_>>();
     if parts.len() != 6
-        || parts.first().and_then(Value::as_str) != Some("quire.probability-product-key/v1")
-        || !parts.get(2).is_some_and(Value::is_string)
-        || parts.iter().skip(3).any(|part| !part.is_null())
+        || !parts.first().is_some_and(|part| matches!(part.node(), quire_canonical::Node::String("quire.probability-product-key/v1")))
+        || parts.iter().skip(3).any(|part| !matches!(part.node(), quire_canonical::Node::Null))
     {
         return Err(ProbabilityDocumentError::Unsupported);
     }
-    let model = parts
-        .get(2)
-        .and_then(Value::as_str)
-        .ok_or(ProbabilityDocumentError::Malformed)?;
+    let Some(quire_canonical::Node::String(model)) = parts.get(2).map(|part| part.node()) else { return Err(ProbabilityDocumentError::Malformed); };
     let model_bytes = URL_SAFE_NO_PAD
         .decode(model)
         .map_err(|_| ProbabilityDocumentError::Malformed)?;
@@ -314,7 +310,7 @@ pub fn read_probability_certificate(
             .unwrap_or(u64::MAX),
         ));
     }
-    let node = qsl_foundation::node_wire::node_key_from_json(&wire.identity.node_id)
+    let node = qsl_foundation::node_wire::node_key_from_text(wire.identity.node_id.get())
         .map_err(|_| ProbabilityDocumentError::Malformed)?;
     let identity = ObligationIdentity::new(
         node,
@@ -365,8 +361,10 @@ pub fn write_probability_certificate(
     poll(cancel)?;
     let wire = WireDocument {
         identity: WireIdentity {
-            node_id: qsl_foundation::node_wire::node_key_to_json(document.identity.node())
-                .map_err(|_| ProbabilityDocumentError::Malformed)?,
+            node_id: serde_json::value::RawValue::from_string(
+                qsl_foundation::node_wire::node_key_to_text(document.identity.node())
+                    .map_err(|_| ProbabilityDocumentError::Malformed)?
+            ).map_err(|_| ProbabilityDocumentError::Malformed)?,
             model: document
                 .identity
                 .model()
@@ -788,6 +786,19 @@ mod tests {
             write_probability_certificate(&read, limits(), &Cancel::new()).unwrap(),
             bytes
         );
+    }
+
+    #[trace("FR-201-AC-9")]
+    #[test]
+    fn structural_identity_nesting_uses_the_shared_iterative_codec() {
+        let mut node = crate::fixture_node(1);
+        for ordinal in 1..=200 {
+            node = quire_exact::NodeKey::new("fixture", vec![quire_exact::PathSegment::Node(node)], ordinal).unwrap();
+        }
+        let mut document = document();
+        document.identity = ObligationIdentity::new(node, None, 0);
+        let bytes = write_probability_certificate(&document, limits(), &Cancel::new()).unwrap();
+        assert_eq!(read_probability_certificate(&bytes, limits(), &Cancel::new()).unwrap(), document);
     }
 
     #[trace("FR-201-AC-9")]

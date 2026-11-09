@@ -22,7 +22,7 @@ use serde_json::{json, Value};
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Identity {
-    node_id: Value,
+    node_id: Box<serde_json::value::RawValue>,
     model: Option<String>,
     ordinal: u32,
 }
@@ -87,7 +87,7 @@ fn check(request: Request, cancel: &Cancel) -> Result<Value, String> {
         [("source".to_owned(), &source)],
     )
     .map_err(|error| error.to_string())?;
-    let node = qsl_foundation::node_wire::node_key_from_json(&request.item.node_id)
+    let node = qsl_foundation::node_wire::node_key_from_text(request.item.node_id.get())
         .map_err(|error| error.to_string())?;
     let item = ObligationIdentity::new(
         node,

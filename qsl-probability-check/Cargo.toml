@@ -15,7 +15,7 @@ qsl-eval = { path = "../qsl-eval" }
 quire-checked = { workspace = true }
 quire-exact = { workspace = true }
 serde = { version = "1.0.228", features = ["derive"] }
-serde_json = "1.0.151"
+serde_json = { version = "1.0.151", features = ["raw_value"] }
 
 [dev-dependencies]
 base64 = "0.22"
