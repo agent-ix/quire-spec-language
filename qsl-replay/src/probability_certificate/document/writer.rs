@@ -2,7 +2,6 @@
 //! Borrowed canonical event source: no wire row vectors or JSON trees.
 
 use std::cell::RefCell;
-use std::fmt::Write as _;
 
 use super::*;
 use quire_canonical::{Encode, Error, Reservation, ReservationDenied, Sink, Writer};
@@ -117,33 +116,29 @@ impl Events<'_> {
             ));
             return Err(Error::ReservationDenied { requested: 0 });
         }
-        // A binary magnitude's bit count bounds its decimal digit count. Admit
-        // two such buffers before formatting: the formatter's text and our
-        // retained transport text. This is an integer bound, not a heap ratio.
+        // The bit count bounds the decimal digit count. Admit that transport
+        // capacity before invoking the kernel's bounded decimal conversion;
+        // it refuses oversized output before allocating its output string and
+        // never populates the integer's lazy BigInt cache.
         let capacity = usize::try_from(bits.saturating_add(u64::from(integer.is_negative())))
             .map_err(|_| Error::Allocation {
                 requested: usize::MAX,
             })?;
-        writer.reserve(capacity.checked_mul(2).ok_or(Error::Allocation {
-            requested: usize::MAX,
-        })?)?;
-        struct Count(usize);
-        impl std::fmt::Write for Count {
-            fn write_str(&mut self, text: &str) -> std::fmt::Result {
-                self.0 = self.0.checked_add(text.len()).ok_or(std::fmt::Error)?;
-                Ok(())
-            }
-        }
-        let mut count = Count(0);
-        write!(&mut count, "{integer}").map_err(|_| Error::Allocation {
-            requested: capacity,
-        })?;
-        self.string_bytes(writer, count.0)?;
+        // Even zero has one digit, plus JSON quotes.
+        self.string_bytes(writer, 1 + usize::from(integer.is_negative()))?;
+        writer.reserve(capacity)?;
+        let remaining = self.limits.bytes.saturating_sub(writer.produced()).saturating_sub(2);
+        let text = integer.try_to_decimal_string(usize::try_from(remaining).unwrap_or(usize::MAX))
+            .map_err(|error| match error {
+                quire_exact::IntegerDecimalError::ByteLimit { required, .. } => Error::Limit(quire_canonical::LimitExceeded {
+                    kind: quire_canonical::LimitKind::CanonicalBytes,
+                    bound: self.limits.bytes,
+                    required: writer.produced().saturating_add(required as u64).saturating_add(2),
+                }),
+                quire_exact::IntegerDecimalError::Allocation { requested } => Error::Allocation { requested },
+                quire_exact::IntegerDecimalError::OutputSizeOverflow => Error::Allocation { requested: usize::MAX },
+            })?;
         self.text_reserved();
-        let mut text = String::new();
-        text.try_reserve_exact(count.0)
-            .map_err(|_| Error::Allocation { requested: count.0 })?;
-        write!(&mut text, "{integer}").map_err(|_| Error::Allocation { requested: count.0 })?;
         writer.string(&text)
     }
 }
@@ -311,7 +306,6 @@ fn encode_events(events: &Events<'_>) -> Result<Vec<u8>, ProbabilityDocumentErro
     Ok(output)
 }
 
-
 pub(super) fn write(
     document: &ProbabilityCertificateDocument,
     limits: ProbabilityDocumentLimits,
@@ -326,6 +320,34 @@ pub(super) fn write(
 mod tests {
     use super::*;
     use ix_trace_rs::trace;
+
+    #[trace("FR-201-AC-9", "FR-255-AC-1")]
+    #[test]
+    fn bounded_kernel_decimal_output_is_admitted_before_retaining_transport_text() {
+        let document = super::super::tests::document();
+        let integer = Integer::power_of_ten(10_000);
+        let cancel = Cancel::new();
+        for (bytes, storage_bytes) in [(3, 1_000_000), (1_000_000, 0)] {
+            let events = Events {
+                document: &document,
+                limits: ProbabilityDocumentLimits { bytes, storage_bytes, scalar_bits: 100_000, ..super::super::tests::limits() },
+                cancel: &cancel,
+                stopped: RefCell::new(None),
+                texts: std::cell::Cell::new(0),
+            };
+            let admission = RefCell::new(Admission { used: 0, bound: storage_bytes, cancel: &cancel, stopped: None });
+            let mut output = Vec::new();
+            let mut reservation = Reserve(&admission);
+            let mut writer = Writer::with_reservation(&mut output, quire_canonical::Limits::new(bytes), &mut reservation);
+            let error = events.integer(&integer, &mut writer).unwrap_err();
+            assert_eq!(events.texts.get(), 0, "oversized decimal transport was not retained");
+            if storage_bytes == 0 {
+                assert!(matches!(admission.borrow().stopped, Some(ProbabilityDocumentError::Limit { limit: ProbabilityDocumentLimit::StorageBytes, bound: 0, actual }) if actual > 0));
+            } else {
+                assert!(matches!(error, Error::Limit(quire_canonical::LimitExceeded { bound: 3, required: 10_003, .. })));
+            }
+        }
+    }
 
     #[trace("FR-201-AC-9", "FR-255-AC-1")]
     #[test]
