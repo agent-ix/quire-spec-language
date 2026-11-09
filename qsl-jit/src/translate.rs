@@ -28,8 +28,8 @@ use qsl_semantics::check::{CheckedGraph, CheckedNode};
 use quire_checked::integer_division::AdmittedIntegerDivision;
 use quire_checked::node::{Arithmetic, Connective, IntegerDivisionOperator, NodeKind, OrderedKind};
 use quire_exact::{
-    DivisionMember, Integer, IntegerDomain, IntegerInterval, Meter, OrderingOperator, Outcome,
-    ScalarLimits, Value, ValueType,
+    ArithmeticOperator, DecimalType, DivisionMember, Integer, IntegerDomain, IntegerInterval,
+    Meter, OrderingOperator, Outcome, RationalDomain, ScalarLimits, Value, ValueType,
 };
 use quire_semantic_value::declaration::CheckedEquality;
 use quire_semantic_value::location::ExpressionLocation;
@@ -50,7 +50,7 @@ pub(crate) enum OpKind {
         operator: IntegerDivisionOperator,
         selection: Option<AdmittedIntegerDivision>,
     },
-    Order(OrderingOperator),
+    Order((OrderingOperator, OrderedKind)),
     Coerce(IntegerInterval),
     /// `=` or `!=` (the checked equality), over operands carried as
     /// Booleans (`true`) or Integers (`false`).
@@ -63,9 +63,34 @@ pub(crate) enum OpKind {
     Retain,
     /// The `function.call` charge of a call.
     ChargeCall,
-    /// An `Integer` literal that does not fit a register: the handle of a
-    /// new arena entry. Charges nothing, as the interpreter's literal does.
-    Literal(Integer),
+    /// A literal that does not fit a register (an `Integer` wider than 64
+    /// bits, a `Rational`, `Decimal` or `Text`): the handle of a new arena
+    /// entry. Charges nothing, as the interpreter's literal does.
+    Literal(Value),
+    /// `Integer / Integer` into a `Rational`.
+    RationalDivide {
+        domain: RationalDomain,
+    },
+    /// `Rational` arithmetic.
+    Rational {
+        operator: ArithmeticOperator,
+        domain: RationalDomain,
+    },
+    RationalNegate {
+        domain: RationalDomain,
+    },
+    /// `Decimal` arithmetic into `target`, recording the operation's loss.
+    Decimal {
+        operator: ArithmeticOperator,
+        target: DecimalType,
+    },
+    DecimalNegate {
+        target: DecimalType,
+    },
+    /// A `Decimal` or `Rational` converted into `target`.
+    ConvertDecimal {
+        target: DecimalType,
+    },
     /// A register `Integer` moved to the arena, to meet a handle.
     Box,
     /// A handle whose value fits a register, moved back to one.
@@ -110,6 +135,10 @@ enum Ty {
     Boolean,
     Int(i128, i128),
     Wide,
+    /// A `Rational`, `Decimal` or `Text` behind a handle.
+    Rational,
+    Decimal,
+    Text,
 }
 
 impl Ty {
@@ -117,19 +146,18 @@ impl Ty {
         match self {
             Self::Boolean => Carried::Boolean,
             Self::Int(..) => Carried::Register,
-            Self::Wide => Carried::Handle,
+            Self::Wide | Self::Rational | Self::Decimal | Self::Text => Carried::Handle,
         }
     }
 
     fn is_integer(self) -> bool {
-        !matches!(self, Self::Boolean)
+        matches!(self, Self::Int(..) | Self::Wide)
     }
 
     fn repr(self) -> Repr {
-        if self == Self::Wide {
-            Repr::Handle
-        } else {
-            Repr::Register
+        match self.carried() {
+            Carried::Handle => Repr::Handle,
+            Carried::Boolean | Carried::Register => Repr::Register,
         }
     }
 }
@@ -178,6 +206,9 @@ fn type_of(value_type: &ValueType) -> Option<Ty> {
             }
         }
         ValueType::Integer => Some(Ty::Wide),
+        ValueType::Rational(_) => Some(Ty::Rational),
+        ValueType::Decimal(_) => Some(Ty::Decimal),
+        ValueType::Text(_) => Some(Ty::Text),
         _ => None,
     }
 }
@@ -496,13 +527,24 @@ impl Emitter<'_, '_, '_> {
                         let operands = [(zero, Ty::Boolean), (zero, Ty::Boolean)];
                         let result = self.shim_call(
                             node,
-                            OpKind::Literal(value.clone()),
+                            OpKind::Literal(Value::Integer(value.clone())),
                             operands,
                             Repr::Handle,
                         );
                         Ok((result, Ty::Wide))
                     }
                 },
+                Value::Rational(_) | Value::Decimal(_) | Value::Text(_) => {
+                    let ty = match &literal.0 {
+                        Value::Rational(_) => Ty::Rational,
+                        Value::Decimal(_) => Ty::Decimal,
+                        _ => Ty::Text,
+                    };
+                    let zero = self.builder.ins().iconst(types::I64, 0);
+                    let operands = [(zero, Ty::Boolean), (zero, Ty::Boolean)];
+                    let kind = OpKind::Literal(literal.0.clone());
+                    Ok((self.shim_call(node, kind, operands, Repr::Handle), ty))
+                }
                 _ => Err(self.unsupported(node)),
             },
             NodeKind::Local(slot) => self
@@ -561,7 +603,9 @@ impl Emitter<'_, '_, '_> {
                 let ty = match operand_ty {
                     Ty::Int(low, high) if fits(-high, -low) => Ty::Int(-high, -low),
                     Ty::Int(..) | Ty::Wide => Ty::Wide,
-                    Ty::Boolean => return Err(self.unsupported(node)),
+                    Ty::Boolean | Ty::Rational | Ty::Decimal | Ty::Text => {
+                        return Err(self.unsupported(node))
+                    }
                 };
                 let zero = self.builder.ins().iconst(types::I64, 0);
                 let operands = [(a, operand_ty), (zero, Ty::Boolean)];
@@ -604,16 +648,117 @@ impl Emitter<'_, '_, '_> {
                 let result = self.shim_call(node, kind, operands, ty.repr());
                 Ok((result, ty))
             }
-            NodeKind::Order(operator, OrderedKind::Integers, left, right) => {
+            NodeKind::Order(operator, kind, left, right) => {
+                let (a, left_ty) = self.emit(node.at(*left), depth + 1)?;
+                let (b, right_ty) = self.emit(node.at(*right), depth + 1)?;
+                let operands_fit = match kind {
+                    OrderedKind::Integers => left_ty.is_integer() && right_ty.is_integer(),
+                    OrderedKind::Rationals => (left_ty, right_ty) == (Ty::Rational, Ty::Rational),
+                    OrderedKind::Decimals => (left_ty, right_ty) == (Ty::Decimal, Ty::Decimal),
+                    OrderedKind::Texts => (left_ty, right_ty) == (Ty::Text, Ty::Text),
+                    OrderedKind::Float | OrderedKind::Enums | OrderedKind::Quantities => false,
+                };
+                if !operands_fit {
+                    return Err(self.unsupported(node));
+                }
+                let operands = [(a, left_ty), (b, right_ty)];
+                let order = OpKind::Order((*operator, *kind));
+                let result = self.shim_call(node, order, operands, Repr::Register);
+                Ok((result, Ty::Boolean))
+            }
+            NodeKind::Divide {
+                left,
+                right,
+                domain,
+            } => {
                 let (a, left_ty) = self.emit(node.at(*left), depth + 1)?;
                 let (b, right_ty) = self.emit(node.at(*right), depth + 1)?;
                 if !(left_ty.is_integer() && right_ty.is_integer()) {
                     return Err(self.unsupported(node));
                 }
-                let operands = [(a, left_ty), (b, right_ty)];
+                let kind = OpKind::RationalDivide {
+                    domain: domain.clone(),
+                };
                 let result =
-                    self.shim_call(node, OpKind::Order(*operator), operands, Repr::Register);
-                Ok((result, Ty::Boolean))
+                    self.shim_call(node, kind, [(a, left_ty), (b, right_ty)], Repr::Handle);
+                Ok((result, Ty::Rational))
+            }
+            NodeKind::Rational {
+                operator,
+                left,
+                right,
+                domain,
+            } => {
+                let (a, left_ty) = self.emit(node.at(*left), depth + 1)?;
+                let (b, right_ty) = self.emit(node.at(*right), depth + 1)?;
+                if (left_ty, right_ty) != (Ty::Rational, Ty::Rational) {
+                    return Err(self.unsupported(node));
+                }
+                let kind = OpKind::Rational {
+                    operator: *operator,
+                    domain: domain.clone(),
+                };
+                let result =
+                    self.shim_call(node, kind, [(a, left_ty), (b, right_ty)], Repr::Handle);
+                Ok((result, Ty::Rational))
+            }
+            NodeKind::RationalNegate(operand, domain) => {
+                let (a, ty) = self.emit(node.at(*operand), depth + 1)?;
+                if ty != Ty::Rational {
+                    return Err(self.unsupported(node));
+                }
+                let zero = self.builder.ins().iconst(types::I64, 0);
+                let kind = OpKind::RationalNegate {
+                    domain: domain.clone(),
+                };
+                let result =
+                    self.shim_call(node, kind, [(a, ty), (zero, Ty::Boolean)], Repr::Handle);
+                Ok((result, Ty::Rational))
+            }
+            NodeKind::Decimal {
+                operator,
+                left,
+                right,
+                target,
+            } => {
+                let (a, left_ty) = self.emit(node.at(*left), depth + 1)?;
+                let (b, right_ty) = self.emit(node.at(*right), depth + 1)?;
+                if (left_ty, right_ty) != (Ty::Decimal, Ty::Decimal) {
+                    return Err(self.unsupported(node));
+                }
+                let kind = OpKind::Decimal {
+                    operator: *operator,
+                    target: target.clone(),
+                };
+                let result =
+                    self.shim_call(node, kind, [(a, left_ty), (b, right_ty)], Repr::Handle);
+                Ok((result, Ty::Decimal))
+            }
+            NodeKind::DecimalNegate(operand, target) => {
+                let (a, ty) = self.emit(node.at(*operand), depth + 1)?;
+                if ty != Ty::Decimal {
+                    return Err(self.unsupported(node));
+                }
+                let zero = self.builder.ins().iconst(types::I64, 0);
+                let kind = OpKind::DecimalNegate {
+                    target: target.clone(),
+                };
+                let result =
+                    self.shim_call(node, kind, [(a, ty), (zero, Ty::Boolean)], Repr::Handle);
+                Ok((result, Ty::Decimal))
+            }
+            NodeKind::ConvertDecimal(operand, target) => {
+                let (a, ty) = self.emit(node.at(*operand), depth + 1)?;
+                if !matches!(ty, Ty::Decimal | Ty::Rational) {
+                    return Err(self.unsupported(node));
+                }
+                let zero = self.builder.ins().iconst(types::I64, 0);
+                let kind = OpKind::ConvertDecimal {
+                    target: target.clone(),
+                };
+                let result =
+                    self.shim_call(node, kind, [(a, ty), (zero, Ty::Boolean)], Repr::Handle);
+                Ok((result, Ty::Decimal))
             }
             NodeKind::Coerce(operand, target) => {
                 let (a, ty) = self.emit(node.at(*operand), depth + 1)?;
@@ -641,7 +786,9 @@ impl Emitter<'_, '_, '_> {
                         (Some(low), Some(high)) => Ty::Int(low.into(), high.into()),
                         _ => Ty::Wide,
                     },
-                    Ty::Boolean => return Err(self.unsupported(node)),
+                    Ty::Boolean | Ty::Rational | Ty::Decimal | Ty::Text => {
+                        return Err(self.unsupported(node))
+                    }
                 };
                 let zero = self.builder.ins().iconst(types::I64, 0);
                 let operands = [(a, ty), (zero, Ty::Boolean)];
@@ -659,6 +806,7 @@ impl Emitter<'_, '_, '_> {
                 let operands_boolean = match (left_ty, right_ty) {
                     (Ty::Boolean, Ty::Boolean) => true,
                     (l, r) if l.is_integer() && r.is_integer() => false,
+                    (l, r) if l == r && l.repr() == Repr::Handle => false,
                     _ => return Err(self.unsupported(node)),
                 };
                 let kind = OpKind::Equality {
@@ -843,6 +991,7 @@ impl Emitter<'_, '_, '_> {
             (Ty::Boolean, Ty::Boolean) => Ty::Boolean,
             (Ty::Int(a, b), Ty::Int(c, d)) => Ty::Int(a.min(c), b.max(d)),
             (a, b) if a.is_integer() && b.is_integer() => Ty::Wide,
+            (a, b) if a == b => a,
             _ => return Err(self.unsupported(node)),
         };
         // Each branch meets the join in the join's representation.

@@ -4,11 +4,9 @@
 
 use super::{BackendCoverage, CoverageOperation, CoverageType};
 use qsl_semantics::check::CheckedNode;
-use quire_checked::node::{
-    Arithmetic, Connective, IntegerDivisionOperator, NodeKind, OrderedKind, Visit,
-};
+use quire_checked::node::{Arithmetic, Connective, IntegerDivisionOperator, NodeKind, Visit};
 use quire_eval::UntranslatableConstruct;
-use quire_exact::{OrderingOperator, ValueType};
+use quire_exact::{ArithmeticOperator, OrderingOperator, ValueType};
 use quire_semantic_value::declaration::EqualityOperator;
 use quire_semantic_value::location::ExpressionLocation;
 
@@ -151,21 +149,35 @@ fn variant_name<C: std::fmt::Debug>(kind: &NodeKind<C>) -> String {
         .to_ascii_lowercase()
 }
 
-/// The `Value`-family operation of an `operator` node, as a coverage entry.
-/// An operator this backend does not implement gets the name `other`, which
-/// no coverage lists.
+/// The `Value`-family operation of an `operator` node, as a coverage entry:
+/// the operator's own name over the class of its first operand. A node that
+/// is not an operator has none; an operator over a type no coverage class
+/// names (such as `Float`) gets the class `Boolean`, which its unlisted type
+/// row has already excluded by the time this is read.
 fn operation_of(node: CheckedNode<'_>, children: &[CheckedNode<'_>]) -> Option<CoverageOperation> {
     let operator = match node.kind() {
         NodeKind::Arithmetic(Arithmetic::Add, ..) => "+",
         NodeKind::Arithmetic(Arithmetic::Subtract, ..) => "-",
         NodeKind::Arithmetic(Arithmetic::Multiply, ..) => "*",
-        NodeKind::Negate(_) => "negate",
+        NodeKind::Negate(_) | NodeKind::RationalNegate(..) | NodeKind::DecimalNegate(..) => {
+            "negate"
+        }
         NodeKind::IntegerDivision { operator, .. } => match operator {
             IntegerDivisionOperator::Div => "div",
             IntegerDivisionOperator::Rem => "rem",
             IntegerDivisionOperator::Mod => "mod",
         },
-        NodeKind::Order(operator, OrderedKind::Integers, ..) => match operator {
+        NodeKind::Divide { .. } => "/",
+        NodeKind::Rational { operator, .. } | NodeKind::Decimal { operator, .. } => {
+            match operator {
+                ArithmeticOperator::Add => "+",
+                ArithmeticOperator::Subtract => "-",
+                ArithmeticOperator::Multiply => "*",
+                ArithmeticOperator::Divide => "/",
+            }
+        }
+        NodeKind::ConvertDecimal(..) => "convert",
+        NodeKind::Order(operator, ..) => match operator {
             OrderingOperator::Less => "<",
             OrderingOperator::LessOrEqual => "<=",
             OrderingOperator::Greater => ">",
@@ -182,13 +194,6 @@ fn operation_of(node: CheckedNode<'_>, children: &[CheckedNode<'_>]) -> Option<C
             Connective::Implies => "implies",
         },
         NodeKind::Not(_) => "not",
-        NodeKind::Divide { .. }
-        | NodeKind::Rational { .. }
-        | NodeKind::RationalNegate(..)
-        | NodeKind::Decimal { .. }
-        | NodeKind::DecimalNegate(..)
-        | NodeKind::ConvertDecimal(..)
-        | NodeKind::Order(..) => "other",
         _ => return None,
     };
     let operand = children
@@ -198,12 +203,12 @@ fn operation_of(node: CheckedNode<'_>, children: &[CheckedNode<'_>]) -> Option<C
     Some(CoverageOperation { operator, operand })
 }
 
-/// The cause for a construct that lies in the coverage but that this backend
-/// cannot yet translate (an operation whose FR-562 fast-path condition fails,
-/// which would call the kernel through a value handle this backend does not
-/// yet have). FR-560 gives such a construct `Operation(k)` with `k` its node
-/// key, which the checked representation does not expose (see
-/// [`outside_construct`]), so the cause is the construct's form.
+/// The cause for a construct that lies in the coverage but that a backend
+/// cannot translate for a reason the coverage cannot state (an operand the
+/// backend does not carry, or a function it lists unsupported). FR-560 gives
+/// such a construct `Operation(k)` with `k` its node key, which the checked
+/// representation does not expose (see [`outside_construct`]), so the cause
+/// is the construct's form.
 #[must_use]
 pub fn untranslated(node: CheckedNode<'_>) -> Outside {
     Outside {

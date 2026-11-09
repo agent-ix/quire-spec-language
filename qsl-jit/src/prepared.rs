@@ -25,6 +25,7 @@ use quire_semantic_value::supplied_stop::SuppliedRun;
 
 use crate::coverage::coverage;
 use crate::exec::{Entry, EntryFrame, EntryRefusal, Halt, Machine, Status};
+use crate::kernel::State;
 use crate::translate::{carried, integer_to_i64, Carried, Compiler, Failure, Op};
 use qsl_eval::execution::{first_outside, Outside};
 
@@ -415,12 +416,12 @@ impl<'p> PreparedJit<'p> {
                 losses: Vec::new(),
             });
         }
-        let mut arena = Vec::new();
-        let registers = registers(compiled, arguments, &mut arena)?;
-        let mut frame = EntryFrame::new(meter, &self.ops, graph.scope().types(), arena);
+        let mut state = State::default();
+        let registers = registers(compiled, arguments, &mut state.arena)?;
+        let mut frame = EntryFrame::new(meter, &self.ops, graph.scope().types(), state);
         let status = compiled.entry.call(&mut frame, &registers);
         let value = frame.result();
-        let (halt, arena) = frame.into_parts();
+        let (halt, state) = frame.into_parts();
         let status = status.map_err(|refusal| {
             CallFailure::Fault(InternalFault::new(
                 "FR-568",
@@ -441,7 +442,7 @@ impl<'p> PreparedJit<'p> {
                     Carried::Register => Value::Integer(value.into()),
                     Carried::Handle => usize::try_from(value)
                         .ok()
-                        .and_then(|index| arena.get(index))
+                        .and_then(|index| state.arena.get(index))
                         .cloned()
                         .ok_or_else(|| {
                             CallFailure::Fault(InternalFault::new("FR-560", "jit-result-handle"))
@@ -450,7 +451,7 @@ impl<'p> PreparedJit<'p> {
                 Ok(Evaluation {
                     outcome: FamilyOutcome::Evaluated(Outcome::Completed(result)),
                     location: None,
-                    losses: Vec::new(),
+                    losses: state.losses,
                 })
             }
             (Status::Stopped, Some(Halt::Stop(stop, location))) => stopped(stop, Some(location)),
@@ -482,7 +483,7 @@ fn registers(
             (Some(Carried::Register), Value::Integer(value)) => {
                 integer_to_i64(value).ok_or_else(broken)
             }
-            (Some(Carried::Handle), Value::Integer(_)) => {
+            (Some(Carried::Handle), _) => {
                 let handle = i64::try_from(arena.len()).map_err(|_| broken())?;
                 arena.push(argument.clone());
                 Ok(handle)

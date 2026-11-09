@@ -20,11 +20,11 @@ use cranelift_codegen::ir::{types, AbiParam};
 use cranelift_codegen::settings::{self, Configurable};
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{FuncId, Linkage, Module};
-use quire_exact::{Meter, Value};
+use quire_exact::Meter;
 use quire_semantic_value::location::ExpressionLocation;
 use quire_semantic_value::stop::Stop;
 
-use crate::kernel::{self, Halt as KernelHalt};
+use crate::kernel::{self, Halt as KernelHalt, State};
 use crate::translate::Op;
 use quire_semantic_value::declaration::TypeEnvironment;
 
@@ -66,7 +66,7 @@ pub(crate) struct EntryFrame<'a> {
     types: &'a TypeEnvironment,
     /// The values behind the handles generated code passes (QSL-1825): owned
     /// by the call, so a handle is an index valid until the call returns.
-    arena: Vec<Value>,
+    state: State,
     halt: Option<Halt>,
 }
 
@@ -84,7 +84,7 @@ impl<'a> EntryFrame<'a> {
         meter: &'a mut Meter,
         ops: &'a [Op],
         types: &'a TypeEnvironment,
-        arena: Vec<Value>,
+        state: State,
     ) -> Self {
         Self {
             failed: 0,
@@ -93,14 +93,15 @@ impl<'a> EntryFrame<'a> {
             meter,
             ops,
             types,
-            arena,
+            state,
             halt: None,
         }
     }
 
-    /// Why the run stopped, if it did, and the values behind the handles.
-    pub(crate) fn into_parts(self) -> (Option<Halt>, Vec<Value>) {
-        (self.halt, self.arena)
+    /// Why the run stopped, if it did, and the values behind the handles and
+    /// the loss records the run produced.
+    pub(crate) fn into_parts(self) -> (Option<Halt>, State) {
+        (self.halt, self.state)
     }
 
     /// The value the entry returned.
@@ -132,7 +133,7 @@ unsafe extern "C" fn shim(frame: *mut c_void, node: i64, a: i64, b: i64) -> i64 
         frame.failed = 1;
         return 0;
     };
-    match kernel::run(op, [a, b], frame.meter, frame.types, &mut frame.arena) {
+    match kernel::run(op, [a, b], frame.meter, frame.types, &mut frame.state) {
         Ok(value) => value,
         Err(KernelHalt::Stop(stop)) => {
             frame.halt = Some(Halt::Stop(stop, op.location.clone()));
