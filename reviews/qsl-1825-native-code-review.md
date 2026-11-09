@@ -81,3 +81,21 @@ Clean, examined:
 - **Accepted blocks:** FR-562-AC-6, FR-561-AC-3/TC-1383, the unbounded
   value-handle entry, the NodeKey accessor and EnvironmentRefused are outside
   this slice.
+
+## Dispositions
+
+Round 1, fix commits f7c8716ed and 305320d6b on c46a1603c. Checked against the
+code at 305320d6b. `cargo test -p qsl-jit` and `cargo test -p qsl-jit
+--features test-support` both pass (lib 4, it 39, plus 3). `cargo clippy -p
+qsl-jit --all-targets` and `--lib` without the feature are clean.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | `sdiv` is now emitted only for `DivisionMember::Quotient`. Cranelift `srem` does not trap on MIN % -1: x64 lowers it through `checked_srem_seq`, and aarch64 lowers it as `sdiv` (no overflow trap) plus `msub`, giving 0. The fast-path quotient is sound because the quotient is monotone in each operand over a one-signed divisor interval, and the MIN / -1 end of such an interval does not fit. The new test runs `rone`/`mone`/`rwide`/`mwide` natively at (MIN, -1) under all three laws and asserts which functions call no kernel operation |
+| FND-002 | fixed | `f` now declares `b: Int[0, 4611686018427387904]`, and both ends are tested |
+| FND-003 | fixed | `package_with_law` plus `division_under_every_law_agrees_with_the_interpreter` cover `div`/`rem`/`mod` under the floor, truncating and Euclidean laws, with both divisor signs, signed dividends, MIN, MAX and -1 |
+| FND-004 | fixed | `agrees` now covers dr, dm, neg, sub, lt, le, gt, ge, same and differ, and the new division test compares charges |
+| FND-005 | fixed | `tuples_of` gives `d` the tuples (0..=9, 1..=9) |
+| FND-006 | fixed | The `*` arm no longer builds an unused operation |
+| FND-007 | fixed | `call_inner` is removed, and the recorder parameter exists only under `test-support`. The unsupported-entry refusal that f7c8716ed dropped is restored in 305320d6b. The net diff keeps it at the top of `call_with` |
+| FND-008 | fixed | The docs now list `convert`, and unary operations and conversions record one operand |
