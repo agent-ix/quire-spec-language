@@ -447,3 +447,82 @@ fn adapter_budget_exhaustion_keeps_incomplete_without_evidence() {
         }
     }
 }
+
+#[trace("TC-637", "FR-202-AC-20")]
+#[test]
+fn actual_s3_over_parameter_and_single_admitted_instance_drive_replay() {
+    for event in [UNTIL, ALWAYS] {
+        let world = World::with_universe(
+            &model(event, "every scheduler", ">=", "0.5"),
+            &["m", "other"],
+        );
+        let mut request = world.request("Claim", ModelCheckLimits::default());
+        request.subject.simulation.universes[0]
+            .keys
+            .retain(|key| key == "m");
+        let system = ModelSystem::new(request.subject.simulation.clone()).unwrap();
+        let record = analyze_items(
+            &Engines::qsl().unwrap(),
+            vec![exact_probabilistic_item(RequestIndex::new(0), request)],
+            &Cancel::new(),
+        )
+        .remove(0);
+        assert_eq!(record.terminal().unwrap().value(), &TerminalValue::Refuted);
+        let witness = record
+            .probabilistic_counterexample
+            .as_ref()
+            .unwrap()
+            .evidence();
+        let actual_parameter = world.claim("Claim").over.as_ref().unwrap().node().unwrap();
+        assert_ne!(
+            actual_parameter,
+            witness.item.node(),
+            "the actual checked over node differs from the claim node"
+        );
+        assert!(matches!(
+            replay_probabilistic_witness(
+                system.package(),
+                &system,
+                &witness.item,
+                witness,
+                &ExactProbLimits::default(),
+                &Cancel::new()
+            ),
+            Ok(ProbabilityWitnessReplay::Reproduced(_))
+        ));
+        let unrestricted = ModelSystem::new(world.subject().simulation).unwrap();
+        assert!(matches!(
+            replay_probabilistic_witness(
+                unrestricted.package(),
+                &unrestricted,
+                &witness.item,
+                witness,
+                &ExactProbLimits::default(),
+                &Cancel::new()
+            ),
+            Err(ProbabilityWitnessError::Graph(
+                qsl_replay::ExactProbabilityGraphError::UnsupportedBinding
+            ))
+        ));
+    }
+}
+
+#[trace("TC-637", "FR-202-AC-20")]
+#[test]
+fn maximum_mass_equal_to_the_authored_threshold_yields_parity() {
+    for event in [UNTIL, ALWAYS] {
+        let original = world(event, "every scheduler", "<=", "0.5");
+        let mut witness = evidence(&original);
+        let equal = world(event, "every scheduler", "<=", "0.75");
+        witness.item = qsl_replay::probabilistic_claim_identity(equal.claim("Claim")).unwrap();
+        assert!(matches!(
+            replay(
+                &equal,
+                &witness,
+                &ExactProbLimits::default(),
+                &Cancel::new()
+            ),
+            Ok(ProbabilityWitnessReplay::Parity)
+        ));
+    }
+}

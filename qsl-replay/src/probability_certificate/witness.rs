@@ -380,10 +380,11 @@ pub fn replay_probabilistic_witness(
             .ok_or(ProbabilityWitnessError::Refused)?
             .choices
             .is_empty();
-        let accepting = match (bound, outcome(system, target, reference, &state, terminal)?) {
-            (Bound::AtMost(_), Some(true)) | (Bound::AtLeast(_), Some(false)) => true,
-            _ => false,
-        };
+        let accepting = matches!(
+            (bound, outcome(system, target, reference, &state, terminal)?),
+            (Bound::AtMost(_), Some(true)) | (Bound::AtLeast(_), Some(false))
+        );
+
         if !accepting {
             return Ok(ProbabilityWitnessReplay::Parity);
         }
