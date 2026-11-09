@@ -733,7 +733,7 @@ mod tests {
     #[trace("TC-1197", "FR-201-AC-6", "FR-203-AC-3")]
     #[test]
     fn threshold_rejection_retains_its_rule_and_complete_product_key() {
-        let key = ProbabilityProductKey::for_model_state(None, b"complete-model-state")
+        let key = ProbabilityProductKey::for_model_state(None, include_bytes!("../../../qsl-probability-check/tests/fixtures/link.model-key-0.json"))
             .expect("the key encodes");
         let (terminal, evidence, counterexample) = ExactReport::Rejected {
             rule: CertificateRule::ThresholdMissed,

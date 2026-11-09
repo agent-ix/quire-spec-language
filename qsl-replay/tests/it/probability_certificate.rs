@@ -2,7 +2,6 @@
 //! FR-201's bounded checker adapter starts from an admitted checked model and
 //! reaches it only through the claim binder.
 
-use base64::Engine;
 use ix_trace_rs::trace;
 use qsl_eval::simulation::model::ModelSystem;
 use qsl_eval::simulation::TransitionSystem;
@@ -102,16 +101,8 @@ fn system_and_root(world: &World) -> (ModelSystem<'_>, ProbabilityProductKey) {
     let system = ModelSystem::new(subject.simulation.clone()).expect("model admits");
     let initial = system.initial().into_iter().next().expect("one initial");
     let model_key = system.state_key(&initial).expect("model key").0;
-    let bytes = serde_json::to_vec(&json!([
-        "quire.probability-product-key/v1",
-        null,
-        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(model_key),
-        null,
-        null,
-        null
-    ]))
-    .unwrap();
-    (system, ProbabilityProductKey::from_canonical_bytes(bytes))
+    let product = ProbabilityProductKey::for_model_state(None, &model_key).expect("the owner form is embedded");
+    (system, product)
 }
 
 fn one() -> Rational {

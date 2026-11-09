@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize};
 use super::*;
 
 mod writer;
+mod key;
+pub(super) use key::model_product_key;
 
 const PROFILE: &str = "quire.probability-objective/reachability/v1";
 const MAX_COUNT: u64 = 9_007_199_254_740_991;
@@ -311,22 +313,10 @@ fn decode_key(
                 quire_canonical::Node::String("quire.probability-product-key/v1")
             )
         })
-        || parts
-            .iter()
-            .skip(3)
-            .any(|part| !matches!(part.node(), quire_canonical::Node::Null))
     {
         return Err(ProbabilityDocumentError::Unsupported);
     }
-    let Some(quire_canonical::Node::String(model)) = parts.get(2).map(|part| part.node()) else {
-        return Err(ProbabilityDocumentError::Malformed);
-    };
-    let model_bytes = URL_SAFE_NO_PAD
-        .decode(model)
-        .map_err(|_| ProbabilityDocumentError::Malformed)?;
-    if URL_SAFE_NO_PAD.encode(&model_bytes) != model {
-        return Err(ProbabilityDocumentError::Malformed);
-    }
+    key::admit_parts(&parts)?;
     Ok(ProbabilityProductKey::from_canonical_bytes(bytes))
 }
 
@@ -962,7 +952,7 @@ mod tests {
         }
     }
     pub(super) fn document() -> ProbabilityCertificateDocument {
-        let key = ProbabilityProductKey::for_model_state(None, b"model").unwrap();
+        let key = fixture_key(0);
         ProbabilityCertificateDocument {
             identity: ObligationIdentity::new(crate::fixture_node(1), None, 0),
             targets: vec![key.clone()],
@@ -973,6 +963,24 @@ mod tests {
             }],
             ranking: vec![(key, 0)],
         }
+    }
+    pub(super) fn model_bytes(index: usize) -> &'static [u8] {
+        match index {
+            0 => include_bytes!("../../../qsl-probability-check/tests/fixtures/link.model-key-0.json"),
+            1 => include_bytes!("../../../qsl-probability-check/tests/fixtures/link.model-key-1.json"),
+            _ => panic!("two production model-state vectors"),
+        }
+    }
+    pub(super) fn fixture_key(index: usize) -> ProbabilityProductKey {
+        ProbabilityProductKey::for_model_state(None, model_bytes(index)).unwrap()
+    }
+    pub(super) fn large_key(size: usize) -> ProbabilityProductKey {
+        let mut model: Value = serde_json::from_slice(model_bytes(0)).unwrap();
+        // Object identities are caller-provided text; vary that identity in
+        // the captured owner's complete typed form, preserving every envelope.
+        model["semantic"]["entries"][0]["value"]["entries"][0]["key"]["identity"] = json!("m".repeat(size));
+        let bytes = canonical(&model, limits().bytes).unwrap();
+        ProbabilityProductKey::for_model_state(None, &bytes).unwrap()
     }
     fn bytes() -> Vec<u8> {
         write_probability_certificate(&document(), limits(), &Cancel::new()).unwrap()
@@ -1064,7 +1072,7 @@ mod tests {
             storage_bytes: 0,
             ..limits()
         };
-        let large_key = ProbabilityProductKey::for_model_state(None, &vec![0; 375_000]).unwrap();
+        let large_key = large_key(375_000);
         let valid = mutate(|value| {
             value["values"][0]["state"] = json!(URL_SAFE_NO_PAD.encode(large_key.as_bytes()));
         });
@@ -1106,7 +1114,7 @@ mod tests {
     #[test]
     fn every_row_collection_requires_strict_complete_key_order() {
         let mut document = document();
-        let second = ProbabilityProductKey::for_model_state(None, b"other-model").unwrap();
+        let second = fixture_key(1);
         document.targets.push(second.clone());
         document.targets.sort();
         document.values.push(ExactProbabilityValue {
@@ -1147,8 +1155,8 @@ mod tests {
     #[trace("FR-201-AC-11")]
     #[test]
     fn bellman_arithmetic_charges_shared_work_and_result_storage() {
-        let root = ProbabilityProductKey::for_model_state(None, b"root").unwrap();
-        let target = ProbabilityProductKey::for_model_state(None, b"target").unwrap();
+        let root = fixture_key(0);
+        let target = fixture_key(1);
         let graph = CheckerGraph {
             initial: root.clone(),
             states: BTreeMap::from([

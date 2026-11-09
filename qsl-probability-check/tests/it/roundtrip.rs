@@ -674,3 +674,26 @@ fn exact_byte_ceilings_retain_the_actual_offered_lengths() {
     assert_eq!(result["limit"]["bound"], 0);
     assert!(result["limit"]["actual"].as_u64().unwrap() > 0);
 }
+
+#[trace("FR-196-AC-6", "FR-201-AC-9", "FR-282-AC-11")]
+#[test]
+fn real_model_keys_embed_parsed_forms_and_refuse_inner_base64_transport() {
+    let original = proof_request(CLAIM);
+    let document: Value = serde_json::from_str(original["certificate"].as_str().unwrap()).unwrap();
+    for row in document["values"].as_array().unwrap() {
+        let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(row["state"].as_str().unwrap()).unwrap();
+        let key: Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(key[2][0], "quire.simulation.state-key/v1");
+        assert_eq!(key[2][1]["type"], "simulation-state");
+        assert_eq!(key[2][1].as_object().unwrap().len(), 8);
+        assert_eq!(&key.as_array().unwrap()[3..], &[Value::Null, Value::Null, Value::Null]);
+    }
+    assert_eq!(run(&original, &[]).0, 0);
+    let mut old = original.clone();
+    change_certificate(&mut old, |document| alter_keys(document, |key| {
+        key[2] = json!(base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(serde_json::to_vec(&key[2][1]).unwrap()));
+    }));
+    let (code, result) = run(&old, &[]);
+    assert_ne!(code, 0, "the invalid inner base64 model transport must refuse: {result}");
+    assert_ne!(result["status"], "accepted");
+}

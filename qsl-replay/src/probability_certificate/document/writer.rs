@@ -6,14 +6,18 @@ use std::cell::RefCell;
 use super::*;
 use quire_canonical::{Encode, Error, Reservation, ReservationDenied, Sink, Writer};
 
-struct Admission<'a> {
+pub(super) struct Admission<'a> {
     used: u64,
     bound: u64,
     cancel: &'a Cancel,
     stopped: Option<ProbabilityDocumentError>,
 }
 
-impl Admission<'_> {
+impl<'a> Admission<'a> {
+    pub(super) fn new(bound: u64, cancel: &'a Cancel) -> Self {
+        Self { used: 0, bound, cancel, stopped: None }
+    }
+    pub(super) fn take_stop(&mut self) -> Option<ProbabilityDocumentError> { self.stopped.take() }
     fn reserve(&mut self, bytes: usize) -> Result<(), ReservationDenied> {
         if let Err(error) = poll(self.cancel) {
             self.stopped = Some(error);
@@ -33,7 +37,7 @@ impl Admission<'_> {
     }
 }
 
-struct Reserve<'a, 'c>(&'a RefCell<Admission<'c>>);
+pub(super) struct Reserve<'a, 'c>(pub(super) &'a RefCell<Admission<'c>>);
 impl Reservation for Reserve<'_, '_> {
     fn reserve(&mut self, bytes: usize) -> Result<(), ReservationDenied> {
         self.0.borrow_mut().reserve(bytes)
@@ -268,6 +272,12 @@ fn encode_events(events: &Events<'_>) -> Result<Vec<u8>, ProbabilityDocumentErro
         cancel,
         stopped: None,
     });
+    let result = encode_reserved(events, limits.bytes, &admission);
+    if let Some(error) = events.stopped.borrow_mut().take() { return Err(error); }
+    result
+}
+
+pub(super) fn encode_reserved(value: &impl Encode, bytes: u64, admission: &RefCell<Admission<'_>>) -> Result<Vec<u8>, ProbabilityDocumentError> {
     let mut output = Vec::new();
     // The metered canonical writer retains output internally until finish.
     // Charge its destination separately before the sink reserves that capacity.
@@ -297,20 +307,15 @@ fn encode_events(events: &Events<'_>) -> Result<Vec<u8>, ProbabilityDocumentErro
     // additional bytes are charged against the remaining working budget.
     let mut sink = Output {
         bytes: &mut output,
-        admission: &admission,
+        admission,
     };
     let result = quire_canonical::encode_with_reservation(
         &mut sink,
-        events,
-        quire_canonical::Limits::new(limits.bytes),
-        &mut Reserve(&admission),
+        value,
+        quire_canonical::Limits::new(bytes),
+        &mut Reserve(admission),
     );
-    if let Some(error) = events
-        .stopped
-        .borrow_mut()
-        .take()
-        .or(admission.into_inner().stopped)
-    {
+    if let Some(error) = admission.borrow_mut().take_stop() {
         return Err(error);
     }
     result.map_err(|error| match error {
@@ -396,7 +401,7 @@ mod tests {
     #[test]
     fn writer_admits_bytes_and_storage_before_transport_text_and_preserves_exact_budget_output() {
         let mut document = super::super::tests::document();
-        let key = ProbabilityProductKey::for_model_state(None, &vec![0; 131_072]).unwrap();
+        let key = super::super::tests::large_key(131_072);
         document.targets = vec![key.clone()];
         document.values[0].state = key.clone();
         document.ranking[0].0 = key.clone();

@@ -357,3 +357,27 @@ fn a_stopped_bounded_check_names_what_stopped_it() {
         );
     }
 }
+
+#[trace("FR-196-AC-6", "FR-201-AC-9")]
+#[test]
+fn a_formula_product_embeds_the_real_complete_monitor_without_inner_transport() {
+    use qsl_replay::{ProbabilityProductKey, ProbabilityDocumentIoLimits};
+    let bounded = bounded("eventually[0,2] holds(c.value = 2)", |n| Some(n == 2));
+    let translation = bounded.translation();
+    let monitor = translation.key(translation.start(false)).expect("actual FR338 key");
+    let model = bounded.state_key(0);
+    let key = ProbabilityProductKey::for_formula_state(None, model.as_bytes(), &monitor, ProbabilityDocumentIoLimits::default(), &Cancel::new()).expect("both owner keys admit");
+    let parsed: serde_json::Value = serde_json::from_slice(key.as_bytes()).unwrap();
+    assert_eq!(parsed[2], serde_json::json!(["quire.simulation.state-key/v1", serde_json::from_slice::<serde_json::Value>(model.as_bytes()).unwrap()]));
+    assert_eq!(parsed[3], serde_json::json!(["formula", serde_json::from_slice::<serde_json::Value>(monitor.as_bytes()).unwrap()]));
+    let document = qsl_replay::ProbabilityCertificateDocument {
+        identity: qsl_replay::ObligationIdentity::new(quire_exact::NodeKey::new("fixture", vec![quire_exact::PathSegment::Text("formula".to_owned())], 0).unwrap(), None, 0),
+        optimization: qsl_replay::ProbabilityObjective::Minimum,
+        targets: vec![key.clone()],
+        values: vec![qsl_replay::ExactProbabilityValue { state: key.clone(), value: quire_exact::Rational::from_integer(quire_exact::Integer::one()) }],
+        ranking: vec![(key, 0)],
+    };
+    let limits = qsl_replay::ProbabilityDocumentLimits { bytes: 1_000_000, storage_bytes: 8_000_000, states: 100, edges: 100, scalar_bits: 128, accounting: qsl_replay::AccountingLimits::default().0 };
+    let bytes = qsl_replay::write_probability_certificate(&document, limits, &Cancel::new()).expect("structural formula keys admit");
+    assert_eq!(qsl_replay::read_probability_certificate(&bytes, limits, &Cancel::new()).unwrap(), document);
+}

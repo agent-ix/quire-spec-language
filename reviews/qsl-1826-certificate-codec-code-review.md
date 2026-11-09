@@ -11,7 +11,9 @@ scope: agent-ix/quire-spec-language; Cargo.lock; Cargo.toml; README.md; qsl-anal
   qsl-probability-check/tests/it/roundtrip.rs; qsl-replay/src/lib.rs; qsl-replay/src/model_check/limits.rs;
   qsl-replay/src/probability_certificate.rs; qsl-replay/src/probability_certificate/document.rs;
   qsl-replay/src/probability_certificate/source.rs; qsl-replay/src/probability_certificate/witness.rs;
-  qsl-replay/src/proof_result.rs; qsl-replay/src/request.rs; spec/functional/FR-255-name-the-setting-that-raises-a-reached-limit.md
+  qsl-replay/src/proof_result.rs; qsl-replay/src/request.rs; spec/functional/FR-255-name-the-setting-that-raises-a-reached-limit.md;
+  qsl-replay/src/probability_certificate/document/writer.rs; qsl-foundation/src/node_wire.rs;
+  qsl-foundation/Cargo.toml; FR-196 canonical product representation
 review_set: subset
 ---
 
@@ -123,3 +125,42 @@ Examined units (clean units included):
     supported representation, not a larger Count | 9007199254740991 rank units | FR-201
     |'
 ```
+
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-002 | high | The shared helper and strict reader use a base64 string as the model component, contradicting FR-196's parsed ["quire.simulation.state-key/v1",model_form] array. Every produced unbounded document therefore has nonconforming keys, while a conforming document is refused. Embed the parsed owner model form with its required wrapper and reject the former nested transport without fallback. | qsl-replay/src/probability_certificate/document.rs:321, qsl-replay/src/probability_certificate.rs:516 |
+
+Additional examined scope:
+
+```yaml
+- id: FR-196
+  path: spec/functional/FR-196-build-the-probabilistic-product.md
+  role: examined
+  excerpt: '`model` is `["quire.simulation.state-key/v1",model_form]`, with
+
+    `model_form` the full FR-101/QSpec FR-181 typed simulation-state form,
+
+    including semantic state, control, queues, roles, observations, bounds
+
+    and memory. Exploration compares its full octets, not a hash. Traces
+
+    name a model state by this same state key; a certificate''s complete product
+
+    key contains the full canonical model form.'
+```
+
+The current origin/main contract was checked directly, not inferred from a draft. FR-196's worked vectors also explicitly prohibit an additional JSON/base64 string layer. ModelSystem::state_key at qsl-eval/src/simulation/model.rs:932 returns the owner encoding from key::state_key_of over encode::model_key(...).0; the latter is the full simulation-state tagged form at model/encode.rs:1443. The helper must retain that owner form as parsed JSON inside the FR-196 model wrapper, without reconstructing its typed semantics. The outer QSpec base64url transport remains required and unchanged. A representation assertion grounded directly in FR-196 is needed: writer and reader roundtripping the same nonconforming helper cannot detect this error. Non-null formula monitors remain outside the delivered unbounded capability; future shared structural admission must use ['formula', parsed complete FR-338 key] and leave actual context/product authority with the bounded owner.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Frozen da445108 replaces retained wire vectors/tree with borrowed canonical events; key and bounded decimal transport reserve bytes/storage before allocation, and structural node traversal reserves before stack growth. Output sink growth is also admitted. Original finding text is preserved. |
+| FND-002 | still-open | Confirmed at frozen da445108: component 2 is encoded_model String and decoder requires String; the specified parsed model array is rejected. Coder is correcting this shared representation in the same PR. |
+
+## Disposition pass 1 verdict
+
+**FAIL — not mergeable while FND-002 remains open.** FND-001 is fixed; its original finding is unchanged. Round inspected the writer/source diff, including bounded foundation node encoder and normal dependency delta. Inspected passing confined/final fix logs: core 16, analyzer 11, fresh process 9 and provider 1, all-target Clippy, format and normal dependency tree. No tests/matrix/aggregate gate were rerun. Reused the coder's standalone production-linked budget probe: bytes=0 and storage=0 each stop before row-text construction, with roughly 0.1–0.3 MiB measurement overhead rather than the original ~40 MiB; positive insufficient byte/storage controls stop before the large key transport. Review confirms reserve-before-growth calls and explicit cancellation independently of the memory observation. Broader assurance limits remain as originally recorded.
