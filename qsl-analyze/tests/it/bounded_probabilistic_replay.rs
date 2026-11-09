@@ -139,6 +139,19 @@ fn full_key_source_and_semantic_cylinder_mutations_never_reproduce() {
     let mut changed = original.clone();
     changed.initial_key = ProbabilityProductKey::from_canonical_bytes(b"null".to_vec());
     no_token(&world, &changed);
+    let system = ModelSystem::new(world.subject().simulation).unwrap();
+    let mut changed = original.clone();
+    changed.initial_key = ProbabilityProductKey::for_model_state(
+        original.binding.as_ref(), &system.state_key(&original.initial).unwrap().0,
+    ).unwrap();
+    no_token(&world, &changed);
+    let accepting = evidence(&world, "Max");
+    let mut changed = original.clone();
+    changed.paths[0].steps[0].post = accepting.paths[0].steps[0].post.clone();
+    no_token(&world, &changed);
+    let mut changed = original.clone();
+    changed.paths[0].steps[0].transition = accepting.paths[0].steps[0].transition.clone();
+    no_token(&world, &changed);
     let mut changed = original.clone();
     changed.binding = None;
     no_token(&world, &changed);
@@ -617,10 +630,9 @@ fn one_admitted_over_binding_uses_the_actual_s3_parameter_node() {
     let parameter = claim.over.as_ref().unwrap().node().unwrap();
     let context =
         qsl_replay::probabilistic_formula_monitor_context(claim, witness.binding.as_ref()).unwrap();
-    assert_eq!(
-        context.binding,
-        vec![ContextBinding::instance(parameter.clone(), "m")]
-    );
+    let [actual] = context.binding.as_slice() else { panic!("one admitted binding"); };
+    assert_eq!(&actual.parameter, parameter);
+    assert!(matches!(&actual.value, qsl_eval::automaton::ContextBindingValue::Instance(key) if key == "m"));
     let ProbForm::Probability {
         event: Event::Formula { formula, .. },
         ..
