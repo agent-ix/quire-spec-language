@@ -118,7 +118,11 @@ pub(super) fn replay(
     for (key, action) in &witness.scheduler {
         poll_cancel(cancel)?;
         let action = system.scheduled_identity_key(action).map_err(expansion)?;
-        retain(key.as_bytes().len().saturating_add(action.len()), &mut storage, limits)?;
+        retain(
+            key.as_bytes().len().saturating_add(action.len()),
+            &mut storage,
+            limits,
+        )?;
     }
     for path in &witness.paths {
         poll_cancel(cancel)?;
@@ -227,11 +231,21 @@ pub(super) fn replay(
             // Reserve the retained typed evidence using its owners' canonical
             // representations. The transition includes the resolved arguments;
             // a second copy admits the explicit draw vector in the evidence.
-            let action_bytes = system.scheduled_identity_key(&step.action).map_err(expansion)?;
-            let transition_bytes = system.transition_key(&step.transition)
+            let action_bytes = system
+                .scheduled_identity_key(&step.action)
+                .map_err(expansion)?;
+            let transition_bytes = system
+                .transition_key(&step.transition)
                 .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?;
-            retain(post_key.as_bytes().len().saturating_add(action_bytes.len())
-                .saturating_add(transition_bytes.len().saturating_mul(2)), &mut storage, limits)?;
+            retain(
+                post_key
+                    .as_bytes()
+                    .len()
+                    .saturating_add(action_bytes.len())
+                    .saturating_add(transition_bytes.len().saturating_mul(2)),
+                &mut storage,
+                limits,
+            )?;
             state = post;
             control = next;
             key = post_key;
@@ -265,8 +279,10 @@ pub(super) fn replay(
             let mut prefix = true;
             for (a, b) in previous.steps.iter().zip(&path.steps) {
                 poll_cancel(cancel)?;
-                if a.action != b.action || a.transition != b.transition
-                    || !same_values(&a.draw, &b.draw) || a.post_key != b.post_key
+                if a.action != b.action
+                    || a.transition != b.transition
+                    || !same_values(&a.draw, &b.draw)
+                    || a.post_key != b.post_key
                 {
                     prefix = false;
                     break;
@@ -276,7 +292,11 @@ pub(super) fn replay(
                 return Ok(ProbabilityWitnessReplay::Parity);
             }
         }
-        retain(std::mem::size_of::<&ProbabilityWitnessPath>(), &mut storage, limits)?;
+        retain(
+            std::mem::size_of::<&ProbabilityWitnessPath>(),
+            &mut storage,
+            limits,
+        )?;
         cylinders.push(path);
         mass = arithmetic(
             quire_exact::RationalArithmetic::Add(&mass, &probability),
@@ -324,7 +344,11 @@ fn admit_state(
     Ok(())
 }
 
-fn retain(bytes: usize, storage: &mut u64, limits: &ExactProbLimits) -> Result<(), ProbabilityWitnessError> {
+fn retain(
+    bytes: usize,
+    storage: &mut u64,
+    limits: &ExactProbLimits,
+) -> Result<(), ProbabilityWitnessError> {
     *storage = storage.saturating_add(u64::try_from(bytes).unwrap_or(u64::MAX));
     if *storage > limits.document.storage_bytes {
         return Err(ProbabilityWitnessError::Limit {

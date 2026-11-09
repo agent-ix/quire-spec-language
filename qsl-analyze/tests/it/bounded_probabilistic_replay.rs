@@ -142,8 +142,10 @@ fn full_key_source_and_semantic_cylinder_mutations_never_reproduce() {
     let system = ModelSystem::new(world.subject().simulation).unwrap();
     let mut changed = original.clone();
     changed.initial_key = ProbabilityProductKey::for_model_state(
-        original.binding.as_ref(), &system.state_key(&original.initial).unwrap().0,
-    ).unwrap();
+        original.binding.as_ref(),
+        &system.state_key(&original.initial).unwrap().0,
+    )
+    .unwrap();
     no_token(&world, &changed);
     let accepting = evidence(&world, "Max");
     let mut changed = original.clone();
@@ -194,9 +196,18 @@ fn zero_horizon_and_terminal_false_extension_need_no_model_steps() {
         assert!(witness.scheduler.is_empty());
         assert_eq!(mass(&world, &witness), ratio(1, 1));
         let mut wrong_verdict = witness;
-        wrong_verdict.item = qsl_replay::probabilistic_claim_identity(world.claim("Opposite")).unwrap();
+        wrong_verdict.item =
+            qsl_replay::probabilistic_claim_identity(world.claim("Opposite")).unwrap();
         rekey(&world, "Opposite", &mut wrong_verdict);
-        assert!(matches!(replay(&world, &wrong_verdict, &ExactProbLimits::default(), &Cancel::new()), Ok(ProbabilityWitnessReplay::Parity)));
+        assert!(matches!(
+            replay(
+                &world,
+                &wrong_verdict,
+                &ExactProbLimits::default(),
+                &Cancel::new()
+            ),
+            Ok(ProbabilityWitnessReplay::Parity)
+        ));
     }
     let mut fixture = model("probabilistic Leaf using ev on M over (m: M::Msg) under every scheduler on origin { probability >= 0.5 [ eventually[0,2] holds(m.delivered) ] }");
     fixture
@@ -215,7 +226,9 @@ fn insufficient_missing_and_equal_mass_are_parity_not_refutations() {
     let world = World::new(&model(CLAIMS));
     let mut witness = evidence(&world, "Max");
     witness.paths.truncate(1);
-    witness.scheduler.retain(|(key, _)| key == &witness.initial_key);
+    witness
+        .scheduler
+        .retain(|(key, _)| key == &witness.initial_key);
     assert!(matches!(
         replay(
             &world,
@@ -636,9 +649,13 @@ fn one_admitted_over_binding_uses_the_actual_s3_parameter_node() {
     let parameter = claim.over.as_ref().unwrap().node().unwrap();
     let context =
         qsl_replay::probabilistic_formula_monitor_context(claim, witness.binding.as_ref()).unwrap();
-    let [actual] = context.binding.as_slice() else { panic!("one admitted binding"); };
+    let [actual] = context.binding.as_slice() else {
+        panic!("one admitted binding");
+    };
     assert_eq!(&actual.parameter, parameter);
-    assert!(matches!(&actual.value, qsl_eval::automaton::ContextBindingValue::Instance(key) if key == "m"));
+    assert!(
+        matches!(&actual.value, qsl_eval::automaton::ContextBindingValue::Instance(key) if key == "m")
+    );
     let ProbForm::Probability {
         event: Event::Formula { formula, .. },
         ..
@@ -683,16 +700,32 @@ fn an_exact_engine_value_cannot_settle_refuted_after_bounded_replay_disagrees() 
     use qsl_analyze::analyze::exact_probabilistic_item_witness_tampered;
     use qsl_replay::InconclusiveCause;
     let world = World::new(&model(CLAIMS));
-    for duplicate in [true,false] {
-        let item = exact_probabilistic_item_witness_tampered(RequestIndex::new(0),world.request("Min",ModelCheckLimits::default()),move |witness| {
-            if duplicate { witness.paths.push(witness.paths[0].clone()); }
-            else { witness.paths[0].steps[0].action.operation.push_str("-disabled"); }
-        });
-        let record = analyze_items(&Engines::qsl().unwrap(),vec![item],&Cancel::new()).remove(0);
+    for duplicate in [true, false] {
+        let item = exact_probabilistic_item_witness_tampered(
+            RequestIndex::new(0),
+            world.request("Min", ModelCheckLimits::default()),
+            move |witness| {
+                if duplicate {
+                    witness.paths.push(witness.paths[0].clone());
+                } else {
+                    witness.paths[0].steps[0]
+                        .action
+                        .operation
+                        .push_str("-disabled");
+                }
+            },
+        );
+        let record = analyze_items(&Engines::qsl().unwrap(), vec![item], &Cancel::new()).remove(0);
         if duplicate {
-            assert!(matches!(record.terminal().unwrap().value(),TerminalValue::Inconclusive(InconclusiveCause::ReplayParity(_))));
+            assert!(matches!(
+                record.terminal().unwrap().value(),
+                TerminalValue::Inconclusive(InconclusiveCause::ReplayParity(_))
+            ));
         } else {
-            assert!(matches!(record.terminal().unwrap().value(),TerminalValue::Inconclusive(InconclusiveCause::ReplayRefused(_))));
+            assert!(matches!(
+                record.terminal().unwrap().value(),
+                TerminalValue::Inconclusive(InconclusiveCause::ReplayRefused(_))
+            ));
         }
         assert!(record.probabilistic_counterexample.is_none());
         assert!(record.exact_probabilistic.is_none());

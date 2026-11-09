@@ -523,10 +523,10 @@ fn bounded_wrong_source_and_nonexact_rows_never_produce_an_accepted_document() {
     );
     assert!(
         evidence.is_none(),
-        "bounded misses have no unbounded witness-replay certificate"
+        "a replayed bounded refutation is not a proof certificate document"
     );
     assert!(
-        matches!(&missed, Settlement::Disposed(disposed) if disposed.kind == DispositionKind::Unsupported),
+        matches!(&missed, Settlement::Terminal(terminal) if terminal.value() == &qsl_replay::TerminalValue::Refuted),
         "{missed:?}"
     );
     let mut original = proof(&cyclic_source(2, "0.75"), SNAPSHOT);
