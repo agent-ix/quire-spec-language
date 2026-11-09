@@ -43,3 +43,9 @@ Verified log evidence: fmt exit 0; clippy qsl-analyze all-targets with warnings 
 Known engine limitations remain owned by QSL-1826; external matrix integration remains with QSL-12. Neither is claimed complete by this PR.
 
 Current-contract update: specification PR 2607 landed during review at main 26b3c7c4f. The current FR-280/281 contract additionally requires negotiated items, SourceProvision and operation-built replay/check requests, and ProviderResults with counterexample projection. This slice implements exact member routing on the pre-existing public API only; it does not satisfy those new API/provision obligations or complete current FR-281-AC-1 or FR-280-AC-2. They remain QSL-1820 implementation work, not a waiver. EN-5 certificate details remain engine evidence; public record projection is not newly implemented.
+
+## Final head verification
+
+Disposition pass 1 examined head 7c7546cbdc6e90b01617059529ead84a5e490bdf. `git range-diff 4ba8b813..55bae7ab 7e0fbcdf9..ee874df9b` reports the routing patch unchanged after rebase onto main 7e0fbcdf9 (current specification and checker cancellation). The fix commit changes only test documentation and copies the two original reviewer artifacts verbatim; no implementation or test assertion changed. The PR title and body explicitly call the slice partial, enumerate NegotiatedItem, SourceProvision, generalized request/results, public evidence projection and unbounded manifest work as remaining, and keep QSL-1820 open. No new finding was identified. The lead owns fresh final-head execution evidence; original-head logs are accurately labeled.
+
+Latest verdict: PASS remains applicable to this final head as a partial functional routing slice. No new executable code was introduced by the fix.

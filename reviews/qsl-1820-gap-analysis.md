@@ -45,3 +45,15 @@ The exact route is a thin constructor over the existing engine adapter; its new 
 No completeness claim is made for all TC-762 engine members, the external lifecycle matrix, EN-5 replay, rejected-certificate vocabulary, wider exact claim forms or certificate byte round trips.
 
 Current-contract update: specification PR 2607 landed during review at main 26b3c7c4f. The current FR-280/281 contract additionally requires negotiated items, SourceProvision and operation-built replay/check requests, and ProviderResults with counterexample projection. This slice implements exact member routing on the pre-existing public API only; it does not satisfy those new API/provision obligations or complete current FR-281-AC-1 or FR-280-AC-2. They remain QSL-1820 implementation work, not a waiver. EN-5 certificate details remain engine evidence; public record projection is not newly implemented.
+
+## Final head verification
+
+Disposition pass 1 examined head 7c7546cbdc6e90b01617059529ead84a5e490bdf. `git range-diff 4ba8b813..55bae7ab 7e0fbcdf9..ee874df9b` reports the routing patch unchanged after rebase onto main 7e0fbcdf9 (current specification and checker cancellation). The fix commit changes only test documentation and copies the two original reviewer artifacts verbatim; no implementation or test assertion changed. The PR title and body explicitly call the slice partial, enumerate NegotiatedItem, SourceProvision, generalized request/results, public evidence projection and unbounded manifest work as remaining, and keep QSL-1820 open. No new finding was identified. The lead owns fresh final-head execution evidence; original-head logs are accurately labeled.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Pass 1: module header, proof/budget test comments and PR title/body now explicitly limit the bindings to existing-API routing and list current-contract obligations that remain open. |
+
+Latest verdict: PASS for the explicitly partial routing slice at 7c7546cbdc6e90b01617059529ead84a5e490bdf. Mergeable after the lead final gate; this is no declaration of complete FR-280-AC-2 or FR-281-AC-1 coverage.
