@@ -2289,7 +2289,9 @@ impl<'a> Lowering<'a> {
         Ok(())
     }
 
-    fn finish_checked_node_keys(&mut self) -> Result<BTreeMap<usize, CheckedNodeKeys>, CheckRefusal> {
+    fn finish_checked_node_keys(
+        &mut self,
+    ) -> Result<BTreeMap<usize, CheckedNodeKeys>, CheckRefusal> {
         let mut retained = BTreeMap::new();
         for (identity, body) in std::mem::take(&mut self.checked_body_keys) {
             let mut keys = vec![None; body.length];
@@ -2310,7 +2312,13 @@ impl<'a> Lowering<'a> {
                 seen[id.index()] = true;
                 keys[id.index()] = key;
             }
-            retained.insert(identity, CheckedNodeKeys { owner: body.owner, keys });
+            retained.insert(
+                identity,
+                CheckedNodeKeys {
+                    owner: body.owner,
+                    keys,
+                },
+            );
         }
         Ok(retained)
     }

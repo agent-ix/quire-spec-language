@@ -193,11 +193,19 @@ fn a_cloned_body_keeps_its_owning_graph_context_without_shared_mutation() {
         Some(&original),
         "the second package really assigns a different authoritative key"
     );
-    let lowered = lowering.finish(body.root().location()).expect("the second context owns its keys");
+    let lowered = lowering
+        .finish(body.root().location())
+        .expect("the second context owns its keys");
     let identity = std::sync::Arc::as_ptr(body.identity()) as usize;
-    let retained = lowered.checked_node_keys.get(&identity).expect("the body is retained");
+    let retained = lowered
+        .checked_node_keys
+        .get(&identity)
+        .expect("the body is retained");
     assert!(std::sync::Arc::ptr_eq(body.identity(), &retained.owner));
-    assert_eq!(retained.keys[body.root().id().index()].as_ref(), changed.key().as_ref());
+    assert_eq!(
+        retained.keys[body.root().id().index()].as_ref(),
+        changed.key().as_ref()
+    );
     assert_eq!(
         graph.node_key(body.root()),
         Some(&original),
@@ -205,9 +213,15 @@ fn a_cloned_body_keeps_its_owning_graph_context_without_shared_mutation() {
     );
     let foreign = source("function f using v(): Boolean pure { true and false }");
     let foreign_node = foreign.function_state(0).expect("foreign f").body;
-    assert!(graph.node_key(foreign_node).is_none(), "structural equality grants no body ownership");
+    assert!(
+        graph.node_key(foreign_node).is_none(),
+        "structural equality grants no body ownership"
+    );
     assert!(foreign.node_key(body.root()).is_none());
-    assert_eq!(foreign.node_key(foreign_node), Some(&graph_body(&foreign, "f")));
+    assert_eq!(
+        foreign.node_key(foreign_node),
+        Some(&graph_body(&foreign, "f"))
+    );
 }
 
 /// Count resolution work at the same private mapper used by settlement.
@@ -254,7 +268,8 @@ fn resolution_visits(functions: usize, pending: bool) -> usize {
                 visits += 1;
                 Ok(match reference {
                     NodeRef::Pending(_) => NodeRef::Admitted(
-                        graph.node_key(root)
+                        graph
+                            .node_key(root)
                             .expect("the source supplied its real key")
                             .clone(),
                     ),
