@@ -21,8 +21,7 @@ Scope: FR-564-AC-6.
    FR-281-AC-2's item, FR-280-AC-6's request with the undeclared-population
    binding, FR-281-AC-11's EN-1 `RequiresBound` item and FR-281-AC-6 (a)'s
    budgeted item, each over bytes and a provision; build one FR-286 item from
-   each record or refusal. A cell FR-564 marks † that is not yet a `Case` is
-   not run and is checked to be a `PendingEngine` cell (FR-564-AC-8).
+   each record or refusal.
 2. Build FR-291-AC-2's `incomplete` `TimedOut` and `incomplete` cancelled
    records and FR-291-AC-1's `failed` record with `ToolFailure::Crash`;
    build one FR-286 item from each.

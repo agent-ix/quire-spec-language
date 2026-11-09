@@ -18,8 +18,8 @@ Every item names a claim of a declaration family its kind applies to (FR-507) un
 
 ## Test Procedure
 
-1. Over ADR-028 §15.4's `Link` model with `probability >= 0.95 [ eventually holds(m.delivered) ]` under every scheduler, run `analyze` with one EN-5 item built from the source bytes and the provision.
-2. Over FR-564's Counter subject, run `analyze` with one EN-1 item for the clause `P`, built from the source bytes, the provision and the clause's occurrence key; replay the returned counterexample through `replay` over the same bytes.
+1. Over ADR-028 §15.4's `Link` model with `probability >= 0.95 [ eventually holds(m.delivered) ]` under every scheduler, run `analyze` with one EN-5 item, settled `Supported(en-5)` by `negotiate_*`, built from the source bytes and the provision.
+2. Over FR-564's Counter subject, run `analyze` with one EN-1 item for the clause `P`, settled `Supported(en-1)` by `negotiate_*`, built from the source bytes, the provision and the clause's occurrence key; replay the returned counterexample through `replay` over the same bytes.
 3. Run `analyze` over `Engines::qsl()` with three items: one of a claim kind no layer-A engine advertises, settled `Unsupported` with `unsupported_projection`/`unsupported-requested-capability` naming that kind, then step 1's and step 2's items, each settled `Supported` on its engine.
 4. Build `engines` with `Engines::with` holding test engines `qsl.test-a` and `qsl.test-b`, both advertising (`value-validity`, `bounded`), each counting its runs. Run one `value-validity` bounded item settled `Supported(qsl.test-b)`; settled `InvalidRequest` with `invalid_capability`/`ambiguous-backend` naming both; settled `Unsupported` with `unsupported_projection`/`unsupported-requested-capability`; settled `RequiresBound`; and settled `Supported(qsl.test-c)`.
 5. Run step 3's request with a binding whose `universes` name a population the package does not declare.
@@ -32,7 +32,7 @@ Tag the tests `#[trace("TC-762", "<AC id>")]`.
 ## Expected Results
 
 - Step 1: the item settles `proved`, category success, naming `en-5`, after the EN-5 checker accepts; the record carries the certificate.
-- Step 2: the item settles `refuted`, naming `en-1`, and the outcome carries the counterexample as an `ItemCounterexample`; `replay` reproduces it.
+- Step 2: the item settles `refuted`, naming `en-1`, and the outcome holds one `ItemCounterexample`; `replay` reproduces it.
 - Step 3: three records return in `request_index` order 0, 1, 2; the first is settled by its `unsupported` disposition with the diagnostic naming the claim kind.
 - Step 4: `qsl.test-b` alone runs and the record names it; then records settled by `invalid-request` (`ambiguous-backend`, both named), `unsupported` and `requires-bound` (no diagnostic) dispositions with no run; then `invalid-request` with `invalid_capability`/`unknown-backend` naming `qsl.test-c` and no run. Neither test engine runs except in the first case.
 - Step 5: `StageFailure::Refused(AnalyzeRefusal::Binding)` holding `invalid_runtime_input`/`wrong-role-mapping`, no record, no engine run.

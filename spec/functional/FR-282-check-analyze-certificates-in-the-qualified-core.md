@@ -42,11 +42,16 @@ the native engine's terminal record there (ADR-029 OP-2). A proof from a
 native engine with none of these checkers settles `proved`, labelled `uncertified`
 (FR-281, FR-290). A checker recompiles the package from its
 byte provision, as `replay` does, and checks the certificate with its own
-code. It reads nothing from the engine's search but the certificate. The one
-exception is the EN-5 checker's checked-subject form (FR-201 "Checking"),
-which `analyze` runs over a package S4 refuses to emit (FR-185): it re-admits
-the subject from the `CheckedPackage` in process and recompiles nothing, with
-the same conditions and the same independence from the engine's search.
+code. It reads nothing from the engine's search but the certificate. The EN-5
+checker has two forms with one set of conditions (FR-201 "Checking"). Over a
+package S4 emits, its wire form recompiles from the byte provision. Over a
+package S4 refuses to emit (FR-185), which is every EN-5 subject, its
+checked-subject form runs over the `CheckedPackage` that `analyze` holds; a
+separate frontend gets that package by re-checking the provision's source
+bytes (S1 to S3, in the qualified core) into a `CheckedPackage`, admitting
+the `ModelSystem` from it and the subject binding, and running the same form.
+No emitted package and no engine code is involved, and the conditions are the
+same.
 
 A certificate is a document `analyze` writes. A checker accepts or rejects
 it in the run that produced it, and equally in a later run of a separate
@@ -56,7 +61,8 @@ CB-3 item 4).
 ## Inputs
 
 - The certificate document.
-- The package's byte provision (ADR-013 O-26), as `replay` takes it.
+- The package's byte provision (ADR-013 O-26), as `replay` takes it, and for
+  an EN-5 certificate the subject binding (FR-281) that admits its `ModelSystem`.
 - The claim item's occurrence key.
 - The checker's limits and `&Cancel`.
 
@@ -81,7 +87,7 @@ cause; or a `StageFailure` when the package cannot be recompiled.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-282-AC-1 | The EN-5 certificate from FR-281-AC-1, written to bytes by `analyze` and passed with the byte provision to the EN-5 checker in a fresh process that links only qualified-core crates, is accepted. | Test (TC-764) |
+| FR-282-AC-1 | The EN-5 certificate from FR-281-AC-1, written to bytes by `analyze` and passed with the byte provision and the subject binding to the EN-5 checker in a fresh process that links only qualified-core crates, is accepted: the process re-checks the provision's sources into a `CheckedPackage`, admits the `ModelSystem` and runs the checked-subject form. | Test (TC-764) |
 | FR-282-AC-2 | The same certificate with one probability bound changed is rejected with a cause naming the failing obligation. | Test (TC-764) |
 | FR-282-AC-3 | A zone certificate from an ADR-026 zone-search run over a dense-time model is accepted by the zone checker, and the same certificate with one zone removed is rejected. | Test (TC-764) |
 | FR-282-AC-5 | The EN-1 closure certificate of an invariant proved over a finite model is accepted by the EN-1 closure checker; the same certificate with one reachable product state removed is rejected with a cause naming the successor it no longer contains. | Test (TC-764) |

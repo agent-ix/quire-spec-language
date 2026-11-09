@@ -133,19 +133,19 @@ product state form `{product_key}` and the second as `{member}`.
   The wire form above recompiles the package a `ReplayRequestWire` names. The
   checked-subject form,
   `check_claim_exact_reachability(system, claims, item, certificate,
-  max_states, max_edges)`, takes the `ModelSystem` admitted over a
+  max_states, max_edges)` for the reachability objective and its counterparts
+  for the other objectives, takes the `ModelSystem` admitted over a
   `CheckedPackage` and its `claims`, binds the claim by the item's node, and
   re-enumerates the product through that system with the checker's own graph
   code and no `qsl-analyze` code; it decodes no wire and recompiles nothing,
   as FR-193's replay over a package S4 does not emit (FR-185). A package with
-  a random parameter, a workload or a reward has no emitted form, so
-  `analyze` (FR-281) runs the checked-subject form for every EN-5 item. The
-  checked-subject form covers an unbounded `eventually` reachability claim
-  with one initial state, at most one `over` instance, no fairness set and an
-  acyclic product; for any other shape it returns an `Unsupported*` error and
-  EN-5 settles the item `unsupported` with
-  `unsupported_construct`/`not-yet-implemented`, since it emits no proof
-  without an accepted certificate (Emission).
+  a random parameter, a workload or a reward has no emitted form, and every
+  EN-5 subject has one, so `analyze` (FR-281) runs the checked-subject form for
+  every EN-5 item. Both forms apply every condition of this requirement
+  (fairness end components, `LongRun` components, `Lower` ranking, `Upper`,
+  `Exact`, quantile tight actions and expected-reward properness), the
+  rejection table and the budgets; they differ only in how the subject is
+  obtained.
 - The checker SHALL refuse a certificate whose identity differs from the
   item's.
 - It SHALL decode `wire` through FR-098's canonical `ByteProvision` and
@@ -200,7 +200,7 @@ product state form `{product_key}` and the second as `{member}`.
 | FR-201-AC-4 | A proof whose certificate the checker accepts settles `proved`; with a checker `max_states` of 2 the check stops and the item settles `Incomplete(LimitReached{…})` naming `max_states`. The same applies while rederiving R/waiting components or checking randomized observation evidence, with the actual consumed value/setting retained. | Test (TC-636) |
 | FR-201-AC-5 | An `Opt` model whose initial state has the actions `go`, which activates and then sets `M` to 1 with probability `1/4` and to 3 with `3/4`, and `skip`, which never activates. For `quantile 0.5 of (M) >= 3` (`M` is a placeholder for the claim's parenthesised measure) over every scheduler, the `Upper` certificate with `y = 0` at the initial state and `−1/4` after `go` is accepted with side `AtLeast`: only `skip` is tight, and no activated state is reachable through it. The same claim over a variant whose `go` sets `M` to 1 and 3 with `1/2` each, with `y = 0` at both states, is rejected, naming the activated state after `go`, since `go` is tight. | Test (TC-636) |
 | FR-201-AC-7 | Given a `ReplayRequestWire` whose measured encoded size is `B`, when the checker receives caller-configured `ReplayLimits` with `input_bytes = B - 1`, it returns `ReplayRefusal::Request(ReplayRequestRefusal::BoundExceeded(BoundExceeded { bound: B - 1, actual: B }))` before byte-provision lookup or recompile. | Test |
-| FR-201-AC-8 | Over a model whose operations carry random parameters (§15.4's `Link`, which S4 does not emit), the checked-subject form accepts AC-1's certificate for `probability >= 0.95 [ eventually holds(m.delivered) ]` under every scheduler and rejects it with `4/5` replaced by `9/10`; given the same claim over a product with a cycle, a fairness set or two initial states it returns an unsupported-shape error and the item settles `unsupported`, never `proved`. | Test (TC-636) |
+| FR-201-AC-8 | Over §15.4's `Link` model, which carries random parameters and so has no emitted package, the checked-subject form returns for each of FR-201-AC-1 to AC-5's certificates the verdict that AC gives the wire form: accepted with its side, or rejected naming the same rule and `ProbabilisticProductState` or `CertificateMember`, including AC-1's certificate with `4/5` replaced by `9/10` (`InequalityFails`), AC-3's `FairTerminates` certificate with its fairness set removed, AC-2's `LongRun` certificate with the changed bias, and AC-5's tight-action case. | Test (TC-636) |
 | FR-201-AC-6 | Rejection rules and loci: AC-1's certificate with `4/5` replaced by `9/10` is rejected `InequalityFails` at the `ProbabilisticProductState` of that first state; AC-2's `LongRun` certificate with the changed bias, `InequalityFails` at the `down` state; AC-3's `Lower` certificate with its ranking omitted, `Malformed` at `CertificateMember("ranking")` before any re-enumeration; AC-2's `Lower` certificate with one named non-target state's rank removed, `RankMissing` at it, and with that rank raised to the rank of its only positive successor, `RankBroken` at it; AC-1's accepted certificate offered for a `>=` threshold above its initial state's value, `ThresholdMissed` at the initial state; AC-5's rejected variant, `InequalityFails` at the activated state after `go`. Each rejection is written with QSpec FR-331's rule spelling at its `{product_key}` or `{member}` form. | Test (TC-1197) |
 
 ## Dependencies

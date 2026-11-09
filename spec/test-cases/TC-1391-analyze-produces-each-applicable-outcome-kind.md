@@ -22,8 +22,7 @@ population; FR-281-AC-3's unsupported item alone; FR-281-AC-12's EN-4 item
 with `deadline` `Milliseconds(1)` and a handle cancelled `Deadline` before the
 call; the same item with a handle cancelled `Requested` before the call;
 FR-281-AC-6 (a)'s item with `max_states` 1. Each input is bytes run through
-the real operation. A cell FR-564 marks † that is not yet a `Case` is not run
-and is checked to be a `PendingEngine` cell (FR-564-AC-8).
+the real operation.
 
 Tag the tests `#[trace("TC-1391", "FR-564-AC-4")]`.
 
