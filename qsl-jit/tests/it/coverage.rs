@@ -3,7 +3,7 @@
 //! outside it.
 
 use ix_trace_rs::trace;
-use qsl_eval::execution::PreparedEntries;
+use qsl_eval::execution::{CoverageType, PreparedEntries};
 use quire_eval::{CallFailure, ExecutionBackendChoice, UnsupportedCause, UntranslatableConstruct};
 use quire_exact::ValueType;
 
@@ -18,6 +18,15 @@ fn the_published_coverage_lists_the_implemented_scalar_subset() {
     }
     assert!(coverage.lists_type(&ValueType::Boolean));
     assert!(coverage.lists_type(&ValueType::Integer));
+    for class in [
+        CoverageType::Rational,
+        CoverageType::Decimal,
+        CoverageType::Text,
+    ] {
+        assert!(coverage.value_types().contains(&class), "{class:?}");
+    }
+    assert!(!coverage.value_types().contains(&CoverageType::Record));
+    assert!(!coverage.value_types().contains(&CoverageType::Collection));
     assert!(!coverage.lists_type(&ValueType::Timestamp));
     assert!(!coverage.lists_form("case"));
 }
