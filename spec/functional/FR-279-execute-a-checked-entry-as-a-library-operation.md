@@ -59,8 +59,12 @@ limits, which belong to a request, not to a prepared backend; and
 `run_clause` is a replay path, and replay runs only through S6a (ADR-029
 EB-3), so `run_clause` takes no chosen backend. EB-3 restricts replay
 only: a function call through the spine's function entries
-(`qsl_replay::spine::run`, `run_with_backends`) is execution, not replay,
-and runs on the call's chosen backend as FR-296 states.
+(`qsl_replay::spine::run`, and `qsl_replay::backends::run_with_backends`,
+which takes the caller's `SuppliedBackends` and the `PrepareLimits` as an
+explicit parameter) is execution, not replay, and runs on the call's chosen
+backend as FR-296 states. The public surface of `qsl_replay::spine` names no
+`qsl_eval` type (FR-100-AC-8); the backend-taking entry lives in
+`qsl_replay::backends`.
 
 ## Inputs
 
