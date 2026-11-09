@@ -404,6 +404,119 @@ impl<'a> PrepareMeter<'a> {
     }
 }
 
+/// FR-560: a value type class a backend's coverage lists. A class, not a
+/// checked type: `Int[0, 9]` and `Int[0, 99]` are both [`Self::BoundedInteger`].
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum CoverageType {
+    /// `Boolean`.
+    Boolean,
+    /// `Int[lo, hi]`.
+    BoundedInteger,
+    /// Unbounded `Integer`.
+    UnboundedInteger,
+    /// `Rational`.
+    Rational,
+    /// `Decimal` under the selected profile.
+    Decimal,
+    /// `Text`.
+    Text,
+    /// A record whose members are of listed types.
+    Record,
+    /// A collection whose members are of listed types.
+    Collection,
+}
+
+impl CoverageType {
+    /// The class of the checked type `value_type`, or `None` for a type no
+    /// coverage class names (such as `Timestamp`).
+    #[must_use]
+    pub fn of(value_type: &quire_exact::ValueType) -> Option<Self> {
+        use quire_exact::ValueType as T;
+        match value_type {
+            T::Boolean => Some(Self::Boolean),
+            T::Int(_) => Some(Self::BoundedInteger),
+            T::Integer => Some(Self::UnboundedInteger),
+            T::Rational(_) => Some(Self::Rational),
+            T::Decimal(_) => Some(Self::Decimal),
+            T::Text(_) => Some(Self::Text),
+            T::Composite(_) => Some(Self::Record),
+            T::Collection(_) => Some(Self::Collection),
+            _ => None,
+        }
+    }
+}
+
+/// FR-560: one `Value`-family operator over one named operand type.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct CoverageOperation {
+    /// The operator's name (`+`, `-`, `*`, `div`, `rem`, `mod`, `<`, ...).
+    pub operator: &'static str,
+    /// The class of its operands.
+    pub operand: CoverageType,
+}
+
+/// FR-560: the constructs a backend translates, as one typed value the
+/// parity runner (FR-563) reads without depending on the backend crate.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BackendCoverage {
+    forms: std::collections::BTreeSet<&'static str>,
+    value_types: std::collections::BTreeSet<CoverageType>,
+    operations: std::collections::BTreeSet<CoverageOperation>,
+}
+
+impl BackendCoverage {
+    /// A coverage listing `forms` (ADR-012 form names), `value_types` and
+    /// `operations`.
+    #[must_use]
+    pub fn new(
+        forms: impl IntoIterator<Item = &'static str>,
+        value_types: impl IntoIterator<Item = CoverageType>,
+        operations: impl IntoIterator<Item = CoverageOperation>,
+    ) -> Self {
+        Self {
+            forms: forms.into_iter().collect(),
+            value_types: value_types.into_iter().collect(),
+            operations: operations.into_iter().collect(),
+        }
+    }
+
+    /// The listed expression forms.
+    #[must_use]
+    pub const fn forms(&self) -> &std::collections::BTreeSet<&'static str> {
+        &self.forms
+    }
+
+    /// The listed value types.
+    #[must_use]
+    pub const fn value_types(&self) -> &std::collections::BTreeSet<CoverageType> {
+        &self.value_types
+    }
+
+    /// The listed operations.
+    #[must_use]
+    pub const fn operations(&self) -> &std::collections::BTreeSet<CoverageOperation> {
+        &self.operations
+    }
+
+    /// Whether the form named `name` is listed.
+    #[must_use]
+    pub fn lists_form(&self, name: &str) -> bool {
+        self.forms.contains(name)
+    }
+
+    /// Whether the checked type `value_type` is listed.
+    #[must_use]
+    pub fn lists_type(&self, value_type: &quire_exact::ValueType) -> bool {
+        CoverageType::of(value_type).is_some_and(|class| self.value_types.contains(&class))
+    }
+
+    /// Whether `operation` is listed.
+    #[must_use]
+    pub fn lists_operation(&self, operation: &CoverageOperation) -> bool {
+        self.operations.contains(operation)
+    }
+}
+
 /// The interpreter backend: it accepts every entry S6a accepts, translates
 /// nothing, and runs S6a.
 #[derive(Clone, Copy, Debug, Default)]
