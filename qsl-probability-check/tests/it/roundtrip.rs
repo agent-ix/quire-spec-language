@@ -4,6 +4,7 @@
 
 use std::io::Write;
 use std::process::{Command, Stdio};
+use base64::Engine;
 
 use ix_trace_rs::trace;
 use qsl_analyze::analyze::{analyze_items, exact_probabilistic_item, Engines};
@@ -175,6 +176,18 @@ fn change_certificate(request: &mut Value, change: impl FnOnce(&mut Value)) {
     request["certificate"] = Value::String(serde_json::to_string(&document).unwrap());
 }
 
+fn alter_keys(document: &mut Value, change: impl Fn(&mut Value)) {
+    let alter = |text: &mut Value| {
+        let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(text.as_str().unwrap()).unwrap();
+        let mut key: Value = serde_json::from_slice(&bytes).unwrap();
+        change(&mut key);
+        *text = json!(base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(serde_json::to_vec(&key).unwrap()));
+    };
+    for row in document["values"].as_array_mut().unwrap() { alter(&mut row["state"]); }
+    for row in document["ranking"].as_array_mut().unwrap() { alter(&mut row["state"]); }
+    for target in document["objective"]["targets"].as_array_mut().unwrap() { alter(target); }
+}
+
 #[trace("FR-282-AC-1", "FR-201-AC-9", "FR-201-AC-11")]
 #[test]
 fn an_actual_en5_proof_is_checked_in_a_fresh_process_using_its_source() {
@@ -228,6 +241,20 @@ fn a_fresh_checker_refuses_altered_values_objectives_identities_ranks_and_provis
     cases.push(changed);
     let mut changed = original.clone();
     changed["source"]["content"] = json!("different admitted source");
+    cases.push(changed);
+    let mut changed = original.clone();
+    change_certificate(&mut changed, |document| alter_keys(document, |key| { key[1] = Value::Null; }));
+    cases.push(changed);
+    let mut changed = original.clone();
+    change_certificate(&mut changed, |document| alter_keys(document, |key| {
+        *key[1].as_array_mut().unwrap().last_mut().unwrap() = json!("foreign-object");
+    }));
+    cases.push(changed);
+    let mut changed = original.clone();
+    change_certificate(&mut changed, |document| alter_keys(document, |key| { key[3] = json!("foreign-monitor"); }));
+    cases.push(changed);
+    let mut changed = original.clone();
+    change_certificate(&mut changed, |document| { document["ranking"].as_array_mut().unwrap().remove(0); });
     cases.push(changed);
     for request in cases {
         let (code, result) = run(&request, &[]);
