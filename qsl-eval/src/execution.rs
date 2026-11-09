@@ -507,10 +507,19 @@ impl BackendCoverage {
         self.forms.contains(name)
     }
 
-    /// Whether the checked type `value_type` is listed.
+    /// Whether the checked type `value_type` is listed. A collection is
+    /// listed when its class is and its element type is (FR-560: collections
+    /// whose members are of the listed types).
     #[must_use]
     pub fn lists_type(&self, value_type: &quire_exact::ValueType) -> bool {
-        CoverageType::of(value_type).is_some_and(|class| self.value_types.contains(&class))
+        let class_listed =
+            CoverageType::of(value_type).is_some_and(|class| self.value_types.contains(&class));
+        match value_type {
+            quire_exact::ValueType::Collection(collection) => {
+                class_listed && self.lists_type(collection.element())
+            }
+            _ => class_listed,
+        }
     }
 
     /// Whether `operation` is listed.
