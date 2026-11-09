@@ -6,7 +6,9 @@ use std::process::{Command, Stdio};
 
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use ix_trace_rs::trace;
-use qsl_analyze::analyze::{analyze_items, exact_probabilistic_item, Engines};
+use qsl_analyze::analyze::{
+    analyze_items, exact_probabilistic_item, DispositionKind, Engines, Settlement,
+};
 use qsl_analyze::exact_probabilistic::{ExactProbLimits, ProductRequest};
 use qsl_eval::model_subject::ModelSubject;
 use qsl_eval::simulation::model::{ExpansionLimits, ModelSimulationRequest, PopulationUniverse};
@@ -21,10 +23,16 @@ use serde_json::{json, Value};
 const DOMAIN: &[u8] = include_bytes!("../fixtures/link.semantic-ir.json");
 const SNAPSHOT: &[u8] = include_bytes!("../fixtures/link.snapshot.json");
 const SOURCE: &str = include_str!("../fixtures/link.native");
-const PROFILE: &str = "profile bounded = \"quire.temporal.event-position.false-extension/v1\";\n";
+
+fn model_source() -> String {
+    SOURCE.replace(
+        "quire.temporal.infinite-trace/v1",
+        "quire.temporal.event-position.false-extension/v1",
+    )
+}
 
 fn claim(scheduler: &str, operator: &str, threshold: &str, horizon: u64) -> String {
-    format!("{PROFILE}probabilistic Likely using bounded on M over (m: M::Msg) under {scheduler} on origin {{ probability {operator} {threshold} [ eventually[0,{horizon}] holds(m.delivered) ] }}\n")
+    format!("probabilistic Likely using inf on M over (m: M::Msg) under {scheduler} on origin {{ probability {operator} {threshold} [ eventually[0,{horizon}] holds(m.delivered) ] }}\n")
 }
 
 fn compile_source(
@@ -64,11 +72,7 @@ fn compile_source(
     (checked, packages)
 }
 
-fn request(
-    source: &str,
-    snapshot: &[u8],
-    exact: ExactProbLimits,
-) -> (Option<Value>, qsl_replay::TerminalValue) {
+fn request(source: &str, snapshot: &[u8], exact: ExactProbLimits) -> (Option<Value>, Settlement) {
     let identity = SourceIdentity::new("test", "bounded-certificate-source");
     let limits = SpineLimits::default();
     let cancel = Cancel::new();
@@ -134,10 +138,11 @@ fn request(
         &cancel,
     );
     let record = records.remove(0);
-    let terminal = record.terminal().expect("bounded analysis settles");
-    let value = terminal.value().clone();
+    let Some(terminal) = record.terminal() else {
+        return (None, record.settlement);
+    };
     let Some(bytes) = terminal.exact_certificate_document() else {
-        return (None, value);
+        return (None, record.settlement);
     };
     let item = qsl_replay::probabilistic_claim_identity(claim).unwrap();
     let request = json!({
@@ -151,7 +156,7 @@ fn request(
         "certificate":String::from_utf8(bytes.to_vec()).unwrap(),
         "limits":{"bytes":1_000_000,"storage_bytes":8_000_000,"states":100,"edges":1000,"scalar_bits":128,"expansion":100_000,"stages":{}},
     });
-    (Some(request), value)
+    (Some(request), record.settlement)
 }
 
 fn proof(source: &str, snapshot: &[u8]) -> Value {
@@ -290,7 +295,11 @@ fn bounded_deliver_exact_minimum_maximum_and_workload_cross_the_process_boundary
         ),
         ("Even", ">=", "0.9775", "0.98", "391", "400", "17", "20"),
     ] {
-        let source = format!("{SOURCE}{}", claim(scheduler, operator, threshold, 2));
+        let source = format!(
+            "{}{}",
+            model_source(),
+            claim(scheduler, operator, threshold, 2)
+        );
         let request = proof(&source, SNAPSHOT);
         let (code, result) = run(&request);
         assert_eq!(code, 0, "{scheduler}: {result}");
@@ -326,7 +335,7 @@ fn bounded_deliver_exact_minimum_maximum_and_workload_cross_the_process_boundary
 }
 
 fn cyclic_source(horizon: u64, threshold: &str) -> String {
-    let model = SOURCE
+    let model = model_source()
         .replace(" and self.attempts < 2", "")
         .replace(
             "self.attempts - pre(self.attempts) = 1",
@@ -488,7 +497,7 @@ fn bounded_wrong_source_and_nonexact_rows_never_produce_an_accepted_document() {
         "bounded misses have no unbounded witness-replay certificate"
     );
     assert!(
-        matches!(missed, qsl_replay::TerminalValue::Unsupported(_)),
+        matches!(&missed, Settlement::Disposed(disposed) if disposed.kind == DispositionKind::Unsupported),
         "{missed:?}"
     );
     let mut original = proof(&cyclic_source(2, "0.75"), SNAPSHOT);
@@ -511,17 +520,12 @@ fn bounded_wrong_source_and_nonexact_rows_never_produce_an_accepted_document() {
         );
         if incomplete {
             assert!(
-                matches!(
-                    terminal,
-                    qsl_replay::TerminalValue::Incomplete(
-                        qsl_replay::IncompleteCause::PrecisionBudget { .. }
-                    )
-                ),
+                matches!(&terminal, Settlement::Terminal(record) if matches!(record.value(), qsl_replay::TerminalValue::Incomplete(qsl_replay::IncompleteCause::PrecisionBudget { .. }))),
                 "{terminal:?}"
             );
         } else {
             assert!(
-                matches!(terminal, qsl_replay::TerminalValue::Unsupported(_)),
+                matches!(&terminal, Settlement::Disposed(disposed) if disposed.kind == DispositionKind::Unsupported),
                 "{terminal:?}"
             );
         }
