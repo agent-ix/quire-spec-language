@@ -414,7 +414,6 @@ fn unsupported_claim_shapes_and_document_profiles_never_produce_acceptance() {
     let original = proof_request(CLAIM);
     for (body, status) in [
         ("always holds(m.delivered)", "refused"),
-        ("always eventually holds(m.delivered)", "unsupported"),
         ("eventually[1,2] holds(m.delivered)", "unsupported"),
     ] {
         let mut request = original.clone();

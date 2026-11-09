@@ -2688,18 +2688,16 @@ fn until_minimum_retains_absorbing_failure_in_qualitative_analysis() {
 #[test]
 fn reachability_avoidance_cannot_cross_an_already_reached_target() {
     use qsl_analyze::exact_probabilistic::{decide_reachability, ExtRational};
-    let states = (0..3)
-        .map(|id| ProbKey {
-            binding: None,
-            model: vec![id],
-            monitor: None,
-            accumulator: None,
-            pending: None,
-        })
-        .collect();
-    let edge = |from, to| ProbEdge {
-        from: ProbStateId(from),
-        to: ProbStateId(to),
+    let world = World::new(&prob_world::link(
+        "probabilistic ForGraph using inf on M over (m: M::Msg) under every scheduler on origin \
+         { probability >= 0.5 [ eventually holds(m.delivered) ] }",
+    ));
+    let seed = built(&world, "ForGraph");
+    let ids = seed.ids().take(3).collect::<Vec<_>>();
+    let states = seed.states.into_iter().take(3).collect();
+    let edge = |from: usize, to: usize| ProbEdge {
+        from: ids[from],
+        to: ids[to],
         choice: ProductAction::TerminalStutter,
         action: None,
         draw: None,
