@@ -1535,6 +1535,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "qsl-probability-check"
+version = "0.1.0"
+dependencies = [
+ "ix-trace-rs",
+ "qsl-analyze",
+ "qsl-eval",
+ "qsl-foundation",
+ "qsl-replay",
+ "qsl-semantics",
+ "quire-checked",
+ "quire-exact",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "qsl-replay"
 version = "0.1.0"
 dependencies = [

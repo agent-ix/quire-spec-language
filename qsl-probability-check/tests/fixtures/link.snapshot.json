@@ -1,0 +1,1 @@
+{"anchor":{"kind":"initialization","name":"start"},"format":"quire.state.snapshot/v1","identity":{"authority":"test","identity":"s0"},"model":{"identity":"test/link"},"observation":"current","populations":[{"complete":true,"objects":[{"fields":{"attempts":{"integer":"0"},"delivered":{"boolean":false}},"key":"m","type":"ix://test/link/Msg"}],"population":"ix://test/link/msgs"}]}

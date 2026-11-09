@@ -36,6 +36,8 @@ pub struct ProbabilityDocumentLimits {
     pub edges: usize,
     /// Maximum numerator or denominator bits.
     pub scalar_bits: u64,
+    /// Shared exact-arithmetic accounting ceilings, including work and storage.
+    pub accounting: quire_exact::ScalarLimits,
 }
 
 /// A document never becomes accepted evidence when one of these occurs.
@@ -62,6 +64,9 @@ pub enum ProbabilityDocumentError {
     /// Cancellation retains the caller's cause.
     #[error("probability certificate cancelled: {0:?}")]
     Cancelled(CancelCause),
+    /// Shared exact arithmetic exhausted a named accounting charge.
+    #[error("probability certificate arithmetic stopped: {0:?}")]
+    Accounting(Box<quire_exact::Incomplete>),
     /// Independent subject admission or graph traversal stopped.
     #[error("probability certificate graph stopped: {0:?}")]
     Graph(ExactProbabilityGraphError),
@@ -504,5 +509,159 @@ pub fn check_probability_certificate_document(
             return Err(ProbabilityDocumentError::RankBroken(key.clone()));
         }
     }
-    check_exact_reachability(&graph, &certificate, objective, &bound, cancel).map_err(Into::into)
+    check_document_equalities(&graph, &values, objective, &bound, limits, cancel)
+}
+
+fn check_scalar(value: &Rational, limits: ProbabilityDocumentLimits) -> Result<(), ProbabilityDocumentError> {
+    if value.numerator().as_big().bits() > limits.scalar_bits || value.denominator().as_big().bits() > limits.scalar_bits {
+        Err(ProbabilityDocumentError::Limit("certificate.scalar_bits"))
+    } else { Ok(()) }
+}
+
+fn check_document_equalities(
+    graph: &CheckerGraph, values: &BTreeMap<ProbabilityProductKey, Rational>, objective: ProbabilityObjective,
+    bound: &Bound, limits: ProbabilityDocumentLimits, cancel: &Cancel,
+) -> Result<ExactProbabilityCertificateCheck, ProbabilityDocumentError> {
+    let mut meter = quire_exact::Meter::new(limits.accounting).with_cancel(cancel.clone());
+    for (key, state) in &graph.states {
+        poll(cancel)?;
+        let value = values.get(key).ok_or(ProbabilityDocumentError::Malformed)?;
+        let expected = match state.terminal {
+            Some(true) => rational(1),
+            Some(false) => rational(0),
+            None => {
+                if state.choices.is_empty() || objective == ProbabilityObjective::Workload && state.choices.len() != 1 {
+                    return Err(ProbabilityDocumentError::Unsupported);
+                }
+                let mut expected: Option<Rational> = None;
+                for choice in &state.choices {
+                    let mut sum = rational(0);
+                    let mut mass = rational(0);
+                    for edge in choice {
+                        poll(cancel)?;
+                        if edge.probability < rational(0) { return Err(ProbabilityDocumentError::Malformed); }
+                        check_scalar(&edge.probability, limits)?;
+                        let next = values.get(&edge.target).ok_or(ProbabilityDocumentError::Malformed)?;
+                        let product = arithmetic(quire_exact::RationalArithmetic::Multiply(&edge.probability, next), &mut meter, cancel)?;
+                        check_scalar(&product, limits)?;
+                        mass = arithmetic(quire_exact::RationalArithmetic::Add(&mass, &edge.probability), &mut meter, cancel)?;
+                        sum = arithmetic(quire_exact::RationalArithmetic::Add(&sum, &product), &mut meter, cancel)?;
+                        check_scalar(&mass, limits)?;
+                        check_scalar(&sum, limits)?;
+                    }
+                    if mass != rational(1) { return Err(ProbabilityDocumentError::Malformed); }
+                    expected = Some(match expected {
+                        None => sum,
+                        Some(previous) => match objective {
+                            ProbabilityObjective::Minimum => previous.min(sum),
+                            ProbabilityObjective::Maximum => previous.max(sum),
+                            ProbabilityObjective::Workload => return Err(ProbabilityDocumentError::Unsupported),
+                        },
+                    });
+                }
+                expected.ok_or(ProbabilityDocumentError::Malformed)?
+            }
+        };
+        if value != &expected { return Ok(rejected(ProbabilityCertificateRule::InequalityFails, key.clone())); }
+    }
+    let initial = values.get(&graph.initial).ok_or(ProbabilityDocumentError::Malformed)?;
+    let threshold = match bound { Bound::AtLeast(value) | Bound::AtMost(value) => value };
+    check_scalar(threshold, limits)?;
+    let meets = match bound { Bound::AtLeast(threshold) => initial >= threshold, Bound::AtMost(threshold) => initial <= threshold };
+    if !meets { return Ok(rejected(ProbabilityCertificateRule::ThresholdMissed, graph.initial.clone())); }
+    poll(cancel)?;
+    Ok(ExactProbabilityCertificateCheck::Accepted(ExactProbabilityAcceptance {
+        value: initial.clone(), side: match bound { Bound::AtLeast(_) => ProbabilityBoundSide::AtLeast, Bound::AtMost(_) => ProbabilityBoundSide::AtMost },
+    }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ix_trace_rs::trace;
+
+    fn limits() -> ProbabilityDocumentLimits {
+        ProbabilityDocumentLimits { bytes: 1_000_000, states: 100, edges: 100, scalar_bits: 128, accounting: crate::AccountingLimits::default().0 }
+    }
+    fn document() -> ProbabilityCertificateDocument {
+        let key = ProbabilityProductKey::for_model_state(None, b"model").unwrap();
+        ProbabilityCertificateDocument {
+            identity: ObligationIdentity::new(crate::fixture_node(1), None, 0),
+            targets: vec![key.clone()], optimization: ProbabilityObjective::Minimum,
+            values: vec![ExactProbabilityValue { state: key.clone(), value: rational(1) }],
+            ranking: vec![(key, 0)],
+        }
+    }
+    fn bytes() -> Vec<u8> { write_probability_certificate(&document(), limits(), &Cancel::new()).unwrap() }
+    fn mutate(change: impl FnOnce(&mut Value)) -> Vec<u8> {
+        let mut value: Value = serde_json::from_slice(&bytes()).unwrap();
+        change(&mut value);
+        canonical(&value, limits().bytes).unwrap()
+    }
+
+    #[trace("FR-201-AC-9")]
+    #[test]
+    fn closed_exact_document_preserves_every_component_and_canonical_bytes() {
+        let original = document();
+        let bytes = write_probability_certificate(&original, limits(), &Cancel::new()).unwrap();
+        let read = read_probability_certificate(&bytes, limits(), &Cancel::new()).unwrap();
+        assert_eq!(read, original);
+        assert_eq!(write_probability_certificate(&read, limits(), &Cancel::new()).unwrap(), bytes);
+    }
+
+    #[trace("FR-201-AC-9")]
+    #[test]
+    fn malformed_rows_rationals_fields_and_keys_are_not_normalized() {
+        let mutations: Vec<Vec<u8>> = vec![
+            mutate(|v| { let row = v["values"][0].clone(); v["values"].as_array_mut().unwrap().push(row); }),
+            mutate(|v| { v["values"][0]["value"] = json!({"numerator":"2", "denominator":"4"}); }),
+            mutate(|v| { v["values"][0]["value"]["denominator"] = json!("0"); }),
+            mutate(|v| { v["values"][0]["value"]["denominator"] = json!("-1"); }),
+            mutate(|v| { v["values"][0]["value"]["numerator"] = json!("01"); }),
+            mutate(|v| { v["values"][0]["value"]["numerator"] = json!("-0"); }),
+            mutate(|v| { v.as_object_mut().unwrap().remove("ranking"); }),
+            mutate(|v| { v["extra"] = json!(true); }),
+            mutate(|v| { v["values"][0]["value"]["extra"] = json!(true); }),
+            mutate(|v| { v["ranking"][0]["rank"] = json!(MAX_COUNT + 1); }),
+            mutate(|v| { let key = v["values"][0]["state"].as_str().unwrap().to_owned(); v["values"][0]["state"] = json!(format!("{key}=")); }),
+            mutate(|v| { v["values"][0]["state"] = json!(URL_SAFE_NO_PAD.encode(br#"["model-only"]"#)); }),
+        ];
+        for bytes in mutations {
+            assert!(read_probability_certificate(&bytes, limits(), &Cancel::new()).is_err(), "malformed evidence must refuse: {}", String::from_utf8_lossy(&bytes));
+        }
+        let bytes = bytes();
+        let duplicate = [b"{\"kind\":\"exact\",".as_slice(), bytes.get(1..).unwrap()].concat();
+        assert!(read_probability_certificate(&duplicate, limits(), &Cancel::new()).is_err());
+        let whitespace = [b" ".as_slice(), bytes.as_slice()].concat();
+        assert_eq!(read_probability_certificate(&whitespace, limits(), &Cancel::new()), Err(ProbabilityDocumentError::Noncanonical));
+        assert!(read_probability_certificate(&[0xff], limits(), &Cancel::new()).is_err());
+    }
+
+    #[trace("FR-201-AC-9", "FR-201-AC-11")]
+    #[test]
+    fn unsupported_profiles_and_cancelled_or_exhausted_reads_have_no_evidence() {
+        for bytes in [mutate(|v| { v["kind"] = json!("lower"); }), mutate(|v| { v["objective"]["profile"] = json!("future/v2"); }), mutate(|v| { v["objective"]["optimization"] = json!("guess"); })] {
+            assert_eq!(read_probability_certificate(&bytes, limits(), &Cancel::new()), Err(ProbabilityDocumentError::Unsupported));
+        }
+        let bytes = bytes();
+        assert_eq!(read_probability_certificate(&bytes, ProbabilityDocumentLimits { bytes: u64::try_from(bytes.len()).unwrap() - 1, ..limits() }, &Cancel::new()), Err(ProbabilityDocumentError::Limit("certificate.bytes")));
+        assert_eq!(read_probability_certificate(&bytes, ProbabilityDocumentLimits { states: 0, ..limits() }, &Cancel::new()), Err(ProbabilityDocumentError::Limit("certificate.states")));
+        assert_eq!(read_probability_certificate(&bytes, ProbabilityDocumentLimits { scalar_bits: 0, ..limits() }, &Cancel::new()), Err(ProbabilityDocumentError::Limit("certificate.scalar_bits")));
+        for cause in [CancelCause::Requested, CancelCause::Deadline] {
+            let cancel = Cancel::new(); cancel.cancel(cause);
+            assert_eq!(read_probability_certificate(&bytes, limits(), &cancel), Err(ProbabilityDocumentError::Cancelled(cause)));
+        }
+    }
+}
+
+fn arithmetic(operation: quire_exact::RationalArithmetic<'_>, meter: &mut quire_exact::Meter, cancel: &Cancel) -> Result<Rational, ProbabilityDocumentError> {
+    poll(cancel)?;
+    match quire_exact::evaluate_rational_arithmetic(operation, None, meter) {
+        quire_exact::Outcome::Completed(value) => Ok(value),
+        quire_exact::Outcome::Incomplete(incomplete) => {
+            poll(cancel)?;
+            Err(ProbabilityDocumentError::Accounting(Box::new(incomplete)))
+        },
+        quire_exact::Outcome::Undefined(_) | quire_exact::Outcome::Refused(_) => Err(ProbabilityDocumentError::Malformed),
+    }
 }

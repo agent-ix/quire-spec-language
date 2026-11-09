@@ -96,6 +96,9 @@ pub fn check_probability_certificate_source(
     let packages = package_input(request.provision.package_documents()).map_err(|_| ProbabilitySourceError::Packages)?;
     let parsed = spine::parse(&ParseRequest { source: &identity, path: request.source.identity(), bytes }, limits.spine.source, cancel)
         .map_err(ProbabilitySourceError::Compile)?.into_value();
+    if !parsed.unit().selections().imports.is_empty() {
+        return Err(ProbabilityDocumentError::Unsupported.into());
+    }
     let models = spine::select(&parsed, &packages, limits.spine.model, cancel)
         .map_err(ProbabilitySourceError::Compile)?.into_value();
     let checked = spine::check(&parsed, request.package_name.to_owned(), &models, &DependencyInput::default(), limits.spine, cancel)

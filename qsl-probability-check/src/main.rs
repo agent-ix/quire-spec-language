@@ -6,16 +6,15 @@ use std::collections::BTreeMap;
 use std::io::{Read, Write};
 
 use qsl_eval::simulation::model::{ExpansionLimits, PopulationUniverse};
-use qsl_foundation::{SettingLimits, SettingName};
-use qsl_replay::spine::{SourceComponent, SpineLimits};
+use qsl_replay::spine::SourceComponent;
 use qsl_replay::{
     check_probability_certificate_source, ByteProvision, DefinitionSourceRef,
     ExactProbabilityCertificateCheck, ObligationIdentity, ProbabilityDocumentLimits,
     ProbabilitySourceLimits, ProbabilitySourceRequest,
 };
-use qsl_semantics::model::observation::{DocumentRef, ObservationLimits};
+use qsl_semantics::model::observation::DocumentRef;
 use quire_checked::key::DeclarationKey;
-use quire_exact::{Cancel, CancelCause, ScalarLimits};
+use quire_exact::{Cancel, CancelCause};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -81,11 +80,8 @@ fn check(request: Request, cancel: &Cancel) -> Result<Value, String> {
         .map_err(|error| error.to_string())?;
     let node = qsl_foundation::node_wire::node_key_from_json(&request.item.node_id).map_err(|error| error.to_string())?;
     let item = ObligationIdentity::new(node, request.item.model.map(qsl_replay::ModelIdentity::new), request.item.ordinal);
-    let mut spine = SpineLimits::default();
-    for (name, bound) in request.limits.stages {
-        let Some(SettingName::Stage(setting)) = SettingName::from_name(&name) else { return Err(format!("unknown stage limit: {name}")); };
-        if !spine.set_bound(setting, bound) { return Err(format!("unsupported stage limit: {name}")); }
-    }
+    let operands = request.limits.stages.iter().map(|(name, bound)| format!("{name}={bound}")).collect::<Vec<_>>();
+    let caller = qsl_replay::CallerLimits::from_operands(operands.iter().map(String::as_str)).map_err(|error| error.to_string())?;
     let expected = SourceComponent { authority: request.source.authority, identity: request.source.identity, content: request.source.content };
     let result = check_probability_certificate_source(ProbabilitySourceRequest {
         source: &source, expected_source: &expected, package_name: &request.package_name,
@@ -96,9 +92,9 @@ fn check(request: Request, cancel: &Cancel) -> Result<Value, String> {
         }).collect(),
         certificate: request.certificate.as_bytes(),
     }, ProbabilitySourceLimits {
-        spine, observation: ObservationLimits::default(), expansion: ExpansionLimits { max_candidates: request.limits.expansion },
-        scalar: ScalarLimits::default(), document: ProbabilityDocumentLimits {
-            bytes: request.limits.bytes, states: request.limits.states, edges: request.limits.edges, scalar_bits: request.limits.scalar_bits,
+        spine: caller.spine, observation: caller.observation, expansion: ExpansionLimits { max_candidates: request.limits.expansion },
+        scalar: caller.accounting.0, document: ProbabilityDocumentLimits {
+            bytes: request.limits.bytes, states: request.limits.states, edges: request.limits.edges, scalar_bits: request.limits.scalar_bits, accounting: caller.accounting.0,
         },
     }, cancel).map_err(|error| error.to_string())?;
     Ok(match result {
