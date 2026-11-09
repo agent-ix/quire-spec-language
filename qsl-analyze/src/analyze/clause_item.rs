@@ -287,7 +287,7 @@ impl<'a> ClauseSubject<'a> {
         let wire = ReplayRequestWire {
             package,
             profile_selections: Vec::new(),
-            dependencies: Vec::new(),
+            dependencies: super::request::dependency_wires(self.package),
             replay_target: RequestTargetWire::state_clause(name.clone()),
             source: ReplaySource::Witness(transcript()?),
             obligation_identity: ObligationIdentity::new(identity.clone(), None, 0),

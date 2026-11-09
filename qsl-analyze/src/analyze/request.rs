@@ -300,6 +300,33 @@ fn check_provision(
     Ok(())
 }
 
+pub(super) fn dependency_wires(
+    package: &qsl_package::CheckedPackage,
+) -> Vec<qsl_replay::DependencyEntryWire> {
+    let mut pending = package.dependencies().iter().collect::<Vec<_>>();
+    let mut dependencies = BTreeMap::new();
+    while let Some((identity, package)) = pending.pop() {
+        if dependencies.contains_key(identity) {
+            continue;
+        }
+        dependencies.insert(
+            identity.clone(),
+            qsl_replay::DependencyEntryWire {
+                identity: identity.to_string(),
+                sources: package
+                    .graph()
+                    .sources()
+                    .into_iter()
+                    .map(|source| (source.authority().to_owned(), source.identity().to_owned()))
+                    .collect(),
+                refinement_internals: None,
+            },
+        );
+        pending.extend(package.dependencies().iter());
+    }
+    dependencies.into_values().collect()
+}
+
 fn simulation<'a>(
     package: &'a qsl_package::CheckedPackage,
     binding: &super::SubjectBinding<'a>,
