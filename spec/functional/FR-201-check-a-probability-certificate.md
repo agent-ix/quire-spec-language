@@ -212,9 +212,9 @@ No second formula AST, opaque monitor id or public horizon field is introduced.
   dyadic lower/upper documents remain unsupported by this closed profile
   until their own certificate profile is defined. An interval SHALL NOT be
   serialized as an exact rational certificate. This admission does not
-  establish bounded refutation/witness replay through FR-202's unbounded
-  typed route; that work remains outstanding, as do broader certificate
-  forms required by this requirement.
+  establish bounded refutation/witness replay. FR-202 separately specifies
+  that native typed path-set extension; broader certificate forms required
+  by this requirement remain outstanding.
 
 ### General checking conditions
 
