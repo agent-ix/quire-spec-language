@@ -161,7 +161,12 @@ fn request(source: &str, snapshot: &[u8], exact: ExactProbLimits) -> (Option<Val
 
 fn proof(source: &str, snapshot: &[u8]) -> Value {
     let (request, value) = request(source, snapshot, ExactProbLimits::default());
-    request.unwrap_or_else(|| panic!("bounded exact proof carried no document: {value:?}"))
+    request.unwrap_or_else(|| {
+        panic!(
+            "{}: bounded exact proof carried no document: {value:?}",
+            source.lines().last().unwrap_or(source)
+        )
+    })
 }
 
 fn run(request: &Value) -> (i32, Value) {
@@ -403,6 +408,7 @@ fn bounded_zero_horizon_reads_position_zero_and_terminal_closes_by_false_extensi
     }
     let source = cyclic_source(2, "0.5")
         .replace("when { self.delivered }", "when { true }")
+        .replace("{ not self.delivered }", "{ false }")
         .replace("probability >= 0.5", "probability <= 0.5");
     let request = proof(&source, SNAPSHOT);
     let doc = document(&request);
