@@ -91,3 +91,20 @@ JIT reports the `only` family result at the query node with no losses, as the
 interpreter does, and uses the same population walk. The kernel's float, sum
 and `forall`/`exists` refusals match `family_ok`. The arena peak test shows
 the peak does not grow with the element count. All five findings are low.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-006 | low | The fix inserted `impl From<collections::Halt> for Halt` between `lift`'s doc comment and `lift`, so that doc now documents the impl and `lift` has none | qsl-eval/src/value/expression/evaluate.rs:171-180 |
+| FND-007 | low | The kernel unit test for the `only` family result is tagged TC-1385 (fast-path charge parity, FR-562-AC-4), but it compares no charges. It checks the family result's payload and the frame count, so the binding is wrong | qsl-jit/src/kernel.rs:754 |
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | Round 1, a9c3c56e4. The `coverage()` doc lists the queries plus `fold` and `reduce`, and says `seq` is its own form and is not listed. |
+| FND-002 | fixed | Round 1, a9c3c56e4. `absorb` takes the host's addition as a closure and stores the total itself. `Absorbed::Summand` is removed, the fields are `pub(crate)`, and the JIT reads `accumulator()`. Checked against dfe983639 and the old evaluate.rs. The element lookup fault still precedes the shape match, and the closure runs only for `Visit::Sum`, which implies a Query node, so the `_ => node` body fallback is never used for an addition. Fold, count, reduce and only never call the closure. `sum_step` errors pass through unchanged as the evaluator's `Halt`, so the seed is still located at the body, the running total is unlocated and the decimal loss is recorded after the same `evaluate_decimal` call. Driver faults go through `From`, then `lift`, then `invariant`, with the same identifiers. In the JIT, absorb faults now lift with `None` instead of `Some(body)`, which only matters for `SumSeedOutOfDomain`, and absorb never returns that itself. |
+| FND-003 | fixed | Round 1, a9c3c56e4. `sum_target` and its `DecimalType` import are removed. |
+| FND-004 | fixed | Round 1, a9c3c56e4. `every_collection_template_checks_and_draws_arguments` compiles each of the 24 templates alone and draws every pool. `the_default_seed_draws_every_collection_template_with_tuples` asserts that 600 default-seed units draw all 24 templates, each with tuples. |
+| FND-005 | fixed | Round 1, a9c3c56e4. The collections, handle, values, records and arena parity tests carry `#[trace("TC-1385")]`. Each compares charge sequences with the interpreter, which is TC-1385's procedure, and the tag form matches the existing `differential.rs` tags. The kernel unit test's tag is FND-007. |

@@ -171,12 +171,6 @@ use crate::value::composite::{self, construct_record, construct_tuple, present_s
 /// A shared collection operation's halt as the evaluator's. The cases the
 /// evaluator handles where they arise (a `sum` seed, an `only` population)
 /// are invariant breaks if they reach here.
-impl From<collections::Halt> for Halt {
-    fn from(halt: collections::Halt) -> Self {
-        lift(halt)
-    }
-}
-
 fn lift(halt: collections::Halt) -> Halt {
     match halt {
         collections::Halt::Stop(stop) => Halt::from(stop),
@@ -184,6 +178,12 @@ fn lift(halt: collections::Halt) -> Halt {
         collections::Halt::SumSeedOutOfDomain | collections::Halt::OnlyNotOne { .. } => {
             invariant("collection-halt-unhandled")
         }
+    }
+}
+
+impl From<collections::Halt> for Halt {
+    fn from(halt: collections::Halt) -> Self {
+        lift(halt)
     }
 }
 

@@ -702,7 +702,6 @@ pub(crate) fn run(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ix_trace_rs::trace;
 
     /// An arena over its bound is a backend fault, not unbounded growth.
     #[test]
@@ -751,7 +750,6 @@ mod tests {
     /// is the population's family result, located at the operation's node
     /// (FR-139); over one object it starts, and a source that names no
     /// population is a backend fault, as in the interpreter.
-    #[trace("TC-1385")]
     #[test]
     fn an_only_over_other_than_one_object_is_the_populations_family_result() {
         use crate::translate::IterSpec;
