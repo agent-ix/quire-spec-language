@@ -581,6 +581,7 @@ fn a_record_collection_holds_one_clock_place_per_slot() {
                     unique,
                     min: 0,
                     max: upper,
+                    map: false,
                 }),
                 PlaceStep::Field("x".to_owned()),
             ]
@@ -1205,6 +1206,7 @@ fn a_package_sequence_type_is_an_unbounded_clock_collection() {
         unique: false,
         min: 0,
         max: None,
+        map: false,
     });
     let q = model
         .clocks()
@@ -1343,6 +1345,7 @@ fn a_clock_collection_field_parameter_and_result_check_with_their_bounds() {
                     unique: false,
                     min: 0,
                     max: Some(maximum),
+                    map: false,
                 }),
             ]
         );

@@ -409,7 +409,15 @@ impl<'a> ModelSystem<'a> {
                             &self.record_orders,
                         ) {
                             Some(domain) => ordered(domain, false)?,
-                            None => ParameterValues::Unbounded,
+                            None => match Domain::map_size(
+                                value_type,
+                                references,
+                                self.types,
+                                &self.record_orders,
+                            ) {
+                                Some(size) if size > MAX_DOMAIN => ParameterValues::TooMany(size),
+                                _ => ParameterValues::Unbounded,
+                            },
                         },
                     },
                 );
@@ -419,7 +427,15 @@ impl<'a> ModelSystem<'a> {
                 Some(result_type) => ResultValues::Declared(
                     match Domain::of(result_type, references, self.types, &self.record_orders) {
                         Some(domain) => ordered(domain, true)?,
-                        None => ParameterValues::Unbounded,
+                        None => match Domain::map_size(
+                            result_type,
+                            references,
+                            self.types,
+                            &self.record_orders,
+                        ) {
+                            Some(size) if size > MAX_DOMAIN => ParameterValues::TooMany(size),
+                            _ => ParameterValues::Unbounded,
+                        },
                     },
                 ),
             };

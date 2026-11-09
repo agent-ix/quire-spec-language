@@ -603,7 +603,7 @@ impl Lowering<'_> {
         let mut nodes = Vec::with_capacity(clocks.len());
         for clock in clocks {
             let mut path = Vec::with_capacity(clock.path().len());
-            for step in clock.path() {
+            for (index, step) in clock.path().iter().enumerate() {
                 let members = match step {
                     PlaceStep::Field(name) => vec![
                         ("kind", self.text_literal("field", location)?),
@@ -619,7 +619,23 @@ impl Lowering<'_> {
                             "collection",
                             self.text_literal(super::collection_kind(*shape), location)?,
                         ),
-                        ("selector", LeafTerm::reference(integer.clone())),
+                        (
+                            "selector",
+                            // A map slot is selected by the entry's key: the
+                            // key type's node, never the position's `Integer`
+                            // (FR-230 "Clock collections"). A key type with no
+                            // builtin scalar node is selected as an `Integer`.
+                            match clock
+                                .resolved_path()
+                                .get(index)
+                                .and_then(|row| row.key_form)
+                            {
+                                Some(form) if shape.map => {
+                                    LeafTerm::reference(self.scalar(form, location)?)
+                                }
+                                _ => LeafTerm::reference(integer.clone()),
+                            },
+                        ),
                         ("minimum", count(shape.min)),
                         (
                             "maximum",

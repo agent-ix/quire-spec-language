@@ -2223,6 +2223,7 @@ const OPEN_SLOT: CollectionShape = CollectionShape {
     unique: false,
     min: 0,
     max: None,
+    map: false,
 };
 
 /// Whether two place paths name one place: equal steps, any slot matching

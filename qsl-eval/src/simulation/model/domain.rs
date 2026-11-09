@@ -487,6 +487,32 @@ impl Domain {
         }
     }
 
+    /// How many values a `Map<K, V>[min, max]` of FR-120 holds without
+    /// enumerating them, saturating at `u128::MAX`: a map is a set of
+    /// distinct keys each with a value, so with `|K|` keys and `|V|` values it
+    /// holds the sum over entry counts `k` from `min` to `max` of
+    /// C(`|K|`, `k`) * `|V|`^`k`. Its values order by entry count, then by
+    /// keys ascending in `K`'s domain order, then by values in `V`'s. The
+    /// value kernel has no map value, so the domain is counted and never
+    /// materialized: [`Self::map_size`] is what a limit check reads.
+    pub(super) fn map_size(
+        value_type: &ValueType,
+        objects: &[ObjectReference],
+        types: &TypeEnvironment,
+        orders: &RecordOrders,
+    ) -> Option<u128> {
+        let ValueType::Map(map) = value_type else {
+            return None;
+        };
+        let bound = map.bound()?;
+        let size = |member: &ValueType| match member {
+            ValueType::Map(_) => Self::map_size(member, objects, types, orders),
+            other => Self::of(other, objects, types, orders).map(|domain| domain.len()),
+        };
+        let (keys, values) = (size(map.key())?, size(map.values())?);
+        Some(entries_size(keys, values, bound.minimum(), bound.maximum()))
+    }
+
     /// How many values the domain holds, saturating at `u128::MAX`.
     pub(super) fn len(&self) -> u128 {
         match self {
@@ -672,6 +698,17 @@ impl Domain {
             }
         }
     }
+}
+
+/// The number of maps of `min` to `max` entries over `keys` possible keys and
+/// `values` possible values: the sum over entry counts `k` of
+/// C(`keys`, `k`) * `values`^`k`, saturating at `u128::MAX`.
+fn entries_size(keys: u128, values: u128, min: u64, max: u64) -> u128 {
+    (min..=max).fold(0u128, |total, count| {
+        total.saturating_add(
+            combinations(keys, u128::from(count), false).saturating_mul(power(values, count)),
+        )
+    })
 }
 
 /// The number of `length`-element sequences of distinct values drawn from
@@ -1237,5 +1274,41 @@ mod tests {
         ));
         let exact = Domain::of(&small, &[], &types(), &RecordOrders::new()).expect("finite");
         assert_eq!(exact.len(), 16);
+    }
+
+    /// FR-120-AC-28: a `Map<K, V>[min, max]` holds the sum over entry counts
+    /// `k` of C(`|K|`, `k`) * `|V|`^`k` values, counted without enumeration
+    /// and saturating rather than wrapping.
+    #[trace("TC-1270", "FR-120-AC-28")]
+    #[test]
+    fn a_bounded_map_counts_its_entries_by_key_subsets_and_values() {
+        let map = |keys: ValueType, values: ValueType, min: u64, max: u64| {
+            ValueType::map(
+                quire_exact::MapType::new(
+                    keys,
+                    values,
+                    Some(CardinalityBound::new(min, max).expect("ordered")),
+                )
+                .expect("a leaf key"),
+            )
+        };
+        let size = |value: &ValueType| Domain::map_size(value, &[], &types(), &RecordOrders::new());
+        // |K| = 3, |V| = 2: 1 + 3*2 + 3*4 = 19.
+        assert_eq!(size(&map(int(0, 2), ValueType::Boolean, 0, 2)), Some(19));
+        // A lower bound drops the smaller entry counts: 6 + 12.
+        assert_eq!(size(&map(int(0, 2), ValueType::Boolean, 1, 2)), Some(18));
+        // More entries than keys add nothing.
+        assert_eq!(size(&map(int(0, 1), ValueType::Boolean, 0, 5)), Some(9));
+        // A key or value with no finite domain, or an unbounded map, has no size.
+        assert_eq!(
+            size(&map(ValueType::String, ValueType::Boolean, 0, 2)),
+            None
+        );
+        assert_eq!(size(&ValueType::Boolean), None);
+        // Overflow saturates.
+        let wide = ValueType::Int(
+            IntegerInterval::new(Integer::from(0_i64), Integer::from(u64::MAX)).expect("nonempty"),
+        );
+        assert_eq!(size(&map(wide.clone(), wide, 0, 40)), Some(u128::MAX));
     }
 }
