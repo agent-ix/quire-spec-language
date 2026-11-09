@@ -724,6 +724,24 @@ all broader CE obligations and are not coerced into this profile.
 FR-282 defines the independent checked-source
 S1 to S3 facade so S4's emission refusal cannot prevent fresh checking.
 
+FR-201 additionally defines the narrow closed
+`quire.probability-objective/state-predicate/v1` objective for untimed,
+infinite-trace acyclic state-predicate until and always proofs. Reusing
+reachability/v1 unchanged would lose until's absorbing failure boundary or
+incorrectly make a currently true P an always success. The separate objective
+therefore carries independently derived `event`, `targets` and `failures`,
+alongside the existing optimization and empty fairness. Until accepts B
+before considering A and rejects neither-A-nor-B permanently; always rejects
+not-P permanently and accepts terminal P under infinite terminal stutter.
+The checker verifies direct-event Bellman equations on its own stopped graph;
+EN-5's complement implementation of always must exchange extrema first.
+PR-6's real binding-bearing model keys suffice without a synthetic monitor.
+Original-graph acyclicity, one initial state, at most one binding and existing
+Markov restrictions remain admission limits. No bounded false-extension
+semantics, cyclic/fair/reward expansion, new FR-202 refutation or QSpec FR-413
+wire is authorized by this proof-only profile. FR-282's existing qualified
+S1 to S3 source facade independently checks these exact document bytes too.
+
 - Claims over every scheduler, rare-event bounds, thresholds close to the
   true value and long-run availability get proofs and refutations, not
   measurements.

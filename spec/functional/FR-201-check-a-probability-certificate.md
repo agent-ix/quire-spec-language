@@ -15,6 +15,10 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-200
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-198
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-126
+    type: depends_on
 ---
 # FR-201: Check a probability certificate
 
@@ -216,6 +220,77 @@ No second formula AST, opaque monitor id or public horizon field is introduced.
   that native typed path-set extension; broader certificate forms required
   by this requirement remain outstanding.
 
+### Closed acyclic state-predicate document profile
+
+For infinite-trace untimed `holds(A) until holds(B)` and `always holds(P)`
+over checked state predicates, the document codec SHALL admit a separate
+`"quire.probability-objective/state-predicate/v1"` profile. This does not
+reinterpret `reachability/v1`. The new objective SHALL contain exactly
+`profile`, `event`, `targets`, `failures`, `optimization` and `fairness`.
+`event` SHALL be `"until"` or `"always"`; optimization and empty fairness
+SHALL retain the closed reachability profile's meanings. All other document
+members, canonical byte rules, exact rational representation, complete-key
+transport, required ranking, strict decoding, identity checks and caller
+controls SHALL retain that profile's contracts. Both key sets SHALL be
+strictly ascending complete-key sets, disjoint and independently rederived;
+neither SHALL be trusted as a qualitative result supplied by EN-5.
+
+- Admission SHALL require the existing unbounded acyclic model graph apart
+  from implicit terminal stutter, one initial state, at most one actual S3
+  claim binding, no clocks, rewards or authored fairness, and FR-196's
+  existing Markov successor restrictions. Only exact minimum AtLeast,
+  maximum AtMost and single-resolved-distribution workload proofs SHALL be
+  admitted. Cyclic, nested temporal, bounded, event-predicate and other
+  profile/optimization/kind cases SHALL remain explicitly unsupported.
+- The checker SHALL bind the actual checked occurrence, infinite-trace
+  profile, formula and S3 binding before evaluating A/B/P through qualified
+  state-predicate evaluation. It SHALL independently build the original
+  reachable model graph and establish its admission, then build the stopped
+  graph reachable from the initial state by expanding only continuation
+  states. Values and ranks SHALL cover exactly this stopped graph. Nodes
+  occurring only after a success or failure are not certificate states.
+- For until, B SHALL take precedence: targets are exactly reached B states;
+  failures are exactly reached states satisfying neither A nor B. A state
+  satisfying A and not B continues unless terminal. A terminal A-and-not-B
+  state SHALL have value 0: its infinite stutter never reaches B. For
+  always, failures are exactly reached not-P states; targets are exactly
+  reached terminal P states. Every nonterminal P state continues; its
+  current truth SHALL NOT establish always. The stopped graph SHALL absorb
+  targets and failures, including a failure whose original successor could
+  later satisfy B or P. Terminal means no model continuation apart from
+  implicit terminal stutter, not a provider's unverified flag.
+- Target values SHALL be 1, failure and other terminal values 0. At each
+  continuation state the checker SHALL verify exact Bellman equality with
+  the independently selected minimum, maximum or resolved workload average.
+  This checks the event probability directly; always's minimum is not the
+  minimum probability of eventual not-P. If EN-5 uses complement solving,
+  it SHALL exchange minimum/maximum and complement each value before
+  issuing this direct-event certificate; workload complements its own
+  resolved expectation. The checker SHALL solve no equations and reuse no
+  EN-5 graph, labels or complement result as trusted evidence.
+- Ranks SHALL satisfy CE-3's positive-value progress on the stopped graph;
+  acyclic height ranks (absorbing and terminal rank 0) MAY be used. The
+  checker SHALL use FR-196's full binding-bearing model-state keys with
+  absent monitor, accumulator and pending components null, as ADR-028 PR-6
+  specifies. No local monitor handle, surrogate formula AST or synthetic
+  terminal model key SHALL be introduced. The qsl-eval qualified bounded
+  monitor and false-extension closure are not the semantics of this
+  infinite-trace subset; terminal stutter here has the same state predicates
+  forever. Actual checked formula/profile/binding context SHALL determine
+  every label, including at position 0. This terminal distinction follows
+  [FR-126](FR-126-check-a-temporal-clause-over-every-behaviour-of-a-model.md)'s infinite-trace
+  terminal rule and ADR-018 DL-6; the until/complement reductions are owned
+  by [FR-198](FR-198-decide-unbounded-reachability-and-expected-rewards.md).
+- Identity mismatch SHALL refuse before enumeration. A changed event,
+  targets, failures or optimization SHALL refuse objective mismatch before
+  acceptance. Value, rank and threshold failures SHALL use the existing
+  rejection rules and canonical first-failure loci. A different formula
+  with extensionally identical derived objective and valid values is not
+  required to fail solely because its spelling differs; no invented formula
+  identity field is added. Certificate proofs alone are extended here;
+  this profile SHALL NOT authorize new FR-202 refutation semantics or
+  complete the blocked QSpec FR-413 witness wire.
+
 ### General checking conditions
 
 - Digital timed certificate objectives SHALL select ADR-028 §13a from the
@@ -332,6 +407,10 @@ No second formula AST, opaque monitor id or public horizon field is introduced.
 | FR-201-AC-12 | ADR-028 §15.4's bounded Deliver at horizon 2 gives accepted exact minimum AtLeast at 24/25, maximum AtMost at 99/100 and Even workload at 391/400; after one loss the minimum is 4/5 and workload 17/20. Each threshold beyond the certified side fails. Existing unbounded profile documents retain their verdict and canonical bytes. | Test |
 | FR-201-AC-13 | A model that stays undelivered with probability 1/2 and delivers with probability 1/2 per step has bounded horizon-2 probability 3/4 despite its raw self-cycle. The initial and one-loss visits share the model key but have distinct full formula-bearing keys and ranks 2 and 1. Horizon 0 accepts iff P holds at position 0. A terminal undelivered state closes to rejection by false extension without enumerating stutter positions. | Test |
 | FR-201-AC-14 | For AC-13's valid certificate, replacing a running monitor with a local StateId, null, another remaining horizon, or another binding cannot certify the claim. Changing rank 2 to 3 while retaining valid values fails RankBroken at that full key. An exact document fabricated from a dyadic interval is never emitted; unsupported lower/upper documents and precision stops produce no accepted exact certificate. | Test |
+| FR-201-AC-15 | For until, an initial A-and-not-B state has choices a and b reaching B with probability 1/4 and 3/4 respectively, otherwise a neither-A-nor-B state that later reaches B. Exact minimum AtLeast 1/4 and maximum AtMost 3/4 are accepted; an equal-weight resolved workload accepts both sides at 1/2. The failure state has value 0 and its later B successor is not expanded. Thresholds 1/3 for minimum AtLeast, 2/3 for maximum AtMost, and 3/5 AtLeast or 2/5 AtMost for that workload fail ThresholdMissed. A reached B-and-not-A state has value 1; initial B accepts at 1, initial neither-A-nor-B at 0, and terminal A-and-not-B at 0. | Test |
+| FR-201-AC-16 | For always, an initial nonterminal P state has choices a and b reaching terminal P with probability 1/4 and 3/4 respectively, otherwise not-P followed by terminal P. Direct-event minimum AtLeast 1/4, maximum AtMost 3/4 and equal-weight resolved workload both sides at 1/2 are accepted. A prefix not-P has value 0 despite later P; initial terminal P has value 1 and initial not-P value 0. Treating the initial P as target, using 3/4 as minimum via an unswapped complement, or changing either boundary value fails checking. The beyond-side thresholds of AC-15 fail here too. | Test |
+| FR-201-AC-17 | Canonical state-predicate documents for AC-15 and AC-16 round-trip byte for byte. Replacing until B by a different checked predicate that changes the derived target set, or always P by one that changes failures, prevents acceptance of the original document under that claim even with internally consistent old rows. Changed event/optimization/targets/failures refuses objective mismatch; a foreign S3 binding or altered complete key is not an alias. Altered value, missing coverage or broken positive-value rank fails its existing check. A reachability/v1 document cannot encode these events by relabelling its targets. | Test |
+| FR-201-AC-18 | AC-15 and AC-16 obey pre-cancellation and byte/state/edge/arithmetic limits throughout independent admission, original/stopped graph construction and checking, with typed stop/cancellation and no accepted truth value. Cycles in the original graph even after an early success, nonempty fairness, clocks, rewards, multiple initials/bindings, nested temporal forms, unresolved workload and non-exact documents remain explicitly unsupported. No state-predicate proof document is treated as a refutation witness. | Test |
 
 ## Dependencies
 

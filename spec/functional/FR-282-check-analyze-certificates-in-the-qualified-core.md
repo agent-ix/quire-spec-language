@@ -82,7 +82,7 @@ cause; or a `StageFailure` when the package cannot be recompiled.
   failing obligation.
 - A certificate checker shall return the same verdict for the same
   certificate bytes and byte provision whichever run or frontend calls it.
-- For FR-201's closed reachability profile, the fresh-process facade SHALL
+- For FR-201's closed reachability and acyclic state-predicate profiles, the fresh-process facade SHALL
   admit the bounded source `ByteProvision`, re-check S1 to S3 into a
   `CheckedPackage`, admit the `ModelSystem` and selected claim binding,
   read the certificate document through that profile's strict reader and
@@ -122,6 +122,8 @@ cause; or a `StageFailure` when the package cannot be recompiled.
 | FR-282-AC-11 | An exact acyclic eventual certificate from a random/workload source package that S4 refuses is written, then accepted in a fresh executable linking only qualified-core crates after bounded source admission and S1 to S3 checking. No emitted-package bytes or fabricated replay request are supplied. The same executable rejects changed values, refuses mismatched identity/objective, and preserves typed source/hash failures. | Test |
 | FR-282-AC-12 | With a source provision or certificate document one byte above its caller ceiling, the fresh checker stops/refuses before reading beyond that ceiling; pre-cancellation and cancellation during graph expansion stop without acceptance or a truth value. Exhausted state, edge and arithmetic budgets retain the actual named setting and consumption. | Test |
 | FR-282-AC-13 | A real FR-197 Exact bounded event-position certificate for FR-201-AC-13 is written by analyze and accepted from its canonical document bytes in a fresh qualified-core-only process using the source provision and actual subject/claim binding. The process independently reconstructs formula-monitor keys and terminal closure through qsl-eval, without qsl-analyze or provider linkage. Changing a running monitor horizon, binding or bounded rank prevents acceptance. | Test |
+| FR-282-AC-14 | Analyze writes the exact until and always proof documents of FR-201-AC-15 and AC-16; a fresh executable linking only qualified-core crates accepts their canonical bytes after independent source S1 to S3 admission and actual subject/claim binding, including random/workload packages that S4 cannot emit. It independently derives the original and stopped graphs, predicate labels and terminal-stutter boundary semantics. Changed formula with changed extensional labels, event, optimization, failure/target set, binding or complete key prevents acceptance; a threshold beyond the certified side rejects. Existing reachability/v1 bytes and verdicts are preserved. | Test |
+| FR-282-AC-15 | For AC-14, source/document byte ceilings, state/edge/arithmetic limits, pre-cancellation and cancellation during independent graph expansion preserve typed nonacceptance with the actual named limit, consumption or cancellation. No analyzer/provider linkage, emitted-package bytes, fabricated replay request, solver labels, local state ids or new witness wire are used. | Test |
 
 ## Dependencies
 
