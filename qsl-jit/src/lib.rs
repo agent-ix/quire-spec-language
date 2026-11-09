@@ -17,10 +17,11 @@
 
 mod classify;
 mod coverage;
+#[allow(unsafe_code)]
 mod exec;
 mod kernel;
 mod prepared;
 mod translate;
 
 pub use coverage::coverage;
-pub use prepared::{Jit, JitPrepared};
+pub use prepared::{CallableEntry, Jit, PreparedJit};

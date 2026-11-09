@@ -112,3 +112,35 @@ fn unsafe_code_appears_only_in_the_exec_module() {
         assert!(!allows || is_exec || path.ends_with("lib.rs"), "{path:?}");
     }
 }
+
+const SIGNATURE_SOURCE: &str = " function id using v(a: Int[0, 9]): Integer pure { a + 0 }\n";
+
+/// A test hook records a wrong signature: the call returns `Fault` without
+/// entering the code.
+#[trace("TC-1400", "FR-568-AC-3")]
+#[test]
+fn an_entry_with_a_wrongly_recorded_signature_returns_fault_without_being_called() {
+    let package = package_of(SIGNATURE_SOURCE);
+    let mut prepared = prepare(&package, &["id"]);
+    prepared.record_signature_for_test(&crate::common::name("id"), 2, true);
+    let result = jitted_call(&prepared, "id", &[int(1)]);
+    let Err(CallFailure::Fault(fault)) = result else {
+        panic!("expected a Fault");
+    };
+    assert_eq!(fault.invariant(), "jit-entry-signature-mismatch");
+}
+
+/// A test entry returns a status outside the closed status type: `Fault`
+/// and no value.
+#[trace("TC-1400", "FR-568-AC-3")]
+#[test]
+fn a_status_outside_the_closed_status_type_returns_fault_and_no_value() {
+    let package = package_of(SIGNATURE_SOURCE);
+    let mut prepared = prepare(&package, &["id"]);
+    prepared.return_out_of_range_status_for_test(&crate::common::name("id"));
+    let result = jitted_call(&prepared, "id", &[int(1)]);
+    let Err(CallFailure::Fault(fault)) = result else {
+        panic!("expected a Fault");
+    };
+    assert_eq!(fault.invariant(), "jit-entry-status-out-of-range");
+}

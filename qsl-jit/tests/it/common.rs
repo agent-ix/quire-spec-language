@@ -3,7 +3,7 @@
 
 use qsl_eval::execution::{EntrySelection, ExecutionBackend, PrepareLimits, PreparedEntries};
 use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
-use qsl_jit::{Jit, JitPrepared};
+use qsl_jit::{Jit, PreparedJit};
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::PackageDeclarations;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
@@ -79,7 +79,7 @@ pub fn select(functions: &[&str]) -> Vec<EntrySelection> {
         .collect()
 }
 
-pub fn prepare<'p>(package: &'p CheckedPackage, functions: &[&str]) -> JitPrepared<'p> {
+pub fn prepare<'p>(package: &'p CheckedPackage, functions: &[&str]) -> PreparedJit<'p> {
     Jit.prepare(
         package,
         &select(functions),
@@ -123,7 +123,7 @@ pub fn interpreted(
 }
 
 pub fn jitted(
-    prepared: &JitPrepared<'_>,
+    prepared: &PreparedJit<'_>,
     function: &str,
     arguments: &[Value],
     limits: ScalarLimits,
@@ -156,7 +156,7 @@ pub fn unsupported_names(prepared: &impl PreparedEntries) -> Vec<String> {
 
 /// `call` through the seam trait, under unlimited accounting.
 pub fn jitted_call(
-    prepared: &JitPrepared<'_>,
+    prepared: &PreparedJit<'_>,
     function: &str,
     arguments: &[Value],
 ) -> Result<Evaluation, CallFailure> {

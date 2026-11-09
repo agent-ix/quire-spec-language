@@ -11,18 +11,21 @@
 
 use std::collections::HashMap;
 
-use cranelift_codegen::ir::{types, AbiParam, Block, InstBuilder, MemFlagsData, Value as Clif};
+use cranelift_codegen::ir::{
+    types, AbiParam, Block, InstBuilder, MemFlagsData, StackSlotData, StackSlotKind, Value as Clif,
+};
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 use cranelift_jit::JITModule;
 use cranelift_module::{FuncId, Module};
 use qsl_eval::execution::{PrepareFailure, PrepareMeter};
-use qsl_semantics::check::CheckedNode;
+use qsl_semantics::check::{CheckedGraph, CheckedNode};
 use quire_checked::integer_division::AdmittedIntegerDivision;
-use quire_checked::node::{Arithmetic, IntegerDivisionOperator, NodeKind, OrderedKind};
+use quire_checked::node::{Arithmetic, Connective, IntegerDivisionOperator, NodeKind, OrderedKind};
 use quire_exact::{
     DivisionMember, Integer, IntegerDomain, IntegerInterval, Meter, OrderingOperator, Outcome,
     ScalarLimits, Value, ValueType,
 };
+use quire_semantic_value::declaration::CheckedEquality;
 use quire_semantic_value::location::ExpressionLocation;
 
 use crate::classify::{untranslated, Outside};
@@ -43,6 +46,17 @@ pub(crate) enum OpKind {
     },
     Order(OrderingOperator),
     Coerce(IntegerInterval),
+    /// `=` or `!=` (the checked equality), over operands carried as
+    /// Booleans (`true`) or Integers (`false`).
+    Equality {
+        checked: Box<CheckedEquality>,
+        operands_boolean: bool,
+    },
+    Not,
+    /// The `boolean.result-retain` charge of a connective's result.
+    Retain,
+    /// The `function.call` charge of a call.
+    ChargeCall,
 }
 
 /// One kernel operation of a translated function and where it is.
@@ -59,10 +73,10 @@ enum Ty {
     Int(i128, i128),
 }
 
-/// What a function was translated to.
+/// What an entry was translated to.
 pub(crate) struct Translated {
+    /// The `extern "C" fn(*const EntryFrame) -> u32` trampoline of the entry.
     pub(crate) id: FuncId,
-    pub(crate) ops: Vec<Op>,
     pub(crate) result_is_boolean: bool,
 }
 
@@ -117,100 +131,260 @@ fn fits(low: i128, high: i128) -> bool {
     i128::from(i64::MIN) <= low && high <= i128::from(i64::MAX)
 }
 
+enum State {
+    InProgress,
+    Done(FuncId, Ty),
+    Unsupported,
+}
+
+/// The translator of one prepared value: the functions it has translated, the
+/// operation table their shim calls index, and the prepare meter.
+pub(crate) struct Compiler<'a, 'm> {
+    module: &'a mut JITModule,
+    shim: FuncId,
+    graph: &'a CheckedGraph,
+    coverage: &'a qsl_eval::execution::BackendCoverage,
+    ops: &'a mut Vec<Op>,
+    meter: &'a mut PrepareMeter<'m>,
+    state: HashMap<usize, State>,
+}
+
 struct Emitter<'a, 'b, 'm> {
     builder: FunctionBuilder<'b>,
     module: &'a mut JITModule,
     shim: FuncId,
     context: Clif,
     exit: Block,
-    ops: Vec<Op>,
+    ops: &'a mut Vec<Op>,
+    state: &'a HashMap<usize, State>,
     slots: HashMap<usize, (Clif, Ty)>,
-    parameters: Vec<Option<Ty>>,
     meter: &'a mut PrepareMeter<'m>,
 }
 
-/// Translate `body`, the checked body of the function `name` with the declared
-/// `parameters`, into a function of `module`.
-pub(crate) fn translate(
-    module: &mut JITModule,
-    shim: &Shim,
-    name: &str,
-    parameters: &[(String, ValueType)],
-    body: CheckedNode<'_>,
-    meter: &mut PrepareMeter<'_>,
-) -> Result<Translated, Failure> {
-    let pointer = module.target_config().pointer_type();
-    let mut signature = module.make_signature();
-    signature.params.push(AbiParam::new(pointer));
-    signature.params.push(AbiParam::new(pointer));
-    signature.returns.push(AbiParam::new(types::I64));
-    let id = module
-        .declare_function(
-            &format!("qsl_{name}"),
-            cranelift_module::Linkage::Export,
-            &signature,
-        )
-        .map_err(|_| fault("jit-declare-function"))?;
-    let frontend = module.target_config();
-    let mut context = module.make_context();
-    context.func.signature = signature;
-    let mut builder_context = FunctionBuilderContext::new();
-    let result_ty = {
-        let mut builder = FunctionBuilder::new(&mut context.func, &mut builder_context);
-        let entry = builder.create_block();
-        builder.append_block_params_for_function_params(entry);
-        builder.switch_to_block(entry);
-        let (ctx_value, args) = (
-            builder.block_params(entry)[0],
-            builder.block_params(entry)[1],
-        );
-        let exit = builder.create_block();
-        let mut emitter = Emitter {
-            builder,
+impl<'a, 'm> Compiler<'a, 'm> {
+    pub(crate) fn new(
+        module: &'a mut JITModule,
+        shim: &Shim,
+        graph: &'a CheckedGraph,
+        coverage: &'a qsl_eval::execution::BackendCoverage,
+        ops: &'a mut Vec<Op>,
+        meter: &'a mut PrepareMeter<'m>,
+    ) -> Self {
+        Self {
             module,
             shim: shim.id(),
-            context: ctx_value,
-            exit,
-            ops: Vec::new(),
-            slots: HashMap::new(),
-            parameters: parameters.iter().map(|(_, t)| type_of(t)).collect(),
+            graph,
+            coverage,
+            ops,
             meter,
+            state: HashMap::new(),
+        }
+    }
+
+    /// The index of the function whose identity is `identity`.
+    pub(crate) fn index_of(&self, identity: &quire_exact::NodeKey) -> Option<usize> {
+        (0..)
+            .map_while(|index| self.graph.function_identity_at(index))
+            .position(|candidate| candidate == *identity)
+    }
+
+    /// Translate the function at `index` and its callees, then the entry
+    /// trampoline that adapts it to the one entry signature (FR-568).
+    pub(crate) fn entry(&mut self, index: usize, name: &str) -> Result<Translated, Failure> {
+        let (block, ty) = self.function(index, 0)?;
+        let pointer = self.module.target_config().pointer_type();
+        let mut signature = self.module.make_signature();
+        signature.params.push(AbiParam::new(pointer));
+        signature.returns.push(AbiParam::new(types::I32));
+        let id = self
+            .module
+            .declare_function(
+                &format!("qsl_entry_{name}"),
+                cranelift_module::Linkage::Export,
+                &signature,
+            )
+            .map_err(|_| fault("jit-declare-entry"))?;
+        let frontend = self.module.target_config();
+        let mut context = self.module.make_context();
+        context.func.signature = signature;
+        let mut builder_context = FunctionBuilderContext::new();
+        {
+            let mut builder = FunctionBuilder::new(&mut context.func, &mut builder_context);
+            let body = builder.create_block();
+            builder.append_block_params_for_function_params(body);
+            builder.switch_to_block(body);
+            let frame = builder.block_params(body)[0];
+            let flags = MemFlagsData::trusted();
+            let arguments = builder.ins().load(pointer, flags, frame, 8);
+            let callee = self.module.declare_func_in_func(block, builder.func);
+            let call = builder.ins().call(callee, &[frame, arguments]);
+            let result = builder.inst_results(call)[0];
+            builder.ins().store(flags, result, frame, 16);
+            let failed = builder.ins().load(types::I64, flags, frame, 0);
+            let status = builder.ins().ireduce(types::I32, failed);
+            builder.ins().return_(&[status]);
+            builder.seal_all_blocks();
+            builder.finalize(frontend);
+        }
+        self.module
+            .define_function(id, &mut context)
+            .map_err(|_| fault("jit-define-entry"))?;
+        self.module.clear_context(&mut context);
+        Ok(Translated {
+            id,
+            result_is_boolean: ty == Ty::Boolean,
+        })
+    }
+
+    /// Translate the function at `index` (once) after the functions it calls.
+    fn function(&mut self, index: usize, depth: usize) -> Result<(FuncId, Ty), Failure> {
+        match self.state.get(&index) {
+            Some(State::Done(id, ty)) => return Ok((*id, *ty)),
+            Some(State::Unsupported) | Some(State::InProgress) => {
+                return Err(self.placeholder(index));
+            }
+            None => {}
+        }
+        let graph = self.graph;
+        let (Some(function), Some(identity)) = (
+            graph.function_state(index),
+            graph.function_identity_at(index),
+        ) else {
+            return Err(fault("jit-function-index"));
         };
-        for (index, ty) in emitter.parameters.clone().into_iter().enumerate() {
-            if let Some(ty) = ty {
-                let offset = i32::try_from(index * 8).map_err(|_| fault("jit-parameter-offset"))?;
-                let value =
-                    emitter
-                        .builder
-                        .ins()
-                        .load(types::I64, MemFlagsData::trusted(), args, offset);
-                emitter.slots.insert(index, (value, ty));
+        let Some(callable) = graph.callable_by_identity(identity) else {
+            self.state.insert(index, State::Unsupported);
+            return Err(self.placeholder(index));
+        };
+        if depth > MAX_DEPTH {
+            self.state.insert(index, State::Unsupported);
+            return Err(Failure::Unsupported(untranslated(function.body)));
+        }
+        if let Some(outside) =
+            crate::classify::first_outside(callable.parameters, function.body, self.coverage)
+        {
+            self.state.insert(index, State::Unsupported);
+            return Err(Failure::Unsupported(outside));
+        }
+        self.state.insert(index, State::InProgress);
+        // Callees first, so a call site finds them translated.
+        let mut pending = vec![function.body];
+        while let Some(node) = pending.pop() {
+            if let NodeKind::Call {
+                function: callee, ..
+            } = node.kind()
+            {
+                match self.function(*callee, depth + 1) {
+                    Ok(_) => {}
+                    Err(Failure::Unsupported(_)) => {
+                        self.state.insert(index, State::Unsupported);
+                        return Err(Failure::Unsupported(untranslated(node)));
+                    }
+                    Err(other) => return Err(other),
+                }
+            }
+            pending.extend(node.children().into_iter().rev());
+        }
+        let parameters: Vec<Option<Ty>> = callable
+            .parameters
+            .iter()
+            .map(|(_, t)| type_of(t))
+            .collect();
+        match self.build(index, &parameters, function.body) {
+            Ok((id, ty)) => {
+                self.state.insert(index, State::Done(id, ty));
+                Ok((id, ty))
+            }
+            Err(failure) => {
+                self.state.insert(index, State::Unsupported);
+                Err(failure)
             }
         }
-        let (result, ty) = emitter.emit(body, 0)?;
-        emitter.builder.ins().return_(&[result]);
-        emitter.builder.switch_to_block(exit);
-        let zero = emitter.builder.ins().iconst(types::I64, 0);
-        emitter.builder.ins().return_(&[zero]);
-        emitter.builder.seal_all_blocks();
-        let ops = std::mem::take(&mut emitter.ops);
-        emitter.builder.finalize(frontend);
-        (ty, ops)
-    };
-    let (ty, ops) = result_ty;
-    module
-        .define_function(id, &mut context)
-        .map_err(|_| fault("jit-define-function"))?;
-    let code_bytes = context.compiled_code().map_or(0, |code| {
-        u64::try_from(code.code_buffer().len()).unwrap_or(u64::MAX)
-    });
-    module.clear_context(&mut context);
-    meter.charge_block(code_bytes)?;
-    Ok(Translated {
-        id,
-        ops,
-        result_is_boolean: ty == Ty::Boolean,
-    })
+    }
+
+    fn placeholder(&self, index: usize) -> Failure {
+        match self.graph.function_state(index) {
+            Some(function) => Failure::Unsupported(untranslated(function.body)),
+            None => fault("jit-function-index"),
+        }
+    }
+
+    fn build(
+        &mut self,
+        index: usize,
+        parameters: &[Option<Ty>],
+        body: CheckedNode<'_>,
+    ) -> Result<(FuncId, Ty), Failure> {
+        let module = &mut *self.module;
+        let pointer = module.target_config().pointer_type();
+        let mut signature = module.make_signature();
+        signature.params.push(AbiParam::new(pointer));
+        signature.params.push(AbiParam::new(pointer));
+        signature.returns.push(AbiParam::new(types::I64));
+        let id = module
+            .declare_function(
+                &format!("qsl_f{index}"),
+                cranelift_module::Linkage::Export,
+                &signature,
+            )
+            .map_err(|_| fault("jit-declare-function"))?;
+        let frontend = module.target_config();
+        let mut context = module.make_context();
+        context.func.signature = signature;
+        let mut builder_context = FunctionBuilderContext::new();
+        let ty = {
+            let mut builder = FunctionBuilder::new(&mut context.func, &mut builder_context);
+            let entry = builder.create_block();
+            builder.append_block_params_for_function_params(entry);
+            builder.switch_to_block(entry);
+            let (ctx_value, args) = (
+                builder.block_params(entry)[0],
+                builder.block_params(entry)[1],
+            );
+            let exit = builder.create_block();
+            let mut emitter = Emitter {
+                builder,
+                module: &mut *module,
+                shim: self.shim,
+                context: ctx_value,
+                exit,
+                ops: &mut *self.ops,
+                state: &self.state,
+                slots: HashMap::new(),
+                meter: &mut *self.meter,
+            };
+            for (position, ty) in parameters.iter().enumerate() {
+                if let Some(ty) = ty {
+                    let offset =
+                        i32::try_from(position * 8).map_err(|_| fault("jit-parameter-offset"))?;
+                    let value = emitter.builder.ins().load(
+                        types::I64,
+                        MemFlagsData::trusted(),
+                        args,
+                        offset,
+                    );
+                    emitter.slots.insert(position, (value, *ty));
+                }
+            }
+            let (result, ty) = emitter.emit(body, 0)?;
+            emitter.builder.ins().return_(&[result]);
+            emitter.builder.switch_to_block(exit);
+            let zero = emitter.builder.ins().iconst(types::I64, 0);
+            emitter.builder.ins().return_(&[zero]);
+            emitter.builder.seal_all_blocks();
+            emitter.builder.finalize(frontend);
+            ty
+        };
+        module
+            .define_function(id, &mut context)
+            .map_err(|_| fault("jit-define-function"))?;
+        let code_bytes = context.compiled_code().map_or(0, |code| {
+            u64::try_from(code.code_buffer().len()).unwrap_or(u64::MAX)
+        });
+        module.clear_context(&mut context);
+        self.meter.charge_block(code_bytes)?;
+        Ok((id, ty))
+    }
 }
 
 impl Emitter<'_, '_, '_> {
@@ -349,8 +523,124 @@ impl Emitter<'_, '_, '_> {
                 };
                 Ok((result, narrowed))
             }
+            NodeKind::Equality(_, checked, left, right) => {
+                let (a, left_ty) = self.emit(node.at(*left), depth + 1)?;
+                let (b, right_ty) = self.emit(node.at(*right), depth + 1)?;
+                let operands_boolean = match (left_ty, right_ty) {
+                    (Ty::Boolean, Ty::Boolean) => true,
+                    (Ty::Int(..), Ty::Int(..)) => false,
+                    _ => return Err(self.unsupported(node)),
+                };
+                let kind = OpKind::Equality {
+                    checked: checked.clone(),
+                    operands_boolean,
+                };
+                let result = self.shim_call(node, kind, a, b);
+                Ok((result, Ty::Boolean))
+            }
+            NodeKind::Not(operand) => {
+                let (a, ty) = self.emit(node.at(*operand), depth + 1)?;
+                if ty != Ty::Boolean {
+                    return Err(self.unsupported(node));
+                }
+                let zero = self.builder.ins().iconst(types::I64, 0);
+                let result = self.shim_call(node, OpKind::Not, a, zero);
+                Ok((result, Ty::Boolean))
+            }
+            NodeKind::Connective(connective, _, left, right) => {
+                self.emit_connective(node, (*connective, *left, *right), depth)
+            }
+            NodeKind::Call {
+                function,
+                arguments,
+            } => {
+                let Some(State::Done(callee, result_ty)) = self.state.get(function) else {
+                    return Err(self.unsupported(node));
+                };
+                let (callee, result_ty) = (*callee, *result_ty);
+                let mut values = Vec::with_capacity(arguments.len());
+                for argument in arguments {
+                    values.push(self.emit(node.at(*argument), depth + 1)?.0);
+                }
+                let zero = self.builder.ins().iconst(types::I64, 0);
+                let charged = self.shim_call(node, OpKind::ChargeCall, zero, zero);
+                let _ = charged;
+                let size = u32::try_from(values.len().max(1) * 8).unwrap_or(8);
+                let slot = self.builder.create_sized_stack_slot(StackSlotData::new(
+                    StackSlotKind::ExplicitSlot,
+                    size,
+                    3,
+                ));
+                for (position, value) in values.iter().enumerate() {
+                    let offset = i32::try_from(position * 8).unwrap_or(0);
+                    self.builder
+                        .ins()
+                        .stack_store(types::I64, *value, slot, offset);
+                }
+                let pointer = self.module.target_config().pointer_type();
+                let address = self.builder.ins().stack_addr(pointer, slot, 0);
+                let function_ref = self.module.declare_func_in_func(callee, self.builder.func);
+                let call = self
+                    .builder
+                    .ins()
+                    .call(function_ref, &[self.context, address]);
+                let result = self.builder.inst_results(call)[0];
+                self.leave_on_failure();
+                Ok((result, result_ty))
+            }
             _ => Err(self.unsupported(node)),
         }
+    }
+
+    fn emit_connective(
+        &mut self,
+        node: CheckedNode<'_>,
+        (connective, left, right): (
+            Connective,
+            qsl_semantics::check::NodeId,
+            qsl_semantics::check::NodeId,
+        ),
+        depth: usize,
+    ) -> Result<(Clif, Ty), Failure> {
+        let (selector, left_ty) = self.emit(node.at(left), depth + 1)?;
+        if left_ty != Ty::Boolean {
+            return Err(self.unsupported(node));
+        }
+        let (skip, evaluate, merge) = (
+            self.builder.create_block(),
+            self.builder.create_block(),
+            self.builder.create_block(),
+        );
+        self.builder.append_block_param(merge, types::I64);
+        // The left operand alone decides `and` when false, `or` when true and
+        // `implies` when false; the decided result is retained (charged) like
+        // any other connective result.
+        let (decided, when_decided) = match connective {
+            Connective::And => (false, false),
+            Connective::Or => (true, true),
+            Connective::Implies => (true, false),
+        };
+        if when_decided {
+            self.builder.ins().brif(selector, skip, &[], evaluate, &[]);
+        } else {
+            self.builder.ins().brif(selector, evaluate, &[], skip, &[]);
+        }
+        self.builder.switch_to_block(skip);
+        let constant = self.builder.ins().iconst(types::I64, i64::from(decided));
+        let zero = self.builder.ins().iconst(types::I64, 0);
+        let retained = self.shim_call(node, OpKind::Retain, constant, zero);
+        self.builder.ins().jump(merge, &[retained.into()]);
+        self.builder.switch_to_block(evaluate);
+        let (value, right_ty) = self.emit(node.at(right), depth + 1)?;
+        if right_ty != Ty::Boolean {
+            return Err(self.unsupported(node));
+        }
+        let zero = self.builder.ins().iconst(types::I64, 0);
+        let retained = self.shim_call(node, OpKind::Retain, value, zero);
+        self.builder.ins().jump(merge, &[retained.into()]);
+        self.builder.switch_to_block(merge);
+        let joined = self.builder.block_params(merge)[0];
+        Ok((joined, Ty::Boolean))
     }
 
     fn emit_if(
@@ -410,6 +700,12 @@ impl Emitter<'_, '_, '_> {
             .ins()
             .call(function, &[self.context, index, a, b]);
         let result = self.builder.inst_results(call)[0];
+        self.leave_on_failure();
+        result
+    }
+
+    /// Return from the function when the call just made recorded a stop.
+    fn leave_on_failure(&mut self) {
         let failed = self
             .builder
             .ins()
@@ -417,7 +713,6 @@ impl Emitter<'_, '_, '_> {
         let next = self.builder.create_block();
         self.builder.ins().brif(failed, self.exit, &[], next, &[]);
         self.builder.switch_to_block(next);
-        result
     }
 }
 
