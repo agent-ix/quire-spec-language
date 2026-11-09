@@ -1438,6 +1438,40 @@ pub(crate) fn check_clause_admitted(
             meter,
         };
     };
+    // SPIKE (QSL-602 step 4a, throwaway): time S6a `evaluate_clause` and the
+    // observation admission around it over QSL_SPIKE_REPS repetitions.
+    if let Some(reps) = std::env::var("QSL_SPIKE_REPS")
+        .ok()
+        .and_then(|v| v.parse::<u32>().ok())
+    {
+        let t = std::time::Instant::now();
+        let mut last = None;
+        for _ in 0..reps {
+            last = admit_clause_observations(
+                graph,
+                clause,
+                run.packages,
+                run.model_limits,
+                &run.provisions,
+                selection,
+                run.observation_limits,
+            )
+            .ok();
+        }
+        let admit_ns = t.elapsed().as_nanos() / u128::from(reps);
+        drop(last);
+        let t = std::time::Instant::now();
+        let mut charges = 0;
+        let trail_len = 0;
+        for _ in 0..reps {
+            let mut m = Meter::new(run.accounting);
+            let ev = run.package.evaluate_clause(&qualified, &observations, &mut m);
+            charges = m.admission_count();
+            std::hint::black_box(&ev);
+        }
+        let eval_ns = t.elapsed().as_nanos() / u128::from(reps);
+        eprintln!("SPIKE clause={} admit_ns={admit_ns} eval_ns={eval_ns} charges={charges} dbg_len={trail_len}", selection.name);
+    }
     let mut derived = None;
     let mut consequent_source_events = ConsequentSourceEvents::Unavailable;
     let disposition = match run

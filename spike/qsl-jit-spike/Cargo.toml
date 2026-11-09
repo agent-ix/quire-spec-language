@@ -1,0 +1,18 @@
+[package]
+name = "qsl-jit-spike"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[dependencies]
+cranelift-codegen = "0.137.1"
+cranelift-frontend = "0.137.1"
+cranelift-jit = "0.137.1"
+cranelift-module = "0.137.1"
+cranelift-native = "0.137.1"
+quire-exact = { git = "https://github.com/agent-ix/quire-exact", rev = "bd2991e79bf43ac4ec99db667c42aefcc887d2f4" }
+
+[profile.release]
+debug = false
