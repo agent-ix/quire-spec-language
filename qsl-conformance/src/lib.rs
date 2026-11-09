@@ -458,22 +458,24 @@ fn run(
     for report in &mut reports {
         if report.compared == 0 {
             report.total_findings += 1;
-            report.findings.push(Finding {
-                kind: FindingKind::EmptyComparison,
-                backend: report.backend,
-                seed: inputs.seed,
-                unit: String::new(),
-                source: String::new(),
-                entry: String::new(),
-                arguments: String::new(),
-                reference: String::new(),
-                result: String::new(),
-            });
+            if report.findings.len() < limits.max_reported {
+                report.findings.push(Finding {
+                    kind: FindingKind::EmptyComparison,
+                    backend: report.backend,
+                    seed: inputs.seed,
+                    unit: String::new(),
+                    source: String::new(),
+                    entry: String::new(),
+                    arguments: String::new(),
+                    reference: String::new(),
+                    result: String::new(),
+                });
+            }
         }
     }
     Ok(ParityReport {
         seed: inputs.seed,
-        units: units.len() as u64,
+        units: u64::try_from(units.len()).unwrap_or(u64::MAX),
         discarded,
         backends: reports,
     })

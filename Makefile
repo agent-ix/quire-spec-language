@@ -383,11 +383,6 @@ conformance: check-conformance-input
 # `arch-lint-api-surface-qsl` passes `--qsl-only`, which skips T12-A, so the
 # QSL-tree rules gate `ci:` without CG_CLONE.
 #
-# FR-563: the engine parity gate. Exit 0 with no finding, 1 with any
-# finding, 2 on a refusal.
-parity:
-	cargo run --locked -p xtask -- parity
-
 # `arch-lint` runs the checks that need only this repository:
 # api-surface-qsl and qualified-core.
 IR_CLONE ?=
@@ -416,16 +411,20 @@ arch-lint-api-surface-qsl:
 arch-lint-qualified-core:
 	cargo run --locked -p arch-lint -- qualified-core --qsl .
 
-# Runs the two checks that need only this repository.
-# `arch-lint-direction` needs IR_CLONE/RT_CLONE/CG_CLONE, and
-# `arch-lint-api-surface` needs CG_CLONE (see above); each runs separately.
 # FR-568 (ADR-035 CG-4): `unsafe` code lives in `qsl_jit::exec` and nowhere
 # else; every other package keeps `unsafe_code` forbidden.
 arch-lint-unsafe:
 	cargo run --locked -p arch-lint -- unsafe-confinement --qsl .
 
-arch-lint: arch-lint-api-surface-qsl arch-lint-qualified-core arch-lint-unsafe
+# FR-563: the engine parity gate. Exit 0 with no finding, 1 with any
+# finding, 2 on a refusal.
+parity:
+	cargo run --locked -p xtask -- parity
 
+# Runs the checks that need only this repository.
+# `arch-lint-direction` needs IR_CLONE/RT_CLONE/CG_CLONE, and
+# `arch-lint-api-surface` needs CG_CLONE (see above); each runs separately.
+arch-lint: arch-lint-api-surface-qsl arch-lint-qualified-core arch-lint-unsafe
 
 # The committed performance benchmarks (`qsl-bench/`), one
 # criterion bench per axis, each runnable by name. `make bench` runs all

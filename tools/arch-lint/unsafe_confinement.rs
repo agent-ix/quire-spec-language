@@ -25,21 +25,50 @@ pub(crate) struct Finding {
     pub(crate) item: String,
 }
 
-/// The members of the workspace rooted at `root` and their directories.
-fn members(root: &Path) -> Result<Vec<(String, PathBuf)>> {
+/// Manifest text with `#` comments removed.
+fn uncommented(text: &str) -> String {
+    text.lines()
+        .map(|line| line.split('#').next().unwrap_or(""))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// The members of the workspace rooted at `root`, and the findings for a
+/// manifest the check cannot read: it fails closed rather than skip a member.
+fn members(root: &Path, findings: &mut Vec<Finding>) -> Result<Vec<(String, PathBuf)>> {
     let manifest = root.join("Cargo.toml");
-    let text = fs::read_to_string(&manifest).map_err(|error| Error::io(&manifest, error))?;
-    let mut directories = vec![PathBuf::from(".")];
-    if let Some(start) = text.find("members") {
-        if let Some(open) = text[start..].find('[') {
-            let rest = &text[start + open + 1..];
-            if let Some(close) = rest.find(']') {
-                for entry in rest[..close].split(',') {
-                    let name = entry.trim().trim_matches('"');
-                    if !name.is_empty() && name != "." {
-                        directories.push(PathBuf::from(name));
-                    }
+    let text =
+        uncommented(&fs::read_to_string(&manifest).map_err(|error| Error::io(&manifest, error))?);
+    let mut directories = Vec::new();
+    if text.lines().any(|line| line.trim() == "[package]") {
+        directories.push(PathBuf::from("."));
+    }
+    let mut in_workspace = false;
+    let mut collecting = false;
+    for line in text.lines() {
+        let line = line.trim();
+        if line.starts_with('[') {
+            in_workspace = line == "[workspace]";
+            collecting = false;
+            continue;
+        }
+        if in_workspace && line.starts_with("members") {
+            collecting = true;
+        }
+        if collecting {
+            for piece in line.split('"').skip(1).step_by(2) {
+                if piece.contains('*') || piece.contains('?') {
+                    findings.push(Finding {
+                        package: "workspace".to_owned(),
+                        file: PathBuf::from("Cargo.toml"),
+                        item: format!("member glob `{piece}` is not supported"),
+                    });
+                } else if piece != "." {
+                    directories.push(PathBuf::from(piece));
                 }
+            }
+            if line.contains(']') {
+                collecting = false;
             }
         }
     }
@@ -47,8 +76,14 @@ fn members(root: &Path) -> Result<Vec<(String, PathBuf)>> {
     for directory in directories {
         let path = root.join(&directory).join("Cargo.toml");
         let Ok(text) = fs::read_to_string(&path) else {
+            findings.push(Finding {
+                package: directory.display().to_string(),
+                file: directory.join("Cargo.toml"),
+                item: "member manifest is missing or unreadable".to_owned(),
+            });
             continue;
         };
+        let text = uncommented(&text);
         let name = text
             .lines()
             .skip_while(|line| line.trim() != "[package]")
@@ -60,6 +95,28 @@ fn members(root: &Path) -> Result<Vec<(String, PathBuf)>> {
         found.push((name, root.join(directory)));
     }
     Ok(found)
+}
+
+/// Whether the workspace root declares `unsafe_code = "forbid"` in
+/// `[workspace.lints.rust]`, which `[lints] workspace = true` inherits.
+fn workspace_forbids(root: &Path) -> bool {
+    let Ok(text) = fs::read_to_string(root.join("Cargo.toml")) else {
+        return false;
+    };
+    let mut in_section = false;
+    for line in uncommented(&text).lines() {
+        let line = line.trim();
+        if line.starts_with('[') {
+            in_section = line == "[workspace.lints.rust]";
+        } else if in_section {
+            if let Some((key, value)) = line.split_once('=') {
+                if key.trim() == "unsafe_code" && value.trim().trim_matches('"') == "forbid" {
+                    return true;
+                }
+            }
+        }
+    }
+    false
 }
 
 /// The `unsafe_code` level a manifest declares in `[lints.rust]`, and whether
@@ -108,8 +165,7 @@ fn crate_roots(directory: &Path, manifest: &str) -> Vec<PathBuf> {
     roots
 }
 
-fn rust_files(directory: &Path, top: bool, out: &mut Vec<PathBuf>) {
-    let _ = top;
+fn rust_files(directory: &Path, out: &mut Vec<PathBuf>) {
     let Ok(entries) = fs::read_dir(directory) else {
         return;
     };
@@ -120,7 +176,7 @@ fn rust_files(directory: &Path, top: bool, out: &mut Vec<PathBuf>) {
             // A nested package is scanned as its own member.
             let nested = path.join("Cargo.toml").is_file();
             if name != "target" && name != ".git" && !nested {
-                rust_files(&path, false, out);
+                rust_files(&path, out);
             }
         } else if path.extension().is_some_and(|ext| ext == "rs") {
             out.push(path);
@@ -147,27 +203,28 @@ fn lowers_unsafe(attribute: &syn::Attribute) -> bool {
 }
 
 impl Scan {
-    fn attributes(&mut self, attributes: &[syn::Attribute], on_mod_exec: bool) {
-        for attribute in attributes {
-            if lowers_unsafe(attribute) {
-                self.lowering.push((
-                    format!(
-                        "#[{}(unsafe_code)]",
-                        attribute
-                            .path()
-                            .get_ident()
-                            .map_or_else(String::new, ToString::to_string)
-                    ),
-                    on_mod_exec,
-                ));
-            }
+    fn attribute(&mut self, attribute: &syn::Attribute, on_mod_exec: bool) {
+        if lowers_unsafe(attribute) {
+            self.lowering.push((
+                format!(
+                    "#[{}(unsafe_code)]",
+                    attribute
+                        .path()
+                        .get_ident()
+                        .map_or_else(String::new, ToString::to_string)
+                ),
+                on_mod_exec,
+            ));
         }
     }
 }
 
 impl<'ast> Visit<'ast> for Scan {
+    fn visit_attribute(&mut self, attribute: &'ast syn::Attribute) {
+        self.attribute(attribute, false);
+    }
+
     fn visit_item_fn(&mut self, item: &'ast syn::ItemFn) {
-        self.attributes(&item.attrs, false);
         if item.sig.unsafety.is_some() {
             self.items.push(format!("unsafe fn {}", item.sig.ident));
         }
@@ -200,13 +257,18 @@ impl<'ast> Visit<'ast> for Scan {
         syn::visit::visit_expr_unsafe(self, expression);
     }
 
+    /// The outer attributes of `mod exec` are the one place a lowering
+    /// attribute is allowed (the caller decides by file); every attribute
+    /// inside the module, and on any other item, is visited as usual.
     fn visit_item_mod(&mut self, item: &'ast syn::ItemMod) {
-        self.attributes(&item.attrs, item.ident == "exec");
-        syn::visit::visit_item_mod(self, item);
-    }
-
-    fn visit_item_use(&mut self, item: &'ast syn::ItemUse) {
-        self.attributes(&item.attrs, false);
+        for attribute in &item.attrs {
+            self.attribute(attribute, item.ident == "exec");
+        }
+        if let Some((_, items)) = &item.content {
+            for inner in items {
+                self.visit_item(inner);
+            }
+        }
     }
 }
 
@@ -220,7 +282,8 @@ fn crate_root_forbids(root: &Path) -> bool {
 /// Run the check over the workspace at `root`.
 pub(crate) fn check(root: &Path) -> Result<Vec<Finding>> {
     let mut findings = Vec::new();
-    for (package, directory) in members(root)? {
+    let workspace_lints_forbid = workspace_forbids(root);
+    for (package, directory) in members(root, &mut findings)? {
         let manifest_path = directory.join("Cargo.toml");
         let manifest =
             fs::read_to_string(&manifest_path).map_err(|error| Error::io(&manifest_path, error))?;
@@ -240,20 +303,22 @@ pub(crate) fn check(root: &Path) -> Result<Vec<Finding>> {
         } else {
             let roots = crate_roots(&directory, &manifest);
             let forbidden = level.as_deref() == Some("forbid")
-                || inherits
+                || (inherits && workspace_lints_forbid)
                 || (!roots.is_empty() && roots.iter().all(|r| crate_root_forbids(r)));
             if !forbidden {
                 finding(&manifest_path, "unsafe_code is not forbidden".to_owned());
             }
         }
         let mut files = Vec::new();
-        rust_files(&directory, true, &mut files);
+        rust_files(&directory, &mut files);
         files.sort();
         for file in files {
             let Ok(text) = fs::read_to_string(&file) else {
+                finding(&file, "file is unreadable".to_owned());
                 continue;
             };
             let Ok(syntax) = syn::parse_file(&text) else {
+                finding(&file, "file does not parse as Rust".to_owned());
                 continue;
             };
             let relative = file.strip_prefix(&directory).unwrap_or(&file);
@@ -476,5 +541,109 @@ mod tests {
             "#![forbid(unsafe_code)]\npub fn h() {}\n",
         );
         assert_eq!(check(dir.path()).unwrap(), vec![]);
+    }
+
+    #[trace("TC-1400", "FR-568-AC-1")]
+    #[test]
+    fn an_unparsable_file_fails_closed() {
+        violates(
+            |root| write(root, "other/src/lib.rs", "fn broken( {\n"),
+            "does not parse",
+        );
+    }
+
+    #[trace("TC-1400", "FR-568-AC-1")]
+    #[test]
+    fn an_inner_allow_in_a_module_file_fails() {
+        violates(
+            |root| {
+                write(
+                    root,
+                    "qsl-jit/src/other.rs",
+                    "#![allow(unsafe_code)]\npub fn g() {}\n",
+                )
+            },
+            "allow(unsafe_code)",
+        );
+    }
+
+    #[trace("TC-1400", "FR-568-AC-1")]
+    #[test]
+    fn an_allow_on_an_impl_or_struct_fails() {
+        violates(
+            |root| {
+                write(
+                    root,
+                    "other/src/lib.rs",
+                    "#[allow(unsafe_code)]\nstruct S;\n",
+                )
+            },
+            "allow(unsafe_code)",
+        );
+        violates(
+            |root| {
+                write(
+                    root,
+                    "other/src/lib.rs",
+                    "struct S;\n#[expect(unsafe_code)]\nimpl S {}\n",
+                )
+            },
+            "expect(unsafe_code)",
+        );
+    }
+
+    #[trace("TC-1400", "FR-568-AC-1")]
+    #[test]
+    fn workspace_lints_without_a_workspace_table_do_not_count_as_forbid() {
+        violates(
+            |root| {
+                write(
+                    root,
+                    "other/Cargo.toml",
+                    "[package]\nname = \"other\"\n[lints]\nworkspace = true\n",
+                )
+            },
+            "forbid",
+        );
+    }
+
+    #[trace("TC-1400", "FR-568-AC-1")]
+    #[test]
+    fn a_missing_member_manifest_fails() {
+        violates(
+            |root| {
+                write(
+                    root,
+                    "Cargo.toml",
+                    "[package]\nname = \"root\"\n[lints.rust]\nunsafe_code = \"forbid\"\n[workspace]\nmembers = [\"qsl-jit\", \"other\", \"ghost\"]\n",
+                )
+            },
+            "missing or unreadable",
+        );
+    }
+
+    #[trace("TC-1400", "FR-568-AC-1")]
+    #[test]
+    fn a_glob_member_fails_and_a_multiline_commented_list_parses() {
+        violates(
+            |root| {
+                write(
+                    root,
+                    "Cargo.toml",
+                    "[package]\nname = \"root\"\n[lints.rust]\nunsafe_code = \"forbid\"\n[workspace]\nmembers = [\"*\"]\n",
+                )
+            },
+            "glob",
+        );
+        let dir = tempfile::tempdir().unwrap();
+        clean(dir.path());
+        write(
+            dir.path(),
+            "Cargo.toml",
+            "[package]\nname = \"root\"\n[lints.rust]\nunsafe_code = \"forbid\"\n[workspace]\nmembers = [\n  \"qsl-jit\", # the jit\n  \"other\",\n]\n",
+        );
+        write(dir.path(), "other/src/lib.rs", "pub unsafe fn h() {}\n");
+        let findings = check(dir.path()).unwrap();
+        assert!(findings.iter().any(|f| f.item.contains("unsafe fn h")));
     }
 }

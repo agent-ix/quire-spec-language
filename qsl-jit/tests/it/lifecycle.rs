@@ -6,7 +6,7 @@ use ix_trace_rs::trace;
 use qsl_eval::execution::{ExecutionBackend, PrepareFailure, PrepareLimits};
 use qsl_jit::Jit;
 use quire_eval::CallFailure;
-use quire_exact::{Cancel, CancelCause};
+use quire_exact::{Cancel, CancelCause, Integer, Value};
 
 use crate::common::{
     int, interpreted, jitted, jitted_call, package_of, prepare, select, UNLIMITED,
@@ -90,9 +90,8 @@ fn prepare_with_a_cancelled_handle_is_cancelled() {
     ));
 }
 
-/// FR-568: no `unsafe` outside `exec.rs`. The workspace gate named by the
-/// spec (`make arch-lint-unsafe`) does not exist yet; this is the in-crate
-/// check of the same rule.
+/// FR-568: no `unsafe` outside `exec.rs`. `make arch-lint-unsafe` checks the
+/// whole workspace; this is the in-crate check of the same rule.
 #[trace("TC-1400")]
 #[test]
 fn unsafe_code_appears_only_in_the_exec_module() {
@@ -143,4 +142,67 @@ fn a_status_outside_the_closed_status_type_returns_fault_and_no_value() {
         panic!("expected a Fault");
     };
     assert_eq!(fault.invariant(), "jit-entry-status-out-of-range");
+}
+
+/// The signature recorded at generation is read from the declared Cranelift
+/// signature: one pointer parameter and a `u32` result.
+#[trace("TC-1400")]
+#[test]
+fn a_generated_entry_records_the_entry_signature() {
+    let package = package_of(SIGNATURE_SOURCE);
+    let prepared = prepare(&package, &["id"]);
+    assert_eq!(
+        prepared.recorded_signature_for_test(&crate::common::name("id")),
+        Some((1, true))
+    );
+}
+
+const EDGE_SOURCE: &str = "\
+ function narrow_mod using v(a: Int[0, 10], b: Int[0, 4000000000000000000]): Integer pure { (a mod 5) * b }\n\
+ function fitting_mod using v(a: Int[0, 10], b: Int[0, 1000000000000000000]): Integer pure { (a mod 5) * b }\n\
+ function unread using v(x: Int[0, 100000000000000000000]): Boolean pure { true }\n\
+ function other using v(a: Int[0, 9]): Integer pure { a + 1 }\n";
+
+/// The remainder is not monotone: `a mod 5` is 0 at both ends of `[0, 10]`
+/// and 4 between them, so a product with `b` must not be judged to fit 64
+/// bits from the ends. The entry is listed unsupported instead of faulting
+/// at run time where the interpreter completes.
+#[trace("TC-1385")]
+#[test]
+fn a_remainder_times_a_large_operand_is_not_judged_to_fit_from_the_interval_ends() {
+    let package = package_of(EDGE_SOURCE);
+    let prepared = prepare(&package, &["narrow_mod", "fitting_mod"]);
+    assert_eq!(
+        crate::common::unsupported_names(&prepared),
+        vec!["narrow_mod".to_owned()]
+    );
+    let arguments = [int(9), int(1_000_000_000_000_000_000)];
+    let want = interpreted(&package, "fitting_mod", &arguments, UNLIMITED);
+    let got = jitted(&prepared, "fitting_mod", &arguments, UNLIMITED);
+    assert_eq!(got.result, want.result);
+    assert_eq!(got.charges, want.charges);
+}
+
+/// A parameter the body does not read, of a type wider than 64 bits, is
+/// admitted and ignored exactly as the interpreter does.
+#[test]
+fn an_unread_wide_parameter_is_not_a_fault() {
+    let package = package_of(EDGE_SOURCE);
+    let prepared = prepare(&package, &["unread"]);
+    assert!(crate::common::unsupported_names(&prepared).is_empty());
+    let big = Value::Integer(Integer::from(1_i128 << 65));
+    let want = interpreted(&package, "unread", std::slice::from_ref(&big), UNLIMITED);
+    let got = jitted(&prepared, "unread", std::slice::from_ref(&big), UNLIMITED);
+    assert_eq!(got.result, want.result);
+    assert_eq!(got.charges, want.charges);
+}
+
+/// A function the caller did not select at `prepare` is a caller condition,
+/// not a backend fault.
+#[test]
+fn a_function_not_selected_at_prepare_is_refused_not_faulted() {
+    let package = package_of(EDGE_SOURCE);
+    let prepared = prepare(&package, &["other"]);
+    let result = jitted_call(&prepared, "unread", &[int(1)]);
+    assert!(matches!(result, Err(CallFailure::Input(_))), "{result:?}");
 }
