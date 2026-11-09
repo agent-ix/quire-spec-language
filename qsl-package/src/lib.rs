@@ -129,6 +129,7 @@ pub use protocol_occurrence_key::{
     OccurrenceKeyError, ProtocolOccurrenceKey, WorkflowInstanceIdentity,
 };
 pub use protocol_selection::{ProtocolSlotDescriptor, SlotSelectionFailure};
+#[cfg(feature = "std")]
 pub use quire_contract_model::{CheckedBindingNameKind, CheckedLiteralValue, CheckedTerm};
 #[cfg(feature = "std")]
 pub use reader_protocol_projection::{

@@ -35,6 +35,9 @@ pub mod serde_object;
 pub mod setting;
 pub mod source;
 pub mod source_map;
+/// Gated on 64-bit atomics: the total is a `u64` that a shared reference adds
+/// to, which targets without them (such as `thumbv7em-none-eabi`) cannot hold.
+#[cfg(target_has_atomic = "64")]
 pub mod tally;
 pub mod wire_format;
 pub mod witness;

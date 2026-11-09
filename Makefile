@@ -278,7 +278,7 @@ test-deep-format:
 # it never reuses this build's cached artifacts) and the parse example.
 #
 # FR-042-AC-15/FR-050-AC-8: a `--lib`, `--no-default-features`
-# check with only `handoff-writer` turned on demonstrates the acceptance
+# check with only `checked-handoff` turned on demonstrates the acceptance
 # itself -- the public writer builds with no dev-dependency in its closure --
 # rather than resting on a claim in prose. `cargo check` (not `build`) is
 # enough: the property under test is which dependencies the lib target
@@ -292,7 +292,7 @@ endif
 
 ci-clean-build:
 	cargo build --locked --workspace --no-default-features --target-dir "$${CI_CLEAN_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/clean}"
-	cargo check --locked -p quire-spec-language --lib --no-default-features --features handoff-writer --target-dir "$${CI_CLEAN_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/clean}"
+	cargo check --locked -p quire-spec-language --lib --no-default-features --features checked-handoff --target-dir "$${CI_CLEAN_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/clean}"
 
 # NFR-015: each no_std-capable crate builds with `std` off. A closure-tier row
 # builds for the governed target (its sysroot has no `std`); a `std` path added

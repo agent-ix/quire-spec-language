@@ -7,7 +7,7 @@
 //!
 //! The family is a property of the claim, never of the item's kind, of the
 //! kind's FR-290 kind group or of QSL's `FamilyKind` (FR-507): this module
-//! takes no [`Capability`](qsl_semantics::check::Capability).
+//! takes no [`Capability`].
 
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_package::CheckedPackage;

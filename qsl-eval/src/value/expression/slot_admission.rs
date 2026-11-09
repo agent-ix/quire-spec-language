@@ -82,7 +82,7 @@ pub(super) fn admit_objects(
 /// The locus member an object-environment entry refusal names.
 const OBJECT_ENVIRONMENT: &str = "object-environment";
 
-/// The record of `failure` when it is [`admit_objects`]'s refusal of the
+/// The record of `failure` when it is `admit_objects`'s refusal of the
 /// object environment -- caller input, refused before any charge, that a
 /// caller maps to its own typed input refusal -- and `None` for any other
 /// call admission failure. The refusal's locus names its member by string, so

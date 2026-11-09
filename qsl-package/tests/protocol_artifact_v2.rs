@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-050-AC-2/3, FR-513-AC-17: the complete version 2 refusal-code table.
+#![cfg(feature = "std")]
 
 use ix_trace_rs::trace;
 use qsl_package::protocol_artifact_v2::RefusalCode;
