@@ -480,7 +480,7 @@ engines of OP-2 and the plugin host's process adapter (§5) each implement
 it, so the driver handles every provider the same way after routing. QSL
 depends on no driver crate (FR-280), so a QSL engine never names this trait:
 QSL exposes `qsl_analyze::provider::run` over its own `SubjectBinding`,
-`RoutedItem` and `AnalyzeLimits` types (FR-280, FR-281), and the driver's
+`SourceProvision`, `NegotiatedItem` and `AnalyzeLimits` types (FR-280, FR-281), and the driver's
 adapter converts its `ProviderRequest` to them and drops `emitted`.
 
 `prove` always passes the run's `CheckedPackage` and passes the

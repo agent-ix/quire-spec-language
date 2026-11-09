@@ -116,8 +116,8 @@ settles it:
 
 `Engines` is the set of in-process engines `analyze` and the provider entry
 (FR-280) may run, each by its `BackendId` with its FR-331 manifest.
-`Engines::qsl()` holds every layer-A engine, each under its own
-`BackendId`. `Engines::with` adds an implementation of `qsl_analyze::Engine`,
+`Engines::qsl()` holds every layer-A engine, EN-5 among them, each under its
+own `BackendId` (EN-1 `en-1`, EN-4 `en-4`, EN-5 `en-5`; FR-280). `Engines::with` adds an implementation of `qsl_analyze::Engine`,
 the trait every layer-A engine implements: its manifest, and its run over one
 item, which returns the engine's own result (a proof with its certificate or
 none, a counterexample, an undefined evaluation, a budget stop, or the
@@ -130,6 +130,70 @@ twice), and the set it was called on is unchanged. Tests use
 it to run test engines. SMT, Kani and plugin providers are not `Engine`s:
 they reach a claim through the driver's `prove`, never through `analyze`
 (ADR-029 OP-2).
+
+### Byte provision
+
+Replay (FR-098) and the certificate checkers (FR-282) recompile the package
+from bytes, so an item that reaches either needs the bytes the
+`CheckedPackage` was checked from. A `CheckedPackage` names each source by its
+FR-001 labels (authority and identity) and holds no bytes, so the caller
+supplies them as the request's `provision`: for every source the package
+names, and every source of its resolved dependencies, the bytes under those
+labels, and nothing else. The caller that ran `check` read those bytes and
+passes the same ones; `analyze` reads no file (FR-276). The subject's
+domain-package and snapshot documents are the binding's `packages` and
+`snapshots`, which `analyze` adds to each replay request's byte provision.
+
+`analyze` builds every replay request and certificate-check request for an
+item itself, from the checked package, the binding, the provision, the
+item's `claim` and the request's limits. No caller, test or engine adapter
+builds a `ReplayRequestWire` for an item, and no adapter takes a closure that
+supplies a verdict, a letter evaluator or a replay. The request has the
+members of ADR-013 O-26:
+
+- `package`: the FR-264 emission of the checked package with the item's
+  temporal clock selections, read as FR-098's package reference;
+- `byte_provision`: the provision's entry for each source label the package
+  reference names, and the binding's documents;
+- `replay_target`, `obligation_identity`, `backend`, `source` and
+  `occurrence_key`: for an authored clause, FR-128's fixed members (the
+  `state_clause` target naming the clause by its declared name, the clause
+  node's obligation identity with no model identity and ordinal 0, the
+  engine's `BackendId`, and the witness transcript
+  `<<<assertion|model_check|clause|>>>`); for every other item kind, the
+  members its replay requirement gives (FR-098 for a function or application
+  claim, FR-193 for a sampled witness, FR-202 for an EN-5 witness);
+- `state_environment` empty, `accounting_limits` the request's
+  `limits.accounting`, and no stage limits.
+
+After the binding is admitted and before any item runs, `analyze` checks that
+the provision holds an entry for every source label the package names. A
+missing entry fails the whole request with
+`StageFailure::Refused(AnalyzeRefusal::Provision)` naming the label, as FR-098
+refuses it (`missing_import`/`missing-selection`), and no record. A source
+label carries no digest, so bytes that are not the ones the package was
+checked from are not detected at construction: the recompilation they give
+differs, a counterexample then fails to replay, and the item settles
+`inconclusive` with cause `replay_parity` or `replay_refused` (below), never
+`refuted`.
+
+A package that S4 refuses to emit (FR-185) has no package reference. An item
+over it takes the in-process subject instead of the wire: EN-4's sampled
+witness replays over the checked subject (FR-193), and EN-5's certificate is
+checked over it (FR-201 "Checking"). Neither reads `provision`, and a
+package that does not emit is not refused for that.
+
+### Engine ownership of the state-budget cell
+
+An engine's own state budget settles its own items. EN-1's `max_states`
+(FR-126) settles an EN-1 item `incomplete` with `LimitReached{max_states}`;
+EN-5's `exact_prob.max_states` (FR-203) settles an EN-5 item `incomplete`
+with `LimitReached{ExactProbMaxStates}`. The lifecycle matrix's analyze
+"incomplete (state budget)" cell is the EN-1 case, AC-6 (a), because the
+authored-clause item that makes AC-2's violation cell is the one item whose
+budget AC-6 lowers; EN-5's case, AC-6 (b), is evidence of the EN-5 budget and
+not a matrix cell. The matrix's "unsupported" cell is EN-1's `RequiresBound`
+refusal (AC-11), never a state budget.
 
 ### External provider arm
 
@@ -207,7 +271,39 @@ pub fn analyze(
 
 pub struct AnalyzeRequest {
     pub binding: SubjectBinding,
+    pub provision: SourceProvision,
     pub items: Vec<NegotiatedItem>,
+}
+
+pub struct ClaimItem {
+    pub request_index: RequestIndex,
+    pub claim: OccurrenceKey,              // {node, occurrence}
+    pub kind: Capability,
+    pub extent: Extent,                    // bounded{bounds} or unbounded{..}
+    pub backend: Option<BackendId>,
+    pub candidates: Vec<Candidate>,
+    pub options: ItemOptions,
+    pub form: ItemForm,
+}
+
+pub enum ItemForm {
+    Temporal(TemporalItem),
+    Probabilistic(ProbabilisticItem),
+    Hybrid(HybridItem),
+}
+
+pub struct TemporalItem {
+    pub item_kind: ItemKind,               // formula, deadlock-freedom, time-lock-freedom, race-freedom, refinement
+    pub max_depth: Option<u64>,
+    pub limits: ModelCheckLimits,          // FR-126: max_states, max_transitions, max_automaton_states, max_candidates
+    pub reductions: Reductions,            // FR-159
+}
+
+pub struct ProbabilisticItem {
+    pub evidence: EvidenceKind,            // statistical or exact
+    pub settings: ProbabilisticSettings,   // statistical: method, seed, sampler, StatisticalLimits, max_witnesses, symmetry, timed_sampling;
+                                           // exact: ExactProbLimits (FR-203)
+    pub required: bool,                    // FR-507-AC-5
 }
 
 pub struct NegotiatedItem {
@@ -236,14 +332,38 @@ pub enum DeadlineSupply {
   provision), `initial: Vec<DocumentRef>` and `universes:
   Vec<PopulationUniverse>`. `analyze` admits it as `ModelSystem::new`
   admits a request (FR-120) before any item runs.
+- `SourceProvision`: "Byte provision" above.
 - `ClaimItem`: one requested item, the typed value of a QSpec FR-331
-  request item in its in-process form ("Items"): `request_index`, `claim`
-  (`{node, occurrence}`, the item's occurrence key), `kind`, `extent` with
-  its proof bounds, the named `backend` when the caller names one,
-  `candidates`, `options`, and the kind's own member (`temporal`,
-  `probabilistic` or `hybrid`) with its settings and limits, for example
-  ADR-018's model-check limits. `request_index` values are `0..n` in
-  `items` order.
+  request item in its in-process form ("Items"): `request_index` (values
+  `0..n` in `items` order), `claim`, `kind`, `extent`, the named `backend`
+  when the caller names one, `candidates`, `options`, and `form`, the kind's
+  own member: `temporal` (a `temporal-satisfaction` item), `probabilistic`
+  (a `probabilistic-satisfaction` item) or `hybrid` (a hybrid-dynamics
+  item, FR-193), as QSpec FR-331 names them, each with its settings and
+  limits. A `value-validity` or `operation-contract` item carries its
+  kind's own `check` settings (QSpec FR-483) in `options` and has no `form`.
+  A `ClaimItem` is built by a constructor that takes the `CheckedPackage`, so
+  it holds no unresolved claim:
+  - `claim` is the item's occurrence key `{node, occurrence}` (QSpec FR-331
+    `claim`). A `formula` temporal item's `node` is the checked clause node
+    (`temporal` or `state_clause`) and its `occurrence` that node's `claim`
+    occurrence; a derived or refinement item names its anchor node and that
+    node's occurrence (QSpec FR-368); a probabilistic item's key is its
+    checked claim's occurrence (FR-498). The constructor resolves the key
+    against the package's checked nodes of the item's kind and refuses with a
+    typed `ClaimRefusal` (`UnknownClaim`, or `UnnamedClause` for a clause
+    whose declared name is no identifier) when none matches, so `analyze` never
+    settles an unresolved claim.
+  - `extent.bounds` are the item's substituted `ProofBound`s. They become
+    the `proof_bounds` of the engine's subject (FR-120 `ModelSubject`), which
+    the engine's admission reads; a root domain no bound covers and that is
+    unbounded refuses the engine's run `RequiresBound`, which settles by
+    "Engine refusals". An `unbounded` extent is negotiation's input
+    (QSpec FR-290): its disposition reaches `analyze` as `RequiresBound`.
+  - `temporal.limits` and `temporal.max_depth` are EN-1's `ModelCheckLimits`
+    and search horizon (FR-126), each with its published default when the
+    request sets none; `probabilistic.settings` are EN-4's (FR-189) or EN-5's
+    (FR-203) limits by `evidence`.
 - `NegotiatedItem`: a `ClaimItem` with the settlement `negotiate_*` gave it:
   `disposition`, FR-057's `qsl_route::Disposition` (`Supported(candidate)`,
   `RequiresBound`, `Unsupported` or `InvalidRequest`), and `diagnostic`, the
@@ -270,15 +390,26 @@ pub enum DeadlineSupply {
 ```rust
 pub struct AnalyzeOutcome {
     pub records: Vec<TerminalRecord>,
+    pub counterexamples: Vec<ItemCounterexample>,
+}
+
+pub struct ItemCounterexample {
+    pub request_index: RequestIndex,
+    pub backend: BackendId,
+    pub counterexample: Counterexample,   // an FR-364 TemporalCounterexample, or FR-181 assignments
 }
 
 pub enum AnalyzeRefusal {
     Binding(AdmissionFailure),
+    Provision(ProvisionRefusal),
 }
 ```
 
 `Staged<AnalyzeOutcome>`: exactly one terminal record per requested item,
-in `request_index` order, with the FR-331 result vocabulary, its O-16
+in `request_index` order, and one `ItemCounterexample` for each `refuted`
+record whose engine reports one (the QSpec FR-331 `counterexamples` entry
+`{request_index, backend, counterexample}`; the counterexample a replay
+reproduced, never the engine's unreplayed candidate), with the FR-331 result vocabulary, its O-16
 category, its typed cause, its basis, its counterexample or certificate
 where it has one, and its accounting. A record of an item an engine ran
 names that engine's `BackendId` and is settled by its result; a record of an
@@ -289,7 +420,9 @@ claim evaluation gives a `refuted` record, category violation, with cause
 `UndefinedEvaluation{where, cause}` and the point where the evaluation was
 undefined as its counterexample. A binding that FR-120 admission does not admit
 fails the whole request with `StageFailure::Refused(AnalyzeRefusal::Binding)`
-holding the `AdmissionFailure`, and no record.
+holding the `AdmissionFailure`, and no record; a provision that lacks a source
+the package names fails it with `StageFailure::Refused(AnalyzeRefusal::Provision)`
+holding the `ProvisionRefusal` that names the label, and no record.
 
 ## Behavior
 
@@ -326,6 +459,20 @@ holding the `AdmissionFailure`, and no record.
 - If FR-120 admission does not admit the subject binding, then `analyze` shall
   return `StageFailure::Refused(AnalyzeRefusal::Binding)` with the
   admission failure, before any item runs.
+- If the request's `provision` holds no entry for a source label the package
+  names, then `analyze` shall return
+  `StageFailure::Refused(AnalyzeRefusal::Provision)` naming the label, after
+  binding admission and before any item runs.
+- The `analyze` operation shall build each replay request and certificate
+  check request for an item from the checked package, the binding, the
+  provision, the item's `claim` and the request's limits.
+- The `analyze` operation shall run no item adapter that takes a
+  caller-supplied closure that settles, evaluates letters for or replays an
+  item.
+- When an engine reports a counterexample and the replay reproduces it,
+  `analyze` shall return it as the item's `ItemCounterexample`, naming the
+  item's engine, and shall return none for an item whose replay did not
+  reproduce it.
 - When an engine reports a proof with a certificate, `analyze` shall run the
   engine's certificate checker (FR-282) and settle the item `proved`, with
   the certification `certified`, only if the checker accepts the
@@ -366,17 +513,17 @@ holding the `AdmissionFailure`, and no record.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-281-AC-1 | Over a finite probabilistic model, an EN-5 item claiming a reachability probability bound that holds settles `proved` with category success after the EN-5 certificate checker accepts its certificate, and the record carries the certificate. | Test (TC-762) |
-| FR-281-AC-2 | Over a finite model whose invariant one transition breaks, an EN-1 item claiming that invariant settles `refuted`, the record carries the counterexample, and replaying that counterexample through `replay` reproduces it. | Test (TC-762) |
+| FR-281-AC-1 | Over ADR-028 §15.4's `Link` model with the claim `probability >= 0.95 [ eventually holds(m.delivered) ]` under every scheduler (an acyclic product with one initial state), an EN-5 item built from the source bytes and provision settles `proved` with category success after the EN-5 certificate checker, run over the checked subject (FR-201 "Checking"), accepts its certificate (values `24/25`, `4/5`, 1 and 0, FR-201-AC-1), and the record carries the certificate and names `en-5`. An EN-5 item of any other shape than the checker covers (a fairness set, a cycle, two initial states, a bounded window) settles `unsupported` with `unsupported_construct`/`not-yet-implemented` and never `proved`. | Test (TC-762) |
+| FR-281-AC-2 | Over FR-564's Counter subject, an EN-1 item for the clause `P` (`always holds(c.value < 2)`) built from the source bytes, the provision and the clause's occurrence key settles `refuted`, category violation, naming `en-1`; the outcome holds the counterexample as an `ItemCounterexample` of kind `formula`, and replaying that counterexample through `replay` over the same bytes reproduces it. No closure, letter table or verdict is supplied by the test. | Test (TC-762) |
 | FR-281-AC-3 | A request of three items over `Engines::qsl()`, one whose claim kind no layer-A engine advertises, settled `Unsupported` with the diagnostic `unsupported_projection`/`unsupported-requested-capability` naming that kind (the settlement `negotiate_*` gives its empty candidate set), one an engine proves and one an engine refutes, each settled `Supported` on its engine, returns exactly three records, the first settled by its `unsupported` disposition, its record carrying the `unsupported_projection`/`unsupported-requested-capability` diagnostic naming the claim kind as its `diagnostic` member and no `cause`, and the FR-286 item serialized from it holding that diagnostic. | Test (TC-762) |
 | FR-281-AC-4 | With the test engine's certificate altered in one member before checking, the item settles `inconclusive` with cause `CertificateRejected`; with an engine that reports a proof no core certificate checker covers (EN-1 under partial-order reduction, ADR-021 RV-1), the item settles `proved`, category success, with the certification `uncertified` naming that engine, and the same item unreduced settles `certified`. This clause is observed at `analyze` over an engine set holding EN-1: the reduced item is an EN-1 item whose request selects partial-order reduction (FR-159), so EN-1 reports `HoldsReduced` and no engine or checker-less seam is added to `analyze`. The step engine's absent-certificate mapping (`BackendCertificate::Absent` to `uncertified`, FR-146) is a separate rule and does not satisfy this clause. | Test (TC-763) |
 | FR-281-AC-5 | With a test engine that reports a counterexample replay does not reproduce, the item settles `inconclusive` with cause `replay_parity`; with one whose counterexample names a parameter the function lacks, `inconclusive` with cause `replay_refused`. | Test (TC-763) |
-| FR-281-AC-6 | The AC-1 item with its engine's state budget set to 1 settles `incomplete` with the state-budget cause. | Test (TC-763) |
+| FR-281-AC-6 | (a) AC-2's EN-1 item with `limits.max_states` 1 settles `incomplete` with `LimitReached{max_states}`, exit 22, carries no counterexample and is never `refuted` or `proved`. (b) AC-1's EN-5 item with `exact_prob.max_states` 1 settles `incomplete` with `LimitReached{ExactProbMaxStates}` naming `exact_prob.max_states`. | Test (TC-763) |
 | FR-281-AC-7 | Over a finite model with one reachable state at which the invariant `100 / x > 0` divides by zero, an EN-1 item claiming that invariant settles `refuted`, category violation, with cause `UndefinedEvaluation` whose `where` names that state and whose `cause` is `division-by-zero`; replay reproduces the undefined value at that state, the record carries no `undefined` label, and FR-285 maps the outcome to exit 10. | Test (TC-763) |
 | FR-281-AC-8 | With `engines` holding test engines `qsl.test-a` and `qsl.test-b`, both advertising (`value-validity`, `bounded`): an item settled `Supported(qsl.test-b)` runs on `qsl.test-b` alone and its record names it; the same item settled `InvalidRequest` with `invalid_capability`/`ambiguous-backend` naming `qsl.test-a` and `qsl.test-b`, as `negotiate_*` settles it with both candidates and no named backend (QSpec FR-290, FR-331-AC-4), returns a record settled by that disposition with that diagnostic and runs neither engine; settled `Unsupported` with `unsupported_projection`/`unsupported-requested-capability`, a record settled by that disposition and no run; settled `RequiresBound`, a record settled by that disposition with no diagnostic and no run; and settled `Supported(qsl.test-c)`, which `engines` does not hold, `invalid-request` with `invalid_capability`/`unknown-backend` naming `qsl.test-c` and no run. | Test (TC-762) |
 | FR-281-AC-9 | AC-3's request returns its three records in `request_index` order 0, 1, 2. The same request whose binding's `universes` name a population the package does not declare returns `StageFailure::Refused(AnalyzeRefusal::Binding)` holding FR-120's `invalid_runtime_input`/`wrong-role-mapping`, no record, and no engine runs. | Test (TC-762) |
 | FR-281-AC-10 | `Engines::with` holding `qsl.test-a`, given a second engine whose manifest's `BackendId` is `qsl.test-a`, returns `invalid_capability`/`duplicate-backend` naming `qsl.test-a`, and the set still runs the first engine for an item settled `Supported(qsl.test-a)`. With `qsl.test-a` advertising only (`value-validity`, `bounded`), a `temporal-satisfaction` item settled `Supported(qsl.test-a)` settles `invalid-request` with `invalid_capability`/`inconsistent-candidates` naming `qsl.test-a` and the item's kind and mode, and `qsl.test-a` does not run. AC-3's unsupported record carries the diagnostic naming the claim kind and no `cause` member. | Test (TC-762) |
-| FR-281-AC-11 | With test engines that each refuse a `Supported` item, `analyze` settles: an `Admission` refusal `declined` with cause `invalid-input` and its diagnostic, and an incomplete admission `declined` with `incomplete-input`; a `RequiresBound` refusal `unsupported` with `unsupported_projection`/`unbounded-extent` whose payload names the item's kind, the engine's `BackendId` and the modes its manifest advertises for that kind; a `Symmetry` refusal `declined`, `invalid-input`, `invalid_runtime_input`/`invalid-value`; a `NotStatistical` refusal `invalid-request` with `invalid_capability`/`not-statistical` and no result; a refusal carrying `unsupported_construct`/`not-yet-implemented` `unsupported` with that diagnostic; and a refusal carrying `invalid_runtime_input`/`wrong-value-kind` `failed` with that diagnostic. Each record names its engine. One request holding the refused-admission case and the five cases after it returns those six records in `request_index` order; the incomplete admission is a seventh case, run as a request of its own because a test engine reports one admission outcome per run, and returns one `declined`, `incomplete-input` record. Over a model one of whose operations `modifies` a field of type `Integer` (an unbounded FR-120 root), an EN-1 item over `Engines::qsl()` settled `Supported` on EN-1 settles `unsupported` with `unsupported_projection`/`unbounded-extent` whose payload names `temporal-satisfaction`, EN-1's `BackendId` and `bounded`, EN-1's one advertised mode. | Test (TC-763) |
+| FR-281-AC-11 | With test engines that each refuse a `Supported` item, `analyze` settles: an `Admission` refusal `declined` with cause `invalid-input` and its diagnostic, and an incomplete admission `declined` with `incomplete-input`; a `RequiresBound` refusal `unsupported` with `unsupported_projection`/`unbounded-extent` whose payload names the item's kind, the engine's `BackendId` and the modes its manifest advertises for that kind; a `Symmetry` refusal `declined`, `invalid-input`, `invalid_runtime_input`/`invalid-value`; a `NotStatistical` refusal `invalid-request` with `invalid_capability`/`not-statistical` and no result; a refusal carrying `unsupported_construct`/`not-yet-implemented` `unsupported` with that diagnostic; and a refusal carrying `invalid_runtime_input`/`wrong-value-kind` `failed` with that diagnostic. Each record names its engine. One request holding the refused-admission case and the five cases after it returns those six records in `request_index` order; the incomplete admission is a seventh case, run as a request of its own because a test engine reports one admission outcome per run, and returns one `declined`, `incomplete-input` record. Over a model one of whose operations `modifies` a field of type `Integer` (an unbounded FR-120 root), an EN-1 item over `Engines::qsl()` settled `Supported` on EN-1 settles `unsupported` with `unsupported_projection`/`unbounded-extent` whose payload names `temporal-satisfaction`, EN-1's `BackendId` and `bounded`, EN-1's one advertised mode; the same item through `qsl_analyze::provider::run` returns the equal record, and the item's exit is 21. | Test (TC-763) |
 | FR-281-AC-12 | A `compile_fail` doctest that builds `AnalyzeLimits` with `..Default::default()` and no `deadline` fails to compile, with a compiling control that states `deadline`. A three-item request with `deadline` `Milliseconds(1)` and an uncancelled handle runs every item to its own settlement, whatever the elapsed time: `analyze` never measures the deadline. The same request with the handle cancelled `CancelCause::Deadline` from a second thread after the first item settles settles the two open items `incomplete` with cause `cancelled{source: deadline}` and keeps the first record unchanged; cancelled `Requested` first, open items carry `cancelled{source: requested}`; if an engine or accounting limit stops an item first, `analyze` keeps that item's typed limit result. A binding admission failure still returns `StageFailure::Refused(AnalyzeRefusal::Binding)` before any item runs. | Test (TC-763) |
 | FR-281-AC-13 | With `engines` holding `qsl.test-a` advertising only (`value-validity`, `bounded`), a `finite-replay` item on a state clause's claim settles `invalid-request` with `invalid_capability`/`inapplicable-kind`, payload `family` `state-model`, and no engine runs, in each case: handed `Supported(qsl.test-c)`, which `engines` does not hold (not `unknown-backend`); handed `Supported(qsl.test-a)`, which does not advertise its (kind, mode) (not `inconsistent-candidates`); and handed `InvalidRequest` with `invalid_capability`/`ambiguous-backend` (not that disposition). A `temporal-satisfaction` item on a temporal clause's claim, whose kind applies, handed the same three settles `unknown-backend` naming `qsl.test-c`, `inconsistent-candidates` naming `qsl.test-a`, and `ambiguous-backend` respectively. | Test (TC-762, TC-1302) |
 | FR-281-AC-14 | With a test provider registered under `qsl.test-smt` advertising (`value-validity`, `unbounded`) beside the value-validity arm, the item `function q using v(a: Integer, b: Integer): Integer pure { a div b }` settled `Supported(qsl.test-smt)` whose provider reports `refuted` with the counterexample `a` = 2^100, `b` = 0 settles `refuted`, category violation, naming `qsl.test-smt`, and the record carries that counterexample at those integers; the replay of the counterexample reproduces the `division-by-zero` violation at the `div`. The item `if b != 0 then a div b else 0` over the same parameters, whose provider reports `proved`, settles `proved` with basis `inductive` at depth 0, certification `uncertified`, naming `qsl.test-smt`. | Test (TC-1337) |
@@ -385,6 +532,9 @@ holding the `AdmissionFailure`, and no record.
 | FR-281-AC-17 | Building an engine from a provider with a descriptor advertising only (`value-validity`, `bounded`) is refused naming that descriptor's `BackendId`, and with one advertising (`value-validity`, `unbounded`) succeeds; the refused provider is never called. | Test (TC-1337) |
 | FR-281-AC-18 | With the AC-14 `proved` provider registered under a descriptor of origin `Linked` the record's certification is `uncertified`; under an otherwise identical descriptor of origin `Process` it is `trusted`; basis `inductive` at depth 0 in both. | Test (TC-1337) |
 | FR-281-AC-19 | With the AC-14 `refuted` provider whose descriptor publishes `max_cases` 1, the item settles `incomplete` with the `ValueCheckMaxCases` limit cause and no counterexample. With the run's `Cancel` cancelled before `analyze`, the provider item settles `incomplete` with `cancelled` and the provider is not called; with a provider that cancels the run during its check and reports the AC-14 counterexample, the item settles `incomplete` with `cancelled`, never `refuted`. | Test (TC-1337) |
+| FR-281-AC-20 | A request whose `provision` omits the source the package names fails with `StageFailure::Refused(AnalyzeRefusal::Provision)` naming that label, `missing_import`/`missing-selection`, no record and no engine run; the same request with the provision complete, and the request of AC-2, return their records. With AC-2's request whose provision holds, under the right label, bytes of a different source, the item settles `inconclusive` with cause `replay_parity` or `replay_refused` and returns no counterexample, never `refuted`. | Test (TC-763) |
+| FR-281-AC-21 | A `ClaimItem` constructor given a `claim` key whose node is a clause of the package but whose occurrence is not that clause's `claim` occurrence, and one given a node the package does not hold as a checked clause, refuses `UnknownClaim`; the constructor for AC-2's clause key returns an item with that key as its `claim`. A package whose source holds a clause named by a non-identifier refuses `UnnamedClause`. | Test (TC-762) |
+| FR-281-AC-22 | Over AC-11's model (an operation `modifies` a field of type `Integer`), an EN-1 item whose `extent.bounds` hold an `integer-range` `ProofBound` for that field is admitted, explores the bounded subject and settles a verdict; the same item with empty `bounds` settles `unsupported` with `unsupported_projection`/`unbounded-extent` and explores no state. | Test (TC-763) |
 
 ## Dependencies
 

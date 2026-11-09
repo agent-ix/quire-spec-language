@@ -42,7 +42,11 @@ the native engine's terminal record there (ADR-029 OP-2). A proof from a
 native engine with none of these checkers settles `proved`, labelled `uncertified`
 (FR-281, FR-290). A checker recompiles the package from its
 byte provision, as `replay` does, and checks the certificate with its own
-code. It reads nothing from the engine's search but the certificate.
+code. It reads nothing from the engine's search but the certificate. The one
+exception is the EN-5 checker's checked-subject form (FR-201 "Checking"),
+which `analyze` runs over a package S4 refuses to emit (FR-185): it re-admits
+the subject from the `CheckedPackage` in process and recompiles nothing, with
+the same conditions and the same independence from the engine's search.
 
 A certificate is a document `analyze` writes. A checker accepts or rejects
 it in the run that produced it, and equally in a later run of a separate

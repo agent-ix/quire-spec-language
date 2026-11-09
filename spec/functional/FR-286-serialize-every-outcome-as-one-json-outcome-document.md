@@ -168,6 +168,26 @@ land (ADR-029 CB-1).
 The serialization lives with the outcome types in the core; it is the one
 renderer a core crate may hold (FR-284).
 
+## Analyze items and their counterexamples
+
+An `analyze` or `prove` item is built from one terminal record and, for a
+`refuted` record, its `ItemCounterexample` (FR-281, FR-280):
+`OutcomeItem::from_analyze(record, counterexample)`. The item carries the
+record's label, cause and, for a disposition, `diagnostic` as above. A
+`refuted` item whose counterexample is a `TemporalCounterexample` (EN-1, EN-6)
+carries it as `counterexample` spelled as the "Monitor documents from clause
+runs" table spells the `Violated` row's: `kind` (`formula`, `deadlock`,
+`undefined-evaluation`, `race` or `time-lock`), `initial_state`, `prefix`,
+`loop` (`[]` for a finite trace) and `trace_position`, and none of `position`,
+`decisive` and `witness`, which belong to a clause run. A `refuted` item whose
+counterexample is FR-181 canonical assignments (a value-validity or
+operation-contract item) carries it as `counterexample` `{type:
+"assignments", values}`. An item of any other result carries no
+`counterexample`, and a `refuted` item with no `ItemCounterexample` is an
+internal fault, never an item without one. One counterexample spelling serves
+the document `analyze` writes and the item `prove` writes, so the same item
+through either gives the same bytes.
+
 ## Inputs
 
 A lifecycle operation's outcome value.
@@ -219,6 +239,7 @@ The outcome document's bytes.
   holds a record, and shall write none otherwise.
 - `OutcomeItem::from_clause_run` shall write no `counterexample` on an item
   whose report holds none.
+- `OutcomeItem::from_analyze` shall write `counterexample`, in the spelling of "Analyze items and their counterexamples", on each `refuted` item that has an `ItemCounterexample` and on no other item, and no `position`, `decisive` or `witness`.
 - `OutcomeDocument::from_clause_runs` shall build a `monitor` document with
   one item per clause run, the item's category read from
   `ClauseRunReport::category()` and its label and cause as the "Monitor
@@ -249,6 +270,7 @@ The outcome document's bytes.
 | FR-286-AC-11 | Over FR-283-AC-5's clause run, `from_clause_run` gives an item with `result` `refuted`, category violation, `position` 1, a `counterexample` with `trace_position` 1, cause `undefined-evaluation{where, cause}` with `cause` `division-by-zero`, no `witness` and no `undefined` label. | Test (TC-770) |
 | FR-286-AC-12 | Over FR-283-AC-11's clause run, `from_clause_run` gives an item with `result` `undefined`, category undefined, cause `insufficient-data`, `position` 0, `count` 1 and `min_count` 2, and neither `counterexample` nor `witness`; its document exits 10. | Test (TC-770) |
 | FR-286-AC-13 | Each `MonitorRecord` the FR-283 `monitor` operation returns for the clause runs of AC-8 to AC-12 (the pending run, FR-501-AC-4's indeterminate run, and the violated, undefined-evaluation and insufficient-data runs of FR-283-AC-1, AC-5 and AC-11) renders through `OutcomeItem::from_clause_run`, and the document built from the records equals `from_clause_runs`'s document for the same runs, byte for byte. | Test (TC-770) |
+| FR-286-AC-14 | Over FR-281-AC-2's record and `ItemCounterexample`, `from_analyze` gives an item with `result` `refuted`, category violation, naming `en-1`, a `counterexample` of kind `formula` with a non-empty `prefix`, a `loop`, an `initial_state` and a `trace_position`, and no `position`, `decisive` or `witness`; the same item built from the record with its `ItemCounterexample` removed is refused as an internal fault, and an item built from FR-281-AC-1's `proved` record carries no `counterexample`. The item `provider::run` gives for the same two records serializes to equal bytes. | Test (TC-770) |
 
 ## Status
 

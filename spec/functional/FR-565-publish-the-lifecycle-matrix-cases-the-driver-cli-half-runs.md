@@ -84,7 +84,8 @@ and compares those encodings. QSL's own `OutcomeDocument::to_bytes`
   all, in verb then kind order as FR-564's table lists them: a `Case` for each
   applicable cell, a `NotApplicable`, carrying a reason, for each n/a cell,
   and a `PendingEngine`, carrying a reason like a `NotApplicable`, for each
-  "n/a until engine" cell. A `PendingEngine`
+  † cell (FR-564) whose byte-driven route to its engine does not yet exist; a
+  † cell whose route exists is a `Case`. A `PendingEngine`
   cell carries no case: no document is produced for it and `run_case` cannot
   be called on it.
 - A `MatrixCase` holds its verb and kind, every input byte the case needs
@@ -119,8 +120,8 @@ typed document or item, and the exit code, or `Err(CaseError)` with its stage.
 
 - `lifecycle_matrix()` shall return one cell per (verb, kind) pair of FR-564,
   a `Case` for each applicable cell, a `NotApplicable` with its reason for
-  each n/a cell and a `PendingEngine` with its reason for each "n/a until
-  engine" cell.
+  each n/a cell and a `PendingEngine` with its reason for each pending †
+  cell.
 - Each `MatrixCase` shall hold every input byte it needs.
 - The `run_case` operation shall read no file.
 - When `run_case` runs a case, it shall return `Ok` with the outcome of the
@@ -139,7 +140,7 @@ typed document or item, and the exit code, or `Err(CaseError)` with its stage.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-565-AC-1 | `lifecycle_matrix()` returns 48 cells in FR-564's verb and kind order, one per (verb, kind) pair: `Case` cells exactly at FR-564's applicable cells, `NotApplicable` cells exactly at its n/a cells, and `PendingEngine` cells exactly at its "n/a until engine" cells, each with a non-empty reason. | Test (TC-1394) |
+| FR-565-AC-1 | `lifecycle_matrix()` returns one cell per (verb, kind) pair in FR-564's verb and kind order: `Case` cells exactly at FR-564's applicable cells and at each † cell whose route exists, `NotApplicable` cells exactly at its n/a cells, and `PendingEngine` cells exactly at each † cell whose route does not exist, each `NotApplicable` and `PendingEngine` with a non-empty reason. | Test (TC-1394) |
 | FR-565-AC-2 | For every `Case`, `run_case` returns `Ok` with a typed document (or, for `prove`, an item) whose category and exit code equal the case's expected category and exit code, two `run_case` calls give equal `OutcomeDocument` values, and every source identity in the document is `SourceIdentity::new("quire", <the case's file name>)`. A case with an input the test removes returns `Err(CaseError)` whose `stage` is `CaseStage::Read`, the `Copy` stage value, and no `CaseOutcome`. | Test (TC-1394) |
 | FR-565-AC-3 | Run with the process's working directory set to an empty temporary directory, every `Case` gives the same `OutcomeDocument` as AC-2. | Test (TC-1394) |
 
