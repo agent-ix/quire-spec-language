@@ -153,6 +153,9 @@ fn altered_semantics_prefixes_policy_and_duplicate_cylinders_have_no_token() {
         changed.paths[0].steps[0].post_key = witness.initial_key.clone();
         no_token(&world, &changed);
         let mut changed = witness.clone();
+        changed.paths[0].steps[0].draw = vec![quire_exact::Value::Integer(Integer::from(7_i64))];
+        no_token(&world, &changed);
+        let mut changed = witness.clone();
         changed.binding = None;
         no_token(&world, &changed);
         let mut changed = witness.clone();
@@ -250,6 +253,16 @@ fn equality_source_identity_and_opposite_verdicts_do_not_reproduce() {
             ),
             Ok(ProbabilityWitnessReplay::Parity)
         ));
+        let changed_event = if event == UNTIL {
+            "holds(true) until holds(m.delivered or m.attempts = 1)"
+        } else {
+            "always holds(true)"
+        };
+        let changed_formula = world(changed_event, "every scheduler", ">=", "0.5");
+        let mut wrong_formula = witness.clone();
+        wrong_formula.item =
+            qsl_replay::probabilistic_claim_identity(changed_formula.claim("Claim")).unwrap();
+        no_token(&changed_formula, &wrong_formula);
         let opposite = world(event, "every scheduler", "<=", "0.5");
         rebound.item = qsl_replay::probabilistic_claim_identity(opposite.claim("Claim")).unwrap();
         no_token(&opposite, &rebound);

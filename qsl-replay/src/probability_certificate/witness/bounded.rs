@@ -363,15 +363,17 @@ pub(super) fn visit(
     cancel: &Cancel,
 ) -> Result<(), ProbabilityWitnessError> {
     poll_cancel(cancel)?;
-    meter
-        .charge(quire_exact::Charge::new(
-            quire_exact::ChargePoint::CollectionMemberTest,
-        ))
-        .map_err(|incomplete| {
-            ProbabilityWitnessError::Build(Box::new(crate::ExactProbBuildIssue::Predicate(
+    if let Err(incomplete) = meter.charge(quire_exact::Charge::new(
+        quire_exact::ChargePoint::CollectionMemberTest,
+    )) {
+        poll_cancel(cancel)?;
+        return Err(ProbabilityWitnessError::Build(Box::new(
+            crate::ExactProbBuildIssue::Predicate(
                 qsl_eval::simulation::model::ClauseOutcome::Incomplete(incomplete),
-            )))
-        })
+            ),
+        )));
+    }
+    Ok(())
 }
 pub(super) fn arithmetic(
     operation: quire_exact::RationalArithmetic<'_>,
