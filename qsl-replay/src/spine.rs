@@ -1830,6 +1830,10 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                     "{message}: `present(p)` of a guarded clock place is not checked in \
                      this position yet"
                 ),
+                TemporalCause::SelectionNotChecked { .. } => format!(
+                    "{message}: a selector `p[s]` of a clock place is checked only inside `ref` \
+                     yet"
+                ),
                 TemporalCause::UnknownClock { .. } => {
                     format!("{message}: a time invariant bounds a clock of `self`")
                 }

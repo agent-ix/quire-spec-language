@@ -56,6 +56,7 @@ mod letter;
 mod monitor;
 mod numbering;
 mod past;
+mod qualified_bounded;
 mod state;
 mod timed_claim;
 mod timed_window;
@@ -69,9 +70,9 @@ pub use counters::{
 pub use error::AutomatonError;
 pub use gba::{Gba, GbaBuilder, Transition};
 pub use key::{
-    invariant_atom, AutomatonStateKey, ContextActivation, ContextBinding, ContextRoot, KeyRefusal,
-    NotTranslated, SafetyItem, SafetyState, SafetyStates, SafetyTranslation, StateContext,
-    SubjectKind, TranslationRefusal, AUTOMATON_STATE_KEY_V1,
+    invariant_atom, AutomatonStateKey, ContextActivation, ContextBinding, ContextBindingValue,
+    ContextRoot, KeyRefusal, NotTranslated, SafetyItem, SafetyState, SafetyStates,
+    SafetyTranslation, StateContext, SubjectKind, TranslationRefusal, AUTOMATON_STATE_KEY_V1,
 };
 pub use key_buchi::{BuchiPhase, BuchiState, BuchiStates};
 pub use key_state::{
@@ -81,6 +82,7 @@ pub use key_state::{
 pub use letter::{Atom, Guard, Letter, MAX_ATOMS};
 pub use monitor::{Monitor, SafetyAutomaton};
 pub use numbering::{Interned, Numbering};
+pub use qualified_bounded::{QualifiedBoundedError, QualifiedBoundedMonitor};
 pub use state::StateId;
 pub use timed_claim::{
     has_timed_interval, position_automaton, ClockedEdge, PositionAutomaton, TimedClaim,

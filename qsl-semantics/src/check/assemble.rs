@@ -2841,6 +2841,7 @@ fn expression_type_forms<'e>(roots: impl IntoIterator<Item = &'e Expression>) ->
                 | ExprNode::Value(_)
                 | ExprNode::Deref(_)
                 | ExprNode::Ref(_)
+                | ExprNode::Select { .. }
                 | ExprNode::Call { .. }
                 | ExprNode::Record { .. }
                 | ExprNode::Collection { .. }

@@ -383,6 +383,7 @@ pub(super) fn expression_form(node: &ExprNode, predicates: &BTreeSet<&str>) -> O
         | ExprNode::Not(_)
         | ExprNode::Field { .. }
         | ExprNode::Ref(_)
+        | ExprNode::Select { .. }
         | ExprNode::Present(_)
         | ExprNode::Value(_)
         | ExprNode::Size(_)

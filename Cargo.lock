@@ -1485,6 +1485,7 @@ version = "0.1.0"
 dependencies = [
  "hashbrown 0.17.1",
  "ix-trace-rs",
+ "quire-canonical",
  "quire-exact",
  "quire-semantic-value",
  "serde",
@@ -1532,6 +1533,23 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror",
+]
+
+[[package]]
+name = "qsl-probability-check"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "ix-trace-rs",
+ "qsl-analyze",
+ "qsl-eval",
+ "qsl-foundation",
+ "qsl-replay",
+ "qsl-semantics",
+ "quire-checked",
+ "quire-exact",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

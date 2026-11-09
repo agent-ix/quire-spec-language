@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! EN-4's published provider manifest (FR-280): converted by FR-288's
 //! conversion into a descriptor that advertises exactly
-//! (`probabilistic-satisfaction`, `bounded`), the evidence kind
+//! (`probabilistic-satisfaction`, `unbounded`), the evidence kind
 //! `statistical` and the domains `population` and `integer`, and that the
 //! registry routes a `statistical` item to and an `exact` item away from.
 
@@ -26,7 +26,7 @@ fn exact_backend() -> qsl_route::BackendDescriptor {
         ProviderOrigin::Linked,
         [(
             Some(Capability::ProbabilisticSatisfaction.to_wire()),
-            Some(Mode::Bounded.to_wire()),
+            Some(Mode::Unbounded.to_wire()),
         )],
         ManifestMembers {
             domains: Some(&[DomainKind::Population.to_wire()]),
@@ -55,12 +55,12 @@ fn candidates(registry: &Registry, evidence: EvidenceKind) -> Vec<String> {
 
 #[test]
 #[trace("TC-761", "FR-280-AC-4")]
-fn en4_advertises_exactly_the_statistical_probabilistic_bounded_pair() {
+fn en4_advertises_exactly_the_statistical_probabilistic_unbounded_pair() {
     let descriptor = en4();
     assert_eq!(descriptor.id().as_str(), BACKEND_ID);
     assert_eq!(
         descriptor.advertises().collect::<Vec<_>>(),
-        [(Capability::ProbabilisticSatisfaction, Mode::Bounded)]
+        [(Capability::ProbabilisticSatisfaction, Mode::Unbounded)]
     );
     assert_eq!(
         descriptor.evidence_kinds(),

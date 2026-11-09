@@ -3,6 +3,7 @@
 
 mod analyze;
 mod bounded_closure;
+mod bounded_probabilistic_replay;
 mod claim_family;
 mod clause_item;
 mod clause_route;
@@ -64,6 +65,8 @@ mod protocol_counted_steps;
 mod protocol_footprints;
 mod protocol_roles;
 mod protocol_system;
+mod provider_external_contract;
+mod provision_contract;
 mod quotient;
 mod race_freedom;
 mod rc11_oracle;

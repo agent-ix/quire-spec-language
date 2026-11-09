@@ -61,6 +61,7 @@ mod protocol_delivery_interval;
 mod protocol_reference;
 mod protocol_retry_bound;
 mod protocol_slots;
+mod qualified_bounded_monitor;
 mod quantity_literals;
 mod quantity_negation;
 mod quantity_power;

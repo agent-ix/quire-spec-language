@@ -709,11 +709,58 @@ The qualified checker independently builds the bounded monitor product using
 qsl-eval-owned canonical key and terminal false-extension operations, with
 ranks matching real monitor horizon/debts rather than unbounded model height.
 A cyclic model is admitted when its bounded undecided product terminates.
-Dyadic lower/upper codec support and bounded FR-202 refutation replay remain
-outstanding; no interval becomes an exact document. Unsupported forms retain
+FR-202 separately extends native checked-subject path-set replay to this same
+bounded eventually subset, using independently replayed rejecting mass R to
+establish event probability at most 1-R for a failed minimum AtLeast, or
+accepting mass A to establish event probability at least A for a failed maximum
+AtMost; a workload uses the same strict comparisons. It reuses qualified
+formula keys, actual S3 binding context and terminal false-extension closure,
+with finite remaining debts rather than raw unbounded graph height. This is
+exact-only native behavior, not QSpec FR-413 wire completion: closed bound,
+scheduler-choice and semantic step action/key transport remain shared-owner
+blockers. Dyadic lower/upper codec support remains outstanding; no interval
+becomes an exact document. Unsupported forms retain
 all broader CE obligations and are not coerced into this profile.
 FR-282 defines the independent checked-source
 S1 to S3 facade so S4's emission refusal cannot prevent fresh checking.
+
+FR-201 additionally defines the narrow closed
+`quire.probability-objective/state-predicate/v1` objective for untimed,
+infinite-trace acyclic state-predicate until and always proofs. Reusing
+reachability/v1 unchanged would lose until's absorbing failure boundary or
+incorrectly make a currently true P an always success. The separate objective
+therefore carries independently derived `event`, `targets` and `failures`,
+alongside the existing optimization and empty fairness. Until accepts B
+before considering A and rejects neither-A-nor-B permanently; always rejects
+not-P permanently and accepts terminal P under infinite terminal stutter.
+The checker verifies direct-event Bellman equations on its own stopped graph;
+EN-5's complement implementation of always must exchange extrema first.
+PR-6's real binding-bearing model keys suffice without a synthetic monitor.
+Original-graph acyclicity, one initial state, at most one binding and existing
+Markov restrictions remain admission limits. No bounded false-extension
+semantics, cyclic/fair/reward expansion, new FR-202 refutation or QSpec FR-413
+wire is authorized by this proof-only profile. FR-282's existing qualified
+S1 to S3 source facade independently checks these exact document bytes too.
+
+FR-201 additionally specializes QSpec FR-412's existing open objective with
+`quire.probability-objective/expected-reward/v1` for finite untimed acyclic
+infinite-trace expected named-reward proofs. The checked source owns the
+model-scoped reward identifier, expression, declaring model and exact unit
+normalization; the objective carries FR-196's actual model/reward identity,
+unit descriptor and extensional stopped targets without transporting a second reward expression or action wire.
+The independent checker derives actual transition/draw costs and verifies
+reward Bellman equalities with terminal-target zero, including entry cost
+and values greater than one. Original acyclicity and all original terminals
+being targets conservatively exclude FR-198's positive-infinity cases,
+including zero-cost nonreachability. Actual finite nonnegative integer or
+quantity rewards are admitted; steps/time enums and expected elapsed are
+not invented. Full key identity and actual semantic action/draw grouping
+remain authoritative. Exact stopped-height ranks also constrain zero-cost
+states. FR-282 extends its independent source S1 to S3 fresh-process facade
+to these documents, preserving caller metering/cancellation and no analyzer
+linkage. Existing profiles retain their bytes. Reward refutations, cyclic,
+fair, long-run, timed and multi-post extensions and FR-413 wire stay outside
+this proof-only slice.
 
 - Claims over every scheduler, rare-event bounds, thresholds close to the
   true value and long-run availability get proofs and refutations, not

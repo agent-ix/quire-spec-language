@@ -82,6 +82,8 @@ impl Default for ModelCheckLimits {
 /// (FR-203, ADR-028 LM-1 to LM-3).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ExactProbLimits {
+    /// Certificate transport byte and working-storage ceilings (FR-201, FR-282).
+    pub document: crate::ProbabilityDocumentIoLimits,
     /// The product state, transition and automaton limits.
     pub model: ModelCheckLimits,
     /// Maximum interval-iteration sweeps.
@@ -101,6 +103,7 @@ pub struct ExactProbLimits {
 impl Default for ExactProbLimits {
     fn default() -> Self {
         Self {
+            document: crate::ProbabilityDocumentIoLimits::default(),
             model: ModelCheckLimits::default(),
             max_iterations: DEFAULT_EXACT_PROB_MAX_ITERATIONS,
             precision_bits: DEFAULT_EXACT_PROB_PRECISION_BITS,
@@ -269,6 +272,10 @@ pub enum ModelCheckLimit {
     CertificateMaxEdges,
     /// FR-245: the bytes a zone certificate check reads.
     CertificateMaxBytes,
+    /// FR-201: working storage reserved while reading certificate JSON.
+    CertificateMaxWorkingBytes,
+    /// FR-201: the closed profile's maximum representable progress rank.
+    CertificateMaxRank,
     /// QSpec FR-483: the value-validity check arm's case budget; limit
     /// `max_cases`, setting `value_check.max_cases`.
     ValueCheckMaxCases,
@@ -328,6 +335,8 @@ impl ModelCheckLimit {
             Self::MaxClocks => "max_clocks",
             Self::CertificateMaxEdges => "max_certificate_edges",
             Self::CertificateMaxBytes => "max_certificate_bytes",
+            Self::CertificateMaxWorkingBytes => "max_working_bytes",
+            Self::CertificateMaxRank => "max_rank",
             Self::ValueCheckMaxCases | Self::ContractCheckMaxCases => "max_cases",
         }
     }
@@ -373,6 +382,8 @@ impl ModelCheckLimit {
             Self::MaxClocks => "model_check.max_clocks",
             Self::CertificateMaxEdges => "certificate_check.max_certificate_edges",
             Self::CertificateMaxBytes => "certificate_check.max_certificate_bytes",
+            Self::CertificateMaxWorkingBytes => "certificate_check.max_working_bytes",
+            Self::CertificateMaxRank => "certificate_check.max_rank",
             Self::ValueCheckMaxCases => "value_check.max_cases",
             Self::ContractCheckMaxCases => "contract_check.max_cases",
         }
@@ -619,6 +630,10 @@ mod tests {
                 "max_certificate_bytes",
                 "certificate_check.max_certificate_bytes",
             ),
+            ModelCheckLimit::CertificateMaxWorkingBytes => {
+                ("max_working_bytes", "certificate_check.max_working_bytes")
+            }
+            ModelCheckLimit::CertificateMaxRank => ("max_rank", "certificate_check.max_rank"),
         }
     }
 
@@ -661,6 +676,8 @@ mod tests {
             ModelCheckLimit::MaxClocks,
             ModelCheckLimit::CertificateMaxEdges,
             ModelCheckLimit::CertificateMaxBytes,
+            ModelCheckLimit::CertificateMaxWorkingBytes,
+            ModelCheckLimit::CertificateMaxRank,
         ];
         all.extend(
             [

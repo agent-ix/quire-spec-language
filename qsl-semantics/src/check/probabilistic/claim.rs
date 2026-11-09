@@ -335,6 +335,16 @@ pub struct OverBinding {
     pub name: String,
     /// Its resolved type.
     pub value_type: ValueType,
+    /// The real S3 `value`/`parameter` node, once this claim is assembled.
+    pub(crate) node: Option<NodeKey>,
+}
+
+impl OverBinding {
+    /// The checked parameter identity produced by S3 lowering. A claim
+    /// checked outside an assembled package has no node yet.
+    pub fn node(&self) -> Option<&NodeKey> {
+        self.node.as_ref()
+    }
 }
 
 /// The normal form of a claim: the content its S4 claim node will be keyed
@@ -440,6 +450,10 @@ impl CheckedProbabilisticClaim {
     /// occurrence's site.
     pub(crate) fn declaration_location(&self) -> Location {
         site_location(self.declared, Site::Declaration)
+    }
+
+    pub(crate) fn over_location(&self) -> Location {
+        site_location(self.declared, Site::Over)
     }
 
     /// Whether the claim's form is one only exact evidence decides: an
@@ -905,6 +919,7 @@ impl Pass<'_, '_> {
         Ok(Some(OverBinding {
             name: parameter.name.name.clone(),
             value_type,
+            node: None,
         }))
     }
 

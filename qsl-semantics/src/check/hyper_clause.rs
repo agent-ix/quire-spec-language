@@ -2387,6 +2387,7 @@ fn check_match(
                 | ExprNode::Field { .. }
                 | ExprNode::Deref(_)
                 | ExprNode::Ref(_)
+                | ExprNode::Select { .. }
                 | ExprNode::Record { .. }
                 | ExprNode::Collection { .. }
                 | ExprNode::Convert { .. }
@@ -2841,6 +2842,7 @@ fn is_opaque(node: &ExprNode) -> bool {
         | ExprNode::Value(_)
         | ExprNode::Deref(_)
         | ExprNode::Ref(_)
+        | ExprNode::Select { .. }
         | ExprNode::Call { .. }
         | ExprNode::Size(_)
         | ExprNode::Contains { .. }
@@ -3030,6 +3032,7 @@ fn leaf_payload(node: &ExprNode, swap: Swap<'_>) -> (Vec<u8>, Vec<u8>) {
         ExprNode::Value(_) => (b"value".to_vec(), Vec::new()),
         ExprNode::Deref(_) => (b"deref".to_vec(), Vec::new()),
         ExprNode::Ref(_) => (b"ref".to_vec(), Vec::new()),
+        ExprNode::Select { .. } => (b"select".to_vec(), Vec::new()),
         ExprNode::Pre(_) => (b"pre".to_vec(), Vec::new()),
         ExprNode::Size(_) => (b"size".to_vec(), Vec::new()),
         ExprNode::Contains { .. } => (b"contains".to_vec(), Vec::new()),

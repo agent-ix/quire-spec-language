@@ -961,6 +961,7 @@ impl<'a> Graph<'a> {
             for state in self.product.ids() {
                 let i = state.index();
                 if safe[i]
+                    && !self.product.decided.iter().any(|(id, _)| *id == state)
                     && !self.choices[i]
                         .iter()
                         .any(|choice| choice.edges.iter().all(|edge| safe[edge.to.index()]))
@@ -978,7 +979,8 @@ impl<'a> Graph<'a> {
             let mut next = reachable.clone();
             for state in self.product.ids() {
                 let i = state.index();
-                if !reachable[i]
+                if !target[i]
+                    && !reachable[i]
                     && self.choices[i]
                         .iter()
                         .any(|choice| choice.edges.iter().all(|edge| reachable[edge.to.index()]))
@@ -1005,6 +1007,7 @@ impl<'a> Graph<'a> {
             for state in self.product.ids() {
                 let index = state.index();
                 if safe[index]
+                    && !self.product.decided.iter().any(|(id, _)| *id == state)
                     && !self.choices[index]
                         .iter()
                         .any(|choice| choice.edges.iter().all(|edge| safe[edge.to.index()]))
@@ -1022,7 +1025,8 @@ impl<'a> Graph<'a> {
             let mut next = reachable.clone();
             for state in self.product.ids() {
                 let index = state.index();
-                if !reachable[index]
+                if !target[index]
+                    && !reachable[index]
                     && self.choices[index].iter().any(|choice| {
                         choice
                             .edges

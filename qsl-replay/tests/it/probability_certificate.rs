@@ -2,7 +2,6 @@
 //! FR-201's bounded checker adapter starts from an admitted checked model and
 //! reaches it only through the claim binder.
 
-use base64::Engine;
 use ix_trace_rs::trace;
 use qsl_eval::simulation::model::ModelSystem;
 use qsl_eval::simulation::TransitionSystem;
@@ -14,7 +13,6 @@ use qsl_replay::{
 };
 use qsl_semantics::check::{Bound, CheckedProbabilisticClaim, ProbForm, ReachTarget};
 use quire_exact::{Cancel, CancelCause, Integer, NodeKey, Rational};
-use serde_json::json;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, OnceLock};
 
@@ -102,16 +100,9 @@ fn system_and_root(world: &World) -> (ModelSystem<'_>, ProbabilityProductKey) {
     let system = ModelSystem::new(subject.simulation.clone()).expect("model admits");
     let initial = system.initial().into_iter().next().expect("one initial");
     let model_key = system.state_key(&initial).expect("model key").0;
-    let bytes = serde_json::to_vec(&json!([
-        "quire.probability-product-key/v1",
-        null,
-        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(model_key),
-        null,
-        null,
-        null
-    ]))
-    .unwrap();
-    (system, ProbabilityProductKey::from_canonical_bytes(bytes))
+    let product = ProbabilityProductKey::for_model_state(None, &model_key)
+        .expect("the owner form is embedded");
+    (system, product)
 }
 
 fn one() -> Rational {
@@ -153,20 +144,17 @@ fn rejected(
     }
 }
 
-#[trace("TC-636")]
+#[trace("TC-636", "QSpec-FR-331-AC-25")]
 #[test]
-fn bound_claim_reconstructs_its_graph_and_reports_the_omitted_state() {
+fn bound_claim_reconstructs_its_graph_and_reports_the_values_member() {
     let world = world_with(UNLIKELY);
     let claim = threshold(&world, at_least, 1, 4);
-    let (system, root) = system_and_root(&world);
+    let (system, _) = system_and_root(&world);
     let empty = ExactProbabilityCertificate { values: Vec::new() };
 
     let rejection = rejected(check(&system, claims(&world), &node_of(claim), &empty));
     assert_eq!(rejection.rule, ProbabilityCertificateRule::Malformed);
-    assert_eq!(
-        rejection.at,
-        ProbabilityCertificateLocus::ProductState(root)
-    );
+    assert_eq!(rejection.at, ProbabilityCertificateLocus::Member("values"));
 }
 
 #[trace("TC-636")]
@@ -197,11 +185,52 @@ fn claim_binding_uses_the_checked_node_not_name_or_source_order() {
         // is rejected for it: its graph has states the certificate omits.
         let rejection = rejected(check(&system, claims(world), &unlikely, &certificate));
         assert_eq!(rejection.rule, ProbabilityCertificateRule::Malformed);
-        let ProbabilityCertificateLocus::ProductState(missing) = rejection.at else {
-            panic!("a missing value is reported at its product state");
-        };
-        assert_ne!(missing, root, "the root's value is present");
+        assert_eq!(rejection.at, ProbabilityCertificateLocus::Member("values"));
     }
+}
+
+#[trace("TC-636", "QSpec-FR-331-AC-25")]
+#[test]
+fn typed_value_coverage_and_order_rejections_name_the_values_member() {
+    let world = world_with(LIKELY);
+    let (system, root) = system_and_root(&world);
+    let node = node_of(threshold(&world, at_least, 1, 2));
+    let valid = rooted(&root, one());
+    assert!(matches!(
+        check(&system, claims(&world), &node, &valid),
+        Ok(ExactProbabilityCertificateCheck::Accepted(_))
+    ));
+    let foreign = ProbabilityProductKey::for_model_state(
+        None,
+        include_bytes!("../../../qsl-probability-check/tests/fixtures/link.model-key-0.json"),
+    )
+    .expect("a valid key from a different model");
+    assert_ne!(foreign, root);
+    let mut duplicate = valid.clone();
+    duplicate.values.push(duplicate.values[0].clone());
+    let mut extra = valid.clone();
+    extra.values.push(ExactProbabilityValue {
+        state: foreign,
+        value: one(),
+    });
+    extra.values.sort_by(|a, b| a.state.cmp(&b.state));
+    let rejections: Vec<_> = [("duplicate", duplicate), ("extra", extra)]
+        .into_iter()
+        .map(|(name, certificate)| {
+            (
+                name,
+                rejected(check(&system, claims(&world), &node, &certificate)),
+            )
+        })
+        .collect();
+    let expected = ProbabilityCertificateRejection {
+        rule: ProbabilityCertificateRule::Malformed,
+        at: ProbabilityCertificateLocus::Member("values"),
+    };
+    assert_eq!(
+        rejections,
+        vec![("duplicate", expected.clone()), ("extra", expected)]
+    );
 }
 
 /// The claim fixes the scheduler objective: a false `under every scheduler`

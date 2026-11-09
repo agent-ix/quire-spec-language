@@ -789,6 +789,7 @@ enum Shape {
     Value,
     Deref,
     Ref,
+    Select,
     Pre,
     Call(NameForm),
     /// Field names in source order, each with whether its value is `null`.
@@ -986,6 +987,13 @@ impl Shape {
             Self::Deref => {
                 arity(1)?;
                 ExprNode::Deref(operands.next()?)
+            }
+            Self::Select => {
+                arity(2)?;
+                ExprNode::Select {
+                    place: operands.next()?,
+                    selector: operands.next()?,
+                }
             }
             Self::Ref => {
                 arity(1)?;
@@ -1769,21 +1777,44 @@ impl<'c> Mapping<'c> {
                     suffixes.push((shape, end, arguments));
                 }
                 Item::Token(token) if token.spelling() == b"[" => {
-                    let end = rest
-                        .find_map(|item| match item {
-                            Item::Token(close) if close.spelling() == b"]" => {
-                                Some(close.span().end)
-                            }
-                            Item::Token(_) | Item::Node(_) => None,
-                        })
-                        .unwrap_or(node.span().end);
-                    return Err(unrepresented(
-                        Production::Postfix,
-                        Span {
-                            start: node.span().start,
-                            end,
-                        },
-                    ));
+                    // FR-091 "Unrepresented constructs", FR-230 "Selection":
+                    // a selector directly after a field access or another
+                    // selector (`r.f[s]`) builds as a `Select`, and the
+                    // checker decides whether the whole is a clock place
+                    // expression; a selector after anything else (`xs[0]`,
+                    // `r.f()[s]`) is unrepresented.
+                    let ahead = rest.clone();
+                    let selects_a_field =
+                        matches!(suffixes.last(), Some((Shape::Field(_) | Shape::Select, ..)));
+                    let selector = match (rest.next(), rest.next()) {
+                        (Some(Item::Node(selector)), Some(Item::Token(close)))
+                            if selects_a_field
+                                && selector.production() == Production::Expression
+                                && close.spelling() == b"]" =>
+                        {
+                            Some((*selector, close.span().end))
+                        }
+                        _ => None,
+                    };
+                    let Some((selector, end)) = selector else {
+                        let end = ahead
+                            .clone()
+                            .find_map(|item| match item {
+                                Item::Token(close) if close.spelling() == b"]" => {
+                                    Some(close.span().end)
+                                }
+                                Item::Token(_) | Item::Node(_) => None,
+                            })
+                            .unwrap_or(node.span().end);
+                        return Err(unrepresented(
+                            Production::Postfix,
+                            Span {
+                                start: node.span().start,
+                                end,
+                            },
+                        ));
+                    };
+                    suffixes.push((Shape::Select, end, vec![selector]));
                 }
                 Item::Token(_) | Item::Node(_) => return Err(unexpected(node)),
             }

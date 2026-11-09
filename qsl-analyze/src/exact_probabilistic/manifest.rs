@@ -5,7 +5,7 @@
 //! conversion and no engine's manifest.
 //!
 //! EN-5 settles one (kind, mode) pair, `probabilistic-satisfaction` over a
-//! `bounded` domain, with the evidence kind `exact` and no other: EN-4 holds
+//! `unbounded` extent, with the evidence kind `exact` and no other: EN-4 holds
 //! `statistical` for the same kind, and one claim requested with either kind
 //! is two items (ADR-028 SP-3). Its `domains` are the boundable domains its
 //! product explores: `population` and `integer`.
@@ -23,7 +23,7 @@ pub const BACKEND_ID: &str = "en-5";
 /// The (kind, mode) pairs EN-5 advertises: exactly one.
 pub const ADVERTISED: [(Option<&str>, Option<&str>); 1] = [(
     Some(Capability::ProbabilisticSatisfaction.to_wire()),
-    Some(Mode::Bounded.to_wire()),
+    Some(Mode::Unbounded.to_wire()),
 )];
 
 /// The boundable domain kinds EN-5's product explores.

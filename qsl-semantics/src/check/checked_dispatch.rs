@@ -1730,6 +1730,7 @@ mod tests {
             Expression::value(boxed()),
             Expression::deref(boxed()),
             Expression::place_ref(boxed()),
+            Expression::select(boxed(), boxed()),
             Expression::call("g".to_owned(), vec![boxed(), boxed(), boxed()]),
             Expression::record(
                 "R".to_owned(),
@@ -1818,7 +1819,7 @@ mod tests {
     }
 
     /// Every name [`form_name`] gives, one per `Expression` form.
-    const FORM_NAMES: [&str; 43] = [
+    const FORM_NAMES: [&str; 44] = [
         "Case",
         "Boolean",
         "Absent",
@@ -1840,6 +1841,7 @@ mod tests {
         "Value",
         "Deref",
         "Ref",
+        "Select",
         "Call",
         "Record",
         "Collection",
@@ -1892,6 +1894,7 @@ mod tests {
             ExprNode::Value(_) => "Value",
             ExprNode::Deref(_) => "Deref",
             ExprNode::Ref(_) => "Ref",
+            ExprNode::Select { .. } => "Select",
             ExprNode::Call { .. } => "Call",
             ExprNode::Record { .. } => "Record",
             ExprNode::Collection { .. } => "Collection",

@@ -18,6 +18,7 @@ hashbrown = { version = "0.17.1", default-features = false, features = ["default
 # ADR-011 §6.1: F depends on K. ADR-013 T-5's `Locus` carries the kernel
 # `Location`, and O-07's occurrence key the kernel `Origin`.
 quire-exact = { workspace = true }
+quire-canonical = { workspace = true }
 # ADR-011 §6.1 layer SV: the catalog vocabulary (`Category`, `CatalogCode`,
 # `InternalFault`, ...) F's diagnostics name (FR-401, ADR-011 X-14).
 quire-semantic-value = { workspace = true }

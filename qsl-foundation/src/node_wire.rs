@@ -234,6 +234,53 @@ pub fn node_key_to_text(key: &NodeKey) -> Result<String, NodeWireError> {
     Ok(out)
 }
 
+/// Emit the shared structural node shape directly into a canonical writer.
+///
+/// The writer admits its own storage and this traversal's stack before growth.
+/// No intermediate identity text or JSON tree is retained.
+///
+/// # Errors
+///
+/// The writer's byte, reservation, allocation or scalar refusal.
+pub fn encode_node_key<S: quire_canonical::Sink + ?Sized>(
+    key: &NodeKey,
+    writer: &mut quire_canonical::Writer<'_, S>,
+) -> Result<(), quire_canonical::Error> {
+    fn head<S: quire_canonical::Sink + ?Sized>(
+        view: NodeKeyView<'_>,
+        writer: &mut quire_canonical::Writer<'_, S>,
+    ) -> Result<(), quire_canonical::Error> {
+        writer.begin_object()?;
+        writer.name("ordinal")?;
+        writer.integer(i128::from(view.ordinal()))?;
+        writer.name("package")?;
+        writer.string(view.package())?;
+        writer.name("path")?;
+        writer.begin_array()
+    }
+    let mut stack = Vec::new();
+    let root = key.view();
+    head(root, writer)?;
+    writer.reserve_list(&mut stack, 1)?;
+    stack.push(root.path());
+    while let Some(path) = stack.last_mut() {
+        match path.next() {
+            Some(PathSegmentView::Text(text)) => writer.string(text)?,
+            Some(PathSegmentView::Node(view)) => {
+                head(view, writer)?;
+                writer.reserve_list(&mut stack, 1)?;
+                stack.push(view.path());
+            }
+            None => {
+                writer.end_array()?;
+                writer.end_object()?;
+                stack.pop();
+            }
+        }
+    }
+    Ok(())
+}
+
 /// The node identity `text` spells, read in one pass with an explicit stack
 /// and a hand-written tokenizer for the fixed shape, so depth is bounded only
 /// by memory and cost is linear in the text.
