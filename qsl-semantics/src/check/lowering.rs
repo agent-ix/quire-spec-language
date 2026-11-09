@@ -1113,6 +1113,9 @@ pub(crate) struct Lowering<'a> {
     /// Indexed only by the live slot allocation's address, not by a semantic
     /// identity, source location or body-local node index.
     checked_body_keys: BTreeMap<usize, CheckedBodyKeys>,
+    /// Only references introduced since the preceding settlement that still
+    /// name a draft. Admitted expression keys need no further resolution.
+    pending_checked_node_keys: Vec<(usize, usize)>,
 }
 
 /// The admitted key of `node`: a node that names no pending handle is
@@ -2126,6 +2129,7 @@ impl<'a> Lowering<'a> {
             related_renames: Vec::new(),
             active_protocol: None,
             checked_body_keys: BTreeMap::new(),
+            pending_checked_node_keys: Vec::new(),
             unsettled_protocols: Vec::new(),
         }
     }
@@ -2242,16 +2246,38 @@ impl<'a> Lowering<'a> {
     fn retain_checked_node(&mut self, node: CheckedNode<'_>, term: &LeafTerm) {
         let slots = node.body().node_key_slots();
         let owner = std::sync::Arc::as_ptr(slots) as usize;
-        self.checked_body_keys
+        let body = self.checked_body_keys
             .entry(owner)
             .or_insert_with(|| CheckedBodyKeys {
                 slots: std::sync::Arc::clone(slots),
                 length: node.body().len(),
                 location: node.location().clone(),
                 nodes: Vec::new(),
-            })
-            .nodes
-            .push((node.id(), term.reference_target().cloned()));
+            });
+        let reference = term.reference_target().cloned();
+        if reference.as_ref().is_some_and(Self::pending) {
+            self.pending_checked_node_keys.push((owner, body.nodes.len()));
+        }
+        body.nodes.push((node.id(), reference));
+    }
+
+    /// Resolve each new pending reference once, without revisiting keys
+    /// retained by independent functions or earlier recursion groups.
+    fn resolve_checked_node_keys(
+        &mut self,
+        mut resolve: impl FnMut(&NodeRef) -> Result<NodeRef, ()>,
+    ) -> Result<(), CheckRefusal> {
+        for (owner, index) in std::mem::take(&mut self.pending_checked_node_keys) {
+            let Some(body) = self.checked_body_keys.get_mut(&owner) else {
+                return Err(fault(&generated_location(), KeyFault::UnresolvedDraft));
+            };
+            let Some((_, Some(node))) = body.nodes.get_mut(index) else {
+                return Err(fault(&body.location, KeyFault::UnresolvedDraft));
+            };
+            *node = resolve(node)
+                .map_err(|()| fault(&body.location, KeyFault::UnresolvedDraft))?;
+        }
+        Ok(())
     }
 
     fn publish_checked_node_keys(&self) -> Result<(), CheckRefusal> {
@@ -3909,14 +3935,7 @@ impl<'a> Lowering<'a> {
             let node = resolve(&node).map_err(|()| unresolved(&site.binder))?;
             self.record_binder(site, node);
         }
-        for body in self.checked_body_keys.values_mut() {
-            for (_, node) in &mut body.nodes {
-                if let Some(node) = node {
-                    *node = resolve(node).map_err(|()| unresolved(&body.location))?;
-                }
-            }
-        }
-        Ok(())
+        self.resolve_checked_node_keys(resolve)
     }
 
     /// Key the recursion group `component` of `drafts`, whose members are

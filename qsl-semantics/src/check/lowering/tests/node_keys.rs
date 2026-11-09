@@ -207,3 +207,84 @@ fn a_cloned_body_cannot_silently_reuse_keys_from_another_package() {
         "refusal cannot overwrite the admitted identity"
     );
 }
+
+/// Count resolution work at the same private mapper used by settlement.
+/// The inputs are independent, genuinely checked function bodies; a pending
+/// control adds one producer-local placeholder per new body.
+fn resolution_visits(functions: usize, pending: bool) -> usize {
+    let declarations = (0..functions)
+        .map(|index| {
+            format!("function f{index} using v(): Boolean pure {{ true and false }}")
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let graph = source(&declarations);
+    let scope = empty_scope();
+    let owner = SourceOwner::new("node-keys", "unit").expect("valid source owner");
+    let mut occurrences = OccurrenceMap::default();
+    let mut meter = Meter::new(crate::check::family::SCALAR_LIMITS_UNLIMITED);
+    let mut lowering = Lowering::new_with_source_owners(
+        &scope,
+        &owner,
+        &std::collections::BTreeMap::new(),
+        &[],
+        &[],
+        scope.types().units().clone(),
+        None,
+        0,
+        &mut occurrences,
+        &mut meter,
+        "fixture",
+    );
+    let mut visits = 0;
+    for index in 0..functions {
+        let root = graph.function_state(index).expect("the function exists").body;
+        lowering
+            .expression(root, &mut Binders::new(&[], &[]))
+            .expect("the independent closed expression lowers");
+        if pending {
+            let placeholder = lowering.placeholder();
+            lowering.retain_checked_node(root, &LeafTerm::reference_node(placeholder));
+        }
+        lowering
+            .resolve_checked_node_keys(|reference| {
+                visits += 1;
+                Ok(match reference {
+                    NodeRef::Pending(_) => NodeRef::Admitted(
+                        root.node_key().expect("the source supplied its real key").clone(),
+                    ),
+                    admitted @ NodeRef::Admitted(_) => admitted.clone(),
+                })
+            })
+            .expect("new pending keys resolve");
+        let after_new = visits;
+        lowering
+            .resolve_checked_node_keys(|reference| {
+                visits += 1;
+                Ok(reference.clone())
+            })
+            .expect("an empty delta resolves without work");
+        assert_eq!(visits, after_new, "a settlement never revisits its old delta");
+    }
+    assert_eq!(
+        lowering.checked_body_keys.values().map(|body| body.nodes.len()).sum::<usize>(),
+        functions * if pending { 4 } else { 3 },
+        "the control really retains each function's expression references"
+    );
+    lowering.finish(&generated_location()).expect("resolved keys publish");
+    visits
+}
+
+#[trace("TC-415", "FR-093-AC-62")]
+#[test]
+fn settlement_does_not_revisit_admitted_expression_keys() {
+    assert_eq!(resolution_visits(16, false), 0);
+    assert_eq!(resolution_visits(32, false), 0);
+}
+
+#[trace("TC-415", "FR-093-AC-62")]
+#[test]
+fn settlement_resolves_each_new_pending_expression_reference_once() {
+    assert_eq!(resolution_visits(16, true), 16);
+    assert_eq!(resolution_visits(32, true), 32);
+}
