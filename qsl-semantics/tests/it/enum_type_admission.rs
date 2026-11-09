@@ -29,7 +29,10 @@ fn an_absent_enum_type_name_is_a_typed_missing_name() {
     };
 
     let refusals = declarations
-        .check(CheckingLimits::default())
+        .check(
+            CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
         .expect_err("an undeclared enum type name must be refused");
     assert_eq!(refusals.len(), 1, "{refusals:?}");
     assert!(matches!(

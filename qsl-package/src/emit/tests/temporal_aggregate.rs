@@ -284,7 +284,10 @@ fn the_aggregate_spans_resolve_through_the_source_map() {
     let declarations = assemble_with_models(text.as_bytes(), &packages).expect("assembles");
     let regions = declarations.regions();
     let graph = declarations
-        .check(CheckingLimits::default())
+        .check(
+            CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
         .unwrap_or_else(|refusals| panic!("the package checks: {refusals:?}"));
     let located = |id: &Value| -> Vec<(u64, u64)> {
         let sought = node_key(wire, id);
@@ -338,7 +341,10 @@ fn emit_with_clock(
     let assembled =
         || assemble_with_models(text.as_bytes(), &packages).expect("the unit assembles");
     let probe = assembled()
-        .check(CheckingLimits::default())
+        .check(
+            CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
         .unwrap_or_else(|refusals| panic!("the clause checks without a clock: {refusals:?}"));
     let [temporal] = probe.temporal_clauses() else {
         panic!("one clause");
@@ -349,7 +355,10 @@ fn emit_with_clock(
             declaration_span: span,
             timestamp_unit: timestamp_unit.to_owned(),
         }])
-        .check(CheckingLimits::default())?;
+        .check(
+            CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )?;
     let selections = [crate::emit::TemporalClockSelection::new(
         graph.source().clone(),
         span,

@@ -119,7 +119,10 @@ fn requirements(
 fn protocol_refusals(declarations: &str) -> (String, Vec<(ProtocolAnchorCause, CheckRefusal)>) {
     let (text, assembled) = assemble(declarations);
     let refusals = assembled
-        .check(CheckingLimits::default())
+        .check(
+            CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
         .err()
         .unwrap_or_default();
     let found = refusals
@@ -235,7 +238,10 @@ fn a_requirement_binds_a_clause_with_an_activation_and_a_capture() {
     assert_ne!(one_temporal, HEADER, "the header selects the timed profile");
     let (_, assembled) = assemble_under(&one_temporal, &unit);
     let refusals = assembled
-        .check(CheckingLimits::default())
+        .check(
+            CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
         .err()
         .unwrap_or_default();
     assert!(
@@ -260,7 +266,10 @@ fn a_refused_protocol_is_followed_by_no_later_stage_consequence() {
     );
     let (_, assembled) = assemble(&unit);
     let refusals = assembled
-        .check(CheckingLimits::default())
+        .check(
+            CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
         .expect_err("the cycle refuses the unit");
     assert!(
         refusals
@@ -376,7 +385,10 @@ fn one_package_checks_three_families_and_binds_the_requirement() {
     let one_temporal = HEADER.replace("profile e = \"quire.temporal.timed/v1\";\n", "");
     let (_, assembled) = assemble_under(&one_temporal, unit);
     let refusals = assembled
-        .check(CheckingLimits::default())
+        .check(
+            CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
         .err()
         .unwrap_or_default();
     assert!(
@@ -387,7 +399,10 @@ fn one_package_checks_three_families_and_binds_the_requirement() {
     );
     let (_, assembled) = assemble_under(&one_temporal, unit);
     let graph = assembled
-        .check_with_protocol_results(CheckingLimits::default())
+        .check_with_protocol_results(
+            CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
         .expect("every declaration of the three families checks");
     let [earlier, clause] = graph.temporal_clauses() else {
         panic!("two temporal clauses");
@@ -427,7 +442,10 @@ fn a_model_type_in_a_clause_binder_resolves_to_the_models_own_type() {
     let one_temporal = HEADER.replace("profile e = \"quire.temporal.timed/v1\";\n", "");
     let (_, assembled) = assemble_under(&one_temporal, unit);
     let graph = assembled
-        .check(CheckingLimits::default())
+        .check(
+            CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
         .unwrap_or_else(|refusals| panic!("the clause checks: {refusals:?}"));
     let [node] = graph.temporal_clauses() else {
         panic!("one temporal clause");
@@ -538,7 +556,10 @@ fn three_units_bind_a_predicate_a_clause_and_a_protocol_across_units() {
             .map(|&i| (all[i].0, all[i].1.as_str()))
             .collect();
         let graph = assemble(&texts)
-            .check_with_protocol_results(CheckingLimits::default())
+            .check_with_protocol_results(
+                CheckingLimits::default(),
+                quire_semantic_value::checking::CheckMode::Linked,
+            )
             .unwrap_or_else(|refusals| panic!("{order:?}: the package checks: {refusals:?}"));
         let [first, node] = graph.temporal_clauses() else {
             panic!("{order:?}: two temporal clauses");
@@ -554,7 +575,10 @@ fn three_units_bind_a_predicate_a_clause_and_a_protocol_across_units() {
     }
 
     let refusals = assemble(&[("a", &predicate), ("a1", &earlier), ("c", &protocol)])
-        .check(CheckingLimits::default())
+        .check(
+            CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
         .expect_err("the requirement names a clause no unit declares");
     let [refusal] = refusals.as_slice() else {
         panic!("one refusal, got {refusals:?}");

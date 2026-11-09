@@ -236,7 +236,10 @@ pub fn check(archive: bool, declarations: &str) -> Result<Checked, Vec<Refused>>
         }
     };
     let regions = declarations.regions();
-    match declarations.check(CheckingLimits::default()) {
+    match declarations.check(
+        CheckingLimits::default(),
+        quire_semantic_value::checking::CheckMode::Linked,
+    ) {
         Ok(graph) => Ok(Checked { graph, packages }),
         Err(refusals) => Err(refusals
             .into_iter()

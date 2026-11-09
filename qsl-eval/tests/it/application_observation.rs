@@ -75,6 +75,7 @@ fn package_with(
                     .with_nodes(1 << 30)
                     .with_input_bytes(1 << 30)
                     .with_work_budget(1 << 40),
+                quire_semantic_value::checking::CheckMode::Linked,
             )
             .expect("source checks"),
     )

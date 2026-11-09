@@ -33,7 +33,10 @@ fn world() -> World {
         "fixture".to_owned(),
         qsl_foundation::IdentityLimits::default(),
     )
-    .check(CheckingLimits::default())
+    .check(
+        CheckingLimits::default(),
+        quire_semantic_value::checking::CheckMode::Linked,
+    )
     .expect("the empty fixture package checks");
     World {
         scope: scope_with(fixture::types(object_type()), Vec::new()),

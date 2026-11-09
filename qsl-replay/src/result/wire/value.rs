@@ -51,7 +51,10 @@ mod tests {
         );
         CheckedPackage::link(
             declarations
-                .check(quire_semantic_value::checking::CheckingLimits::default())
+                .check(
+                    quire_semantic_value::checking::CheckingLimits::default(),
+                    quire_semantic_value::checking::CheckMode::Linked,
+                )
                 .expect("the empty fixture package checks"),
         )
     }
@@ -180,7 +183,10 @@ mod tests {
         declarations.types = types;
         let package = CheckedPackage::link(
             declarations
-                .check(quire_semantic_value::checking::CheckingLimits::default())
+                .check(
+                    quire_semantic_value::checking::CheckingLimits::default(),
+                    quire_semantic_value::checking::CheckMode::Linked,
+                )
                 .expect("the package checks"),
         );
         (package, [money, taxed, pair])

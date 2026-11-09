@@ -450,7 +450,10 @@ fn checked(variant: &Variant) -> Admission {
         Vec::new(),
     )
     .expect("the model assembles")
-    .check(CheckingLimits::default())
+    .check(
+        CheckingLimits::default(),
+        quire_semantic_value::checking::CheckMode::Linked,
+    )
     .expect("the unit checks");
     Admission { graph, packages }
 }

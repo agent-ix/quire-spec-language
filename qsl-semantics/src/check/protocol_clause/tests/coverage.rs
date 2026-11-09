@@ -10,14 +10,20 @@ use quire_semantic_value::checking::CheckingLimits;
 fn checks_with_header(header: &str, source: &str) {
     let (_, assembled) = super::assemble_with(header, source);
     assembled
-        .check(CheckingLimits::default())
+        .check(
+            CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
         .unwrap_or_else(|refusals| panic!("{source}: {refusals:?}"));
 }
 
 fn refusals_with_header(header: &str, source: &str) -> (String, Vec<crate::check::CheckRefusal>) {
     let (text, assembled) = super::assemble_with(header, source);
     let refusals = assembled
-        .check(CheckingLimits::default())
+        .check(
+            CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
         .expect_err("the wrong profile kind refuses");
     (text, refusals)
 }
@@ -419,7 +425,10 @@ fn a_compensation_without_its_temporal_alias_keeps_missing_profile() {
     );
     let (text, assembled) = super::assemble_with(&header, &source);
     let found = assembled
-        .check(quire_semantic_value::checking::CheckingLimits::default())
+        .check(
+            quire_semantic_value::checking::CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
         .expect_err("a template whose using alias is not selected refuses");
     let missing_profile = found.iter().find_map(|refusal| {
         let crate::check::CheckCause::ProtocolAnchor(cause) = &refusal.cause else {

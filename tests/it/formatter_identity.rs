@@ -89,7 +89,10 @@ fn private_state_source_identity(document: Vec<u8>, body: &str) {
     let declarations = semantic_models::admit_and_assemble_with_body(&document, body)
         .expect("the original private TC465 fixture assembles");
     let graph = declarations
-        .check(quire_semantic_value::checking::CheckingLimits::default())
+        .check(
+            quire_semantic_value::checking::CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
         .unwrap_or_else(|refusals| panic!("original private TC465 S3: {refusals:?}"));
     let original = qsl_package::emit_checked(
         &qsl_package::CheckedPackage::link(graph),
@@ -192,7 +195,10 @@ fn protocol_attempt_identity(declarations: &str) {
         )
         .expect("the actual original SelectedModel resolves the protocol");
         let graph = declarations
-            .check(quire_semantic_value::checking::CheckingLimits::default())
+            .check(
+                quire_semantic_value::checking::CheckingLimits::default(),
+                quire_semantic_value::checking::CheckMode::Linked,
+            )
             .unwrap_or_else(|refusals| panic!("{revision}: protocol S3 refuses: {refusals:?}"));
         let emission = qsl_package::emit_checked(
             &qsl_package::CheckedPackage::link(graph),
@@ -415,7 +421,10 @@ fn state_fixture_identity(case: usize) {
     let (document, body) = state_fixture(case);
     let graph = semantic_models::admit_and_assemble_with_body(&document, &body)
         .expect("the owning original state fixture assembles")
-        .check(quire_semantic_value::checking::CheckingLimits::default())
+        .check(
+            quire_semantic_value::checking::CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
         .unwrap_or_else(|refusals| panic!("state fixture {case}: original S3: {refusals:?}"));
     if case == 13 {
         let (source, _) = semantic_models::config_unit_with_body(&document, &body);
@@ -628,7 +637,10 @@ fn state_generated_occurrences_have_authored_regions() {
     let (source, _) = semantic_models::config_unit_with_body(&document, &body);
     let graph = semantic_models::admit_and_assemble_with_body(&document, &body)
         .unwrap()
-        .check(quire_semantic_value::checking::CheckingLimits::default())
+        .check(
+            quire_semantic_value::checking::CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
         .expect("the original three clauses check before emission");
     let authored_names = ["ParentOrder", "NoCycle", "VersionUnchanged"];
     assert_eq!(graph.state_clauses().len(), authored_names.len());
@@ -885,7 +897,10 @@ fn ieee_fixture_identity(text: &str) {
         let definition = DefinitionRole::IeeeProfile.reference();
         declarations.ieee_profile = Some(admit_ieee_profile(&[definition], &[]).unwrap());
         let graph = declarations
-            .check(quire_semantic_value::checking::CheckingLimits::default())
+            .check(
+                quire_semantic_value::checking::CheckingLimits::default(),
+                quire_semantic_value::checking::CheckMode::Linked,
+            )
             .expect("the owning IEEE profile admits the fixture");
         let emission = qsl_package::emit_checked(
             &qsl_package::CheckedPackage::link(graph),

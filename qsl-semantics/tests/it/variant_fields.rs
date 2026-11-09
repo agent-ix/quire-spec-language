@@ -234,7 +234,10 @@ fn a_variant_case_with_a_resolving_payload_is_admitted() {
         .expect("Account.choice");
     assert_eq!(choice.value_type(), &ValueType::Composite(composite.key()));
     declarations
-        .check(CheckingLimits::default())
+        .check(
+            CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
         .expect("the package's union payload type checks");
 }
 
@@ -483,7 +486,10 @@ fn a_second_alias_names_the_same_variant_record_and_object_types() {
         .all(|declared| !declared.name().starts_with("Cfg::")));
     let tier = enum_of(&declarations, "Config", "Tier");
     let checked = declarations
-        .check(CheckingLimits::default())
+        .check(
+            CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
         .unwrap_or_else(|refusals| panic!("the unit checks: {refusals:?}"));
     let signature = |name: &str| {
         let callable = checked
@@ -599,7 +605,10 @@ fn two_units_name_the_same_variant_record_and_object_types_through_their_own_ali
     );
     let tier = enum_of(&declarations, "Config", "Tier");
     let checked = declarations
-        .check(CheckingLimits::default())
+        .check(
+            CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
         .unwrap_or_else(|refusals| panic!("both units check: {refusals:?}"));
     let callable = |name: &str| {
         checked
@@ -642,7 +651,10 @@ fn a_variant_case_through_another_units_alias_refuses_missing_name() {
     };
     units("Cfg::Tier::Gold")
         .unwrap_or_else(|refusal| panic!("b's own alias assembles: {refusal:?}"))
-        .check(CheckingLimits::default())
+        .check(
+            CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
         .unwrap_or_else(|refusals| panic!("b's own alias checks: {refusals:?}"));
     let codes: Vec<String> = match units("Config::Tier::Gold") {
         Err(refusal) => refusal
@@ -651,7 +663,10 @@ fn a_variant_case_through_another_units_alias_refuses_missing_name() {
             .map(|error| error.cause.catalog_code().to_string())
             .collect(),
         Ok(declarations) => declarations
-            .check(CheckingLimits::default())
+            .check(
+                CheckingLimits::default(),
+                quire_semantic_value::checking::CheckMode::Linked,
+            )
             .expect_err("b binds no Config")
             .iter()
             .filter_map(|refusal| refusal.cause.catalog_code())
@@ -686,7 +701,10 @@ fn checked() -> Checked {
         .map(|declared| ValueType::Composite(declared.key()))
         .expect("Settings is declared");
     let graph = declarations
-        .check(CheckingLimits::default())
+        .check(
+            CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
         .unwrap_or_else(|refusals| panic!("the unit checks: {refusals:?}"));
     Checked {
         graph,
@@ -1004,7 +1022,10 @@ fn replay_over(document: serde_json::Value) -> Replay {
     let declarations = declarations_of(&document, "Config", "").0;
     let graph = declarations_of(&document, "Config", "")
         .0
-        .check(CheckingLimits::default())
+        .check(
+            CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
         .unwrap_or_else(|refusals| panic!("the unit checks: {refusals:?}"));
     Replay {
         declarations,
@@ -1391,7 +1412,10 @@ fn a_defect_in_a_nested_variant_value_is_refused_at_its_path() {
 /// The refusals `declarations` is checked with.
 fn check_refusals(declarations: &str) -> Vec<CheckRefusal> {
     assemble_as("Config", declarations)
-        .check(CheckingLimits::default())
+        .check(
+            CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
         .map(|_| Vec::new())
         .unwrap_or_else(|refusals| refusals)
 }
@@ -1905,7 +1929,10 @@ fn odd_document() -> Value {
 fn odd_refusals(declarations: &str) -> Vec<CheckRefusal> {
     declarations_of(&odd_document(), "Config", declarations)
         .0
-        .check(CheckingLimits::default())
+        .check(
+            CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
         .map(|_| Vec::new())
         .unwrap_or_else(|refusals| refusals)
 }

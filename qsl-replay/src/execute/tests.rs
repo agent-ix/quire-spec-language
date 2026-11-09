@@ -1749,8 +1749,14 @@ fn an_out_of_type_stored_value_refuses_where_the_equality_fault_once_reached_rep
         None,
         source.clone(),
     )];
-    let package =
-        qsl_package::CheckedPackage::link(declarations.check(CheckingLimits::default()).unwrap());
+    let package = qsl_package::CheckedPackage::link(
+        declarations
+            .check(
+                CheckingLimits::default(),
+                quire_semantic_value::checking::CheckMode::Linked,
+            )
+            .unwrap(),
+    );
     let expression = package
         .graph()
         .check_expression(
@@ -1912,8 +1918,14 @@ fn actual_empty_admitted_identity_fault_propagates_from_package_into_replay_fail
         None,
         source.clone(),
     )];
-    let package =
-        qsl_package::CheckedPackage::link(declarations.check(CheckingLimits::default()).unwrap());
+    let package = qsl_package::CheckedPackage::link(
+        declarations
+            .check(
+                CheckingLimits::default(),
+                quire_semantic_value::checking::CheckMode::Linked,
+            )
+            .unwrap(),
+    );
     let expression = package
         .graph()
         .check_expression(
@@ -2028,8 +2040,14 @@ fn actual_public_package_comparator_fault_keeps_the_nested_cause_in_replay() {
         None,
         source.clone(),
     )];
-    let package =
-        qsl_package::CheckedPackage::link(declarations.check(CheckingLimits::default()).unwrap());
+    let package = qsl_package::CheckedPackage::link(
+        declarations
+            .check(
+                CheckingLimits::default(),
+                quire_semantic_value::checking::CheckMode::Linked,
+            )
+            .unwrap(),
+    );
     let expression = package
         .graph()
         .check_expression(

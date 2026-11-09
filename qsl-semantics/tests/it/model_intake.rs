@@ -2555,7 +2555,10 @@ fn a_port_role_on_a_shared_alias_is_its_own_units_packages_port() {
     let (a, b) = (port_document(A), port_document(B));
     let checked = crate::model_operations::assemble_units(&units, &[a.as_slice(), b.as_slice()])
         .with_unwritten_protocols()
-        .check(quire_semantic_value::checking::CheckingLimits::default())
+        .check(
+            quire_semantic_value::checking::CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
         .unwrap_or_else(|refusals| panic!("both protocols check: {refusals:?}"));
     for (protocol, package) in [("Pa", A), ("Pb", B)] {
         let checked = checked

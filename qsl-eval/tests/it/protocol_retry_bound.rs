@@ -171,7 +171,10 @@ fn fixture(bound: u64) -> Fixture {
             Vec::new(),
         )
         .expect("unit assembled")
-        .check(CheckingLimits::default())
+        .check(
+            CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
         .unwrap_or_else(|refusals| panic!("protocol checks: {refusals:?}")),
     );
 

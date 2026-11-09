@@ -816,7 +816,10 @@ mod tests {
         assert!(text(&declaration).ends_with("c + d }"));
 
         let checked = declarations
-            .check(CheckingLimits::default())
+            .check(
+                CheckingLimits::default(),
+                quire_semantic_value::checking::CheckMode::Linked,
+            )
             .expect("the unit checks");
         for (location, expected) in &cases {
             let region = checked
@@ -868,7 +871,10 @@ mod tests {
         assert_eq!(declarations.declaration_region(1), None);
 
         let checked = declarations
-            .check(CheckingLimits::default())
+            .check(
+                CheckingLimits::default(),
+                quire_semantic_value::checking::CheckMode::Linked,
+            )
             .expect("the unit checks");
         for location in &unresolved {
             assert_eq!(checked.region(location), None, "{location:?}");
@@ -944,7 +950,10 @@ mod tests {
         let standalone = unit();
         let regions = declarations.regions();
         let checked = for_check
-            .check(CheckingLimits::default())
+            .check(
+                CheckingLimits::default(),
+                quire_semantic_value::checking::CheckMode::Linked,
+            )
             .expect("the unit checks");
         let cases = [
             (body(&[]), "if a then b else c + d"),
@@ -1187,7 +1196,9 @@ mod tests {
         ] {
             let unit = unit();
             let regions = unit.regions();
-            let refusals = unit.check(limits).expect_err("the limit stops checking");
+            let refusals = unit
+                .check(limits, quire_semantic_value::checking::CheckMode::Linked)
+                .expect_err("the limit stops checking");
             let [refusal] = refusals.as_slice() else {
                 panic!("one refusal, got {refusals:?}");
             };
@@ -1217,8 +1228,10 @@ mod tests {
         for budget in (declared + 1)..(declared + 1000) {
             let unit = unit();
             let regions = unit.regions();
-            let Err(refusals) = unit.check(CheckingLimits::default().with_work_budget(budget))
-            else {
+            let Err(refusals) = unit.check(
+                CheckingLimits::default().with_work_budget(budget),
+                quire_semantic_value::checking::CheckMode::Linked,
+            ) else {
                 continue;
             };
             let [refusal] = refusals.as_slice() else {
@@ -1251,7 +1264,10 @@ mod tests {
             let unit = unit();
             let regions = unit.regions();
             let refusals = unit
-                .check(CheckingLimits::default().with_work_budget(budget))
+                .check(
+                    CheckingLimits::default().with_work_budget(budget),
+                    quire_semantic_value::checking::CheckMode::Linked,
+                )
                 .expect_err("lowering spends past the budget");
             let [refusal] = refusals.as_slice() else {
                 panic!("one refusal, got {refusals:?}");
@@ -1340,7 +1356,10 @@ mod tests {
         // isolation too, but Typer's package-wide counter, seeded at g1's
         // final 3, crosses 4 on g2's second node.
         let refusals = declarations
-            .check(CheckingLimits::new(g1_count + 1))
+            .check(
+                CheckingLimits::new(g1_count + 1),
+                quire_semantic_value::checking::CheckMode::Linked,
+            )
             .expect_err("g2's Typer walk crosses the package-wide node bound");
         let [refusal] = refusals.as_slice() else {
             panic!("one refusal, got {refusals:?}");

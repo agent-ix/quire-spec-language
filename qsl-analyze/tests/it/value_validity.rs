@@ -398,7 +398,10 @@ pub(crate) fn package_with_source(declarations: &str) -> (CheckedPackage, Vec<u8
     );
     let package = CheckedPackage::link(
         declarations
-            .check(CheckingLimits::default())
+            .check(
+                CheckingLimits::default(),
+                quire_semantic_value::checking::CheckMode::Linked,
+            )
             .unwrap_or_else(|e| panic!("the package checks: {e:?}\n{text}")),
     );
     (package, text.into_bytes())

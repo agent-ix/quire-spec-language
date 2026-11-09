@@ -106,7 +106,10 @@ fn assemble(document: &[u8], body: &str) -> Result<CheckedGraph, Vec<(Code, Opti
         }
     };
     declarations
-        .check(CheckingLimits::default())
+        .check(
+            CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
         .map_err(|refusals| {
             refusals
                 .iter()
@@ -377,7 +380,10 @@ fn source_refusals(declarations: &str) -> Result<(), Vec<(Code, Option<String>)>
         }
     };
     declarations
-        .check(CheckingLimits::default())
+        .check(
+            CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
         .map(|_| ())
         .map_err(|refusals| {
             refusals
@@ -614,7 +620,10 @@ fn unit_name_causes(
             )
         })?;
     assembled
-        .check(CheckingLimits::default())
+        .check(
+            CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
         .map(|_| ())
         .map_err(|refusals| {
             (

@@ -91,7 +91,10 @@ fn timestamped<R>(
         Vec::new(),
     )
     .expect("the unit assembles")
-    .check(quire_semantic_value::checking::CheckingLimits::default())
+    .check(
+        quire_semantic_value::checking::CheckingLimits::default(),
+        quire_semantic_value::checking::CheckMode::Linked,
+    )
     .unwrap_or_else(|refusals| panic!("{body}: {refusals:?}"));
     let [node] = graph.temporal_clauses() else {
         panic!("one clause");
@@ -533,7 +536,10 @@ fn event_clause<R>(
         Vec::new(),
     )
     .expect("the unit assembles")
-    .check(quire_semantic_value::checking::CheckingLimits::default())
+    .check(
+        quire_semantic_value::checking::CheckingLimits::default(),
+        quire_semantic_value::checking::CheckMode::Linked,
+    )
     .unwrap_or_else(|refusals| panic!("{body}: {refusals:?}"));
     let [node] = graph.temporal_clauses() else {
         panic!("one clause");

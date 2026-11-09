@@ -242,7 +242,10 @@ fn subject(document: Vec<u8>, clauses: &[&str]) -> Subject {
     )
     .expect("the unit assembles");
     let graph = declarations
-        .check(CheckingLimits::default())
+        .check(
+            CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
         .unwrap_or_else(|refusals| panic!("the unit checks: {refusals:?}"));
     Subject {
         package: CheckedPackage::link(graph),

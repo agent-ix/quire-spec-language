@@ -859,7 +859,10 @@ pub(crate) fn dependency_chain(length: usize) -> CheckedPackage {
             "test/package",
             qsl_foundation::IdentityLimits::default(),
         )
-        .check(CheckingLimits::default())
+        .check(
+            CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
         .expect("an empty package checks"),
     );
     (0..length).fold(
@@ -1002,7 +1005,10 @@ mod tests {
             qsl_forms::Expression::boolean(true),
         )];
         let graph = declarations
-            .check(CheckingLimits::default())
+            .check(
+                CheckingLimits::default(),
+                quire_semantic_value::checking::CheckMode::Linked,
+            )
             .expect("a function over a model reference checks");
         let model_nodes: Vec<quire_exact::NodeKey> = graph
             .semantic_graph()

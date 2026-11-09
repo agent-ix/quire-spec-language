@@ -429,7 +429,10 @@ pub(crate) mod tests {
             Vec::new(),
         )
         .expect("the fixture assembles")
-        .check(CheckingLimits::default())
+        .check(
+            CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
         .expect("the fixture checks");
         let package = qsl_package::CheckedPackage::link(graph);
         let emission = qsl_package::emit_checked(&package, qsl_package::EmitLimits::new(1 << 32))

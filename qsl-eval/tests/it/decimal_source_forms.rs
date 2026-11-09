@@ -83,7 +83,10 @@ fn compile_limited(
     .expect("the unit assembles");
     declarations.decimal_literal_limits = limits;
     declarations
-        .check(CheckingLimits::default())
+        .check(
+            CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
         .map(CheckedPackage::link)
 }
 
@@ -1028,7 +1031,10 @@ fn a_float_converts_to_no_decimal() {
         )
         .expect("the pinned IEEE profile admits"),
     );
-    let Err(refusals) = declarations.check(CheckingLimits::default()) else {
+    let Err(refusals) = declarations.check(
+        CheckingLimits::default(),
+        quire_semantic_value::checking::CheckMode::Linked,
+    ) else {
         panic!("a float to decimal conversion is refused");
     };
     let [refusal] = refusals.as_slice() else {

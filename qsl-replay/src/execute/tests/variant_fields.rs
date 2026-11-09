@@ -58,7 +58,10 @@ fn package_over(document: &serde_json::Value, alias: &str) -> CheckedPackage {
     .expect("assembly succeeds");
     CheckedPackage::link(
         declarations
-            .check(CheckingLimits::default())
+            .check(
+                CheckingLimits::default(),
+                quire_semantic_value::checking::CheckMode::Linked,
+            )
             .unwrap_or_else(|refusals| panic!("the unit checks: {refusals:?}")),
     )
 }

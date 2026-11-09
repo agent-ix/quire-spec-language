@@ -631,7 +631,10 @@ fn a_package_dimension_node_is_model_owned_with_no_declaration() {
     );
     let checked = assembled
         .expect("the unit assembles")
-        .check(CheckingLimits::default())
+        .check(
+            CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
         .expect("the unit checks");
     let graph = checked.semantic_graph();
     let dimensions: Vec<_> = graph
@@ -952,7 +955,10 @@ fn unit_nodes(packages: &[Package], body: &str, used: &[&str]) -> Vec<UnitNode> 
         assemble_selected_as(("agent-ix", "example"), packages, &format!("{body}{uses}"));
     let checked = assembled
         .unwrap_or_else(|refusal| panic!("{body}: {refusal:?}"))
-        .check(CheckingLimits::default())
+        .check(
+            CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
         .expect("the unit checks");
     let graph = checked.semantic_graph();
     let nodes: Vec<_> = graph.nodes().collect();
@@ -1056,7 +1062,10 @@ fn a_function_converting_a_package_typed_unit_to_a_package_unit_checks() {
     let (_, assembled) = assemble_selected_as(("agent-ix", "example"), &packages, body);
     assembled
         .expect("assembles")
-        .check(CheckingLimits::default())
+        .check(
+            CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
         .expect("k1 checks");
     let units = unit_nodes(
         &packages,

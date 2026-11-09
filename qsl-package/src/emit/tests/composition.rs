@@ -99,7 +99,10 @@ fn dependency(identity: &str, clauses: &str) -> Dependency {
             .expect("the dependency assembles");
     let package = Arc::new(CheckedPackage::link(
         declarations
-            .check(CheckingLimits::default())
+            .check(
+                CheckingLimits::default(),
+                quire_semantic_value::checking::CheckMode::Linked,
+            )
             .expect("the dependency checks"),
     ));
     let emission = emit_checked(&package).expect("the dependency emits");
@@ -171,7 +174,10 @@ fn compile_with(
         assembled = assembled.with_composition_lattice(profile);
     }
     let graph = assembled
-        .check(CheckingLimits::default())
+        .check(
+            CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
         .map_err(Failure::Check)?;
     Ok(CheckedPackage::link_with(
         graph,

@@ -579,7 +579,10 @@ fn a_template_over_two_populations_refuses_its_operation() {
     );
     let (text, assembled) = assemble_against(ambiguous_population_model(), &source);
     let found = assembled
-        .check(quire_semantic_value::checking::CheckingLimits::default())
+        .check(
+            quire_semantic_value::checking::CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
         .expect_err("an operation over two populations refuses");
     let causes = obligation_causes(&found);
     let [cause] = causes.as_slice() else {

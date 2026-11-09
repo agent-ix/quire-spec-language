@@ -105,7 +105,7 @@ pub(super) fn check_on_small_stack(
                     qsl_foundation::IdentityLimits::default(),
                 )
             }
-            .check(limits)
+            .check(limits, quire_semantic_value::checking::CheckMode::Linked)
         })
         .expect("the check thread spawns")
         .join()

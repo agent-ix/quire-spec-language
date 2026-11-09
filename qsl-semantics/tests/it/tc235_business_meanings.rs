@@ -1395,7 +1395,10 @@ fn tc235_record_subtype_value_conforms_to_parent_typed_parameter() {
          function taxedTotal using v(money: M::TaxedMoney): Integer pure { acceptsMoney(money) }",
     );
     assert!(declarations
-        .check(quire_semantic_value::checking::CheckingLimits::default())
+        .check(
+            quire_semantic_value::checking::CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked
+        )
         .is_ok());
 }
 
@@ -1409,7 +1412,10 @@ fn tc235_record_parent_value_is_refused_at_child_typed_parameter() {
          function plainTotal using v(money: M::Money): Integer pure { needsTaxed(money) }",
     );
     let refusals = declarations
-        .check(quire_semantic_value::checking::CheckingLimits::default())
+        .check(
+            quire_semantic_value::checking::CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
         .expect_err("a parent value does not conform to its child");
     assert!(
         refusals.iter().all(|refusal| refusal.cause

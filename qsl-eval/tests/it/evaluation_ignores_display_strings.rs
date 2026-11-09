@@ -64,7 +64,10 @@ fn run(source: &str, entry: &str, argument: i64, work_units: u64) -> (String, us
     .expect("the assembler builds the package declarations");
     let package = CheckedPackage::link(
         declarations
-            .check(CheckingLimits::default())
+            .check(
+                CheckingLimits::default(),
+                quire_semantic_value::checking::CheckMode::Linked,
+            )
             .expect("the package checks"),
     );
     let mut meter = Meter::new(limits(work_units));

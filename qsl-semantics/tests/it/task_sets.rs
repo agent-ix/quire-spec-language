@@ -57,7 +57,10 @@ fn unit_text(declarations: &str) -> String {
 fn check(declarations: &str) -> Result<CheckedGraph, Vec<qsl_semantics::check::CheckRefusal>> {
     admit_and_assemble_with_profiles(&document(), PROFILES, &unit_text(declarations))
         .expect("S2 keeps the task-set forms")
-        .check(CheckingLimits::default())
+        .check(
+            CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
 }
 
 fn checked(declarations: &str) -> CheckedGraph {
@@ -459,7 +462,10 @@ fn each_task_set_declaration_needs_the_temporal_complete_layer() {
     ] {
         let refusals = admit_and_assemble_with_body(&document(), &unit_text(body))
             .expect("S2 retains the declaration")
-            .check(CheckingLimits::default())
+            .check(
+                CheckingLimits::default(),
+                quire_semantic_value::checking::CheckMode::Linked,
+            )
             .expect_err("S3 requires the temporal facet");
         let [error] = refusals.as_slice() else {
             panic!("{body}: one error expected: {refusals:?}");

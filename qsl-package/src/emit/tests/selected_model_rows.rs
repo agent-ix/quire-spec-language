@@ -73,7 +73,10 @@ fn emit_with_tuple_source(tuple_is_referenced: bool) -> (CheckedPackage, Emissio
     );
     let graph = assemble_with_models(unit.as_bytes(), &packages)
         .expect("the unit assembles")
-        .check(CheckingLimits::default())
+        .check(
+            CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
         .unwrap_or_else(|refusals| panic!("the unit checks: {refusals:?}"));
     let checked = CheckedPackage::link(graph);
     let emission = emit_checked(&checked).expect("the package emits");

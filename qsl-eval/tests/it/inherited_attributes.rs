@@ -79,7 +79,10 @@ fn package(object_types: Vec<ObjectTypeDeclaration>) -> (CheckedPackage, TypeEnv
         declarations.types = types.clone();
         declarations
     }
-    .check(CheckingLimits::default())
+    .check(
+        CheckingLimits::default(),
+        quire_semantic_value::checking::CheckMode::Linked,
+    )
     .unwrap();
     (CheckedPackage::link(graph), types)
 }

@@ -2535,7 +2535,10 @@ fn a_record_value_type_beside_an_admitted_operation_assembles() {
         "the record value type Address is declared"
     );
     declarations
-        .check(quire_semantic_value::checking::CheckingLimits::default())
+        .check(
+            quire_semantic_value::checking::CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
         .expect("the clause reading self.address.street checks");
 }
 
@@ -2773,7 +2776,10 @@ fn inherited_members_resolve_through_a_second_alias() {
         "each object type is declared once, under the first alias"
     );
     let checked = declarations
-        .check(quire_semantic_value::checking::CheckingLimits::default())
+        .check(
+            quire_semantic_value::checking::CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
         .unwrap_or_else(|refusals| panic!("the unit checks: {refusals:?}"));
     assert_eq!(checked.state_clauses().len(), 3);
 }

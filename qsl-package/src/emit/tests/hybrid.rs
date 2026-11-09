@@ -110,7 +110,10 @@ fn compile_checked(declarations: &str) -> (Emission, Value, Checked) {
         Vec::new(),
     )
     .expect("the unit assembles")
-    .check(CheckingLimits::default())
+    .check(
+        CheckingLimits::default(),
+        quire_semantic_value::checking::CheckMode::Linked,
+    )
     .unwrap_or_else(|refusals| panic!("the package checks: {refusals:?}"));
     let selections = graph
         .temporal_clauses()

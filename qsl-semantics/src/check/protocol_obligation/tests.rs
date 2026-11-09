@@ -131,7 +131,10 @@ fn assemble_with(
 /// checks.
 fn refusals(declarations: &str) -> (String, Vec<CheckRefusal>) {
     let (text, assembled) = assemble(declarations);
-    match assembled.check(CheckingLimits::default()) {
+    match assembled.check(
+        CheckingLimits::default(),
+        quire_semantic_value::checking::CheckMode::Linked,
+    ) {
         Err(refusals) => (text, refusals),
         Ok(_) => (text, Vec::new()),
     }
@@ -141,7 +144,10 @@ fn refusals(declarations: &str) -> (String, Vec<CheckRefusal>) {
 fn checked(declarations: &str) -> CheckedGraph {
     let (_, assembled) = assemble(declarations);
     assembled
-        .check(CheckingLimits::default())
+        .check(
+            CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
         .unwrap_or_else(|refusals| panic!("{declarations}: {refusals:?}"))
 }
 
@@ -1216,7 +1222,10 @@ fn a_compensation_with_each_guard_and_capture_checks_as_a_template() {
         false,
     );
     let graph = assembled
-        .check(CheckingLimits::default())
+        .check(
+            CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
         .expect("the compensation and its protocol check");
     let protocol = &graph.protocols()[0];
     assert_eq!(protocol.name, "Refunds");

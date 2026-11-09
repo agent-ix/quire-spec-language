@@ -671,7 +671,10 @@ fn enum_parameter_package(functions: usize) -> PackageDeclarations {
 #[test]
 fn preimage_bytes_bind_before_the_work_budget() {
     enum_parameter_package(4_000)
-        .check(CheckingLimits::default())
+        .check(
+            CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
         .expect("4,000 enum-parameter functions check at the default ceilings");
     let bytes = 10_000;
     let refusals = enum_parameter_package(2)
@@ -679,6 +682,7 @@ fn preimage_bytes_bind_before_the_work_budget() {
             CheckingLimits::default()
                 .with_input_bytes(bytes)
                 .with_work_budget(bytes),
+            quire_semantic_value::checking::CheckMode::Linked,
         )
         .expect_err("one declaration's preimage passes 10,000 bytes");
     assert!(
@@ -713,7 +717,10 @@ fn assert_rows(rows: Vec<Row>) {
         let name = row.package.functions[0].name.clone();
         let graph = row
             .package
-            .check(CheckingLimits::default())
+            .check(
+                CheckingLimits::default(),
+                quire_semantic_value::checking::CheckMode::Linked,
+            )
             .unwrap_or_else(|refusals| panic!("{name}: {refusals:?}"));
         let node = application(graph.semantic_graph(), row.identity);
         let operation = &node["body"]["operation"];
@@ -830,7 +837,10 @@ fn a_tuple_value_is_a_value_node_over_its_arguments() {
             qsl_foundation::IdentityLimits::default(),
         )
     }
-    .check(CheckingLimits::default())
+    .check(
+        CheckingLimits::default(),
+        quire_semantic_value::checking::CheckMode::Linked,
+    )
     .expect("the tuple fixture checks");
     let graph = checked.semantic_graph();
     let tuple = graph
@@ -992,7 +1002,10 @@ fn rational_literal_normalization_exhausting_the_bits_limit_is_a_stage_limit() {
                 qsl_foundation::IdentityLimits::default(),
             )
         }
-        .check(CheckingLimits::default().with_rational_bits(64))
+        .check(
+            CheckingLimits::default().with_rational_bits(64),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
     };
     let exhausted = |actual: u128| {
         CheckCause::ResourceExhausted(Box::new(StageLimitCause {

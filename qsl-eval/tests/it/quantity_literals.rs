@@ -99,7 +99,10 @@ fn package_with_aliases(
     .expect("the assembler builds the declarations");
     configure(&mut declarations);
     declarations
-        .check(CheckingLimits::default())
+        .check(
+            CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
         .map(CheckedPackage::link)
 }
 
@@ -192,7 +195,10 @@ fn a_package_typed_unit_conversion_evaluates_true_for_two_ticks() {
     .expect("the package-unit declarations assemble");
     let package = CheckedPackage::link(
         declarations
-            .check(CheckingLimits::default())
+            .check(
+                CheckingLimits::default(),
+                quire_semantic_value::checking::CheckMode::Linked,
+            )
             .expect("k1 and its call check"),
     );
     assert!(truth(&package, "k1_at_two_ticks"));

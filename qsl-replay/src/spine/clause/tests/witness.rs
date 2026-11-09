@@ -2283,7 +2283,10 @@ fn metre_package() -> (qsl_package::CheckedPackage, quire_exact::UnitId) {
     declarations.types =
         quire_semantic_value::declaration::TypeEnvironment::default().with_units(units);
     let graph = declarations
-        .check(quire_semantic_value::checking::CheckingLimits::default())
+        .check(
+            quire_semantic_value::checking::CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
         .expect("the unit table checks");
     (
         qsl_package::CheckedPackage::link(graph),

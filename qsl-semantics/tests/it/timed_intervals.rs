@@ -497,6 +497,9 @@ fn a_checked_timed_clause_reaches_package_check() {
     let (_, package, outcome) = check_with(UNITS, OVER, "model-time", body, vec![dense_ms()]);
     assert!(outcome.is_ok(), "{outcome:?}");
     package
-        .check(quire_semantic_value::checking::CheckingLimits::default())
+        .check(
+            quire_semantic_value::checking::CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
         .expect("FR-370 carries the checked timed interval through S4");
 }

@@ -61,7 +61,10 @@ fn package(clauses: &str) -> CheckedPackage {
     .expect("the package admits");
     let graph = PackageDeclarations::assemble(raw, "pkg".to_owned(), built, models, Vec::new())
         .expect("the unit assembles")
-        .check(CheckingLimits::default())
+        .check(
+            CheckingLimits::default(),
+            quire_semantic_value::checking::CheckMode::Linked,
+        )
         .unwrap_or_else(|refusals| panic!("the package checks: {refusals:?}"));
     CheckedPackage::link(graph)
 }

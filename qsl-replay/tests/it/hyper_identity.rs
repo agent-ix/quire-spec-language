@@ -210,7 +210,10 @@ fn a_package_with_no_emission_names_product_identity() {
         "fixture",
         qsl_foundation::IdentityLimits::default(),
     )
-    .check(CheckingLimits::default())
+    .check(
+        CheckingLimits::default(),
+        quire_semantic_value::checking::CheckMode::Linked,
+    )
     .expect("an empty package checks");
     let empty = CheckedPackage::link(graph);
     let subjects = [world.subject_over(&empty, Vec::new())];

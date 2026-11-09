@@ -10,7 +10,7 @@ use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::value::{admit_integer_division, DefinitionRole};
 use quire_eval::{CallFailure, Evaluation};
 use quire_exact::{AdmittedCharge, Cancel, Integer, Meter, ScalarLimits, Value};
-use quire_semantic_value::checking::CheckingLimits;
+use quire_semantic_value::checking::{CheckMode, CheckingLimits};
 use quire_semantic_value::supplied_stop::{SuppliedLimits, SuppliedRun};
 
 pub const UNLIMITED: ScalarLimits = ScalarLimits {
@@ -44,7 +44,21 @@ pub fn package_with_law(declarations: &str, law: DefinitionRole) -> CheckedPacka
     package_with(declarations, Some(law))
 }
 
+/// [`package_of`] checked under `CheckMode::Kernel` (FR-495): a function's
+/// result bound is a run-time obligation of the kernel evaluation.
+pub fn package_kernel(declarations: &str) -> CheckedPackage {
+    package_in(declarations, None, CheckMode::Kernel)
+}
+
 fn package_with(declarations: &str, division: Option<DefinitionRole>) -> CheckedPackage {
+    package_in(declarations, division, CheckMode::Linked)
+}
+
+fn package_in(
+    declarations: &str,
+    division: Option<DefinitionRole>,
+    mode: CheckMode,
+) -> CheckedPackage {
     let text = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n{declarations}"
@@ -81,6 +95,7 @@ fn package_with(declarations: &str, division: Option<DefinitionRole>) -> Checked
                     .with_nodes(1 << 30)
                     .with_input_bytes(1 << 30)
                     .with_work_budget(1 << 40),
+                mode,
             )
             .expect("the unit checks"),
     )

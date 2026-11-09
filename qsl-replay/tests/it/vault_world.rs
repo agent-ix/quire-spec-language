@@ -454,7 +454,10 @@ impl World {
             .next()
             .map(|checked| checked.expect("the temporal clause checks"));
         let graph = assembled
-            .check(CheckingLimits::default())
+            .check(
+                CheckingLimits::default(),
+                quire_semantic_value::checking::CheckMode::Linked,
+            )
             .unwrap_or_else(|refusals| panic!("{text}: the unit checks: {refusals:?}"));
         let package = CheckedPackage::link(graph);
         let unassembled = match check_hyper_clauses(&declarations(&documents, &text))

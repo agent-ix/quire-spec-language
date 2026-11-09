@@ -113,7 +113,10 @@ impl Case {
         };
         let graph = admit_and_assemble_with_body(&document, body)
             .expect("assemble model")
-            .check(CheckingLimits::default())
+            .check(
+                CheckingLimits::default(),
+                quire_semantic_value::checking::CheckMode::Linked,
+            )
             .expect("check model");
         let checked = graph.state_clause("Holds").expect("checked clause");
         let base = checked.operation().expect("operation");
@@ -502,7 +505,10 @@ fn nested_references_resolve_parameters_in_pre_and_results_in_post() {
         "post Holds using v on Config::ConfigVersion::probe { true }",
     )
     .expect("assemble")
-    .check(CheckingLimits::default())
+    .check(
+        CheckingLimits::default(),
+        quire_semantic_value::checking::CheckMode::Linked,
+    )
     .expect("check");
     let context = graph.state_clause("Holds").expect("clause").context();
     let ty = ValueType::option(sequence(ValueType::Reference(context.clone())));

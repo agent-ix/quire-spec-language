@@ -301,7 +301,10 @@ pub(crate) fn check_declarations(
         vec![],
     )
     .expect("the model assembles");
-    declarations.check(CheckingLimits::default())
+    declarations.check(
+        CheckingLimits::default(),
+        quire_semantic_value::checking::CheckMode::Linked,
+    )
 }
 
 pub(crate) fn descendants(root: CheckedNode<'_>) -> Vec<CheckedNode<'_>> {
