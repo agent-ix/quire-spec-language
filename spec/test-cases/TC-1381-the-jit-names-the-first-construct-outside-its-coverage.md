@@ -13,7 +13,7 @@ relationships:
 Verify the `Untranslatable` cause the JIT gives for each kind of construct
 outside its coverage, and that covered entries beside them are prepared.
 
-Scope: FR-560-AC-3 and FR-560-AC-4.
+Scope: FR-560-AC-3, FR-560-AC-4, FR-560-AC-7 and FR-560-AC-8.
 
 ## Test Procedure
 
@@ -27,6 +27,10 @@ Scope: FR-560-AC-3 and FR-560-AC-4.
 3. Over a property-generated set of entries built only from listed forms and
    types, prepare the JIT; then replace one construct of each entry with the
    unlisted form and prepare again.
+4. Prepare a clause entry with no `self` and all constructs listed, and call
+   `evaluate`.
+5. Prepare an entry with a union-typed parameter and no `case`; read
+   `coverage()`'s forms and value types.
 
 Tag the tests `#[trace("TC-1381", "<AC id>")]`.
 
@@ -38,3 +42,7 @@ Tag the tests `#[trace("TC-1381", "<AC id>")]`.
   cause; `e4` is prepared and its call returns the interpreter's result.
 - Step 3: no generated entry is listed unsupported in the first run; each is
   listed with the form's `ExpressionForm` cause in the second.
+- Step 4: the clause is translated, `evaluate` equals the interpreter's
+  `Evaluation`, and `unsupported()` is empty.
+- Step 5: the entry is listed `ValueType(<union type>)` at the parameter's
+  `Location`; `coverage()` lists `name` and no union type.

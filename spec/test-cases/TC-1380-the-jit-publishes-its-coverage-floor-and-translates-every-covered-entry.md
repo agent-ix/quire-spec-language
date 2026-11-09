@@ -18,7 +18,7 @@ Scope: FR-560-AC-1 and FR-560-AC-2.
 ## Test Procedure
 
 1. Read `qsl_jit::coverage()` and compare its forms, value types and
-   operations with the floor: the seven `Value` forms, `Boolean`, bounded and
+   operations with the floor: the eight `Value` forms (`literal`, `name`, `operator`, `let`, `if`, `call`, `record`, `collection`), `Boolean`, bounded and
    unbounded `Integer`, `Rational`, `Decimal`, `Text`, records and
    collections of them, and every `Value` operator over them.
 2. Prepare the JIT over each of the 10,000 units the FR-295 generator yields

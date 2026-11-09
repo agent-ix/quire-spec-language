@@ -16,7 +16,9 @@ relationships:
   - target: ix://agent-ix/quire-spec-language/FR-560
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-350
-    type: references
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-100
+    type: depends_on
   - target: "ix://agent-ix/quire-specification/FR-306"
     type: depends_on
 ---
@@ -54,6 +56,21 @@ depend on `qsl-jit`. The driver runs the same operation over `quire-aot`
 (Overlap). `make parity` runs `cargo xtask parity`, which links every
 non-interpreter backend the QSL workspace has and calls `run_parity` with the
 defaults.
+
+### Parity cases
+
+A parity case is one source unit, one entry and a list of argument tuples
+(each tuple the values of the entry's parameters in order). The generated
+units carry the tuples FR-295 generates. For the corpus, the runner reads the
+vectors in place (FR-350), selects those whose subject consumer type is
+`runtime` and whose operation is `run` (FR-100) with a function entry, and
+builds one case from each: the unit is the source files the vector's
+`input.files` names, the entry is the function the vector names, and the
+vector's one decoded argument assignment, in parameter order through the same
+input adapters FR-350 uses, is the case's one tuple. A vector of another
+consumer type or operation (`compile`, `format`, `replay`), or whose entry is
+a clause, is no parity case and is counted in the report as not selected,
+and is never a finding. The case's id is the vector id.
 
 For each backend and each corpus or generated unit, the runner prepares the
 unit's entries on the backend and on the reference, then calls each entry
@@ -101,7 +118,8 @@ count; `ParityLimits`; `&Cancel`.
 ## Outputs
 
 `ParityReport`: per backend, the compared count, the unsupported entries and
-the findings; or `ParityRefusal`.
+the findings, and the count of corpus vectors not selected as parity cases;
+or `ParityRefusal`.
 
 ## Behavior
 
@@ -139,6 +157,7 @@ the findings; or `ParityRefusal`.
 | FR-563-AC-6 | Under `test-support`, a reference that returns `Fault` for one entry gives one `reference-fault` finding naming the entry, exit 1; a run with no non-interpreter backend refuses `empty-scope` before any unit runs, exit 2; a corpus location that does not exist refuses, exit 2. | Test (TC-1387) |
 | FR-563-AC-7 | A backend with 150 `difference` findings yields a report holding 100 findings and the total 150 at the default `max_reported`, and the run reaches every unit. | Test (TC-1386) |
 | FR-563-AC-8 | `run_parity`'s inputs and `cargo xtask parity`'s options hold no member that allows, skips, retries or tolerates a finding, and none selects a reference; `run_parity_with_reference` does not exist without the `test-support` feature (a `compile_fail` doctest with a compiling control under the feature); `cargo xtask parity --no-such-option` refuses, exit 2, naming the option. | Test (TC-1387) and Inspection |
+| FR-563-AC-9 | Over a corpus fixture holding a `runtime`/`run` vector for `function inc using v(x: Int[0, 9]): Int[0, 10] pure { x + 1 }` with the argument assignment `x` = 4, a `compile` vector and a `format` vector, the runner builds exactly one parity case, id the `run` vector's, entry `inc`, one tuple `(4)`; the report counts two vectors not selected and no finding for them; a test backend that returns 6 for `inc(4)` fails with one `difference` carrying that vector id and the tuple `(4)`. | Test (TC-1386) |
 
 ## Dependencies
 
@@ -147,6 +166,7 @@ the findings; or `ParityRefusal`.
 - [FR-295](FR-295-return-interpreter-outcomes-from-jit-and-aot.md): the compared members, the corpus and the generator.
 - [FR-560](FR-560-translate-the-jit-coverage-set-and-report-every-other-construct-untranslatable.md): the JIT coverage.
 - [FR-350](FR-350-run-the-conformance-corpus-against-qsl.md): reading the corpus in place.
+- [FR-100](FR-100-run-a-named-function-through-the-spine.md): the `run` operation whose vectors become parity cases.
 - QSpec FR-306-AC-1: parity over the conformance corpus and generated
   programs.
 
