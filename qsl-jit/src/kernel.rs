@@ -59,9 +59,11 @@ impl From<Stop> for Halt {
 #[cfg(feature = "test-support")]
 #[derive(Clone, Debug)]
 pub struct KernelCall {
-    /// `add`, `sub`, `mul`, `neg`, `div`, `rem`, `mod`, `order` or `eq`.
+    /// `add`, `sub`, `mul`, `neg`, `div`, `rem`, `mod`, `order`, `eq` or
+    /// `convert`.
     pub operation: &'static str,
-    /// The operand values.
+    /// The operand values: one for a unary operation or conversion, two
+    /// otherwise.
     pub operands: Vec<Value>,
 }
 
@@ -378,9 +380,19 @@ pub(crate) fn run(
             Repr::Register => Ok(Value::Integer(Integer::from(raw))),
             Repr::Handle => handle(raw, &state.arena).cloned(),
         };
+        let mut operands = vec![read(a, left_repr)?];
+        if !matches!(
+            op.kind,
+            OpKind::Negate
+                | OpKind::RationalNegate { .. }
+                | OpKind::DecimalNegate { .. }
+                | OpKind::ConvertDecimal { .. }
+        ) {
+            operands.push(read(b, right_repr)?);
+        }
         recorder.calls.push(KernelCall {
             operation: name,
-            operands: vec![read(a, left_repr)?, read(b, right_repr)?],
+            operands,
         });
         if recorder.fault_on == Some(name) {
             return Err(Halt::Fault("jit-kernel-entry-fault"));
