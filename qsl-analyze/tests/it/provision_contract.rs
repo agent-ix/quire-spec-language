@@ -1,5 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! The provider/analyze byte-provision and evidence boundary.
+//!
+//! These are the in-process portions of the tagged criteria. Candidate
+//! fixtures come from the real engine registry; their dispositions are
+//! supplied by this caller. Genuine CG negotiation and the complete FR-331
+//! wire projection remain integration obligations, not coverage claimed here.
 
 use ix_trace_rs::trace;
 use qsl_analyze::analyze::{
@@ -38,7 +43,7 @@ fn counter() -> World {
 
 fn temporal(world: &World) -> NegotiatedItem {
     let node = &world.package.graph().temporal_clauses()[0];
-    let candidate = Candidate::new(BackendId::new("en-1"));
+    let candidate = registered_candidate(Capability::TemporalSatisfaction, None, "en-1");
     NegotiatedItem {
         item: ClaimItem {
             request_index: RequestIndex::new(0),
@@ -47,7 +52,7 @@ fn temporal(world: &World) -> NegotiatedItem {
             extent: ExtentClassification::Unbounded {
                 finite_bound_available: true,
             },
-            backend: None,
+            backend: Some(candidate.id().clone()),
             candidates: vec![candidate.clone()],
             options: ItemOptions {
                 required: true,
@@ -61,7 +66,11 @@ fn temporal(world: &World) -> NegotiatedItem {
 }
 
 fn exact(world: &prob_world::World, limits: ExactProbLimits) -> NegotiatedItem {
-    let candidate = Candidate::new(BackendId::new("en-5"));
+    let candidate = registered_candidate(
+        Capability::ProbabilisticSatisfaction,
+        Some(EvidenceKind::Exact),
+        "en-5",
+    );
     NegotiatedItem {
         item: ClaimItem {
             request_index: RequestIndex::new(0),
@@ -74,7 +83,7 @@ fn exact(world: &prob_world::World, limits: ExactProbLimits) -> NegotiatedItem {
             extent: ExtentClassification::Unbounded {
                 finite_bound_available: false,
             },
-            backend: None,
+            backend: Some(candidate.id().clone()),
             candidates: vec![candidate.clone()],
             options: ItemOptions::default(),
             form: Some(ItemForm::Probabilistic(ProbabilisticItem {
@@ -330,14 +339,14 @@ fn source_completeness_is_checked_even_when_the_package_cannot_emit() {
 }
 
 fn plain(claim: OccurrenceKey, kind: Capability, backend: &str) -> NegotiatedItem {
-    let candidate = Candidate::new(BackendId::new(backend));
+    let candidate = registered_candidate(kind, None, backend);
     NegotiatedItem {
         item: ClaimItem {
             request_index: RequestIndex::new(0),
             claim,
             kind,
             extent: ExtentClassification::Bounded,
-            backend: None,
+            backend: Some(candidate.id().clone()),
             candidates: vec![candidate.clone()],
             options: ItemOptions::default(),
             form: None,
@@ -473,4 +482,31 @@ fn omitted_optional_statistical_settings_equal_the_explicit_defaults() {
         TerminalValue::Measured(_)
     ));
     assert_eq!(serve(omitted).records, expected.records);
+}
+
+fn registered_candidate(
+    kind: Capability,
+    evidence: Option<EvidenceKind>,
+    backend: &str,
+) -> Candidate {
+    let engines = Engines::qsl().expect("the production manifests register");
+    let mut registry = qsl_route::Registry::new();
+    for descriptor in engines.registrations() {
+        registry
+            .register(descriptor.clone())
+            .expect("a unique backend");
+    }
+    let evidence = evidence
+        .map(qsl_route::ItemEvidence::Kind)
+        .unwrap_or(qsl_route::ItemEvidence::Absent);
+    let requested = BackendId::new(backend);
+    let qsl_route::CandidateOutcome::Candidates(candidates) =
+        registry.candidates_for_evidence(kind, &evidence, Some(&requested))
+    else {
+        panic!("the named backend is registered")
+    };
+    let [candidate] = candidates.candidates() else {
+        panic!("the registered named backend advertises this kind/evidence")
+    };
+    candidate.clone()
 }
