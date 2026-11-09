@@ -959,7 +959,15 @@ fn check_document_equalities(
     poll(cancel)?;
     Ok(ExactProbabilityCertificateCheck::Accepted(
         ExactProbabilityAcceptance {
-            certificate: ExactProbabilityCertificate { values: values.iter().map(|(state, value)| ExactProbabilityValue { state: state.clone(), value: value.clone() }).collect() },
+            certificate: ExactProbabilityCertificate {
+                values: values
+                    .iter()
+                    .map(|(state, value)| ExactProbabilityValue {
+                        state: state.clone(),
+                        value: value.clone(),
+                    })
+                    .collect(),
+            },
             document: None,
             value: initial.clone(),
             side: match bound {

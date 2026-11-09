@@ -6,6 +6,10 @@ its exact reachability certificate in the qualified core. Its normal dependency
 closure contains no analyzer. Tests use EN-5 as a development dependency to
 produce evidence, then launch the built checker executable in a fresh process.
 
+For accepted EN-5 proofs, `TerminalRecord::exact_certificate_document()` exposes
+the canonical bytes retained by the qualified checker's opaque acceptance token.
+Both direct analysis and provider results carry that same checked document.
+
 The request contains `source` (`authority`, `identity`, exact UTF-8 `content`),
 `package_name`, structural `item` (`node_id`, `model`, `ordinal`), source-keyed
 `byte_provision` triples (`authority`, `identity`, byte array), domain/snapshot

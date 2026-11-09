@@ -300,7 +300,12 @@ fn analyzer_document_budgets_stop_after_solving_without_certification() {
     let world = World::new(&prob_world::link(CLAIMS));
     let engines = Engines::qsl().unwrap();
     let baseline = settle(&world, "Likely", ModelCheckLimits::default());
-    assert!(!baseline.terminal().unwrap().exact_certificate_document().unwrap().is_empty());
+    assert!(!baseline
+        .terminal()
+        .unwrap()
+        .exact_certificate_document()
+        .unwrap()
+        .is_empty());
     for storage in [false, true] {
         let mut request = world.request("Likely", ModelCheckLimits::default());
         if storage {

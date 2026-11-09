@@ -321,7 +321,9 @@ pub struct ExactProbabilityAcceptance {
 
 impl ExactProbabilityAcceptance {
     /// Canonical document bytes when this token was produced by the document checker.
-    pub fn document(&self) -> Option<&[u8]> { self.document.as_deref() }
+    pub fn document(&self) -> Option<&[u8]> {
+        self.document.as_deref()
+    }
     /// The exact certificate this checker accepted, retained with its token.
     pub fn certificate(&self) -> &ExactProbabilityCertificate {
         &self.certificate
