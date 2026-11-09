@@ -7,22 +7,6 @@ use qsl_eval::automaton::{
 };
 use qsl_semantics::check::Event;
 
-struct CylinderStep {
-    action: ScheduledIdentity,
-    transition: ModelTransition,
-    draw: Vec<SemanticValue>,
-    post_key: ProbabilityProductKey,
-}
-
-impl CylinderStep {
-    fn same(&self, other: &Self) -> bool {
-        self.action == other.action
-            && self.transition == other.transition
-            && same_values(&self.draw, &other.draw)
-            && self.post_key == other.post_key
-    }
-}
-
 pub(super) fn replay(
     system: &ModelSystem<'_>,
     claim: &CheckedProbabilisticClaim,
@@ -80,6 +64,9 @@ pub(super) fn replay(
             value: limits.max_witness_paths,
         });
     }
+    if witness.scheduler.len() > limits.model.limits.max_states {
+        return Err(ExactProbabilityGraphError::LimitReached.into());
+    }
     let mut scheduler = BTreeMap::new();
     let mut previous = None;
     for (key, action) in &witness.scheduler {
@@ -127,14 +114,18 @@ pub(super) fn replay(
     let mut mass = rational(0);
     // A cylinder includes its semantic choice and draw, even when several
     // disjoint draws produce exactly the same model and monitor state.
-    let mut cylinders: Vec<Vec<CylinderStep>> = Vec::new();
+    let mut cylinders: Vec<&ProbabilityWitnessPath> = Vec::new();
+    for (key, action) in &witness.scheduler {
+        poll_cancel(cancel)?;
+        let action = system.scheduled_identity_key(action).map_err(expansion)?;
+        retain(key.as_bytes().len().saturating_add(action.len()), &mut storage, limits)?;
+    }
     for path in &witness.paths {
         poll_cancel(cancel)?;
         let mut state = initial.clone();
         let mut control = root;
         let mut key = root_key.clone();
         let mut probability = rational(1);
-        let mut cylinder = Vec::new();
         for step in &path.steps {
             poll_cancel(cancel)?;
             admit_state(&key, &mut seen, &mut storage, limits)?;
@@ -233,12 +224,14 @@ pub(super) fn replay(
                 cancel,
             )?;
             check_bits(&probability, limits.max_rational_bits)?;
-            cylinder.push(CylinderStep {
-                action: step.action.clone(),
-                transition: step.transition.clone(),
-                draw: step.draw.clone(),
-                post_key: post_key.clone(),
-            });
+            // Reserve the retained typed evidence using its owners' canonical
+            // representations. The transition includes the resolved arguments;
+            // a second copy admits the explicit draw vector in the evidence.
+            let action_bytes = system.scheduled_identity_key(&step.action).map_err(expansion)?;
+            let transition_bytes = system.transition_key(&step.transition)
+                .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?;
+            retain(post_key.as_bytes().len().saturating_add(action_bytes.len())
+                .saturating_add(transition_bytes.len().saturating_mul(2)), &mut storage, limits)?;
             state = post;
             control = next;
             key = post_key;
@@ -269,11 +262,22 @@ pub(super) fn replay(
         }
         for previous in &cylinders {
             poll_cancel(cancel)?;
-            if previous.iter().zip(&cylinder).all(|(a, b)| a.same(b)) {
+            let mut prefix = true;
+            for (a, b) in previous.steps.iter().zip(&path.steps) {
+                poll_cancel(cancel)?;
+                if a.action != b.action || a.transition != b.transition
+                    || !same_values(&a.draw, &b.draw) || a.post_key != b.post_key
+                {
+                    prefix = false;
+                    break;
+                }
+            }
+            if prefix {
                 return Ok(ProbabilityWitnessReplay::Parity);
             }
         }
-        cylinders.push(cylinder);
+        retain(std::mem::size_of::<&ProbabilityWitnessPath>(), &mut storage, limits)?;
+        cylinders.push(path);
         mass = arithmetic(
             quire_exact::RationalArithmetic::Add(&mass, &probability),
             &mut meter,
@@ -315,14 +319,19 @@ fn admit_state(
     if seen.len() >= limits.model.limits.max_states {
         return Err(ExactProbabilityGraphError::LimitReached.into());
     }
-    *storage = storage.saturating_add(u64::try_from(key.as_bytes().len()).unwrap_or(u64::MAX));
+    retain(key.as_bytes().len(), storage, limits)?;
+    seen.insert(key.clone());
+    Ok(())
+}
+
+fn retain(bytes: usize, storage: &mut u64, limits: &ExactProbLimits) -> Result<(), ProbabilityWitnessError> {
+    *storage = storage.saturating_add(u64::try_from(bytes).unwrap_or(u64::MAX));
     if *storage > limits.document.storage_bytes {
         return Err(ProbabilityWitnessError::Limit {
             limit: ModelCheckLimit::CertificateMaxWorkingBytes,
             value: limits.document.storage_bytes,
         });
     }
-    seen.insert(key.clone());
     Ok(())
 }
 fn arithmetic(

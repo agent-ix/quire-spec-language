@@ -183,7 +183,8 @@ fn full_key_source_and_semantic_cylinder_mutations_never_reproduce() {
 #[test]
 fn zero_horizon_and_terminal_false_extension_need_no_model_steps() {
     for (initial, comparison, threshold) in [(true, "<=", "0.5"), (false, ">=", "0.5")] {
-        let claim = format!("probabilistic Zero using ev on M over (m: M::Msg) under every scheduler on origin {{ probability {comparison} {threshold} [ eventually[0,0] holds(m.delivered) ] }}");
+        let opposite = if initial { ">=" } else { "<=" };
+        let claim = format!("probabilistic Zero using ev on M over (m: M::Msg) under every scheduler on origin {{ probability {comparison} {threshold} [ eventually[0,0] holds(m.delivered) ] }}\nprobabilistic Opposite using ev on M over (m: M::Msg) under every scheduler on origin {{ probability {opposite} 0.5 [ eventually[0,0] holds(m.delivered) ] }}");
         let mut fixture = model(&claim);
         fixture.initial["delivered"] = serde_json::json!({"boolean":initial});
         let world = World::new(&fixture);
@@ -192,6 +193,10 @@ fn zero_horizon_and_terminal_false_extension_need_no_model_steps() {
         assert!(witness.paths[0].steps.is_empty());
         assert!(witness.scheduler.is_empty());
         assert_eq!(mass(&world, &witness), ratio(1, 1));
+        let mut wrong_verdict = witness;
+        wrong_verdict.item = qsl_replay::probabilistic_claim_identity(world.claim("Opposite")).unwrap();
+        rekey(&world, "Opposite", &mut wrong_verdict);
+        assert!(matches!(replay(&world, &wrong_verdict, &ExactProbLimits::default(), &Cancel::new()), Ok(ProbabilityWitnessReplay::Parity)));
     }
     let mut fixture = model("probabilistic Leaf using ev on M over (m: M::Msg) under every scheduler on origin { probability >= 0.5 [ eventually[0,2] holds(m.delivered) ] }");
     fixture
@@ -210,6 +215,7 @@ fn insufficient_missing_and_equal_mass_are_parity_not_refutations() {
     let world = World::new(&model(CLAIMS));
     let mut witness = evidence(&world, "Max");
     witness.paths.truncate(1);
+    witness.scheduler.retain(|(key, _)| key == &witness.initial_key);
     assert!(matches!(
         replay(
             &world,
@@ -217,7 +223,7 @@ fn insufficient_missing_and_equal_mass_are_parity_not_refutations() {
             &ExactProbLimits::default(),
             &Cancel::new()
         ),
-        Ok(ProbabilityWitnessReplay::Parity) | Err(ProbabilityWitnessError::Refused)
+        Ok(ProbabilityWitnessReplay::Parity)
     ));
     // Keep a consistent policy while removing every represented cylinder.
     witness.paths.clear();
@@ -668,5 +674,27 @@ fn one_admitted_over_binding_uses_the_actual_s3_parameter_node() {
             ),
             Err(ProbabilityWitnessError::Refused)
         ));
+    }
+}
+
+#[trace("TC-637", "FR-202-AC-15", "FR-202-AC-16")]
+#[test]
+fn an_exact_engine_value_cannot_settle_refuted_after_bounded_replay_disagrees() {
+    use qsl_analyze::analyze::exact_probabilistic_item_witness_tampered;
+    use qsl_replay::InconclusiveCause;
+    let world = World::new(&model(CLAIMS));
+    for duplicate in [true,false] {
+        let item = exact_probabilistic_item_witness_tampered(RequestIndex::new(0),world.request("Min",ModelCheckLimits::default()),move |witness| {
+            if duplicate { witness.paths.push(witness.paths[0].clone()); }
+            else { witness.paths[0].steps[0].action.operation.push_str("-disabled"); }
+        });
+        let record = analyze_items(&Engines::qsl().unwrap(),vec![item],&Cancel::new()).remove(0);
+        if duplicate {
+            assert!(matches!(record.terminal().unwrap().value(),TerminalValue::Inconclusive(InconclusiveCause::ReplayParity(_))));
+        } else {
+            assert!(matches!(record.terminal().unwrap().value(),TerminalValue::Inconclusive(InconclusiveCause::ReplayRefused(_))));
+        }
+        assert!(record.probabilistic_counterexample.is_none());
+        assert!(record.exact_probabilistic.is_none());
     }
 }
