@@ -15,9 +15,16 @@ pub(super) struct Admission<'a> {
 
 impl<'a> Admission<'a> {
     pub(super) fn new(bound: u64, cancel: &'a Cancel) -> Self {
-        Self { used: 0, bound, cancel, stopped: None }
+        Self {
+            used: 0,
+            bound,
+            cancel,
+            stopped: None,
+        }
     }
-    pub(super) fn take_stop(&mut self) -> Option<ProbabilityDocumentError> { self.stopped.take() }
+    pub(super) fn take_stop(&mut self) -> Option<ProbabilityDocumentError> {
+        self.stopped.take()
+    }
     fn reserve(&mut self, bytes: usize) -> Result<(), ReservationDenied> {
         if let Err(error) = poll(self.cancel) {
             self.stopped = Some(error);
@@ -273,11 +280,17 @@ fn encode_events(events: &Events<'_>) -> Result<Vec<u8>, ProbabilityDocumentErro
         stopped: None,
     });
     let result = encode_reserved(events, limits.bytes, &admission);
-    if let Some(error) = events.stopped.borrow_mut().take() { return Err(error); }
+    if let Some(error) = events.stopped.borrow_mut().take() {
+        return Err(error);
+    }
     result
 }
 
-pub(super) fn encode_reserved(value: &impl Encode, bytes: u64, admission: &RefCell<Admission<'_>>) -> Result<Vec<u8>, ProbabilityDocumentError> {
+pub(super) fn encode_reserved(
+    value: &impl Encode,
+    bytes: u64,
+    admission: &RefCell<Admission<'_>>,
+) -> Result<Vec<u8>, ProbabilityDocumentError> {
     let mut output = Vec::new();
     // The metered canonical writer retains output internally until finish.
     // Charge its destination separately before the sink reserves that capacity.

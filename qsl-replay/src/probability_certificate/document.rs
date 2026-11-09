@@ -7,8 +7,8 @@ use serde::{Deserialize, Serialize};
 
 use super::*;
 
-mod writer;
 mod key;
+mod writer;
 pub(super) use key::model_product_key;
 
 const PROFILE: &str = "quire.probability-objective/reachability/v1";
@@ -966,8 +966,12 @@ mod tests {
     }
     pub(super) fn model_bytes(index: usize) -> &'static [u8] {
         match index {
-            0 => include_bytes!("../../../qsl-probability-check/tests/fixtures/link.model-key-0.json"),
-            1 => include_bytes!("../../../qsl-probability-check/tests/fixtures/link.model-key-1.json"),
+            0 => include_bytes!(
+                "../../../qsl-probability-check/tests/fixtures/link.model-key-0.json"
+            ),
+            1 => include_bytes!(
+                "../../../qsl-probability-check/tests/fixtures/link.model-key-1.json"
+            ),
             _ => panic!("two production model-state vectors"),
         }
     }
@@ -978,7 +982,8 @@ mod tests {
         let mut model: Value = serde_json::from_slice(model_bytes(0)).unwrap();
         // Object identities are caller-provided text; vary that identity in
         // the captured owner's complete typed form, preserving every envelope.
-        model["semantic"]["entries"][0]["value"]["entries"][0]["key"]["identity"] = json!("m".repeat(size));
+        model["semantic"]["entries"][0]["value"]["entries"][0]["key"]["identity"] =
+            json!("m".repeat(size));
         let bytes = canonical(&model, limits().bytes).unwrap();
         ProbabilityProductKey::for_model_state(None, &bytes).unwrap()
     }

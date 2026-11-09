@@ -354,9 +354,12 @@ fn the_bound_reference_is_part_of_the_product_key() {
     let binding = claim_binding(&system, world.claim("Likely"))
         .expect("one instance")
         .expect("the claim has an over");
-    let model = system.state_key(&system.initial()[0]).expect("the owner encodes its initial state").0;
-    let bound = ProbabilityProductKey::for_model_state(Some(&binding.reference), &model)
-        .expect("encodes");
+    let model = system
+        .state_key(&system.initial()[0])
+        .expect("the owner encodes its initial state")
+        .0;
+    let bound =
+        ProbabilityProductKey::for_model_state(Some(&binding.reference), &model).expect("encodes");
     let unbound = ProbabilityProductKey::for_model_state(None, &model).expect("encodes");
     assert_ne!(bound, unbound);
     let text = String::from_utf8(bound.as_bytes().to_vec()).expect("JSON text");

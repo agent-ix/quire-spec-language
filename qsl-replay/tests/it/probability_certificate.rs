@@ -13,7 +13,6 @@ use qsl_replay::{
 };
 use qsl_semantics::check::{Bound, CheckedProbabilisticClaim, ProbForm, ReachTarget};
 use quire_exact::{Cancel, CancelCause, Integer, NodeKey, Rational};
-use serde_json::json;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, OnceLock};
 
@@ -101,7 +100,8 @@ fn system_and_root(world: &World) -> (ModelSystem<'_>, ProbabilityProductKey) {
     let system = ModelSystem::new(subject.simulation.clone()).expect("model admits");
     let initial = system.initial().into_iter().next().expect("one initial");
     let model_key = system.state_key(&initial).expect("model key").0;
-    let product = ProbabilityProductKey::for_model_state(None, &model_key).expect("the owner form is embedded");
+    let product = ProbabilityProductKey::for_model_state(None, &model_key)
+        .expect("the owner form is embedded");
     (system, product)
 }
 

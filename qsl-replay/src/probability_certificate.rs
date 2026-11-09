@@ -71,8 +71,10 @@ impl ProbabilityProductKey {
     /// Malformed/noncanonical input, the actual exhausted certificate ceiling,
     /// or the supplied cancellation cause; no partial key is returned.
     pub fn for_model_state_with_limits(
-        binding: Option<&ObjectReference>, model_bytes: &[u8],
-        limits: ProbabilityDocumentIoLimits, cancel: &Cancel,
+        binding: Option<&ObjectReference>,
+        model_bytes: &[u8],
+        limits: ProbabilityDocumentIoLimits,
+        cancel: &Cancel,
     ) -> Result<Self, ProbabilityDocumentError> {
         document::model_product_key(binding, model_bytes, None, limits, cancel)
     }
@@ -85,9 +87,11 @@ impl ProbabilityProductKey {
     /// The same admission/cancellation refusals as `for_model_state_with_limits`,
     /// or a malformed automaton envelope.
     pub fn for_formula_state(
-        binding: Option<&ObjectReference>, model_bytes: &[u8],
+        binding: Option<&ObjectReference>,
+        model_bytes: &[u8],
         monitor: &qsl_eval::automaton::AutomatonStateKey,
-        limits: ProbabilityDocumentIoLimits, cancel: &Cancel,
+        limits: ProbabilityDocumentIoLimits,
+        cancel: &Cancel,
     ) -> Result<Self, ProbabilityDocumentError> {
         document::model_product_key(binding, model_bytes, Some(monitor), limits, cancel)
     }
@@ -537,8 +541,13 @@ fn product_key(
     binding: Option<&ObjectReference>,
     model_bytes: &[u8],
 ) -> Result<ProbabilityProductKey, ExactProbabilityGraphError> {
-    ProbabilityProductKey::for_model_state_with_limits(binding, model_bytes, ProbabilityDocumentIoLimits::default(), &Cancel::new())
-        .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)
+    ProbabilityProductKey::for_model_state_with_limits(
+        binding,
+        model_bytes,
+        ProbabilityDocumentIoLimits::default(),
+        &Cancel::new(),
+    )
+    .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)
 }
 
 fn model_distributions(
@@ -1177,7 +1186,8 @@ mod tests {
     #[trace("TC-636")]
     #[test]
     fn bounded_model_product_key_uses_the_complete_fr196_v1_tuple() {
-        let model = include_bytes!("../../qsl-probability-check/tests/fixtures/link.model-key-0.json");
+        let model =
+            include_bytes!("../../qsl-probability-check/tests/fixtures/link.model-key-0.json");
         let key = product_key(None, model).expect("the production model key encodes");
         let actual: serde_json::Value =
             serde_json::from_slice(key.as_bytes()).expect("the key is JSON");
@@ -1186,7 +1196,10 @@ mod tests {
             serde_json::json!([
                 "quire.probability-product-key/v1",
                 null,
-                ["quire.simulation.state-key/v1", serde_json::from_slice::<Value>(model).unwrap()],
+                [
+                    "quire.simulation.state-key/v1",
+                    serde_json::from_slice::<Value>(model).unwrap()
+                ],
                 null,
                 null,
                 null
