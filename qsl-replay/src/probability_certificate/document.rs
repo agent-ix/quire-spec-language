@@ -269,16 +269,18 @@ fn exceeded(limit: ProbabilityDocumentLimit, bound: u64, actual: u64) -> Probabi
     }
 }
 
-fn decode_key(text: &str) -> Result<ProbabilityProductKey, ProbabilityDocumentError> {
+fn decode_key(text: &str, limits: ProbabilityDocumentLimits) -> Result<ProbabilityProductKey, ProbabilityDocumentError> {
     let bytes = URL_SAFE_NO_PAD
         .decode(text)
         .map_err(|_| ProbabilityDocumentError::Malformed)?;
     if URL_SAFE_NO_PAD.encode(&bytes) != text {
         return Err(ProbabilityDocumentError::Malformed);
     }
-    let key =
-        quire_canonical::read(&bytes, u64::MAX).map_err(|_| ProbabilityDocumentError::Malformed)?;
-    if quire_canonical::to_vec(&key, quire_canonical::Limits::new(u64::MAX))
+    let key = quire_canonical::read_bounded(&bytes, limits.bytes, limits.storage_bytes).map_err(|error| match error {
+        quire_canonical::ReadError::Limit(limit) => exceeded(ProbabilityDocumentLimit::StorageBytes, limit.bound, limit.required),
+        _ => ProbabilityDocumentError::Malformed,
+    })?;
+    if quire_canonical::to_vec(&key, quire_canonical::Limits::new(limits.bytes))
         .map_err(|_| ProbabilityDocumentError::Malformed)?
         != bytes
     {
@@ -287,6 +289,7 @@ fn decode_key(text: &str) -> Result<ProbabilityProductKey, ProbabilityDocumentEr
     let quire_canonical::Node::Array(parts) = key.root().node() else {
         return Err(ProbabilityDocumentError::Malformed);
     };
+    if parts.len() != 6 { return Err(ProbabilityDocumentError::Unsupported); }
     let parts = parts.collect::<Vec<_>>();
     if parts.len() != 6
         || !parts.first().is_some_and(|part| {
@@ -430,13 +433,22 @@ fn read_document(
     let outside_profile = matches!(root.get("kind").map(|node| node.node()), Some(quire_canonical::Node::String(kind)) if kind != "exact")
         || matches!(objective.and_then(|node| node.get("profile")).map(|node| node.node()), Some(quire_canonical::Node::String(profile)) if profile != PROFILE)
         || matches!(objective.and_then(|node| node.get("optimization")).map(|node| node.node()), Some(quire_canonical::Node::String(operator)) if !matches!(operator, "minimum" | "maximum" | "workload"))
-        || match objective.and_then(|node| node.get("fairness")).map(|node| node.node()) {
+        || match objective
+            .and_then(|node| node.get("fairness"))
+            .map(|node| node.node())
+        {
             Some(quire_canonical::Node::Array(mut items)) => items.next().is_some(),
             _ => false,
         };
     if outside_profile {
-        let canonical = quire_canonical::to_vec(&parsed, quire_canonical::Limits::new(limits.bytes)).map_err(|_| ProbabilityDocumentError::Malformed)?;
-        return Err(if canonical == bytes { ProbabilityDocumentError::Unsupported } else { ProbabilityDocumentError::Noncanonical });
+        let canonical =
+            quire_canonical::to_vec(&parsed, quire_canonical::Limits::new(limits.bytes))
+                .map_err(|_| ProbabilityDocumentError::Malformed)?;
+        return Err(if canonical == bytes {
+            ProbabilityDocumentError::Unsupported
+        } else {
+            ProbabilityDocumentError::Noncanonical
+        });
     }
     if parsed.root().get("ranking").is_none() {
         return Err(ProbabilityDocumentError::MissingMember("ranking"));
@@ -491,14 +503,14 @@ fn read_document(
         wire.objective
             .targets
             .iter()
-            .map(|key| decode_key(key))
+            .map(|key| decode_key(key, limits))
             .collect::<Result<Vec<_>, _>>()?,
     )?;
     let mut values = Vec::new();
     for row in wire.values {
         poll(cancel)?;
         values.push(ExactProbabilityValue {
-            state: decode_key(&row.state)?,
+            state: decode_key(&row.state, limits)?,
             value: ratio(row.value, limits.scalar_bits, meter, cancel)?,
         });
     }
@@ -509,7 +521,7 @@ fn read_document(
         if row.rank > MAX_COUNT {
             return Err(ProbabilityDocumentError::Malformed);
         }
-        ranking.push((decode_key(&row.state)?, row.rank));
+        ranking.push((decode_key(&row.state, limits)?, row.rank));
     }
     ordered(ranking.iter().map(|(state, _)| state.clone()))?;
     poll(cancel)?;
@@ -1072,6 +1084,13 @@ mod tests {
                 decimal_digits: 100_001
             })
         );
+        let admission = ProbabilityDocumentLimits { storage_bytes: 2_000_000, ..limits() };
+        let large_key = ProbabilityProductKey::for_model_state(None, &vec![0; 375_000]).unwrap();
+        let valid = mutate(|value| { value["values"][0]["state"] = json!(URL_SAFE_NO_PAD.encode(large_key.as_bytes())); });
+        assert!(read_probability_certificate(&valid, admission, &Cancel::new()).is_ok(), "a similarly sized flat key fits the caller's storage ceiling");
+        let inner = serde_json::to_vec(&vec![Value::Null; 100_000]).unwrap();
+        let offered = mutate(|value| { value["values"][0]["state"] = json!(URL_SAFE_NO_PAD.encode(inner)); });
+        assert!(matches!(read_probability_certificate(&offered, admission, &Cancel::new()), Err(ProbabilityDocumentError::Limit { limit: ProbabilityDocumentLimit::StorageBytes, .. })), "decoded key JSON must pass the same bounded admission before its tree is retained");
     }
 
     #[trace("FR-201-AC-9")]
