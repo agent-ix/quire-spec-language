@@ -43,3 +43,26 @@ CHANGES REQUESTED. The confined unsafe module is sound as currently wired (frame
 | FND-009 | low | Silent fallbacks in code generation (stack slot size unwrap_or(8), offset unwrap_or(0), op index unwrap_or(i64::MAX)) would emit wrong code instead of refusing. | qsl-jit/src/translate.rs:568-575; qsl-jit/src/translate.rs:689 | implementation-bug-despite-evidence |
 | FND-010 | low | Generated entry symbol is qsl_entry_{name with :: replaced by _}, so distinct names such as a::b_c and a_b::c collide and the second define_function faults the whole prepare. | qsl-jit/src/prepared.rs:179; qsl-jit/src/translate.rs:199-206 | implementation-bug-despite-evidence |
 | FND-011 | low | Stale or dead text and code: lifecycle test says make arch-lint-unsafe does not exist; exec doc names Ctx::failed; EntryFrame.kernel is never read; rust_files has a dead `top` param; EmptyComparison is pushed past max_reported; `units.len() as u64`; the parity target splits the arch-lint comment block in the Makefile. | qsl-jit/tests/it/lifecycle.rs:93-95; qsl-jit/src/exec.rs:13; qsl-jit/src/exec.rs:61; tools/arch-lint/unsafe_confinement.rs:111-112; qsl-conformance/src/lib.rs:444-458; Makefile:383-390 | implementation-bug-despite-evidence |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs | Escape Cause |
+| --- | --- | --- | --- | --- |
+| FND-012 | low | division_interval now returns the rem/mod bound before consulting the selection, so a `rem` node with no admitted selection (div still refuses through divide's None) is translated and faults at run time (jit-division-selection-missing) instead of being listed unsupported at prepare as before. | qsl-jit/src/translate.rs:777-783; qsl-jit/src/kernel.rs:66-72 | implementation-bug-despite-evidence |
+| FND-013 | low | FR-568 says EntryFrame holds the KernelTable and &Cancel; after the fix it holds neither (the shim is an imported symbol, cancel is polled through the meter). The code is sound and arguably safer, but the spec text and code now disagree and need an FR-568 amendment. | qsl-jit/src/exec.rs:55-70; spec/functional/FR-568-confine-unsafe-code-in-qsl-jit-to-one-module.md | wrong-requirement |
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | rem/mod take [-(max abs divisor - 1), max abs divisor - 1]; sound for every admitted law, negative operands included; divisor intervals that straddle 0 were already refused at translate.rs:482-484. Test a_remainder_times_a_large_operand_is_not_judged_to_fit_from_the_interval_ends. |
+| FND-002 | fixed | register_kind derives the parameter kind from type_of; an_unread_wide_parameter_is_not_a_fault passes. |
+| FND-003 | fixed | Signature::of reads the declared Cranelift signature in Compiler::entry and Machine::entry stores it; a_generated_entry_records_the_entry_signature asserts (1, true). |
+| FND-004 | fixed | Hooks and their exec helpers are behind cfg(feature = "test-support"); clippy without the feature is clean. |
+| FND-005 | fixed | FAILED/ARGUMENTS/RESULT_OFFSET from offset_of! are used by every generated load and store; shim is unsafe extern "C" with a Safety section. |
+| FND-006 | still-open | Both JIT parity tests still carry #[trace("TC-1386")]. TC-1386 verifies the runner (its own tests are in qsl-conformance), and the 200-unit test passes only because the count stops before unit 555; that is an allow-list by selection. Remove the TC-1386 tags. The ignored 300-unit test is acceptable as an honest red-gate record if it is untagged and names a tracked Linear ticket for the kernel-handle path instead of QSL-602 itself. |
+| FND-007 | fixed | Unparsable and unreadable files, missing manifests and glob members are findings; visit_attribute catches every attribute; workspace = true requires [workspace.lints.rust] forbid; 6 new fixture tests pass; the check passes on the workspace. |
+| FND-008 | fixed | An unselected function returns InputRefusal::UnknownFunction; a_function_not_selected_at_prepare_is_refused_not_faulted. |
+| FND-009 | fixed | Each fallback now refuses (unsupported, or a fault recorded in Emitter::refused and returned from build). |
+| FND-010 | fixed | Entries are named qsl_entry_{index}. |
+| FND-011 | fixed | Comment, Ctx reference, dead kernel field, dead top parameter, EmptyComparison cap, cast and Makefile block all corrected. |

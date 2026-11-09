@@ -774,6 +774,9 @@ fn division_interval(
     (al, ah): (i128, i128),
     (bl, bh): (i128, i128),
 ) -> Option<(i128, i128)> {
+    if operator == IntegerDivisionOperator::Rem && selection.is_none() {
+        return None;
+    }
     if matches!(
         operator,
         IntegerDivisionOperator::Rem | IntegerDivisionOperator::Mod
@@ -845,4 +848,24 @@ pub(crate) fn divide(
         &IntegerDomain::Mathematical,
         meter,
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A remainder with no admitted division selection has no interval, so the
+    /// entry is listed unsupported at prepare instead of faulting at run time
+    /// (`jit-division-selection-missing`); `mod` needs none.
+    #[test]
+    fn a_remainder_without_a_selection_has_no_interval() {
+        assert_eq!(
+            division_interval(IntegerDivisionOperator::Rem, None, (0, 10), (1, 5)),
+            None
+        );
+        assert_eq!(
+            division_interval(IntegerDivisionOperator::Mod, None, (0, 10), (1, 5)),
+            Some((-4, 4))
+        );
+    }
 }
