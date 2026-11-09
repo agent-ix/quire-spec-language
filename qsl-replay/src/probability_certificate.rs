@@ -390,6 +390,9 @@ fn enumerate_model_graph<P: StatePredicate>(
     if initial.len() != 1 {
         return Err(ExactProbabilityGraphError::UnsupportedInitial);
     }
+    if max_states == 0 {
+        return Err(ExactProbabilityGraphError::LimitReached);
+    }
     let key_of = |state: &ModelSimState| {
         let (model_bytes, _) = system
             .state_key(state)
@@ -407,9 +410,6 @@ fn enumerate_model_graph<P: StatePredicate>(
     let mut edge_count = 0usize;
     while let Some((key, state)) = pending.pop_front() {
         poll_cancel(cancel)?;
-        if states.len() == max_states {
-            return Err(ExactProbabilityGraphError::LimitReached);
-        }
         visit(&key, &state);
         let reading = system
             .state_predicates(&state, &[(target, binding)])
@@ -480,7 +480,11 @@ fn enumerate_model_graph<P: StatePredicate>(
                         target: target_key.clone(),
                         probability: draw.probability,
                     });
-                    if seen.insert(target_key.clone()) {
+                    if !seen.contains(&target_key) {
+                        if seen.len() >= max_states {
+                            return Err(ExactProbabilityGraphError::LimitReached);
+                        }
+                        seen.insert(target_key.clone());
                         pending.push_back((target_key, successor));
                     }
                 }
@@ -595,6 +599,23 @@ pub fn check_claim_exact_reachability(
     )
 }
 
+/// Derive the complete request-item identity from the checked claim's own
+/// occurrence using the qualified planner's claim identity contract. The
+/// subject carries the owning model; the actual occurrence ordinal is retained.
+///
+/// # Errors
+///
+/// Returns `ClaimNotBound` for an unassembled claim or an unrepresentable ordinal.
+pub fn probabilistic_claim_identity(
+    claim: &CheckedProbabilisticClaim,
+) -> Result<ObligationIdentity, ExactProbabilityGraphError> {
+    let occurrence = claim.occurrence().ok_or(ExactProbabilityGraphError::ClaimNotBound)?;
+    if u32::try_from(occurrence.origin().ordinal()).is_err() {
+        return Err(ExactProbabilityGraphError::ClaimNotBound);
+    }
+    Ok(ObligationIdentity::from_claim_occurrence(occurrence))
+}
+
 fn bind_claim<'a>(
     claims: &'a [CheckedProbabilisticClaim],
     item: &ObligationIdentity,
@@ -607,9 +628,10 @@ fn bind_claim<'a>(
         if claim
             .occurrence()
             .is_some_and(|key| key.node() == item.node())
-            && bound_claim.replace(claim).is_some()
         {
-            return Err(ExactProbabilityGraphError::ClaimNotBound);
+            if &probabilistic_claim_identity(claim)? != item || bound_claim.replace(claim).is_some() {
+                return Err(ExactProbabilityGraphError::ClaimNotBound);
+            }
         }
     }
     bound_claim.ok_or(ExactProbabilityGraphError::ClaimNotBound)

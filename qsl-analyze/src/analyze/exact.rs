@@ -22,7 +22,7 @@ use qsl_replay::{
     check_claim_exact_reachability, claim_binding, ExactBinding, ExactProbBuildIssue,
     ExactProbBuildRecord, ExactProbabilityCertificate, ExactProbabilityCertificateCheck,
     ExactProbabilityGraphError, ExactProbabilityValue, Extremum, ModelCheckLimit,
-    ObligationIdentity, ProbabilityBoundSide, ProbabilityProductKey, TerminalRecord,
+    ProbabilityBoundSide, ProbabilityProductKey, TerminalRecord,
 };
 use qsl_replay::{
     replay_probabilistic_witness, ProbabilisticCounterexample, ProbabilityWitnessError,
@@ -291,7 +291,7 @@ fn run(
         Bound::AtLeast(threshold) => value >= threshold,
         Bound::AtMost(threshold) => value <= threshold,
     };
-    let Some(node) = claim.occurrence().map(|key| key.node().clone()) else {
+    let Ok(item) = qsl_replay::probabilistic_claim_identity(claim) else {
         return not_yet();
     };
     let Ok(system) = ModelSystem::new(simulation) else {
@@ -327,7 +327,7 @@ fn run(
     let checked = check_claim_exact_reachability(
         &system,
         package.graph().probabilistic_model().claims(),
-        &ObligationIdentity::new(node, None, 0),
+        &item,
         &certificate,
         limits.model.limits.max_states,
         limits.model.limits.max_transitions,
@@ -504,12 +504,14 @@ fn replay_refutation(
     let produced = match produced {
         Ok(Some(witness)) => witness,
         Ok(None) => return not_yet(),
+        Err(crate::exact_probabilistic::WitnessError::Limit { limit, value }) => {
+            return settled(&ExactProbBuildIssue::Limit { limit, value },subject);
+        }
         Err(_) => return broken(),
     };
-    let Some(node) = claim.occurrence().map(|key| key.node().clone()) else {
+    let Ok(item) = qsl_replay::probabilistic_claim_identity(claim) else {
         return not_yet();
     };
-    let item = ObligationIdentity::new(node, None, 0);
     let initials = system.initial();
     let [first] = initials.as_slice() else {
         return not_yet();

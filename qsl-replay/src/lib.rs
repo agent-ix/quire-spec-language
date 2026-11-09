@@ -329,7 +329,7 @@ pub use planner::{
     PlannerResult, PremiseItem, PremiseResult, ResultEntry, SettlementRequest,
 };
 pub use probability_certificate::{
-    check_claim_exact_reachability, claim_binding, digital_probability_product_key,
+    check_claim_exact_reachability, claim_binding, digital_probability_product_key, probabilistic_claim_identity,
     replay_probabilistic_witness, ClaimBinding, DigitalClockKey, DigitalDeadlineKey,
     DigitalProductKeyInput, DigitalTail, ExactProbabilityAcceptance, ExactProbabilityCertificate,
     ExactProbabilityCertificateCheck, ExactProbabilityGraphError, ExactProbabilityValue,

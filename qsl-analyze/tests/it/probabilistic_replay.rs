@@ -662,3 +662,27 @@ fn fix_round_fanout_checks_state_storage_before_queuing_successors() {
         assert!(matches!(replay(&world,&witness,&limits,&Cancel::new()),Err(ProbabilityWitnessError::Graph(ExactProbabilityGraphError::LimitReached))),"state admission must stop before another fanout edge can exhaust the transition budget");
     }
 }
+
+#[trace("TC-637", "FR-202-AC-11")]
+#[test]
+fn fix_round_producer_frontier_and_rational_stops_follow_a_successful_real_solve() {
+    use qsl_analyze::exact_probabilistic::{build_product,decide_reachability,produce_witness,ProbBuild,UnboundedObjective,WitnessError,WitnessScope};
+    let world = World::new(&prob_world::link(CLAIMS));
+    let request = world.request("TooMuch",ModelCheckLimits::default());
+    let ample = request.limits;
+    let ProbBuild::Built(product) = build_product(request,&Cancel::new()).expect("the real model builds under ample limits") else { panic!("defined product"); };
+    let target = product.labels.iter().map(|row| row[0]).collect::<Vec<_>>();
+    let solved = decide_reachability(&product,&target,UnboundedObjective::Max,&ample).expect("the real product solves before producer-only limits apply");
+    let start = product.initial[0].2;
+    let produce = |limits: &ExactProbLimits| produce_witness(&product,&solved.policy,WitnessScope::EveryScheduler,start,&target,&ratio(1,2),limits);
+    assert!(matches!(produce(&ample),Ok(Some(_))),"positive control: the same policy has sufficient finite evidence");
+    let mut path = ample; path.max_witness_paths = 0;
+    let mut frontier = ample; frontier.model.limits.max_transitions = 2;
+    let mut arithmetic = ample; arithmetic.max_rational_bits = 3;
+    for (limits,expected,value) in [(path,ModelCheckLimit::ExactProbMaxWitnessPaths,0),(frontier,ModelCheckLimit::ExactProbMaxTransitions,2),(arithmetic,ModelCheckLimit::ExactProbMaxRationalBits,3)] {
+        match produce(&limits) {
+            Err(WitnessError::Limit { limit, value: actual }) => { assert_eq!(limit,expected); assert_eq!(actual,value); }
+            other => panic!("a successful build/solve must expose the actual producer stop, got {other:?}"),
+        }
+    }
+}

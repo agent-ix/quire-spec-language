@@ -17,7 +17,7 @@ use serde_json::{json, Map, Value};
 
 use super::declaration::SlotRole;
 use super::json::{array, canonical_text, check_members, count, object, require, string, Fault};
-use crate::identity::{ModelIdentity, ObligationIdentity};
+use crate::identity::ObligationIdentity;
 use crate::proof_result::child;
 
 /// FR-290's closed capability-kind vocabulary (`quire.capability-kind/v1`).
@@ -278,8 +278,7 @@ impl ItemKey {
     /// occurrence ordinal. The model owning the claim is not on the wire, so
     /// the subject member carries it.
     pub fn identity(&self) -> ObligationIdentity {
-        let ordinal = u32::try_from(self.claim.origin().ordinal()).unwrap_or(u32::MAX);
-        ObligationIdentity::new(self.claim.node().clone(), None::<ModelIdentity>, ordinal)
+        ObligationIdentity::from_claim_occurrence(&self.claim)
     }
 }
 

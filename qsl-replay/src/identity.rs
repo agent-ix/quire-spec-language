@@ -71,6 +71,15 @@ struct ObligationParts {
 }
 
 impl ObligationIdentity {
+    /// The request-item identity of a checked claim occurrence. The subject
+    /// carries its model; the identity retains the actual occurrence ordinal.
+    pub(crate) fn from_claim_occurrence(
+        claim: &qsl_foundation::source::provenance::OccurrenceKey,
+    ) -> Self {
+        let ordinal = u32::try_from(claim.origin().ordinal()).unwrap_or(u32::MAX);
+        Self::new(claim.node().clone(), None, ordinal)
+    }
+
     /// The obligation of `node` owned by `model` at occurrence `ordinal`.
     pub fn new(node: NodeKey, model: Option<ModelIdentity>, ordinal: u32) -> Self {
         Self(Box::new(ObligationParts {
@@ -335,5 +344,15 @@ mod tests {
             a,
             ObligationIdentity::new(node(7), Some(ModelIdentity::new("m")), 0)
         );
+    }
+
+    #[ix_trace_rs::trace("TC-637", "FR-202-AC-10")]
+    #[test]
+    fn claim_identity_retains_the_checked_occurrence_ordinal() {
+        use qsl_foundation::source::provenance::OccurrenceKey;
+        use quire_exact::{Origin, Role};
+        let node = crate::fixture_node(7);
+        let occurrence = OccurrenceKey::new(node.clone(), Origin::new(Role::new("claim"), 17));
+        assert_eq!(ObligationIdentity::from_claim_occurrence(&occurrence), ObligationIdentity::new(node, None, 17));
     }
 }

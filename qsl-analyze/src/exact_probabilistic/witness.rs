@@ -101,6 +101,14 @@ pub struct ProducedWitness {
 /// Why no witness could be read from the product and policy.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum WitnessError {
+    /// The producer exhausted a caller-configured resource budget.
+    #[error("witness production exhausted {limit:?} at its configured bound {value}")]
+    Limit {
+        /// The exact exhausted setting.
+        limit: qsl_replay::ModelCheckLimit,
+        /// The configured bound of that setting.
+        value: u64,
+    },
     /// The initial state or the accepting vector does not fit the product.
     #[error("the witness inputs do not fit the product")]
     InvalidState,
@@ -473,10 +481,10 @@ fn reaching(induced: &Induced, accepting: &[bool]) -> BTreeSet<ProbStateId> {
 /// each state they leave that `scope` resolves. A partial path at a state
 /// from which no accepting state is reachable is not extended.
 ///
-/// `Ok(None)` when no such path set exists within `limits.max_witness_paths`
-/// paths, `max_transitions` expansions and frontier pushes, and
-/// `max_rational_bits` per path probability: the claim then needs subsystem
-/// evidence instead.
+/// `Ok(None)` only when the induced chain's finite paths do not have enough
+/// mass to cross `past`. Resource exhaustion is `WitnessError::Limit`, naming
+/// the actual path, transition-work or rational-bit setting; it is never
+/// mathematical insufficiency.
 ///
 /// # Errors
 ///
@@ -497,6 +505,16 @@ pub fn produce_witness(
     let induced = induce(product, policy, initial, accepting)?;
     let reaching = reaching(&induced, accepting);
     let accepts = |state: ProbStateId| accepting.get(state.index()).copied().unwrap_or(false);
+    let transition_limit = || WitnessError::Limit {
+        limit: qsl_replay::ModelCheckLimit::ExactProbMaxTransitions,
+        value: u64::try_from(limits.model.limits.max_transitions).unwrap_or(u64::MAX),
+    };
+    let rational_limit = || WitnessError::Limit {
+        limit: qsl_replay::ModelCheckLimit::ExactProbMaxRationalBits,
+        value: limits.max_rational_bits,
+    };
+    if limits.model.limits.max_transitions == 0 { return Err(transition_limit()); }
+    if !rational_fits(&rational(1),limits.max_rational_bits) { return Err(rational_limit()); }
     let mut frontier = BinaryHeap::from([Partial {
         probability: rational(1),
         sequence: 0,
@@ -511,9 +529,13 @@ pub fn produce_witness(
     while let Some(partial) = frontier.pop() {
         if accepts(partial.state) {
             if u64::try_from(paths.len()).map_or(true, |count| count >= limits.max_witness_paths) {
-                return Ok(None);
+                return Err(WitnessError::Limit {
+                    limit: qsl_replay::ModelCheckLimit::ExactProbMaxWitnessPaths,
+                    value: limits.max_witness_paths,
+                });
             }
             sum = sum.add(&partial.probability);
+            if !rational_fits(&sum, limits.max_rational_bits) { return Err(rational_limit()); }
             paths.push(ProducedPath {
                 steps: partial.steps(&induced),
                 probability: partial.probability,
@@ -531,7 +553,7 @@ pub fn produce_witness(
         };
         expansions += 1;
         if expansions > limits.model.limits.max_transitions {
-            return Ok(None);
+            return Err(transition_limit());
         }
         for (index, step) in steps.iter().enumerate() {
             if !accepts(step.to) && !reaching.contains(&step.to) {
@@ -539,11 +561,11 @@ pub fn produce_witness(
             }
             pushes += 1;
             if pushes > limits.model.limits.max_transitions {
-                return Ok(None);
+                return Err(transition_limit());
             }
             let probability = partial.probability.mul(&step.probability);
             if !rational_fits(&probability, limits.max_rational_bits) {
-                return Ok(None);
+                return Err(rational_limit());
             }
             sequence += 1;
             frontier.push(Partial {
