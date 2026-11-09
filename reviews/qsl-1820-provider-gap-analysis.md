@@ -69,3 +69,13 @@ Examined units (excerpts are exact requirement text, truncated only to the revie
 - FR-281, examined: "When an engine budget or an accounting limit is reached, or the `Cancel`   handle is cancelled, `analyze` shall settle each open item `incomplete`   with the limit or cancellation cause kept."
 - FR-281-AC-22, context_only: "Over AC-11's model (an operation `modifies` a field of type `Integer`), an EN-1 item whose `temporal.proof_bounds` hold an `integer-range` `ProofBound` for that field, with `extent` `unbounded` unchanged, is admitted, explores the bounded subject and settles a verdict; the same item with empty `proof_bounds` settles `unsupported` with `unsupported_projection`/`unbounded-extent` and explores no state."
 
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Round 1, head 2cc1dda56870d059a152db08af10665f8b8036f3. Checked-package constructor rejects absent and wrong authored occurrences with typed UnknownClaim and accepts the genuine clause; runtime revalidation remains necessary for mutable settings. |
+| FND-002 | fixed | Round 1, head 2cc1dda56870d059a152db08af10665f8b8036f3. Explicit E0277 compile-fail and compiling deadline control are present; supplied doctest log records both passing. |
+| FND-003 | fixed | Round 1, head 2cc1dda56870d059a152db08af10665f8b8036f3. Refutation trace now claims public-entry parity and probabilistic replay; incorrect proof criterion removed. |
+
+Round 1 inspected the fix diff and actual external adapter, constructor/family checks, operation limits and test oracles. No new findings. Both-crate clippy, formatting, 83 affected integration tests and two doctests pass in supplied fix-final/fix logs; no tests rerun by reviewer. Aggregate gate remains owned by the lead. External CG/driver/wire/matrix dependencies and FR-281-AC-22 versus FR-336 remain unresolved context, not waived. Original review text above is preserved verbatim.
