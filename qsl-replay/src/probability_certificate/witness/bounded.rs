@@ -344,7 +344,7 @@ fn admit_state(
     Ok(())
 }
 
-fn retain(
+pub(super) fn retain(
     bytes: usize,
     storage: &mut u64,
     limits: &ExactProbLimits,
@@ -358,7 +358,7 @@ fn retain(
     }
     Ok(())
 }
-fn arithmetic(
+pub(super) fn arithmetic(
     operation: quire_exact::RationalArithmetic<'_>,
     meter: &mut quire_exact::Meter,
     cancel: &Cancel,
@@ -377,7 +377,7 @@ fn arithmetic(
         _ => Err(ProbabilityWitnessError::Refused),
     }
 }
-fn document_error(error: ProbabilityDocumentError) -> ProbabilityWitnessError {
+pub(super) fn document_error(error: ProbabilityDocumentError) -> ProbabilityWitnessError {
     match error {
         ProbabilityDocumentError::Limit { limit, bound, .. } => ProbabilityWitnessError::Limit {
             limit: limit.model_limit(),

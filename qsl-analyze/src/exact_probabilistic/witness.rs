@@ -429,6 +429,7 @@ fn induce(
     policy: &[Option<usize>],
     initial: ProbStateId,
     accepting: &[bool],
+    stopped: Option<&[bool]>,
 ) -> Result<Induced, WitnessError> {
     let mut induced = Induced::new();
     let mut queue = VecDeque::from([initial]);
@@ -437,7 +438,11 @@ fn induce(
             .get(state.index())
             .copied()
             .ok_or(WitnessError::InvalidState)?;
-        if accepts || induced.contains_key(&state) || product.outgoing(state).is_empty() {
+        if accepts
+            || stopped.is_some_and(|stopped| stopped.get(state.index()) == Some(&true))
+            || induced.contains_key(&state)
+            || product.outgoing(state).is_empty()
+        {
             continue;
         }
         let index = state.index();
@@ -499,10 +504,30 @@ pub fn produce_witness(
     past: &Rational,
     limits: &ExactProbLimits,
 ) -> Result<Option<ProducedWitness>, WitnessError> {
+    produce_witness_stopping(
+        product, policy, scope, initial, accepting, None, past, limits,
+    )
+}
+
+/// Search finite paths while stopping at either verdict of a direct state event.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn produce_witness_stopping(
+    product: &ProbProduct,
+    policy: &[Option<usize>],
+    scope: WitnessScope,
+    initial: ProbStateId,
+    accepting: &[bool],
+    stopped: Option<&[bool]>,
+    past: &Rational,
+    limits: &ExactProbLimits,
+) -> Result<Option<ProducedWitness>, WitnessError> {
     if accepting.len() != product.states.len() || initial.index() >= product.states.len() {
         return Err(WitnessError::InvalidState);
     }
-    let induced = induce(product, policy, initial, accepting)?;
+    if stopped.is_some_and(|stopped| stopped.len() != product.states.len()) {
+        return Err(WitnessError::InvalidState);
+    }
+    let induced = induce(product, policy, initial, accepting, stopped)?;
     let reaching = reaching(&induced, accepting);
     let accepts = |state: ProbStateId| accepting.get(state.index()).copied().unwrap_or(false);
     let transition_limit = || WitnessError::Limit {

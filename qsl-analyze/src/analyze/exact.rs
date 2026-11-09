@@ -712,7 +712,6 @@ fn replay_refutation(
     };
     // Direct state-predicate boundaries stop the evidence search at the first
     // decisive state. Replay independently derives these outcomes from source.
-    let mut boundary_product = None;
     let state_outcomes = match &claim.form {
         ProbForm::Reach {
             target: ReachTarget::Until(..) | ReachTarget::Always(_),
@@ -754,16 +753,10 @@ fn replay_refutation(
                     }
                 })
                 .collect::<Vec<_>>();
-            let mut stopped = product.clone();
-            stopped
-                .edges
-                .retain(|edge| outcomes.get(edge.from.index()).is_some_and(Option::is_none));
-            boundary_product = Some(stopped);
             Some(outcomes)
         }
         _ => None,
     };
-    let product = boundary_product.as_ref().unwrap_or(product);
     let (accepting, past) = match &claim.form {
         ProbForm::Reach { bound, .. } if state_outcomes.is_some() => (
             state_outcomes
@@ -832,7 +825,23 @@ fn replay_refutation(
         ProbScheduler::Every => WitnessScope::EveryScheduler,
         ProbScheduler::Workload(_) => WitnessScope::Workload,
     };
-    let produced = produce_witness(product, policy, scope, initial, &accepting, &past, limits);
+    let stopped = state_outcomes
+        .as_ref()
+        .map(|outcomes| outcomes.iter().map(Option::is_some).collect::<Vec<_>>());
+    let produced = if let Some(stopped) = stopped.as_deref() {
+        crate::exact_probabilistic::produce_witness_stopping(
+            product,
+            policy,
+            scope,
+            initial,
+            &accepting,
+            Some(stopped),
+            &past,
+            limits,
+        )
+    } else {
+        produce_witness(product, policy, scope, initial, &accepting, &past, limits)
+    };
     if cancel.poll() {
         if let Some(cause) = cancel.tripped() {
             return settled(&ExactProbBuildIssue::Cancelled(cause), subject);

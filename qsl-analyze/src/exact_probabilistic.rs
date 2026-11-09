@@ -56,6 +56,7 @@ pub use unbounded::{
     ComponentValue, ExtRational, GainBias, LongRunResult, UnboundedError, UnboundedObjective,
     UnboundedOutcome, UnboundedResult,
 };
+pub(crate) use witness::produce_witness_stopping;
 pub use witness::{
     action_steps, entry_choice, policy_action, produce_witness, witness_scheduler, EntryChoice,
     ProducedPath, ProducedStep, ProducedWitness, WitnessError, WitnessScope,

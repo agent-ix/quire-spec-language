@@ -169,6 +169,9 @@ pub fn replay_probabilistic_witness(
         return Err(ProbabilityWitnessError::Refused);
     }
     let mut model_states = BTreeMap::new();
+    let mut storage = 0;
+    let mut meter = quire_exact::Meter::new(system.meter_limits()).with_cancel(cancel.clone());
+    let key_error = std::cell::RefCell::new(None);
     let mut issue = None;
     let graph = enumerate_model_graph_with_keys(
         system,
@@ -179,8 +182,19 @@ pub fn replay_probabilistic_witness(
         limits.model.limits.max_transitions,
         cancel,
         false,
-        &|state| key_of(system, reference, state),
+        &|state| {
+            key_of(system, reference, state, limits, cancel).map_err(|error| {
+                *key_error.borrow_mut() = Some(error);
+                ExactProbabilityGraphError::ExpansionRefused
+            })
+        },
         &mut |key, state| {
+            bounded::retain(key.as_bytes().len().saturating_mul(2), &mut storage, limits).map_err(
+                |error| {
+                    *key_error.borrow_mut() = Some(error);
+                    ExactProbabilityGraphError::ExpansionRefused
+                },
+            )?;
             model_states.insert(key.clone(), state.clone());
             Ok(())
         },
@@ -189,6 +203,9 @@ pub fn replay_probabilistic_witness(
         },
     )
     .map_err(|error| {
+        if let Some(error) = key_error.borrow_mut().take() {
+            return error;
+        }
         issue.map_or(ProbabilityWitnessError::Graph(error), |issue| {
             ProbabilityWitnessError::Build(Box::new(issue))
         })
@@ -198,8 +215,8 @@ pub fn replay_probabilistic_witness(
     let [initial] = initials.as_slice() else {
         return Err(ExactProbabilityGraphError::UnsupportedInitial.into());
     };
-    if key_of(system, reference, initial)? != witness.initial_key
-        || key_of(system, reference, &witness.initial)? != witness.initial_key
+    if key_of(system, reference, initial, limits, cancel)? != witness.initial_key
+        || key_of(system, reference, &witness.initial, limits, cancel)? != witness.initial_key
         || initial.anchor() != witness.initial.anchor()
         || initial.reached_by() != witness.initial.reached_by()
     {
@@ -249,13 +266,12 @@ pub fn replay_probabilistic_witness(
     }
     let mut transitions = 0usize;
     let mut mass = rational(0);
-    let mut replayed: Vec<Vec<(ModelTransition, ProbabilityProductKey, Vec<SemanticValue>)>> =
-        Vec::new();
+    let mut replayed: Vec<&ProbabilityWitnessPath> = Vec::new();
     for path in &witness.paths {
         poll_cancel(cancel)?;
         let mut state = initial.clone();
         let mut probability = rational(1);
-        let mut signature = Vec::new();
+
         for step in &path.steps {
             poll_cancel(cancel)?;
             transitions = transitions
@@ -267,7 +283,7 @@ pub fn replay_probabilistic_witness(
             if outcome(system, target, reference, &state)?.is_some() {
                 return Ok(ProbabilityWitnessReplay::Parity);
             }
-            let key = key_of(system, reference, &state)?;
+            let key = key_of(system, reference, &state, limits, cancel)?;
             if step.elapsed != rational(0)
                 || workload.is_none() && scheduler.get(&key).copied() != Some(&step.action)
             {
@@ -284,7 +300,8 @@ pub fn replay_probabilistic_witness(
                     if candidate.identity.as_ref() == Some(&step.action)
                         && candidate.transition == TransitionId::Operation(step.transition.clone())
                         && same_values(&candidate.random, &step.draw)
-                        && key_of(system, reference, &candidate.post)? == step.post_key
+                        && key_of(system, reference, &candidate.post, limits, cancel)?
+                            == step.post_key
                     {
                         found = Some((candidate.probability, candidate.post));
                         break;
@@ -310,7 +327,8 @@ pub fn replay_probabilistic_witness(
                         }
                         for (transition, post) in draw.successors {
                             if transition == step.transition
-                                && key_of(system, reference, &post)? == step.post_key
+                                && key_of(system, reference, &post, limits, cancel)?
+                                    == step.post_key
                             {
                                 found = Some((draw.probability.clone(), post));
                             }
@@ -322,20 +340,20 @@ pub fn replay_probabilistic_witness(
                 return Err(ProbabilityWitnessError::Refused);
             };
             if step_mass <= rational(0)
-                || key_of(system, reference, &step.post)? != step.post_key
+                || key_of(system, reference, &step.post, limits, cancel)? != step.post_key
                 || post.anchor() != step.post.anchor()
                 || post.reached_by() != step.post.reached_by()
             {
                 return Err(ProbabilityWitnessError::Refused);
             }
             check_bits(&step_mass, limits.max_rational_bits)?;
-            probability = probability.mul(&step_mass);
+            probability = bounded::arithmetic(
+                quire_exact::RationalArithmetic::Multiply(&probability, &step_mass),
+                &mut meter,
+                cancel,
+            )?;
             check_bits(&probability, limits.max_rational_bits)?;
-            signature.push((
-                step.transition.clone(),
-                step.post_key.clone(),
-                step.draw.clone(),
-            ));
+
             state = post;
         }
         let accepting = match (bound, outcome(system, target, reference, &state)?) {
@@ -347,21 +365,41 @@ pub fn replay_probabilistic_witness(
         }
         for previous in &replayed {
             poll_cancel(cancel)?;
-            if previous
-                .iter()
-                .zip(&signature)
-                .all(|(a, b)| a.0 == b.0 && a.1 == b.1 && same_values(&a.2, &b.2))
-            {
+            if previous.steps.iter().zip(&path.steps).all(|(a, b)| {
+                a.action == b.action
+                    && a.transition == b.transition
+                    && a.post_key == b.post_key
+                    && same_values(&a.draw, &b.draw)
+            }) {
                 return Ok(ProbabilityWitnessReplay::Parity);
             }
         }
-        replayed.push(signature);
-        mass = mass.add(&probability);
+        bounded::retain(
+            std::mem::size_of::<&ProbabilityWitnessPath>(),
+            &mut storage,
+            limits,
+        )?;
+        replayed
+            .try_reserve(1)
+            .map_err(|_| ProbabilityWitnessError::Limit {
+                limit: ModelCheckLimit::CertificateMaxWorkingBytes,
+                value: limits.document.storage_bytes,
+            })?;
+        replayed.push(path);
+        mass = bounded::arithmetic(
+            quire_exact::RationalArithmetic::Add(&mass, &probability),
+            &mut meter,
+            cancel,
+        )?;
         check_bits(&mass, limits.max_rational_bits)?;
     }
     let threshold = match bound {
         Bound::AtMost(threshold) => threshold.clone(),
-        Bound::AtLeast(threshold) => rational(1).sub(threshold),
+        Bound::AtLeast(threshold) => bounded::arithmetic(
+            quire_exact::RationalArithmetic::Subtract(&rational(1), threshold),
+            &mut meter,
+            cancel,
+        )?,
     };
     if mass <= threshold {
         return Ok(ProbabilityWitnessReplay::Parity);
@@ -409,11 +447,14 @@ fn key_of(
     system: &ModelSystem<'_>,
     binding: Option<&ObjectReference>,
     state: &ModelSimState,
-) -> Result<ProbabilityProductKey, ExactProbabilityGraphError> {
+    limits: &ExactProbLimits,
+    cancel: &Cancel,
+) -> Result<ProbabilityProductKey, ProbabilityWitnessError> {
     let (bytes, _) = system
         .state_key(state)
         .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?;
-    product_key(binding, &bytes)
+    ProbabilityProductKey::for_model_state_with_limits(binding, &bytes, limits.document, cancel)
+        .map_err(bounded::document_error)
 }
 fn observes(
     system: &ModelSystem<'_>,
