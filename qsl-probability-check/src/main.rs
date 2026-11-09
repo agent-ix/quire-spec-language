@@ -9,8 +9,9 @@ use qsl_eval::simulation::model::{ExpansionLimits, PopulationUniverse};
 use qsl_replay::spine::SourceComponent;
 use qsl_replay::{
     check_probability_certificate_source, ByteProvision, DefinitionSourceRef,
-    ExactProbabilityCertificateCheck, ObligationIdentity, ProbabilityDocumentError, ProbabilityDocumentLimits,
-    ProbabilitySourceError, ProbabilitySourceLimits, ProbabilitySourceRequest,
+    ExactProbabilityCertificateCheck, ObligationIdentity, ProbabilityDocumentError,
+    ProbabilityDocumentLimits, ProbabilitySourceError, ProbabilitySourceLimits,
+    ProbabilitySourceRequest,
 };
 use qsl_semantics::model::observation::DocumentRef;
 use quire_checked::key::DeclarationKey;
@@ -164,12 +165,21 @@ fn check(request: Request, cancel: &Cancel) -> Result<Value, String> {
         }
         ExactProbabilityCertificateCheck::Rejected(rejection) => {
             let rule = match rejection.rule {
-                qsl_replay::ProbabilityCertificateRule::InequalityFails => qsl_replay::CertificateRule::InequalityFails,
-                qsl_replay::ProbabilityCertificateRule::ThresholdMissed => qsl_replay::CertificateRule::ThresholdMissed,
-                qsl_replay::ProbabilityCertificateRule::Malformed => qsl_replay::CertificateRule::Malformed,
+                qsl_replay::ProbabilityCertificateRule::InequalityFails => {
+                    qsl_replay::CertificateRule::InequalityFails
+                }
+                qsl_replay::ProbabilityCertificateRule::ThresholdMissed => {
+                    qsl_replay::CertificateRule::ThresholdMissed
+                }
+                qsl_replay::ProbabilityCertificateRule::Malformed => {
+                    qsl_replay::CertificateRule::Malformed
+                }
             };
             let at = match rejection.at {
-                qsl_replay::ProbabilityCertificateLocus::ProductState(key) => serde_json::to_value(qsl_replay::CertificateLocus::ProbabilityProductState(key)).map_err(|error| error.to_string())?,
+                qsl_replay::ProbabilityCertificateLocus::ProductState(key) => {
+                    serde_json::to_value(qsl_replay::CertificateLocus::ProbabilityProductState(key))
+                        .map_err(|error| error.to_string())?
+                }
                 qsl_replay::ProbabilityCertificateLocus::Member(member) => json!({"member":member}),
             };
             json!({"status":"rejected", "rule":rule, "at":at})
@@ -181,11 +191,29 @@ fn source_failure(error: ProbabilitySourceError) -> Value {
     use ProbabilityDocumentError as Document;
     let status = match &error {
         ProbabilitySourceError::Document(Document::Unsupported) => "unsupported",
-        ProbabilitySourceError::Document(Document::RankBroken(_) | Document::RankMissing(_) | Document::MissingMember("ranking")) => "rejected",
-        ProbabilitySourceError::Document(Document::Malformed | Document::MissingMember(_) | Document::Noncanonical | Document::IdentityMismatch | Document::ObjectiveMismatch)
-        | ProbabilitySourceError::SourceMismatch | ProbabilitySourceError::Source { .. } | ProbabilitySourceError::Packages(_) => "refused",
-        ProbabilitySourceError::Document(Document::Limit { .. } | Document::Cancelled(_) | Document::Accounting(_) | Document::Graph(_) | Document::Build(_))
-        | ProbabilitySourceError::ProvisionLimit { .. } | ProbabilitySourceError::Compile(_) | ProbabilitySourceError::Subject(_) => "stopped",
+        ProbabilitySourceError::Document(
+            Document::RankBroken(_) | Document::RankMissing(_) | Document::MissingMember("ranking"),
+        ) => "rejected",
+        ProbabilitySourceError::Document(
+            Document::Malformed
+            | Document::MissingMember(_)
+            | Document::Noncanonical
+            | Document::IdentityMismatch
+            | Document::ObjectiveMismatch,
+        )
+        | ProbabilitySourceError::SourceMismatch
+        | ProbabilitySourceError::Source { .. }
+        | ProbabilitySourceError::Packages(_) => "refused",
+        ProbabilitySourceError::Document(
+            Document::Limit { .. }
+            | Document::Cancelled(_)
+            | Document::Accounting(_)
+            | Document::Graph(_)
+            | Document::Build(_),
+        )
+        | ProbabilitySourceError::ProvisionLimit { .. }
+        | ProbabilitySourceError::Compile(_)
+        | ProbabilitySourceError::Subject(_) => "stopped",
     };
     json!({"status": status, "reason": error.to_string()})
 }

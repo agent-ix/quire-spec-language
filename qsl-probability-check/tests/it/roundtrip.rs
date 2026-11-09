@@ -2,9 +2,9 @@
 //! Real EN-5 evidence crosses an operating-system process boundary and is
 //! admitted using production source/model/checker code in the child.
 
+use base64::Engine;
 use std::io::Write;
 use std::process::{Command, Stdio};
-use base64::Engine;
 
 use ix_trace_rs::trace;
 use qsl_analyze::analyze::{analyze_items, exact_probabilistic_item, Engines};
@@ -164,7 +164,11 @@ fn run(request: &Value, arguments: &[&str]) -> (i32, Value) {
         .unwrap();
     let input = serde_json::to_vec(request).unwrap();
     if let Err(error) = child.stdin.take().unwrap().write_all(&input) {
-        assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe, "the bounded child may close its input early");
+        assert_eq!(
+            error.kind(),
+            std::io::ErrorKind::BrokenPipe,
+            "the bounded child may close its input early"
+        );
     }
     let output = child.wait_with_output().unwrap();
     let result = serde_json::from_slice(&output.stdout)
@@ -181,17 +185,26 @@ fn change_certificate(request: &mut Value, change: impl FnOnce(&mut Value)) {
 
 fn alter_keys(document: &mut Value, change: impl Fn(&mut Value)) {
     let alter = |text: &mut Value| {
-        let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(text.as_str().unwrap()).unwrap();
+        let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .decode(text.as_str().unwrap())
+            .unwrap();
         let mut key: Value = serde_json::from_slice(&bytes).unwrap();
         change(&mut key);
-        *text = json!(base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(serde_json::to_vec(&key).unwrap()));
+        *text = json!(base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .encode(serde_json::to_vec(&key).unwrap()));
     };
-    for row in document["values"].as_array_mut().unwrap() { alter(&mut row["state"]); }
-    for row in document["ranking"].as_array_mut().unwrap() { alter(&mut row["state"]); }
-    for target in document["objective"]["targets"].as_array_mut().unwrap() { alter(target); }
+    for row in document["values"].as_array_mut().unwrap() {
+        alter(&mut row["state"]);
+    }
+    for row in document["ranking"].as_array_mut().unwrap() {
+        alter(&mut row["state"]);
+    }
+    for target in document["objective"]["targets"].as_array_mut().unwrap() {
+        alter(target);
+    }
 }
 
-#[trace("FR-282-AC-1", "FR-201-AC-9", "FR-201-AC-11")]
+#[trace("TC-764", "FR-282-AC-1", "FR-282-AC-11", "FR-201-AC-9", "FR-201-AC-11")]
 #[test]
 fn an_actual_en5_proof_is_checked_in_a_fresh_process_using_its_source() {
     let request = proof_request(CLAIM);
@@ -204,7 +217,7 @@ fn an_actual_en5_proof_is_checked_in_a_fresh_process_using_its_source() {
     );
 }
 
-#[trace("FR-282-AC-1", "FR-201-AC-10")]
+#[trace("TC-764", "FR-282-AC-1", "FR-282-AC-2", "FR-282-AC-11", "FR-201-AC-10")]
 #[test]
 fn a_fresh_checker_refuses_altered_values_objectives_identities_ranks_and_provisions() {
     let original = proof_request(CLAIM);
@@ -246,18 +259,30 @@ fn a_fresh_checker_refuses_altered_values_objectives_identities_ranks_and_provis
     changed["source"]["content"] = json!("different admitted source");
     cases.push(changed);
     let mut changed = original.clone();
-    change_certificate(&mut changed, |document| alter_keys(document, |key| { key[1] = Value::Null; }));
+    change_certificate(&mut changed, |document| {
+        alter_keys(document, |key| {
+            key[1] = Value::Null;
+        })
+    });
     cases.push(changed);
     let mut changed = original.clone();
-    change_certificate(&mut changed, |document| alter_keys(document, |key| {
-        key[1]["identity"] = json!("foreign-object");
-    }));
+    change_certificate(&mut changed, |document| {
+        alter_keys(document, |key| {
+            key[1]["identity"] = json!("foreign-object");
+        })
+    });
     cases.push(changed);
     let mut changed = original.clone();
-    change_certificate(&mut changed, |document| alter_keys(document, |key| { key[3] = json!("foreign-monitor"); }));
+    change_certificate(&mut changed, |document| {
+        alter_keys(document, |key| {
+            key[3] = json!("foreign-monitor");
+        })
+    });
     cases.push(changed);
     let mut changed = original.clone();
-    change_certificate(&mut changed, |document| { document["ranking"].as_array_mut().unwrap().remove(0); });
+    change_certificate(&mut changed, |document| {
+        document["ranking"].as_array_mut().unwrap().remove(0);
+    });
     cases.push(changed);
     for request in cases {
         let (code, result) = run(&request, &[]);
@@ -267,11 +292,18 @@ fn a_fresh_checker_refuses_altered_values_objectives_identities_ranks_and_provis
     }
 }
 
-#[trace("FR-201-AC-11", "FR-282-AC-1")]
+#[trace("TC-764", "FR-201-AC-11", "FR-282-AC-1", "FR-282-AC-12")]
 #[test]
 fn child_limits_and_cancellation_produce_no_truth_value() {
     let original = proof_request(CLAIM);
-    for name in ["bytes", "storage_bytes", "states", "edges", "scalar_bits", "expansion"] {
+    for name in [
+        "bytes",
+        "storage_bytes",
+        "states",
+        "edges",
+        "scalar_bits",
+        "expansion",
+    ] {
         let mut request = original.clone();
         request["limits"][name] = json!(0);
         let (code, result) = run(&request, &[]);

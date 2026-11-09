@@ -83,7 +83,7 @@ pub enum ProbabilitySourceError {
     Compile(FrontEndFailure),
     /// Domain package intake failed.
     #[error("probability certificate domain intake failed: {0:?}")]
-    Packages(qsl_semantics::model::normalize::ModelRefusal),
+    Packages(Box<qsl_semantics::model::normalize::ModelRefusal>),
     /// State/model admission failed with its original typed cause.
     #[error("probability certificate subject refused: {0:?}")]
     Subject(AdmissionFailure),
@@ -132,21 +132,34 @@ pub fn check_probability_certificate_source(
     if actual != *request.expected_source {
         return Err(ProbabilitySourceError::SourceMismatch);
     }
-    let document_ceiling = limits.spine.model.intake.input_bytes.max(limits.observation.document_bytes);
+    let document_ceiling = limits
+        .spine
+        .model
+        .intake
+        .input_bytes
+        .max(limits.observation.document_bytes);
     for bytes in request.provision.documents() {
         let actual = u64::try_from(bytes.len()).unwrap_or(u64::MAX);
         if actual > document_ceiling {
-            return Err(ProbabilitySourceError::ProvisionLimit { setting: "provision.input_bytes", bound: document_ceiling, actual });
+            return Err(ProbabilitySourceError::ProvisionLimit {
+                setting: "provision.input_bytes",
+                bound: document_ceiling,
+                actual,
+            });
         }
     }
     for bytes in request.provision.package_documents() {
         let actual = u64::try_from(bytes.len()).unwrap_or(u64::MAX);
         if actual > limits.spine.model.intake.input_bytes {
-            return Err(ProbabilitySourceError::ProvisionLimit { setting: "intake.input_bytes", bound: limits.spine.model.intake.input_bytes, actual });
+            return Err(ProbabilitySourceError::ProvisionLimit {
+                setting: "intake.input_bytes",
+                bound: limits.spine.model.intake.input_bytes,
+                actual,
+            });
         }
     }
     let packages = package_input(request.provision.package_documents())
-        .map_err(ProbabilitySourceError::Packages)?;
+        .map_err(|refusal| ProbabilitySourceError::Packages(Box::new(refusal)))?;
     let parsed = spine::parse(
         &ParseRequest {
             source: &identity,
