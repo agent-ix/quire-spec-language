@@ -234,12 +234,14 @@ fn a_rejected_certificate_never_settles_proved() {
         .unwrap();
     let accepted = settle(&world, "Likely", ModelCheckLimits::default());
     let certificate = &accepted.exact_probabilistic.as_ref().unwrap().certificate;
-    // The altered terminal non-target state has true delivery value zero.
+    // The altered terminal row and its one-attempt predecessor both fail
+    // their one-step equations; the contract reports the first canonical key.
     let expected = certificate
         .values
         .iter()
-        .find(|entry| entry.value == ratio(0, 1))
-        .expect("the two-loss state")
+        .filter(|entry| entry.value == ratio(0, 1) || entry.value == ratio(4, 5))
+        .min_by(|left, right| left.state.cmp(&right.state))
+        .expect("the first failing one-step equation")
         .state
         .clone();
     assert_eq!(
