@@ -129,6 +129,22 @@ product state form `{product_key}` and the second as `{member}`.
   This replaces the positive-value successor proviso below only for this
   expected-reward use; Reach retains its original proviso.
 
+- The checker has one set of conditions and two ways to obtain its subject.
+  The wire form above recompiles the package a `ReplayRequestWire` names. The
+  checked-subject form,
+  `check_claim_exact_reachability(system, claims, item, certificate,
+  max_states, max_edges)` for the reachability objective and its counterparts
+  for the other objectives, takes the `ModelSystem` admitted over a
+  `CheckedPackage` and its `claims`, binds the claim by the item's node, and
+  re-enumerates the product through that system with the checker's own graph
+  code and no `qsl-analyze` code; it decodes no wire and recompiles nothing,
+  as FR-193's replay over a package S4 does not emit (FR-185). A package with
+  a random parameter, a workload or a reward has no emitted form, so
+  `analyze` (FR-281) runs the checked-subject form for every EN-5 item. Both forms apply every condition of this requirement
+  (fairness end components, `LongRun` components, `Lower` ranking, `Upper`,
+  `Exact`, quantile tight actions and expected-reward properness), the
+  rejection table and the budgets; they differ only in how the subject is
+  obtained.
 - The checker SHALL refuse a certificate whose identity differs from the
   item's.
 - It SHALL decode `wire` through FR-098's canonical `ByteProvision` and
@@ -184,6 +200,7 @@ product state form `{product_key}` and the second as `{member}`.
 | FR-201-AC-5 | An `Opt` model whose initial state has the actions `go`, which activates and then sets `M` to 1 with probability `1/4` and to 3 with `3/4`, and `skip`, which never activates. For `quantile 0.5 of (M) >= 3` (`M` is a placeholder for the claim's parenthesised measure) over every scheduler, the `Upper` certificate with `y = 0` at the initial state and `−1/4` after `go` is accepted with side `AtLeast`: only `skip` is tight, and no activated state is reachable through it. The same claim over a variant whose `go` sets `M` to 1 and 3 with `1/2` each, with `y = 0` at both states, is rejected, naming the activated state after `go`, since `go` is tight. | Test (TC-636) |
 | FR-201-AC-7 | Given a `ReplayRequestWire` whose measured encoded size is `B`, when the checker receives caller-configured `ReplayLimits` with `input_bytes = B - 1`, it returns `ReplayRefusal::Request(ReplayRequestRefusal::BoundExceeded(BoundExceeded { bound: B - 1, actual: B }))` before byte-provision lookup or recompile. | Test |
 | FR-201-AC-6 | Rejection rules and loci: AC-1's certificate with `4/5` replaced by `9/10` is rejected `InequalityFails` at the `ProbabilisticProductState` of that first state; AC-2's `LongRun` certificate with the changed bias, `InequalityFails` at the `down` state; AC-3's `Lower` certificate with its ranking omitted, `Malformed` at `CertificateMember("ranking")` before any re-enumeration; AC-2's `Lower` certificate with one named non-target state's rank removed, `RankMissing` at it, and with that rank raised to the rank of its only positive successor, `RankBroken` at it; AC-1's accepted certificate offered for a `>=` threshold above its initial state's value, `ThresholdMissed` at the initial state; AC-5's rejected variant, `InequalityFails` at the activated state after `go`. Each rejection is written with QSpec FR-331's rule spelling at its `{product_key}` or `{member}` form. | Test (TC-1197) |
+| FR-201-AC-8 | Over each of those ACs' own model, the checked-subject form gives the verdict, rule and locus that AC states: AC-1's certificate over §15.4's `Link`, including the `4/5` replaced by `9/10` rejection; AC-2's `LongRun` certificate over §15.3's model and its dyadic `Lower` certificate over §15.1's; AC-3's `FairTerminates` certificates over §15.6's `Coin` model, the fairness-removed one rejected; and AC-5's tight-action cases over its `Opt` model. | Test (TC-636) |
 
 ## Dependencies
 
