@@ -8,6 +8,7 @@ use quire_exact::{
 };
 
 use crate::common::{int, interpreted, jitted, package_of, prepare, unsupported_names, UNLIMITED};
+use ix_trace_rs::trace;
 
 const SOURCE: &str = "\
  type Q = Rational[-10000000000000000000000000, 10000000000000000000000000; 1, 100000];\n\
@@ -171,6 +172,7 @@ fn arguments_of(function: &str) -> Vec<Vec<Value>> {
 
 /// Every function is prepared, and each call returns the interpreter's
 /// outcome, charges and loss records.
+#[trace("TC-1385")]
 #[test]
 fn every_function_agrees_with_the_interpreter_on_value_charges_and_losses() {
     let package = package_of(SOURCE);
@@ -194,6 +196,7 @@ fn every_function_agrees_with_the_interpreter_on_value_charges_and_losses() {
 
 /// A rounding conversion records its loss at the conversion, as the
 /// interpreter does.
+#[trace("TC-1385")]
 #[test]
 fn a_rounded_conversion_returns_the_interpreters_loss_record() {
     let package = package_of(SOURCE);
@@ -209,6 +212,7 @@ fn a_rounded_conversion_returns_the_interpreters_loss_record() {
 
 /// With `work_units` at each value below the interpreter's spend, the JIT
 /// stops at the same charge point.
+#[trace("TC-1385")]
 #[test]
 fn a_denied_charge_stops_the_jit_where_it_stops_the_interpreter() {
     let package = package_of(SOURCE);

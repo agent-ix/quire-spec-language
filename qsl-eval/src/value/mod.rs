@@ -10,6 +10,7 @@
 //! `qsl_package::CheckedPackage` (X-7), re-exported by none of this
 //! crate.
 
+pub mod collections;
 pub mod composite;
 mod expression;
 
@@ -20,6 +21,7 @@ pub use expression::bare_evaluate_selected_protocol_slot;
 pub use expression::collection_write::{Provenance, WrittenCollection};
 pub(crate) use expression::evaluate_over_admitted_environment;
 pub use expression::object_environment_refusal;
+pub use expression::only_population;
 pub use expression::{
     admit_arguments, evaluate_activation_guard, evaluate_activation_guard_at_absent_key,
     evaluate_capture, evaluate_closed_with_frame, evaluate_history_update, evaluate_protocol_slot,

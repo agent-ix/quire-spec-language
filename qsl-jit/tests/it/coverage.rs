@@ -27,7 +27,9 @@ fn the_published_coverage_lists_the_implemented_scalar_subset() {
         assert!(coverage.value_types().contains(&class), "{class:?}");
     }
     assert!(coverage.lists_form("record"));
-    assert!(!coverage.value_types().contains(&CoverageType::Collection));
+    assert!(coverage.value_types().contains(&CoverageType::Collection));
+    assert!(coverage.lists_form("collection"));
+    assert!(!coverage.lists_form("forall") && !coverage.lists_form("exists"));
     assert!(!coverage.lists_type(&ValueType::Timestamp));
     assert!(!coverage.lists_form("case"));
 }

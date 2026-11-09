@@ -11,6 +11,7 @@ use quire_semantic_value::supplied_stop::{SuppliedLimits, SuppliedRun};
 use crate::common::{
     int, interpreted, jitted, name, package_of, prepare, unsupported_names, UNLIMITED,
 };
+use ix_trace_rs::trace;
 
 const SOURCE: &str = "\
  record P { x: Int[0, 9]; y: Boolean; }\n\
@@ -100,6 +101,7 @@ fn arguments_of(package: &qsl_package::CheckedPackage, function: &str) -> Vec<Ve
 /// Every function is prepared, and each call returns the interpreter's
 /// outcome and charges, building records, reading fields (including a
 /// record with an absent optional field) and comparing records.
+#[trace("TC-1385")]
 #[test]
 fn every_function_agrees_with_the_interpreter_on_value_and_charges() {
     let package = package_of(SOURCE);
@@ -123,6 +125,7 @@ fn every_function_agrees_with_the_interpreter_on_value_and_charges() {
 
 /// With `work_units` at each value below the interpreter's spend, the JIT
 /// stops at the same charge point.
+#[trace("TC-1385")]
 #[test]
 fn a_denied_charge_stops_the_jit_where_it_stops_the_interpreter() {
     let package = package_of(SOURCE);
