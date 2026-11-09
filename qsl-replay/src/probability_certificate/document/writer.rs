@@ -408,7 +408,10 @@ mod tests {
         let cap = 1 + 2 * (encoded_key + 2);
         let events = Events {
             document: &document,
-            limits: ProbabilityDocumentLimits { bytes: cap, ..generous },
+            limits: ProbabilityDocumentLimits {
+                bytes: cap,
+                ..generous
+            },
             cancel: &cancel,
             stopped: RefCell::new(None),
             texts: std::cell::Cell::new(0),
@@ -417,8 +420,14 @@ mod tests {
         let mut writer = Writer::new(&mut output, quire_canonical::Limits::new(cap));
         writer.begin_array().unwrap();
         events.key(&key, &mut writer, false).unwrap();
-        assert!(matches!(events.key(&key, &mut writer, true), Err(Error::Limit(quire_canonical::LimitExceeded { required, .. })) if required == cap + 1));
-        assert_eq!(events.texts.get(), 1, "the rejected second transport string was never encoded");
+        assert!(
+            matches!(events.key(&key, &mut writer, true), Err(Error::Limit(quire_canonical::LimitExceeded { required, .. })) if required == cap + 1)
+        );
+        assert_eq!(
+            events.texts.get(),
+            1,
+            "the rejected second transport string was never encoded"
+        );
         for (bytes, storage_bytes, expected) in [
             (0, generous.storage_bytes, ProbabilityDocumentLimit::Bytes),
             (
