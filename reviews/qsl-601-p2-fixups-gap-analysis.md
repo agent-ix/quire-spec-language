@@ -50,5 +50,5 @@ The xtask lanes serve QSL#157's guard.
 
 | FND | outcome | reason |
 | --- | --- | --- |
-| FND-001 | fixed | `outcome_json_does_not_change_when_the_text_rendering_does` renders one outcome as text under two source sets (the text differs) and checks its JSON is the same bytes both times and the document's own. |
-| FND-002 | accepted-no-change | The omitted requirement-record fields stay documented in docs/inspect-render.md and are listed in the PR body; no ticket. |
+| FND-001 | fixed | `outcome_json_does_not_change_when_the_text_rendering_does` renders one outcome under two source sets, asserts the text differs, and asserts the JSON bytes are equal both times and equal to `document.to_bytes()` (qsl-inspect/src/render.rs:1522-1553). |
+| FND-002 | accepted-no-change | The lead decided to ship with the lossy view JSON documented in docs/inspect-render.md, because no spec yet defines a view JSON schema. No ticket was filed. No PR is open for l5/p2-render, so the "PR body" listing could not be checked. |

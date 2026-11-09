@@ -17,7 +17,7 @@ Ticket: QSL-601. Code review with the rust-review lane (rust-style loaded) over
 `qsl-inspect::render` (`render_outcome`, `render_view`, `RenderSources`,
 `Rendered`, `RenderCause`), an `AssignmentView::declaration_order` field, and
 two `OutcomeItem` accessors in `qsl-replay`. Compared with the stale-branch
-the stale-branch commit: dropping `package_id` and the digest fields is forced by the
+implementation, dropping `package_id` and the digest fields is forced by the
 current base types (`PackageView`, `OutcomeView` and `DocumentRef` no longer
 carry them; `SourceIdentity` takes authority and identity), and keying
 `RenderSources` on `RawSourceRef` matches FR-298's "source reference

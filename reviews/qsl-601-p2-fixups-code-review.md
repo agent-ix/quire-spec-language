@@ -45,13 +45,31 @@ healthy change: adding a doctest to a crate.
 | FND-001 | medium | Value test: the guard rule "a declared-empty suite that gains a test fails" (test_suites.rs:26-30) fails on a healthy change. Adding doctests to qsl-analyze and qsl-inspect turned the gate red, and this PR's xtask edit and its new macro exist only to bring the inventory back in line with the tree. A declared-empty suite that runs and passes at least one test hides nothing. Drop that failure, keeping the ignored/filtered-out detection if wanted. One list then serves both workspace lanes, and the macro and `ALL_FEATURES_EMPTY` go away. | xtask/src/test_suites.rs:26-30, 186-298 |
 | FND-002 | low | `macro_rules! workspace_empty` exists only to share a const-array prefix. rustfmt does not format the macro body, which is already mis-indented under `&[`. `$($extra:expr),*` rejects a trailing comma. A per-lane `extra: &[EmptySuite]` slice chained with the shared list at the check site (or FND-001's single list) is plainer Rust. | xtask/src/test_suites.rs:186-278 |
 | FND-003 | low | The macro's doc comment says the default-feature and all-feature runs "listed the same suites". After this PR they differ on `src/lib.rs`, so the claim is stale. The "retained make ci log of the QSL#670 gate ... older head" sentence is provenance prose with no value to a reader. | xtask/src/test_suites.rs:182-185 |
-| FND-004 | low | The committed review records are inconsistent. In reviews/qsl-601-code-review.md, FND-007 and FND-008 have no Dispositions row, although FND-008 is fixed in docs/inspect-render.md (Re-land section removed, `used + n`). FND-007 is only a "Known gap" sentence with no ticket. Both records' `scope` still cite commit e508a53e1, which is SHA recording the repo's CLAUDE.md asks to keep out of review logs. | reviews/qsl-601-code-review.md:6, 54-70; reviews/qsl-601-gap-analysis.md:6 |
+| FND-004 | low | The committed review records are inconsistent. In reviews/qsl-601-code-review.md, FND-007 and FND-008 have no Dispositions row, although FND-008 is fixed in docs/inspect-render.md (Re-land section removed, `used + n`). FND-007 is only a "Known gap" sentence with no ticket. Both records' `scope` still cite commit (commit), which is SHA recording the repo's CLAUDE.md asks to keep out of review logs. | reviews/qsl-601-code-review.md:6, 54-70; reviews/qsl-601-gap-analysis.md:6 |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | high | The code now contradicts NFR-014, which is still in force. NFR-014-AC-5 requires a declared-empty suite's running, passed, failed, ignored, measured and filtered-out counts all to be zero. NFR-014-AC-7 says a declared-empty suite "gaining any registered, passing ... tests refuses as declaration drift". The renamed test `a_declared_suite_that_gains_a_passing_test_is_fine` and the `over_declared` doctest fixture keep `#[trace("TC-950", "NFR-014-AC-5", "NFR-014-AC-7")]` but assert the opposite of both ACs. Either amend NFR-014-AC-5/AC-7 and TC-950 in this PR to the new rule, or restore the rule. | xtask/src/test_suites.rs:1088, 1900-1909, 4118-4127; spec/non-functional/NFR-014-check-native-ci-suite-emptiness.md:78-80 |
+| FND-006 | low | The FND-004 edit garbled a sentence in reviews/qsl-601-code-review.md: "Compared with the stale-branch the stale-branch commit:". | reviews/qsl-601-code-review.md:19-20 |
+| FND-007 | low | The `evaluate` doc comment says a declared-empty suite "may not hide any it does not pass: none ignored, measured or filtered out". The code `passed == 0 && (running != 0 \|\| filtered != 0)` accepts ignored, measured or filtered-out tests whenever at least one passes. | xtask/src/test_suites.rs:1062-1065, 1088 |
 
 ## Dispositions
 
 | FND | outcome | reason |
 | --- | --- | --- |
-| FND-001 | fixed | The declared-empty suite that passes a test is no longer a finding; a declared suite that passes nothing yet registers ignored, measured or filtered-out tests still fails. One `WORKSPACE_EMPTY` list serves both workspace lanes and `ALL_FEATURES_EMPTY` is gone. |
-| FND-002 | fixed | `workspace_empty!` is removed; the list is a plain const slice. |
-| FND-003 | fixed | The stale "same suites" claim and the retained-log provenance are removed from the list's doc comment. |
-| FND-004 | fixed | reviews/qsl-601-code-review.md gains FND-007 (accepted-no-change, listed in the PR body) and FND-008 (fixed) dispositions; commit SHAs are removed from both review records' scope. |
+| FND-001 | still-open | The rule was dropped in code and one list serves both lanes, but NFR-014-AC-5/AC-7 still require it, so the code now violates its spec (FND-005). The fix needs the NFR-014/TC-950 amendment in the same PR, or a revert. |
+| FND-002 | fixed | `workspace_empty!` is removed; `WORKSPACE_EMPTY` is a plain const slice. |
+| FND-003 | fixed | The doc comment now reads "The suites that pass no test in the `make ci` workspace lanes; one list serves both ..."; the provenance prose is gone. |
+| FND-004 | fixed | FND-007 (accepted-no-change) and FND-008 (fixed) have disposition rows; SHAs are removed from both records' scope (garbled sentence filed as FND-006). |
+
+## New dispositions (round 2)
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Option (b): the guard rule is restored exactly as on integration, so NFR-014-AC-5/AC-7 and TC-950 hold. A declared-empty suite that gains any test fails. The tests that assert it are restored. |
+| FND-005 | fixed | The `evaluate` change and the renamed test and `over_declared` fixture are reverted; the guard again requires a declared-empty suite to register nothing. |
+| FND-006 | fixed | The garbled sentence in reviews/qsl-601-code-review.md now reads "Compared with the stale-branch implementation, dropping ...". |
+| FND-007 | fixed | The `evaluate` doc comment is back to the integration text, which matches the restored code. |
+
