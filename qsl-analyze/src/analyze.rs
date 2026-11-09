@@ -36,6 +36,7 @@ mod clause_item;
 mod exact;
 mod items;
 mod request;
+pub(crate) use request::analyze_bound;
 
 pub use request::{
     analyze, ClaimItem, HybridItem, ItemForm, ItemOptions, NegotiatedItem, ProbabilisticItem,

@@ -2,8 +2,8 @@
 //! FR-280's in-process provider boundary over the same admitted analyze request.
 
 use crate::analyze::{
-    analyze, AnalyzeLimits, AnalyzeRefusal, AnalyzeRequest, Engines, ItemCounterexample,
-    NegotiatedItem, SourceProvision, SubjectBinding,
+    analyze_bound, AnalyzeLimits, AnalyzeRefusal, Engines, ItemCounterexample, NegotiatedItem,
+    SourceProvision, SubjectBinding,
 };
 use qsl_foundation::diagnostic::{Code, StageFailure};
 use qsl_package::CheckedPackage;
@@ -31,12 +31,7 @@ pub fn run(
     limits: &AnalyzeLimits,
     cancel: &Cancel,
 ) -> ProviderResults {
-    let request = AnalyzeRequest {
-        binding: binding.clone(),
-        provision: provision.clone(),
-        items: items.to_vec(),
-    };
-    match analyze(package, &request, engines, limits, cancel) {
+    match analyze_bound(package, binding, provision, items, engines, limits, cancel) {
         Ok(staged) => {
             let outcome = staged.into_value();
             ProviderResults {

@@ -224,16 +224,38 @@ pub fn analyze(
     qsl_foundation::diagnostic::Staged<super::AnalyzeOutcome>,
     qsl_foundation::diagnostic::StageFailure<super::AnalyzeRefusal>,
 > {
+    analyze_bound(
+        package,
+        &request.binding,
+        &request.provision,
+        &request.items,
+        engines,
+        limits,
+        cancel,
+    )
+}
+
+pub(crate) fn analyze_bound(
+    package: &qsl_package::CheckedPackage,
+    binding: &super::SubjectBinding<'_>,
+    provision: &SourceProvision,
+    requested: &[NegotiatedItem],
+    engines: &super::Engines,
+    limits: &super::AnalyzeLimits,
+    cancel: &quire_exact::Cancel,
+) -> Result<
+    qsl_foundation::diagnostic::Staged<super::AnalyzeOutcome>,
+    qsl_foundation::diagnostic::StageFailure<super::AnalyzeRefusal>,
+> {
     use qsl_foundation::diagnostic::{StageFailure, Staged};
-    let simulation = simulation(package, &request.binding, limits);
+    let simulation = simulation(package, binding, limits);
     qsl_eval::simulation::model::ModelSystem::new(simulation)
         .map_err(|failure| StageFailure::Refused(super::AnalyzeRefusal::Binding(failure)))?;
-    check_provision(package, &request.provision)
+    check_provision(package, provision)
         .map_err(|failure| StageFailure::Refused(super::AnalyzeRefusal::Provision(failure)))?;
-    let items = request
-        .items
+    let items = requested
         .iter()
-        .map(|item| work(package, &request.binding, &request.provision, item, limits))
+        .map(|item| work(package, binding, provision, item, limits))
         .collect::<Vec<_>>();
     let requirements = items
         .iter()
