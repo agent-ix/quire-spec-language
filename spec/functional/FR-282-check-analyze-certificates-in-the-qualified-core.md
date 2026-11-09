@@ -82,7 +82,7 @@ cause; or a `StageFailure` when the package cannot be recompiled.
   failing obligation.
 - A certificate checker shall return the same verdict for the same
   certificate bytes and byte provision whichever run or frontend calls it.
-- For FR-201's closed reachability and acyclic state-predicate profiles, the fresh-process facade SHALL
+- For FR-201's closed reachability, acyclic state-predicate and acyclic expected-reward profiles, the fresh-process facade SHALL
   admit the bounded source `ByteProvision`, re-check S1 to S3 into a
   `CheckedPackage`, admit the `ModelSystem` and selected claim binding,
   read the certificate document through that profile's strict reader and
@@ -124,6 +124,9 @@ cause; or a `StageFailure` when the package cannot be recompiled.
 | FR-282-AC-13 | A real FR-197 Exact bounded event-position certificate for FR-201-AC-13 is written by analyze and accepted from its canonical document bytes in a fresh qualified-core-only process using the source provision and actual subject/claim binding. The process independently reconstructs formula-monitor keys and terminal closure through qsl-eval, without qsl-analyze or provider linkage. Changing a running monitor horizon, binding or bounded rank prevents acceptance. | Test |
 | FR-282-AC-14 | Analyze writes the exact until and always proof documents of FR-201-AC-15 and AC-16; a fresh executable linking only qualified-core crates accepts their canonical bytes after independent source S1 to S3 admission and actual subject/claim binding, including random/workload packages that S4 cannot emit. It independently derives the original and stopped graphs, predicate labels and terminal-stutter boundary semantics. Changed formula with changed extensional labels, event, optimization, failure/target set, binding or complete key prevents acceptance; a threshold beyond the certified side rejects. Existing reachability/v1 bytes and verdicts are preserved. | Test |
 | FR-282-AC-15 | For AC-14, source/document byte ceilings, state/edge/arithmetic limits, pre-cancellation and cancellation during independent graph expansion preserve typed nonacceptance with the actual named limit, consumption or cancellation. No analyzer/provider linkage, emitted-package bytes, fabricated replay request, solver labels, local state ids or new witness wire are used. | Test |
+
+| FR-282-AC-16 | Analyze emits the real expected-reward proof documents of FR-201-AC-19 to AC-21. A fresh executable linking only qualified-core crates accepts their canonical bytes from the bounded source provision and actual S3 subject/claim binding, including random/workload source packages refused by S4. It independently rederives reward identity, exact unit normalization, semantic actions/draws/costs, original acyclicity and stopped Bellman equations, with no qsl-analyze/provider dependency, emitted-package bytes, fabricated replay request or solver graph. Source admission failures retain their typed refusal; changed claim/reward/target/unit identity, complete key or an unmet threshold prevents acceptance. Changed source costs that falsify the equations reject, while equivalent independently rederived costs may accept. | Test |
+| FR-282-AC-17 | For AC-16, source/document byte ceilings, state/edge/rational/key-representation budgets, pre-cancellation and cancellation during independent reward evaluation/graph expansion preserve the actual typed failure, named limit/consumption or cancellation without acceptance or truth values. Both older probability document profiles retain their canonical bytes and verdicts. | Test |
 
 ## Dependencies
 

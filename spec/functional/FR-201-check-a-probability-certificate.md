@@ -389,6 +389,77 @@ neither SHALL be trusted as a qualitative result supplied by EN-5.
 - The checker's arithmetic and graph algorithms SHALL be code separate from
   EN-5's iterative and linear-algebra methods.
 
+### Closed acyclic expected-reward document profile
+
+For checked `ProbForm::ExpectedReward` source claims `expected accumulate R
+until holds(B) op c` in the untimed infinite-trace profile, the codec SHALL
+admit the separate `"quire.probability-objective/expected-reward/v1"`
+objective. It SHALL have exactly `profile`, `targets`, `reward`,
+`unit`, `optimization` and `fairness`. `reward` SHALL use FR-196's existing
+`[model_node,identifier]` identity: the actual declaring model NodeId and
+checked reward Identifier R. `unit` SHALL use FR-196's actual descriptor:
+null for plain numeric, `["declared",unit_key]` or
+`["compound",unit_form]` for the admitted UnitId. The checker SHALL compare
+both against the checked claim and its normalized comparison unit. Targets are the independently
+rederived complete-key set where B holds in the stopped graph. Optimization
+and empty fairness retain their existing meanings. This profile SHALL NOT
+change the bytes or interpretation of either existing probability profile.
+
+- Admission SHALL require one initial state, at most one actual S3 binding,
+  no clocks or authored fairness, the existing Markov successor restrictions
+  with one post-state per draw, and an acyclic original reachable graph
+  apart from implicit terminal stutter. Establish original-graph acyclicity
+  before stopping at targets, so a cycle hidden beyond B is unsupported.
+  Every reachable original terminal SHALL satisfy B. A non-target terminal,
+  even with zero reward, SHALL make this finite-only profile unsupported:
+  FR-198 assigns positive infinity to nonreachability, rather than the
+  finite cost of a failed prefix. No infinity is encoded as a rational.
+- The source contract is the actual named checked Reward expression over
+  operation parameters, returning integer or quantity, not a Steps/Time enum
+  or an invented expected-elapsed form. The checker SHALL resolve R under
+  the checked model and rederive every step reward through qualified
+  transition/draw evaluation. An operation without that reward contributes
+  zero. Every reachable step reward SHALL be defined, finite and
+  nonnegative; violations preserve the source refusal or explicit unsupported
+  outcome without accepted evidence. The bound and costs SHALL use the
+  checked claim's normalized comparison unit and existing exact conversion
+  graph. FR-196 owns the actual UnitId descriptor (null for plain numeric;
+  declared or compound identity for quantities); no display-name alias or second unit algebra is introduced.
+- Values and ranking SHALL cover exactly the independently rebuilt stopped
+  graph: expand only states where B is false. A target, including the
+  initial state, has value zero before any outgoing cost is charged. At
+  each continuation state s check `V(s) = opt_a sum_e p(e) *
+  (r_R(e) + V(to(e)))` over the actual semantic choices and their draws;
+  workload uses its single resolved distribution. This includes the cost
+  of entering B, and excludes every cost after B. Costs, probabilities and
+  action grouping SHALL be independently rederived, not read from solver
+  values, labels or a trusted objective table. Full FR-187 ScheduledIdentity
+  operation/receiver/non-random arguments and actual typed draws determine
+  actions and edges; local offsets, action ordinals and model-only key
+  aliases SHALL NOT substitute for them. No action/edge transport or formula
+  AST is added to the certificate.
+- Admit exact minimum AtLeast and maximum AtMost proofs, and either bound
+  under a resolved workload; evaluate equality inclusively. Values SHALL
+  be nonnegative exact rationals with no upper bound of 1. Retain the exact
+  document's existing strict canonical JSON, rational, complete binding-bearing
+  key, coverage, identity, ranking and threshold rules. Use full model keys
+  with absent monitor/accumulator/pending null. Check acyclic height ranks
+  exactly: target/terminal zero, each continuation one plus the maximum
+  stopped-successor height. Thus zero-cost continuation is also checked;
+  probability-target value 1 and probability range checks do not apply.
+- Identity conflict SHALL refuse before enumeration. Wrong target, reward
+  or optimization SHALL refuse as objective mismatch. A wrong value or rank
+  SHALL reject at the first full key in canonical order under the existing
+  inequality/rank rules; an otherwise valid document missing the requested
+  threshold SHALL reject ThresholdMissed. Parsing, original/stopped graph
+  expansion, expression evaluation, unit conversion and rational arithmetic
+  SHALL obey caller byte/state/edge/arithmetic limits and cancellation,
+  including metering full key, rank and value representations. No solver,
+  equation solving, iteration or provider dependency is allowed in checking.
+  Cyclic, fair, long-run, timed, multi-post, interval and reward-refutation
+  extensions, including native FR-202 reward witnesses and FR-413 wire,
+  remain outside this profile.
+
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
@@ -411,6 +482,11 @@ neither SHALL be trusted as a qualitative result supplied by EN-5.
 | FR-201-AC-16 | For always, an initial nonterminal P state has choices a and b reaching terminal P with probability 1/4 and 3/4 respectively, otherwise not-P followed by terminal P. Direct-event minimum AtLeast 1/4, maximum AtMost 3/4 and equal-weight resolved workload both sides at 1/2 are accepted. A prefix not-P has value 0 despite later P; initial terminal P has value 1 and initial not-P value 0. Treating the initial P as target, using 3/4 as minimum via an unswapped complement, or changing either boundary value fails checking. The beyond-side thresholds of AC-15 fail here too. | Test |
 | FR-201-AC-17 | Canonical state-predicate documents for AC-15 and AC-16 round-trip byte for byte. Replacing until B by a different checked predicate that changes the derived target set, or always P by one that changes failures, prevents acceptance of the original document under that claim even with internally consistent old rows. Changed event/optimization/targets/failures refuses objective mismatch; a foreign S3 binding or altered complete key is not an alias. Altered value, missing coverage or broken positive-value rank fails its existing check. A reachability/v1 document cannot encode these events by relabelling its targets. | Test |
 | FR-201-AC-18 | AC-15 and AC-16 obey pre-cancellation and byte/state/edge/arithmetic limits throughout independent admission, original/stopped graph construction and checking, with typed stop/cancellation and no accepted truth value. Cycles in the original graph even after an early success, nonempty fairness, clocks, rewards, multiple initials/bindings, nested temporal forms, unresolved workload and non-exact documents remain explicitly unsupported. No state-predicate proof document is treated as a refutation witness. | Test |
+
+| FR-201-AC-19 | For an acyclic two-step source with named integer reward R, initial choices a (cost 1, then cost 2 to B) and b (cost 4 directly to B) have exact minimum 3 and maximum 4. The minimum AtLeast 3 and maximum AtMost 4 documents accept at equality; thresholds 4 and 3 respectively reject ThresholdMissed. An equal-weight resolved workload has value 7/2 and accepts either bound at 7/2. Values above 1 are accepted; a probability-style target value 1 rejects. | Test |
+| FR-201-AC-20 | A draw-dependent authored reward of 2 or 6 with equal probability on an edge entering B gives value 4, including the entry cost. Changing the actual draw/cost association or using a fixed unit-step cost prevents acceptance. Initial B has value 0 even with an enabled positive-cost operation. A reached B absorbs a later positive-cost edge; a reached non-B terminal, including a zero-cost terminal, is explicitly unsupported under FR-198's nonreachability rule. A raw reachable cycle beyond B is unsupported before stopping. | Test |
+| FR-201-AC-21 | A checked quantity reward expressed as 2 ms and 6 ms under equal draws gives 4 ms and accepts a source threshold 0.004 s after exact checked-unit normalization. Wrong reward name/model, target set, optimization, binding or full key prevents acceptance; changing the claimed reward/unit identity with the same numeric magnitudes prevents objective acceptance. Equivalent independently rederived costs under the actual admitted subject remain valid; source changes alone do not imply a staleness rejection. A dimensionally wrong source bound preserves the typing refusal. Noncanonical, duplicate, omitted or oversized keys/rows/rationals refuse or stop under the actual caller control; missing/wrong ranks reject, including a zero-cost live state's wrong height. | Test |
+| FR-201-AC-22 | The checker independently checks analyze's AC-19 to AC-21 exact documents with no qsl-analyze/provider dependency or reused solver graph/cost labels. Negative/undefined reward evaluation, unsupported profile/kind, exhausted graph/arithmetic/representation budgets, pre-cancellation and cancellation during expansion or reward evaluation preserve typed nonacceptance without truth values. Existing reachability/v1 and state-predicate/v1 canonical bytes/verdicts are unchanged. | Test |
 
 ## Dependencies
 

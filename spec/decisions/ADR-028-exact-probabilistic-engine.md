@@ -742,6 +742,26 @@ semantics, cyclic/fair/reward expansion, new FR-202 refutation or QSpec FR-413
 wire is authorized by this proof-only profile. FR-282's existing qualified
 S1 to S3 source facade independently checks these exact document bytes too.
 
+FR-201 additionally specializes QSpec FR-412's existing open objective with
+`quire.probability-objective/expected-reward/v1` for finite untimed acyclic
+infinite-trace expected named-reward proofs. The checked source owns the
+model-scoped reward identifier, expression, declaring model and exact unit
+normalization; the objective carries FR-196's actual model/reward identity,
+unit descriptor and extensional stopped targets without transporting a second reward expression or action wire.
+The independent checker derives actual transition/draw costs and verifies
+reward Bellman equalities with terminal-target zero, including entry cost
+and values greater than one. Original acyclicity and all original terminals
+being targets conservatively exclude FR-198's positive-infinity cases,
+including zero-cost nonreachability. Actual finite nonnegative integer or
+quantity rewards are admitted; steps/time enums and expected elapsed are
+not invented. Full key identity and actual semantic action/draw grouping
+remain authoritative. Exact stopped-height ranks also constrain zero-cost
+states. FR-282 extends its independent source S1 to S3 fresh-process facade
+to these documents, preserving caller metering/cancellation and no analyzer
+linkage. Existing profiles retain their bytes. Reward refutations, cyclic,
+fair, long-run, timed and multi-post extensions and FR-413 wire stay outside
+this proof-only slice.
+
 - Claims over every scheduler, rare-event bounds, thresholds close to the
   true value and long-run availability get proofs and refutations, not
   measurements.
