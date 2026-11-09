@@ -82,6 +82,29 @@ cause; or a `StageFailure` when the package cannot be recompiled.
   failing obligation.
 - A certificate checker shall return the same verdict for the same
   certificate bytes and byte provision whichever run or frontend calls it.
+- For FR-201's closed reachability profile, the fresh-process facade SHALL
+  admit the bounded source `ByteProvision`, re-check S1 to S3 into a
+  `CheckedPackage`, admit the `ModelSystem` and selected claim binding,
+  read the certificate document through that profile's strict reader and
+  invoke the independent core checker with the caller's limits and
+  `&Cancel`. It SHALL extract/reuse the source completeness and provision
+  identity admission in `qsl-replay/src/request.rs`, together with existing
+  content-hash validation wherever required by the provision's source
+  contracts; it SHALL NOT duplicate those semantics or invent a new hash
+  identity. Source and document byte ceilings SHALL be
+  enforced before unbounded allocation or source lookup. The facade SHALL
+  observe cancellation throughout admission, parsing and checking.
+- That facade SHALL expose the checked-source path independently of S4
+  emission. `compile_package` runs S4 and therefore SHALL NOT be required
+  to obtain this package: random/workload packages refused by FR-185 still
+  reach the checker through qualified S1 to S3. The facade SHALL NOT require
+  a fake emitted package or fabricated `ReplayRequestWire` for this path. The existing
+  replay-wire entry retains its own decode/recompile obligations.
+- The fresh checker executable SHALL link no provider or `qsl-analyze`
+  dependency and SHALL use only the certificate document, provision,
+  checked subject/claim binding and caller controls as evidence. It SHALL
+  enforce FR-201's identity and independently rederived objective comparison
+  before accepting the document.
 
 ## Acceptance Criteria
 
@@ -96,6 +119,8 @@ cause; or a `StageFailure` when the package cannot be recompiled.
 | FR-282-AC-8 | The product-closure certificate of a two-copy hyperproperty proved over a finite model is accepted by the product-closure checker; the same certificate with one product-state key removed is rejected with a cause naming the successor it no longer contains. | Test (TC-764) |
 | FR-282-AC-9 | **RETIRED (staleness check withdrawn).** The certificate `package_id` check is deleted. | Test (TC-1141), retired |
 | FR-282-AC-10 | **RETIRED (staleness check withdrawn).** The certificate `package_id` check is deleted. | Test (TC-1141), retired |
+| FR-282-AC-11 | An exact acyclic eventual certificate from a random/workload source package that S4 refuses is written, then accepted in a fresh executable linking only qualified-core crates after bounded source admission and S1 to S3 checking. No emitted-package bytes or fabricated replay request are supplied. The same executable rejects changed values, refuses mismatched identity/objective, and preserves typed source/hash failures. | Test |
+| FR-282-AC-12 | With a source provision or certificate document one byte above its caller ceiling, the fresh checker stops/refuses before reading beyond that ceiling; pre-cancellation and cancellation during graph expansion stop without acceptance or a truth value. Exhausted state, edge and arithmetic budgets retain the actual named setting and consumption. | Test |
 
 ## Dependencies
 
