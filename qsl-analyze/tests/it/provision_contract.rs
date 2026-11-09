@@ -373,12 +373,17 @@ fn a_value_claim_returns_its_native_replayed_assignment() {
         initial: Vec::new(),
         universes: Vec::new(),
     };
-    let claim = OccurrenceKey::declaration(
-        package
-            .graph()
-            .function_identity("Goal")
-            .expect("the function identity"),
-    );
+    let function = package
+        .graph()
+        .function_identity("Goal")
+        .expect("the function identity");
+    let body = package
+        .graph()
+        .semantic_graph()
+        .node(function)
+        .and_then(|node| node.function_body())
+        .expect("the checked Boolean body");
+    let claim = OccurrenceKey::declaration(body);
     let provision = SourceProvision::single(package.graph().source(), source.as_bytes());
     let result = provider::run(
         &package,

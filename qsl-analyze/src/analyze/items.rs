@@ -250,7 +250,7 @@ pub fn statistical_item<'a>(
         index,
         Capability::ProbabilisticSatisfaction,
         Some(DeclarationFamily::Probabilistic),
-        Mode::Bounded,
+        Mode::Unbounded,
         en4::BACKEND_ID,
         move |cancel| {
             let simulation = &request.subject.simulation;
