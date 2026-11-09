@@ -27,11 +27,12 @@ fn claim(scheduler: &str, operator: &str, threshold: &str, horizon: u64) -> Stri
     format!("{PROFILE}probabilistic Likely using bounded on M over (m: M::Msg) under {scheduler} on origin {{ probability {operator} {threshold} [ eventually[0,{horizon}] holds(m.delivered) ] }}\n")
 }
 
-fn request(
+fn compile_source(
     source: &str,
-    snapshot: &[u8],
-    exact: ExactProbLimits,
-) -> (Option<Value>, qsl_replay::TerminalValue) {
+) -> (
+    spine::CheckedUnit,
+    qsl_semantics::model::intake::PackageInput,
+) {
     let identity = SourceIdentity::new("test", "bounded-certificate-source");
     let limits = SpineLimits::default();
     let cancel = Cancel::new();
@@ -60,6 +61,18 @@ fn request(
     )
     .unwrap()
     .into_value();
+    (checked, packages)
+}
+
+fn request(
+    source: &str,
+    snapshot: &[u8],
+    exact: ExactProbLimits,
+) -> (Option<Value>, qsl_replay::TerminalValue) {
+    let identity = SourceIdentity::new("test", "bounded-certificate-source");
+    let limits = SpineLimits::default();
+    let cancel = Cancel::new();
+    let (checked, packages) = compile_source(source);
     let package = checked.package();
     let claim = package
         .graph()
@@ -93,6 +106,17 @@ fn request(
         meter: qsl_replay::AccountingLimits::default().0,
         emit: limits.package.emit(),
     };
+    let system = qsl_eval::simulation::model::ModelSystem::new(simulation.clone()).unwrap();
+    let binding = qsl_replay::claim_binding(&system, claim).unwrap().unwrap();
+    let context =
+        qsl_replay::probabilistic_formula_monitor_context(claim, Some(&binding.reference)).unwrap();
+    assert_eq!(
+        context.binding[0].parameter,
+        *claim.over.as_ref().unwrap().node().unwrap()
+    );
+    assert!(
+        matches!(&context.binding[0].value, qsl_eval::automaton::ContextBindingValue::Instance(key) if key == &binding.instance.key)
+    );
     let engines = Engines::qsl().unwrap();
     let mut records = analyze_items(
         &engines,
@@ -160,6 +184,45 @@ fn document(request: &Value) -> Value {
 
 fn key(text: &Value) -> Value {
     serde_json::from_slice(&URL_SAFE_NO_PAD.decode(text.as_str().unwrap()).unwrap()).unwrap()
+}
+
+#[trace("TC-636", "FR-196-AC-1", "FR-201-AC-14")]
+#[test]
+fn bounded_claim_over_is_a_real_s3_parameter_with_its_actual_model_type() {
+    use qsl_semantics::check::{BodyTerm, LeafTerm, MemberTerm, NodeTag, Owner};
+    let (checked, _) = compile_source(&cyclic_source(2, "0.75"));
+    let package = checked.package();
+    let claim = package
+        .graph()
+        .probabilistic_model()
+        .claim("Likely")
+        .unwrap();
+    let parameter = claim.over.as_ref().unwrap().node().unwrap();
+    let graph = package.graph().semantic_graph();
+    let node = graph
+        .node(parameter.clone())
+        .expect("S3 retains the real parameter node");
+    assert_eq!(node.node_tag(), NodeTag::Value);
+    assert_eq!(node.semantic_form(), "parameter");
+    assert_ne!(parameter, claim.occurrence().unwrap().node());
+    let reference_type = graph.node(node.semantic_type().unwrap()).unwrap();
+    assert_eq!(reference_type.semantic_form(), "reference");
+    let BodyTerm::Aggregate(body) = reference_type.body() else {
+        panic!("reference type has an aggregate body");
+    };
+    let [MemberTerm::Leaf(LeafTerm::Reference { target })] = body.members.as_slice() else {
+        panic!("reference type names its model object");
+    };
+    let object = graph.node(target.admitted().unwrap().clone()).unwrap();
+    let Some(Owner::Model(owner)) = object.owner() else {
+        panic!("object type keeps its actual model owner");
+    };
+    assert_eq!(owner.identity(), "test/link");
+    assert_eq!(owner.node(), "ix://test/link/Msg");
+    let root = graph
+        .node(claim.occurrence().unwrap().node().clone())
+        .unwrap();
+    assert!(matches!(root.body(), BodyTerm::Aggregate(body) if body.members.is_empty()));
 }
 
 fn mutate(request: &Value, change: impl FnOnce(&mut Value)) -> Value {
@@ -369,10 +432,12 @@ fn bounded_wrong_source_and_nonexact_rows_never_produce_an_accepted_document() {
     for (threshold, precision, maximum, incomplete) in
         [("0.5", 64, 64, false), ("0.75", 1, 1, true)]
     {
-        let mut limits = ExactProbLimits::default();
-        limits.max_rational_bits = 1;
-        limits.precision_bits = precision;
-        limits.max_precision_bits = maximum;
+        let limits = ExactProbLimits {
+            max_rational_bits: 1,
+            precision_bits: precision,
+            max_precision_bits: maximum,
+            ..ExactProbLimits::default()
+        };
         let (document, terminal) = request(&cyclic_source(2, threshold), SNAPSHOT, limits);
         assert!(
             document.is_none(),

@@ -619,8 +619,8 @@ mod tp4 {
     };
     use qsl_semantics::check::footprint::{FootprintRefusal, SymbolicLocation};
     use qsl_semantics::check::{CheckedTemporalClause, FormulaNodeId};
+    use quire_exact::ValueType;
     use quire_exact::{Cancel, Meter, Origin, Role};
-    use quire_exact::{Value, ValueType};
 
     use super::{World, FORALL_EXISTS};
 

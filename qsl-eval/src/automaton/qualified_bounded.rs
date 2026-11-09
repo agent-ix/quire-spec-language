@@ -35,6 +35,16 @@ pub struct QualifiedBoundedMonitor {
 }
 
 impl QualifiedBoundedMonitor {
+    /// Whether this formula and profile have the qualified single-event
+    /// representation. Binding and occurrence admission remain contextual.
+    pub fn supports(formula: &CheckedFormula, profile: TemporalProfile) -> bool {
+        profile == TemporalProfile::EventPositionFalseExtension
+            && matches!(
+                super::bounded::bounded_formula_shape(formula),
+                Some((BoundedKind::Eventually, _, _))
+            )
+    }
+
     /// Retain a producer's already reached monitor without copying its
     /// cache. Its complete translation identity must match the checked
     /// formula before any local handle can be projected into a key.

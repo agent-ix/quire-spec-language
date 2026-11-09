@@ -220,3 +220,47 @@ fn qualified_bounded_monitor_closes_a_full_u64_horizon_without_stutter_states() 
         "terminal closure creates no stutter states"
     );
 }
+
+#[trace("TC-525", "FR-338-AC-6", "FR-201-AC-14")]
+#[test]
+fn over_instance_keys_and_ordinary_reference_arguments_have_distinct_context_forms() {
+    use crate::support::ids::{effective_id, node_key, universe_id};
+    use quire_exact::{ObjectId, ObjectReference};
+    let fixture = fixture(
+        EVENT,
+        "c: Counter",
+        "on origin",
+        "eventually[0,2] holds(true)",
+    );
+    let parameter = node_key([0xcd]);
+    let reference = ObjectReference::new(
+        universe_id([1]),
+        effective_id([2]),
+        ObjectId::new("c").unwrap(),
+    );
+    let mut instance = context(&fixture.clause, 0);
+    instance.binding.push(ContextBinding::instance(
+        parameter.clone(),
+        reference.object().as_str(),
+    ));
+    let mut ordinary = context(&fixture.clause, 0);
+    ordinary.binding.push(ContextBinding::value(
+        parameter,
+        Value::Reference(reference),
+    ));
+    let instance = BoundedTranslation::clause(&fixture.clause, &instance).unwrap();
+    let ordinary = BoundedTranslation::clause(&fixture.clause, &ordinary).unwrap();
+    let instance_key = instance.key(instance.start(false)).unwrap();
+    let ordinary_key = ordinary.key(ordinary.start(false)).unwrap();
+    assert_ne!(instance_key, ordinary_key);
+    let instance_value: serde_json::Value =
+        serde_json::from_slice(instance_key.as_bytes()).unwrap();
+    let ordinary_value: serde_json::Value =
+        serde_json::from_slice(ordinary_key.as_bytes()).unwrap();
+    assert_eq!(
+        instance_value[1][3][0][1],
+        serde_json::json!(["instance", "c"])
+    );
+    assert_eq!(ordinary_value[1][3][0][1]["type"], "reference");
+    assert_eq!(ordinary_value[1][3][0][1]["identity"], "c");
+}

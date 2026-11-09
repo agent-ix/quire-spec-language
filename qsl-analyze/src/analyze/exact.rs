@@ -250,6 +250,16 @@ fn run(
     if !claim.fairness.is_empty() {
         return not_yet();
     }
+    if let Some(formula) = bounded_formula {
+        let Some(profile) =
+            qsl_semantics::check::TemporalProfile::from_identity(claim.profile.identity())
+        else {
+            return not_yet();
+        };
+        if !qsl_eval::automaton::QualifiedBoundedMonitor::supports(formula.formula(), profile) {
+            return not_yet();
+        }
+    }
     let (objective, extremum) = match (&claim.scheduler, bound) {
         (ProbScheduler::Every, Bound::AtLeast(_)) => (UnboundedObjective::Min, Some(Extremum::Min)),
         (ProbScheduler::Every, Bound::AtMost(_)) => (UnboundedObjective::Max, Some(Extremum::Max)),
@@ -265,6 +275,14 @@ fn run(
     let [(_, _, start)] = product.initial.as_slice() else {
         return not_yet();
     };
+    if bounded_formula.is_some()
+        && product
+            .states
+            .iter()
+            .any(|state| state.pending.is_some() || state.accumulator.is_some())
+    {
+        return not_yet();
+    }
     let target: Vec<bool> = product
         .labels
         .iter()

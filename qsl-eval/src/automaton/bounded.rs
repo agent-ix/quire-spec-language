@@ -405,7 +405,9 @@ pub fn bounded_shape(clause: &CheckedTemporalClause) -> Option<(BoundedKind, u64
     bounded_formula_shape(clause.formula())
 }
 
-fn bounded_formula_shape(formula: &CheckedFormula) -> Option<(BoundedKind, u64, FormulaNodeId)> {
+pub(super) fn bounded_formula_shape(
+    formula: &CheckedFormula,
+) -> Option<(BoundedKind, u64, FormulaNodeId)> {
     let FormulaNode::Unary {
         operator,
         interval: Some(CheckedInterval::Steps(interval)),
