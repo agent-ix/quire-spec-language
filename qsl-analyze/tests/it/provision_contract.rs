@@ -613,8 +613,8 @@ fn exact_refutation_retains_the_reproduced_path_set_through_both_entries() {
     let system = qsl_eval::simulation::model::ModelSystem::new(world.subject().simulation)
         .expect("the checked subject admits");
     let expected_mass = quire_exact::Rational::new(
-        quire_exact::Integer::from(1),
-        quire_exact::Integer::from(25),
+        quire_exact::Integer::from(1_i64),
+        quire_exact::Integer::from(25_i64),
     )
     .unwrap();
     for counterexamples in [&outcome.counterexamples, &served.counterexamples] {
