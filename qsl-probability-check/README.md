@@ -42,7 +42,13 @@ ceilings). Unspecified stage/accounting settings retain their published defaults
 
 This source facade admits one native unit without library imports, one initial
 state and at most one claim binding. The closed document profile covers exact,
-untimed, acyclic, unbounded eventual reachability with empty fairness. The
+untimed, acyclic, unbounded eventual reachability with empty fairness, plus
+infinite-trace `holds(A) until holds(B)` and `always holds(P)` over checked
+state predicates. The latter uses the separate state-predicate/v1 objective:
+its event, success keys and absorbing failure keys are independently derived.
+The checker establishes original model acyclicity before stopping at boundaries;
+terminal stutter preserves the last state predicates. These additions admit
+proof documents only; native until/always refutations remain unsupported. The
 checker independently derives the target keys and the checked claim's
 minimum, maximum or resolved-workload operator, verifies complete key/value/rank
 coverage, positive-value rank progress, Bellman equality and the threshold.

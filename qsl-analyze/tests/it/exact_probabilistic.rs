@@ -2640,3 +2640,95 @@ fn an_mdp_undefined_path_names_the_post_state_taken_at_each_draw() {
     assert!(plain.states.iter().any(|key| key.model == resolved.model));
     assert_eq!(step.target, *resolved);
 }
+
+#[trace("TC-633", "FR-198-AC-3", "FR-201-AC-15")]
+#[test]
+fn until_minimum_retains_absorbing_failure_in_qualitative_analysis() {
+    use qsl_analyze::exact_probabilistic::{decide_until, ExtRational};
+    let world = World::new(&prob_world::link(
+        "probabilistic FirstSend using inf on M over (m: M::Msg) under every scheduler on origin \
+         { probability >= 0.5 [ holds(m.attempts = 0) until holds(m.delivered) ] }",
+    ));
+    let product = built(&world, "FirstSend");
+    let from = product
+        .labels
+        .iter()
+        .map(|labels| labels[0])
+        .collect::<Vec<_>>();
+    let target = product
+        .labels
+        .iter()
+        .map(|labels| labels[1])
+        .collect::<Vec<_>>();
+    for (objective, numerator, denominator) in [
+        (UnboundedObjective::Min, 4, 5),
+        (UnboundedObjective::Max, 9, 10),
+    ] {
+        let result = decide_until(
+            &product,
+            &from,
+            &target,
+            objective,
+            &ExactProbLimits::default(),
+        )
+        .unwrap();
+        assert_eq!(
+            result.values[start(&product).index()],
+            ExtRational::Finite(ratio(numerator, denominator))
+        );
+        for (index, labels) in product.labels.iter().enumerate() {
+            if !labels[0] && !labels[1] {
+                assert_eq!(result.values[index], ExtRational::Finite(ratio(0, 1)));
+            }
+        }
+    }
+}
+
+#[trace("TC-633", "FR-198-AC-3")]
+#[test]
+fn reachability_avoidance_cannot_cross_an_already_reached_target() {
+    use qsl_analyze::exact_probabilistic::{decide_reachability, ExtRational};
+    let states = (0..3)
+        .map(|id| ProbKey {
+            binding: None,
+            model: vec![id],
+            monitor: None,
+            accumulator: None,
+            pending: None,
+        })
+        .collect();
+    let edge = |from, to| ProbEdge {
+        from: ProbStateId(from),
+        to: ProbStateId(to),
+        choice: ProductAction::TerminalStutter,
+        action: None,
+        draw: None,
+        probability: ratio(1, 1),
+        rewards: Vec::new(),
+    };
+    let product = ProbProduct {
+        states,
+        kind: ProductKind::Mdp,
+        edges: vec![edge(0, 1), edge(1, 2), edge(2, 2)],
+        initial: Vec::new(),
+        decided: Vec::new(),
+        labels: Vec::new(),
+        fairness_operations: Vec::new(),
+        fairness: Vec::new(),
+    };
+    let result = decide_reachability(
+        &product,
+        &[false, true, false],
+        UnboundedObjective::Min,
+        &ExactProbLimits::default(),
+    )
+    .unwrap();
+    assert_eq!(
+        result.values,
+        vec![
+            ExtRational::Finite(ratio(1, 1)),
+            ExtRational::Finite(ratio(1, 1)),
+            ExtRational::Finite(ratio(0, 1))
+        ]
+    );
+}

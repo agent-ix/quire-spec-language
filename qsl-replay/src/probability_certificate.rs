@@ -450,7 +450,7 @@ fn enumerate_model_graph<P: StatePredicate>(
     };
     enumerate_model_graph_with_keys(
         system,
-        target,
+        Some(target),
         binding,
         workload,
         max_states,
@@ -469,7 +469,7 @@ fn enumerate_model_graph<P: StatePredicate>(
 #[allow(clippy::too_many_arguments)]
 fn enumerate_model_graph_with_keys<P: StatePredicate>(
     system: &ModelSystem<'_>,
-    target: &P,
+    target: Option<&P>,
     binding: Option<&ObjectReference>,
     workload: Option<&Workload>,
     max_states: usize,
@@ -503,23 +503,27 @@ fn enumerate_model_graph_with_keys<P: StatePredicate>(
     while let Some((key, state)) = pending.pop_front() {
         poll_cancel(cancel)?;
         visit(&key, &state)?;
-        let reading = system
-            .state_predicates(&state, &[(target, binding)])
-            .map_err(|stop| {
-                failure(crate::ExactProbBuildIssue::Expansion(stop));
-                ExactProbabilityGraphError::ExpansionRefused
-            })?
-            .into_iter()
-            .next()
-            .ok_or(ExactProbabilityGraphError::ExpansionRefused)?;
-        let terminal = match reading {
-            qsl_eval::simulation::model::PredicateReading::True => Some(true),
-            qsl_eval::simulation::model::PredicateReading::False => None,
-            qsl_eval::simulation::model::PredicateReading::Refused(outcome) => {
-                failure(crate::ExactProbBuildIssue::Predicate(outcome));
-                return Err(ExactProbabilityGraphError::ExpansionRefused);
+        let terminal = if let Some(target) = target {
+            let reading = system
+                .state_predicates(&state, &[(target, binding)])
+                .map_err(|stop| {
+                    failure(crate::ExactProbBuildIssue::Expansion(stop));
+                    ExactProbabilityGraphError::ExpansionRefused
+                })?
+                .into_iter()
+                .next()
+                .ok_or(ExactProbabilityGraphError::ExpansionRefused)?;
+            match reading {
+                qsl_eval::simulation::model::PredicateReading::True => Some(true),
+                qsl_eval::simulation::model::PredicateReading::False => None,
+                qsl_eval::simulation::model::PredicateReading::Refused(outcome) => {
+                    failure(crate::ExactProbBuildIssue::Predicate(outcome));
+                    return Err(ExactProbabilityGraphError::ExpansionRefused);
+                }
+                _ => return Err(ExactProbabilityGraphError::ExpansionRefused),
             }
-            _ => return Err(ExactProbabilityGraphError::ExpansionRefused),
+        } else {
+            None
         };
         let choices = if terminal.is_some() && stop_at_target {
             Vec::new()

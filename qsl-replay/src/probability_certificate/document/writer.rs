@@ -264,6 +264,9 @@ fn encode(
     cancel: &Cancel,
 ) -> Result<Vec<u8>, ProbabilityDocumentError> {
     poll(cancel)?;
+    if document.event.is_none() && !document.failures.is_empty() {
+        return Err(ProbabilityDocumentError::Malformed);
+    }
     let rows = document
         .targets
         .len()

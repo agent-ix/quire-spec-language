@@ -454,6 +454,7 @@ fn read_document(
     let objective = root.get("objective");
     let outside_profile = matches!(root.get("kind").map(|node| node.node()), Some(quire_canonical::Node::String(kind)) if kind != "exact")
         || matches!(objective.and_then(|node| node.get("profile")).map(|node| node.node()), Some(quire_canonical::Node::String(profile)) if profile != PROFILE && profile != STATE_PROFILE)
+        || matches!(objective.and_then(|node| node.get("event")).map(|node| node.node()), Some(quire_canonical::Node::String(event)) if !matches!(event, "until" | "always"))
         || matches!(objective.and_then(|node| node.get("optimization")).map(|node| node.node()), Some(quire_canonical::Node::String(operator)) if !matches!(operator, "minimum" | "maximum" | "workload"))
         || match objective
             .and_then(|node| node.get("fairness"))
@@ -813,7 +814,7 @@ pub fn probability_certificate_document(
         values: certificate
             .values
             .iter()
-            .filter(|row| graph.states.contains_key(&row.state))
+            .filter(|row| event.is_none() || graph.states.contains_key(&row.state))
             .cloned()
             .collect(),
         ranking: ranks.into_iter().collect(),

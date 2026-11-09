@@ -12,6 +12,11 @@ fn source(event: &str, scheduler: &str, operator: &str, threshold: &str) -> Stri
     let model = SOURCE
         .replace("true: 1, false: 9", "true: 3, false: 1")
         .replace("true: 1, false: 4", "true: 1, false: 3");
+    let threshold = match threshold {
+        "1" => "0.999",
+        "0" => "0.001",
+        other => other,
+    };
     format!("{model}probabilistic Likely using inf on M over (m: M::Msg) under {scheduler} on origin {{ probability {operator} {threshold} [ {event} ] }}\n")
 }
 
@@ -33,11 +38,41 @@ fn until_and_always_check_exact_direct_minimum_maximum_and_workload_values() {
             ("Even", ">=", "0.5", "1", "2"),
             ("Even", "<=", "0.5", "1", "2"),
         ] {
-            let request = proof(&source(event, scheduler, operator, threshold), SNAPSHOT);
+            let text = source(event, scheduler, operator, threshold);
+            let request = proof(&text, SNAPSHOT);
             let (code, output) = run(&request);
             assert_eq!(code, 0, "{event} {scheduler}: {output}");
             assert_eq!(output["value"], json!({"numerator": n,"denominator": d}));
+            let mut stronger = request.clone();
+            let beyond = match (scheduler, operator) {
+                ("every scheduler", ">=") => "rational(1,3)",
+                ("every scheduler", "<=") => "rational(2,3)",
+                (_, ">=") => "rational(3,5)",
+                _ => "rational(2,5)",
+            };
+            replace_source(&mut stronger, &text.replace(threshold, beyond));
+            let (code, rejected) = run(&stronger);
+            assert_eq!(code, 1, "{rejected}");
+            assert_eq!(rejected["rule"], "threshold-missed");
             let doc = document(&request);
+            assert_eq!(doc["values"].as_array().unwrap().len(), 3);
+            assert_eq!(doc["objective"]["targets"].as_array().unwrap().len(), 1);
+            assert_eq!(doc["objective"]["failures"].as_array().unwrap().len(), 1);
+            let bytes = request["certificate"].as_str().unwrap().as_bytes();
+            let limits = qsl_replay::ProbabilityDocumentLimits {
+                bytes: 1_000_000,
+                storage_bytes: 8_000_000,
+                states: 100,
+                edges: 1000,
+                scalar_bits: 128,
+                accounting: qsl_replay::AccountingLimits::default().0,
+            };
+            let cancel = quire_exact::Cancel::new();
+            let decoded = qsl_replay::read_probability_certificate(bytes, limits, &cancel).unwrap();
+            assert_eq!(
+                qsl_replay::write_probability_certificate(&decoded, limits, &cancel).unwrap(),
+                bytes
+            );
             assert_eq!(
                 doc["objective"]["profile"],
                 "quire.probability-objective/state-predicate/v1"
@@ -127,6 +162,13 @@ fn altered_objective_binding_keys_values_ranks_and_threshold_do_not_prove() {
     for changed in [
         mutate(&request, |doc| doc["objective"]["event"] = json!("always")),
         mutate(&request, |doc| doc["objective"]["targets"] = json!([])),
+        mutate(&request, |doc| doc["objective"]["failures"] = json!([])),
+        mutate(&request, |doc| {
+            doc["values"].as_array_mut().unwrap().pop();
+        }),
+        mutate(&request, |doc| {
+            alter_keys(doc, |key| key[3] = json!(["foreign-monitor"]))
+        }),
         mutate(&request, |doc| {
             doc["objective"]["failures"] = doc["objective"]["targets"].clone()
         }),
@@ -180,5 +222,115 @@ fn failed_state_predicate_bounds_have_no_old_eventual_refutation() {
             format!("{settlement:?}").contains("Unsupported"),
             "{settlement:?}"
         );
+    }
+}
+
+#[trace("TC-636", "FR-201-AC-18", "FR-282-AC-15")]
+#[test]
+fn original_cycles_remain_unsupported_even_behind_initial_success_or_failure() {
+    for event in [
+        "holds(false) until holds(m.attempts = 0)",
+        "always holds(false)",
+    ] {
+        let text = source(
+            event,
+            "every scheduler",
+            if event.starts_with("always") {
+                "<="
+            } else {
+                ">="
+            },
+            if event.starts_with("always") {
+                "0"
+            } else {
+                "1"
+            },
+        );
+        let mut request = proof(&text, SNAPSHOT);
+        let cyclic = text
+            .replace("self.attempts < 2", "true")
+            .replace(
+                "self.attempts - pre(self.attempts) = 1",
+                "self.attempts = pre(self.attempts)",
+            )
+            .replace(
+                "terminal Stop using v on M when { self.delivered or self.attempts = 2 };",
+                "",
+            );
+        replace_source(&mut request, &cyclic);
+        let (code, output) = run(&request);
+        assert_ne!(code, 0);
+        assert_eq!(output["status"], "unsupported", "{output}");
+    }
+}
+
+#[trace("TC-636", "FR-201-AC-18", "FR-282-AC-15")]
+#[test]
+fn caller_limits_and_cancellation_never_return_truth_or_evidence() {
+    let original = proof(
+        &source(
+            "holds(false) until holds(m.attempts = 0)",
+            "every scheduler",
+            ">=",
+            "1",
+        ),
+        SNAPSHOT,
+    );
+    for name in [
+        "bytes",
+        "storage_bytes",
+        "states",
+        "edges",
+        "scalar_bits",
+        "expansion",
+    ] {
+        let mut limited = original.clone();
+        limited["limits"][name] = json!(0);
+        let (code, output) = run(&limited);
+        assert_ne!(code, 0, "{name}: {output}");
+        assert!(output.get("value").is_none(), "{name}: {output}");
+        assert!(output.get("certificate").is_none());
+    }
+    let mut original_graph = original.clone();
+    original_graph["limits"]["states"] = json!(1);
+    assert_ne!(
+        run(&original_graph).0,
+        0,
+        "initial absorption cannot bypass original graph limits"
+    );
+    let mut arithmetic = original.clone();
+    arithmetic["limits"]["stages"]["accounting.work_units"] = json!(0);
+    assert_ne!(run(&arithmetic).0, 0);
+    let (code, output) = super::bounded::run_with(&original, &["--cancel"]);
+    assert_ne!(code, 0);
+    assert!(output.get("value").is_none());
+}
+
+#[trace("TC-636", "FR-201-AC-15", "FR-201-AC-16")]
+#[test]
+fn initial_terminal_predicates_use_infinite_stutter() {
+    let mut snapshot: Value = serde_json::from_slice(SNAPSHOT).unwrap();
+    snapshot["populations"][0]["objects"][0]["fields"]["attempts"]["integer"] = json!("2");
+    let snapshot = serde_json::to_vec(&snapshot).unwrap();
+    for (event, operator, threshold, expected) in [
+        ("always holds(not m.delivered)", ">=", "1", "1"),
+        (
+            "holds(not m.delivered) until holds(m.delivered)",
+            "<=",
+            "0",
+            "0",
+        ),
+    ] {
+        let request = proof(
+            &source(event, "every scheduler", operator, threshold),
+            &snapshot,
+        );
+        let (code, output) = run(&request);
+        assert_eq!(code, 0, "{output}");
+        assert_eq!(
+            output["value"],
+            json!({"numerator":expected,"denominator":"1"})
+        );
+        assert_eq!(document(&request)["values"].as_array().unwrap().len(), 1);
     }
 }

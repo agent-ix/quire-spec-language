@@ -26,8 +26,7 @@ pub(super) fn enumerate(
         ReachTarget::Always(predicate) => (ProbabilityStateEvent::Always, predicate, None),
         ReachTarget::Eventually(_) => return Err(ProbabilityDocumentError::Unsupported),
     };
-    let mut from_labels = BTreeMap::new();
-    let mut predicate_error = None;
+    let mut model_states = BTreeMap::new();
     let key_error = std::cell::RefCell::new(None);
     let key_of = |state: &ModelSimState| {
         let (bytes, _) = system
@@ -49,7 +48,7 @@ pub(super) fn enumerate(
     };
     let mut graph = enumerate_model_graph_with_keys(
         system,
-        predicate,
+        None::<&qsl_semantics::check::CheckedPredicate>,
         binding,
         workload,
         limits.states,
@@ -58,28 +57,7 @@ pub(super) fn enumerate(
         false,
         &key_of,
         &mut |key, state| {
-            if let Some(from) = from {
-                let reading = system
-                    .state_predicates(state, &[(from, binding)])
-                    .map_err(crate::ExactProbBuildIssue::Expansion)
-                    .and_then(|readings| match readings.into_iter().next() {
-                        Some(PredicateReading::True) => Ok(true),
-                        Some(PredicateReading::False) => Ok(false),
-                        Some(PredicateReading::Refused(outcome)) => {
-                            Err(crate::ExactProbBuildIssue::Predicate(outcome))
-                        }
-                        _ => Err(crate::ExactProbBuildIssue::UndecidedSuccessor),
-                    });
-                match reading {
-                    Ok(label) => {
-                        from_labels.insert(key.clone(), label);
-                    }
-                    Err(error) => {
-                        predicate_error = Some(error);
-                        return Err(ExactProbabilityGraphError::ExpansionRefused);
-                    }
-                }
-            }
+            model_states.insert(key.clone(), state.clone());
             Ok(())
         },
         failure,
@@ -87,9 +65,6 @@ pub(super) fn enumerate(
     .map_err(|error| {
         if let Some(error) = key_error.borrow_mut().take() {
             return error;
-        }
-        if let Some(error) = predicate_error.take() {
-            return ProbabilityDocumentError::Build(Box::new(error));
         }
         match error {
             ExactProbabilityGraphError::LimitReached => ProbabilityDocumentError::Limit {
@@ -119,16 +94,32 @@ pub(super) fn enumerate(
             .states
             .remove(&key)
             .ok_or(ProbabilityDocumentError::Malformed)?;
-        let predicate = state.terminal == Some(true);
+        let model = model_states
+            .remove(&key)
+            .ok_or(ProbabilityDocumentError::Malformed)?;
+        let read = |predicate| -> Result<bool, ProbabilityDocumentError> {
+            let readings = system
+                .state_predicates(&model, &[(predicate, binding)])
+                .map_err(|error| {
+                    ProbabilityDocumentError::Build(Box::new(
+                        crate::ExactProbBuildIssue::Expansion(error),
+                    ))
+                })?;
+            match readings.into_iter().next() {
+                Some(PredicateReading::True) => Ok(true),
+                Some(PredicateReading::False) => Ok(false),
+                Some(PredicateReading::Refused(outcome)) => Err(ProbabilityDocumentError::Build(
+                    Box::new(crate::ExactProbBuildIssue::Predicate(outcome)),
+                )),
+                _ => Err(ExactProbabilityGraphError::ExpansionRefused.into()),
+            }
+        };
+        let predicate = read(predicate)?;
         let terminal = state.choices.is_empty();
         let (success, failure) = match event {
             ProbabilityStateEvent::Until => (
                 predicate,
-                !predicate
-                    && !from_labels
-                        .get(&key)
-                        .copied()
-                        .ok_or(ProbabilityDocumentError::Malformed)?,
+                !predicate && !read(from.ok_or(ProbabilityDocumentError::Malformed)?)?,
             ),
             ProbabilityStateEvent::Always => (predicate && terminal, !predicate),
         };
