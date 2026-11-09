@@ -328,3 +328,98 @@ fn source_completeness_is_checked_even_when_the_package_cannot_emit() {
         StageFailure::Refused(AnalyzeRefusal::Provision(_))
     ));
 }
+
+fn plain(claim: OccurrenceKey, kind: Capability, backend: &str) -> NegotiatedItem {
+    let candidate = Candidate::new(BackendId::new(backend));
+    NegotiatedItem {
+        item: ClaimItem {
+            request_index: RequestIndex::new(0),
+            claim,
+            kind,
+            extent: ExtentClassification::Bounded,
+            backend: None,
+            candidates: vec![candidate.clone()],
+            options: ItemOptions::default(),
+            form: None,
+        },
+        disposition: Disposition::Supported(candidate),
+        diagnostic: None,
+    }
+}
+
+/// Generalized items retain the existing value arm's native replay token;
+/// they do not reinterpret a value claim as a probabilistic request.
+#[trace("TC-761", "FR-280-AC-2")]
+#[test]
+fn a_value_claim_returns_its_native_replayed_assignment() {
+    let declaration = "function Goal using v(): Boolean pure { false }";
+    let package = crate::value_validity::package_of(declaration);
+    let source = format!("language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\";\n{declaration}\n");
+    let packages = qsl_semantics::model::intake::package_input(std::iter::empty::<&[u8]>())
+        .expect("empty package input");
+    let snapshots = qsl_semantics::model::observation::DocumentProvision::default();
+    let binding = qsl_analyze::analyze::SubjectBinding {
+        packages: &packages,
+        snapshots: &snapshots,
+        initial: Vec::new(),
+        universes: Vec::new(),
+    };
+    let claim = OccurrenceKey::declaration(
+        package
+            .graph()
+            .function_identity("Goal")
+            .expect("the function identity"),
+    );
+    let provision = SourceProvision::single(package.graph().source(), source.as_bytes());
+    let result = provider::run(
+        &package,
+        &binding,
+        &provision,
+        &[plain(
+            claim,
+            Capability::ValueValidity,
+            qsl_analyze::value_check::manifest::BACKEND_ID,
+        )],
+        &Engines::qsl().expect("the manifests register"),
+        &AnalyzeLimits::unbounded(),
+        &Cancel::new(),
+    );
+    assert_eq!(result.records[0].value(), &TerminalValue::Refuted);
+    assert_eq!(result.counterexamples.len(), 1);
+    let Counterexample::Assignments(assignment) = &result.counterexamples[0].counterexample else {
+        panic!("native value assignment")
+    };
+    assert!(assignment.parameters.is_empty());
+    assert!(assignment.reproduced.assignment().is_empty());
+}
+
+#[trace("TC-761", "FR-280-AC-2")]
+#[test]
+fn a_contract_claim_reaches_the_existing_contract_arm() {
+    let world = counter();
+    let clause = world
+        .package
+        .graph()
+        .state_clause("CanInc")
+        .expect("the precondition is checked");
+    let claim = OccurrenceKey::new(clause.identity(), clause.claim().clone());
+    let result = provider::run(
+        &world.package,
+        &world.binding(&["c"]),
+        &world.provision,
+        &[plain(
+            claim,
+            Capability::OperationContract,
+            qsl_analyze::contract_check::manifest::BACKEND_ID,
+        )],
+        &Engines::qsl().expect("the manifests register"),
+        &AnalyzeLimits::unbounded(),
+        &Cancel::new(),
+    );
+    assert!(
+        matches!(result.records[0].value(), TerminalValue::Proved { .. }),
+        "{:?}",
+        result.records[0]
+    );
+    assert!(result.counterexamples.is_empty());
+}
