@@ -34,3 +34,10 @@ Both entries use the existing `EmptySuite` struct literal form and reuse `NO_DOC
 
 - `cargo fmt -p xtask -- --check` — exit 0.
 - `cargo test --locked -p xtask --lib every_lane_names_each_empty_suite_once` — 1 passed.
+
+## Dispositions
+
+| FND | Disposition |
+| --- | --- |
+| FND-001 | Fixed: the entry moved beside the other binary Tests entries. |
+| FND-002 | Fixed: the qsl-command doctest entry moved ahead of qsl-foundation. |

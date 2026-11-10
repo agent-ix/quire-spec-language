@@ -34,3 +34,10 @@ Ticket: QSL-1855. Code-review lane for branch `fix-empty-suites` at head `715b60
 - `CARGO_TARGET_DIR=target/ci-default-features cargo test --locked -p qsl-probability-check --bin qsl-probability-check` — `running 0 tests`, `0 filtered out`.
 - `cargo test --locked -p xtask --lib every_lane_names_each_empty_suite_once` — 1 passed (no duplicate ids, non-empty reasons).
 - The full `cargo xtask test-suites default-workspace` lane was not re-run in this review.
+
+## Dispositions
+
+| FND | Disposition |
+| --- | --- |
+| FND-001 | Fixed: the entry moved beside the other binary Tests entries. |
+| FND-002 | Fixed: the qsl-command doctest entry moved ahead of qsl-foundation. |
