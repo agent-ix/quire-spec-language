@@ -1953,9 +1953,12 @@ fn raw_model_key_preserves_legacy_reference_enum_and_extent_vectors() {
         first, second,
         "object document order must not change the key"
     );
-    println!(
-        "LEGACY_ENUM_KEY={}",
-        String::from_utf8(first.0).expect("UTF-8")
+    assert_eq!(
+        first.0,
+        include_str!("../fixtures/raw-model-key/legacy-enum.json")
+            .trim_end_matches('\n')
+            .as_bytes(),
+        "literal bytes captured from the unchanged legacy encoder"
     );
 
     let mut extents = build_world_with(Vec::new(), "", false, vec![link_relationship()])
@@ -1979,13 +1982,19 @@ fn raw_model_key_preserves_legacy_reference_enum_and_extent_vectors() {
         linked, unlinked,
         "repeated relationship pairs belong to the key"
     );
-    println!(
-        "LEGACY_EXTENT_KEY={}",
-        String::from_utf8(linked.0).expect("UTF-8")
+    assert_eq!(
+        linked.0,
+        include_str!("../fixtures/raw-model-key/legacy-extents.json")
+            .trim_end_matches('\n')
+            .as_bytes(),
+        "literal bytes captured from the unchanged legacy encoder"
     );
-    println!(
-        "LEGACY_UNLINKED_KEY={}",
-        String::from_utf8(unlinked.0).expect("UTF-8")
+    assert_eq!(
+        unlinked.0,
+        include_str!("../fixtures/raw-model-key/legacy-unlinked.json")
+            .trim_end_matches('\n')
+            .as_bytes(),
+        "literal bytes captured from the unchanged legacy encoder"
     );
 }
 
