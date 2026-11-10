@@ -2,11 +2,11 @@
 //! TC-1390: the `execute` row.
 
 use ix_trace_rs::trace;
-use qsl_conformance::{CaseOutcome, OutcomeKind, Verb};
-use quire_eval::{CallFailure, UnsupportedCause};
-use quire_exact::CancelCause;
+use qsl_conformance::{run_case, CaseOutcome, OutcomeKind, Verb};
+use quire_eval::{CallFailure, FamilyOutcome, UnsupportedCause};
+use quire_exact::{CancelCause, Incomplete, LimitKind, Outcome};
 
-use crate::support::{diagnostic, outcome_of, written};
+use crate::support::{case_of, diagnostic, outcome_of, written};
 
 /// The typed `CallFailure` of an `execute` case, which must have failed.
 fn failure_of(outcome: &CaseOutcome) -> &CallFailure {
@@ -16,6 +16,20 @@ fn failure_of(outcome: &CaseOutcome) -> &CallFailure {
         .result()
         .as_ref()
         .expect_err("the cell's call fails")
+}
+
+/// The kernel's actual incomplete arm, rather than its Debug rendering.
+fn incomplete_of(outcome: &CaseOutcome) -> &Incomplete {
+    let evaluated = outcome
+        .execution()
+        .expect("typed result")
+        .result()
+        .as_ref()
+        .expect("an incomplete evaluation is not a call failure");
+    match &evaluated.outcome {
+        FamilyOutcome::Evaluated(Outcome::Incomplete(limit)) => limit,
+        other => panic!("expected the kernel incomplete arm, got {other:?}"),
+    }
 }
 
 /// FR-564-AC-3: each of `execute`'s seven applicable cells returns its kind,
@@ -79,15 +93,7 @@ fn execute_returns_each_applicable_kind() {
         incomplete_document["result"]["limit"]["field"],
         "work_units"
     );
-    assert!(
-        format!(
-            "{:?}",
-            incomplete.execution().expect("typed result").result()
-        )
-        .contains("limit_kind: WorkUnits"),
-        "{:?}",
-        incomplete.execution().expect("typed result").result()
-    );
+    assert_eq!(incomplete_of(&incomplete).limit_kind, LimitKind::WorkUnits);
 
     let fault = outcome_of(Verb::Execute, OutcomeKind::ToolFailure);
     assert_eq!(fault.exit_code(), 30);
@@ -95,4 +101,25 @@ fn execute_returns_each_applicable_kind() {
     assert!(written(&fault)
         .get("result")
         .is_none_or(|result| result.is_null()));
+}
+
+/// A non-work counter supplied by the case reaches both execution paths.
+#[trace("TC-1390")]
+#[test]
+fn execute_preserves_the_cases_non_work_accounting_limit() {
+    let mut case = case_of(Verb::Execute, OutcomeKind::Success);
+    let unlimited = run_case(&case).expect("the original case runs");
+    assert_eq!(unlimited.exit_code(), 0);
+    assert_eq!(written(&unlimited)["result"]["value"]["decimal"], "7");
+
+    case.parameters.accounting.integer_bits = 0;
+    let limited = run_case(&case).expect("the limited case runs");
+    assert_eq!(limited.exit_code(), 22);
+    let native = incomplete_of(&limited);
+    assert_eq!(native.limit_kind, LimitKind::IntegerBits);
+    assert_eq!(native.limit, 0);
+    let document = written(&limited);
+    assert_eq!(document["result"]["kind"], "incomplete");
+    assert_eq!(document["result"]["limit"]["field"], "integer_bits");
+    assert_eq!(document["result"]["limit"]["bound"], 0);
 }
