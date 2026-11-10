@@ -337,6 +337,7 @@ pub use probability_certificate::{
     check_cyclic_mdp_probability_certificate_observing,
     check_cyclic_mdp_probability_certificate_with_identity,
     check_cyclic_reward_probability_certificate_observing, CyclicMdpProbabilityPhase,
+    check_bounded_fair_probability_certificate_observing, BoundedFairProbabilityPhase,
     RewardProbabilityPhase,
 };
 pub use probability_certificate::{

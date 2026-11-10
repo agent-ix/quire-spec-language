@@ -320,6 +320,14 @@ pub(super) fn same(
     Ok(true)
 }
 
+pub(super) fn admit_encoding(records: &[Record], limits: ProbabilityDocumentLimits, cancel: &Cancel) -> Result<(), ProbabilityDocumentError> {
+    let mut meter = quire_exact::Meter::new(limits.accounting).with_cancel(cancel.clone());
+    let mut storage = 0;
+    let mut cx = Admission { limits, cancel, meter: &mut meter, storage: &mut storage };
+    for record in records { cx.bytes(record)?; }
+    Ok(())
+}
+
 pub(super) fn read(
     records: &[Box<serde_json::value::RawValue>],
     limits: ProbabilityDocumentLimits,
@@ -373,4 +381,43 @@ pub(super) fn read(
         result.push(record);
     }
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ix_trace_rs::trace;
+
+    fn limits() -> ProbabilityDocumentLimits {
+        ProbabilityDocumentLimits {
+            bytes: 1_000_000, storage_bytes: 64_000_000, states: 128, edges: 1024,
+            scalar_bits: 128, accounting: crate::AccountingLimits::default().0,
+        }
+    }
+
+    #[trace("TC-1406", "FR-201-AC-50")]
+    #[test]
+    fn shared_structural_metadata_walk_admits_deep_nodes_and_text_before_writing() {
+        std::thread::Builder::new().stack_size(512 * 1024).spawn(|| {
+            let mut declaration = NodeKey::new("pkg", vec![quire_exact::PathSegment::Text("leaf".repeat(2048))], 0).unwrap();
+            for _ in 0..1024 {
+                declaration = NodeKey::new("pkg", vec![quire_exact::PathSegment::Node(declaration)], 0).unwrap();
+            }
+            let record = Record { kind: FairnessKind::Weak, granularity: FairnessGranularity::Each, declaration, name: Identifier::new("tick").unwrap() };
+            let cancel = Cancel::new();
+            let mut meter = quire_exact::Meter::new(limits().accounting);
+            let mut storage = 0;
+            let bytes = Admission { limits: limits(), cancel: &cancel, meter: &mut meter, storage: &mut storage }.bytes(&record).unwrap();
+            let raw = serde_json::value::RawValue::from_string(String::from_utf8(bytes).unwrap()).unwrap();
+            let records = read(&[raw], limits(), &cancel, &mut meter, &mut storage).unwrap();
+            assert!(same(&[record.clone()], &records, limits(), &cancel, &mut meter, &mut storage).unwrap());
+            for cap in 0..3 {
+                let mut bound = limits();
+                match cap { 0 => bound.bytes = 32, 1 => bound.storage_bytes = 0, 2 => bound.accounting.work_units = 10, _ => unreachable!() }
+                let mut meter = quire_exact::Meter::new(bound.accounting);
+                let mut storage = 0;
+                assert!(matches!(Admission { limits: bound, cancel: &cancel, meter: &mut meter, storage: &mut storage }.bytes(&record), Err(ProbabilityDocumentError::Limit { .. } | ProbabilityDocumentError::Accounting(_))));
+            }
+        }).unwrap().join().unwrap();
+    }
 }

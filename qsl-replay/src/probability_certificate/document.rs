@@ -612,6 +612,7 @@ fn read_document(
     read_document_profile(bytes, limits, cancel, meter, false, None, &mut 0)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn read_document_profile(
     bytes: &[u8],
     limits: ProbabilityDocumentLimits,
@@ -701,10 +702,20 @@ fn read_document_profile(
             u64::try_from(rows).unwrap_or(u64::MAX),
         ));
     }
+    let bounded_fair = matches!(objective.and_then(|node| node.get("profile")).map(|node| node.node()), Some(quire_canonical::Node::String(BOUNDED_FAIR_PROFILE)));
+    if bounded_fair {
+        let mut admission = ProbabilityKeyAdmission::new(meter, storage, limits.storage_bytes, cancel);
+        quire_exact::IntegerDecimalBudget::work(&mut admission, u64::try_from(bytes.len()).unwrap_or(u64::MAX))
+            .map_err(|_| admission.refusal(qsl_eval::simulation::model::ModelKeyError::Denied))?;
+        let shared = std::cell::RefCell::new(writer::Admission::with_used(limits.storage_bytes, cancel, *storage));
+        let canonical = writer::encode_reserved(&parsed, limits.bytes, &shared)?;
+        *storage = shared.borrow().used();
+        if canonical != bytes { return Err(ProbabilityDocumentError::Noncanonical); }
+    }
     drop(parsed);
     let wire: WireDocument =
         serde_json::from_slice(bytes).map_err(|_| ProbabilityDocumentError::Malformed)?;
-    if canonical(&wire, limits.bytes)? != bytes {
+    if !bounded_fair && canonical(&wire, limits.bytes)? != bytes {
         return Err(ProbabilityDocumentError::Noncanonical);
     }
     if wire.kind != "exact"

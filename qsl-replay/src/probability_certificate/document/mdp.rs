@@ -69,6 +69,9 @@ pub fn write_probability_proof_document(
     limits: ProbabilityDocumentLimits,
     cancel: &Cancel,
 ) -> Result<Vec<u8>, ProbabilityDocumentError> {
+    if !document.fairness.is_empty() {
+        super::fairness::admit_encoding(&document.fairness, limits, cancel)?;
+    }
     let bytes = writer::encode_fair_profile(
         &document.document,
         limits,
