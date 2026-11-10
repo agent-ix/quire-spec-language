@@ -35,7 +35,8 @@ depend on) and the CG, IR and RT crates the prove path reaches, under
 their own records.
 
 The crates above the core are QSL's `qsl-analyze` (layer A), `qsl-inspect`
-(layer P) and `qsl-jit` (layer X), and the driver's `quire-plugin-host`,
+(layer P), `qsl-jit` (layer X) and `qsl-command` (the FR-027 and FR-100
+request-file adapter), and the driver's `quire-plugin-host`,
 `quire-aot` and `quire-cli` (ADR-029 CB-3 item 3). Each may
 depend on the core. No core crate depends on any of them.
 
@@ -59,7 +60,8 @@ dependency) pair.
 - No QSL core crate shall depend, directly or transitively through normal
   dependencies, on:
   - a QSL workspace crate outside the core set;
-  - a crate above the core: `qsl-analyze`, `qsl-inspect`, `qsl-jit`, or the
+  - a crate above the core: `qsl-analyze`, `qsl-inspect`, `qsl-jit`,
+    `qsl-command`, or the
     driver's `quire-driver`, `quire-plugin-host`, `quire-aot`
     or `quire-cli`;
   - a CG or RT crate;

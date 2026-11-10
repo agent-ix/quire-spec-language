@@ -83,8 +83,48 @@ the command encoding of the `execute` operation with a function selection
 (FR-279). Every exit status this requirement states is FR-285's exit code of
 the outcome's ADR-013 O-16 category. `command` returns a typed outcome that
 carries the result document, the refusal envelope or neither, and writes
-nothing to the process streams; the driver writes the result document to
-stdout and the refusal envelope to stderr (FR-287, Overlap).
+nothing to the process streams. These are the in-process native products;
+the driver writes FR-286's machine outcome document as FR-287 specifies.
+
+The request-file owner is the non-core `qsl_command::command` module
+([ADR-011](../decisions/ADR-011-stage-dag-and-dependency-architecture.md)
+§6.1). Its existing `run` and `run_with_limits` entries retain the library
+result and native-document behavior specified here. The driver instead
+uses the typed preparation boundary below and renders FR-286's
+`quire-outcome/1`; FR-286 explicitly replaces the native result document
+for the driver's verbs.
+
+### Request-file preparation for the driver
+
+`prepare_run(path: &std::path::Path, limits: RunLimits)` returns
+`Result<PreparedRun, Box<RunError>>` from the same module. Its variants are
+`PreparedRun::Function(PreparedFunctionRun)` and
+`PreparedRun::Clause(qsl_replay::spine::ClauseRunRequest)`.
+`PreparedFunctionRun::into_input(self) -> FunctionRunInput` exposes these
+owned typed members:
+
+| Member | Carrier |
+| --- | --- |
+| `source` | `qsl_foundation::Source`, with its offered labels, path and admitted bytes |
+| `package_name` | `String`, selected by the command from the authored identity as before |
+| `packages` | `qsl_semantics::model::intake::PackageInput` |
+| `dependencies` | `qsl_replay::spine::DependencyInput` |
+| `call` | `qsl_replay::spine::Call`, retaining function selection, arguments and accounting |
+
+The preparation operation SHALL reuse the existing closed request decoder
+and bounded intake, retaining relative-path resolution, source identity,
+selected-file and byte ceilings, domain packages, libraries and call
+values. It SHALL perform no compiler, evaluator, engine or provider call.
+The existing in-process `run` operations SHALL share this preparation
+rather than keeping another request decoder or intake path.
+
+The driver passes the prepared values to its existing execution and
+configured-provider pipeline. Engine selection, provider configuration,
+signal handling, cancellation and object environment remain the driver's
+responsibility. The preparation API adds no execution callback or backend
+selector. Completed and refused runs are rendered with the existing
+producer-owned FR-286 outcome constructors, not by reading the native
+result's JSON or rebuilding an outcome in the CLI.
 
 ## Inputs
 
