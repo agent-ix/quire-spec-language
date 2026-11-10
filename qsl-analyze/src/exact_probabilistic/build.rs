@@ -167,7 +167,7 @@ fn build_configured(
         None => vec![(None, None)],
         Some(over) => {
             let ValueType::Reference(object) = &over.value_type else {
-                return Err(fault("over-is-an-object-type"));
+                return Err(fault("over-is-an-object-type").into());
             };
             system
                 .instances(&over.value_type)
