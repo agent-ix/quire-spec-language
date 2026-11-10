@@ -180,7 +180,7 @@ fn target_free_recurrence_forces_zero_and_early_target_cannot_hide_scheduler_cho
         "pre B using v on M::Msg::send_b { false }",
         "pre B using v on M::Msg::send_b { self.delivered }",
     );
-    let mut changed = request;
+    let mut changed = request.clone();
     replace_source(
         &mut changed,
         &claim(
@@ -195,6 +195,26 @@ fn target_free_recurrence_forces_zero_and_early_target_cannot_hide_scheduler_cho
     assert_ne!(
         code, 0,
         "an original choice beyond target must not be accepted: {output}"
+    );
+    assert_eq!(output["status"], "unsupported");
+    let equal_choices = model(false)
+        .replace("pre B using v on M::Msg::send_b { false }", "pre B using v on M::Msg::send_b { self.attempts < 2 or self.delivered }")
+        .replace("post B_done using v on M::Msg::send_b { self.attempts = 0 and not self.delivered }", "post B_done using v on M::Msg::send_b { self.attempts - (if lost = 0 then 0 else 2) = 0 and self.delivered = (lost = 1) }");
+    let mut equal = request;
+    replace_source(
+        &mut equal,
+        &claim(
+            &equal_choices,
+            "every scheduler",
+            ">=",
+            "rational(1,2)",
+            "m.delivered",
+        ),
+    );
+    let (code, output) = run(&equal);
+    assert_ne!(
+        code, 0,
+        "equal action distributions still contain a residual choice: {output}"
     );
     assert_eq!(output["status"], "unsupported");
     let (emitted, settlement) = request_with(
