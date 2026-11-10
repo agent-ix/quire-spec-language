@@ -15,6 +15,7 @@ mod deadlock_item;
 mod dense_route;
 mod derived_request;
 mod digital_clocks;
+mod exact_mdp_avoidance;
 mod exact_probabilistic;
 mod exact_probabilistic_item;
 mod exact_probabilistic_zero_binding;

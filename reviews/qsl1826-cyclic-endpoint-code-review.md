@@ -1,5 +1,5 @@
 ---
-id: SR-20261109172912000101
+id: SR-20261110034547820003
 title: code-review review of cyclic DTMC endpoint fixtures
 type: SpecReview
 analysis: code-review
@@ -297,3 +297,7 @@ scope:
     \ {\n                    claim: claim.clone(),\n                    span: value.span,\n\
     \                });\n                false\n            }\n        };"
 ```
+
+## Historical ID correction
+
+Historical ID correction: SR-20261109172912000101 → SR-20261110034547820003 resolves an ID collision with separate peer QSL-1813 review records. Frozen review scope, findings, verdicts and excerpts are unchanged.

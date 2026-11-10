@@ -1020,6 +1020,8 @@ impl<'a> Graph<'a> {
             }
             safe = next;
         }
+        // A finite positive-probability path into the safe set suffices;
+        // other successors need not themselves permit target avoidance.
         let mut reachable = safe.clone();
         loop {
             let mut next = reachable.clone();
@@ -1027,13 +1029,9 @@ impl<'a> Graph<'a> {
                 let index = state.index();
                 if !target[index]
                     && !reachable[index]
-                    && self.choices[index].iter().any(|choice| {
-                        choice
-                            .edges
-                            .iter()
-                            .all(|edge| target[edge.to.index()] || reachable[edge.to.index()])
-                            && choice.edges.iter().any(|edge| reachable[edge.to.index()])
-                    })
+                    && self.choices[index]
+                        .iter()
+                        .any(|choice| choice.edges.iter().any(|edge| reachable[edge.to.index()]))
                 {
                     next[index] = true;
                 }
