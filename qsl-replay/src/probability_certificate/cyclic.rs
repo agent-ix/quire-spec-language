@@ -3,6 +3,91 @@
 
 use super::*;
 
+/// Check original subject acyclicity before constructing native unbounded
+/// refutation paths. This grants admission only and emits no document or
+/// product keys, so certificate transport-byte limits do not apply.
+pub fn admit_acyclic_probabilistic_refutation_subject(
+    system: &ModelSystem<'_>,
+    limits: &crate::ExactProbLimits,
+    cancel: &Cancel,
+) -> Result<bool, crate::ExactProbBuildIssue> {
+    let used = std::cell::RefCell::new(0_u64);
+    let failure = std::cell::RefCell::new(None);
+    let mut meter = quire_exact::Meter::new(system.meter_limits()).with_cancel(cancel.clone());
+    let mut issue = None;
+    let result = enumerate_model_graph_with_keys_and_reservation(
+        system,
+        None::<&qsl_semantics::check::CheckedPredicate>,
+        None,
+        None,
+        limits.model.limits.max_states,
+        limits.model.limits.max_transitions,
+        cancel,
+        false,
+        &|state| {
+            // These private scratch labels compare raw owner keys only. They
+            // never become transported FR-196 identities or rejection loci.
+            let (bytes, _) = system
+                .state_key(state)
+                .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?;
+            Ok(ProbabilityProductKey::from_canonical_bytes(bytes))
+        },
+        &mut |bytes| {
+            let actual = used
+                .borrow()
+                .saturating_add(u64::try_from(bytes).unwrap_or(u64::MAX));
+            if actual > limits.document.storage_bytes {
+                *failure.borrow_mut() = Some(crate::ExactProbBuildIssue::Limit {
+                    limit: crate::ModelCheckLimit::CertificateMaxWorkingBytes,
+                    value: limits.document.storage_bytes,
+                });
+                return Err(ExactProbabilityGraphError::ExpansionRefused);
+            }
+            *used.borrow_mut() = actual;
+            Ok(())
+        },
+        #[cfg(feature = "test-support")]
+        &mut |_| {},
+        &mut |_, _| {
+            if let Err(incomplete) = meter.charge(quire_exact::Charge::new(
+                quire_exact::ChargePoint::CollectionVisit,
+            )) {
+                *failure.borrow_mut() = Some(match cancel.tripped() {
+                    Some(cause) => crate::ExactProbBuildIssue::Cancelled(cause),
+                    None => crate::ExactProbBuildIssue::Predicate(
+                        qsl_eval::simulation::model::ClauseOutcome::Incomplete(incomplete),
+                    ),
+                });
+                return Err(ExactProbabilityGraphError::ExpansionRefused);
+            }
+            Ok(())
+        },
+        &mut |failure| issue = Some(failure),
+    );
+    if let Some(error) = failure.into_inner().or(issue) {
+        return Err(error);
+    }
+    let result = result.and_then(|graph| topological_order(&graph, cancel).map(|_| ()));
+    match result {
+        Ok(()) => Ok(true),
+        Err(ExactProbabilityGraphError::Cycle) => Ok(false),
+        Err(ExactProbabilityGraphError::Cancelled(cause)) => {
+            Err(crate::ExactProbBuildIssue::Cancelled(cause))
+        }
+        Err(ExactProbabilityGraphError::LimitReached) => Err(crate::ExactProbBuildIssue::Limit {
+            limit: crate::ModelCheckLimit::ExactProbMaxStates,
+            value: u64::try_from(limits.model.limits.max_states).unwrap_or(u64::MAX),
+        }),
+        Err(
+            ExactProbabilityGraphError::EdgeLimitReached | ExactProbabilityGraphError::TooManyEdges,
+        ) => Err(crate::ExactProbBuildIssue::Limit {
+            limit: crate::ModelCheckLimit::ExactProbMaxTransitions,
+            value: u64::try_from(limits.model.limits.max_transitions).unwrap_or(u64::MAX),
+        }),
+        Err(_) => Err(crate::ExactProbBuildIssue::BrokenInvariant),
+    }
+}
+
 fn charge(used: &mut u64, bound: u64, bytes: usize) -> Result<(), ProbabilityDocumentError> {
     let actual = used.saturating_add(u64::try_from(bytes).unwrap_or(u64::MAX));
     if actual > bound {

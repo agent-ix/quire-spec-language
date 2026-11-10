@@ -473,17 +473,12 @@ fn run(
                 ..
             }
         ) {
-            if let Err(error) = qsl_replay::admit_acyclic_eventual_certificate_subject(
-                &system,
-                package.graph().probabilistic_model().claims(),
-                &item,
-                document_limits,
-                cancel,
+            match qsl_replay::admit_acyclic_probabilistic_refutation_subject(
+                &system, &limits, cancel,
             ) {
-                return match error {
-                    ProbabilityDocumentError::Graph(ExactProbabilityGraphError::Cycle) => not_yet(),
-                    other => document_failure(other, subject),
-                };
+                Ok(true) => {}
+                Ok(false) => return not_yet(),
+                Err(issue) => return settled(&issue, subject),
             }
         }
         let bounded_monitor = match (bounded_formula, monitor) {

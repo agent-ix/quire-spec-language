@@ -23,6 +23,7 @@ mod bounded;
 mod key_admission;
 pub use key_admission::ProbabilityKeyAdmission;
 mod cyclic;
+pub use cyclic::admit_acyclic_probabilistic_refutation_subject;
 mod document;
 mod reward;
 mod state_predicate;

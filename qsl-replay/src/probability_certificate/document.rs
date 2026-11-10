@@ -964,24 +964,6 @@ pub fn admit_expected_reward_certificate_subject_with_identity(
     Ok(())
 }
 
-/// Admit an unbounded eventual subject to the existing acyclic profile.
-/// Engines use this before choosing native acyclic refutation construction;
-/// cyclic proofs do not extend that witness contract.
-pub fn admit_acyclic_eventual_certificate_subject(
-    system: &ModelSystem<'_>,
-    claims: &[CheckedProbabilisticClaim],
-    item: &ObligationIdentity,
-    limits: ProbabilityDocumentLimits,
-    cancel: &Cancel,
-) -> Result<(), ProbabilityDocumentError> {
-    if !matches!(bind_claim(claims, item, cancel)?.form,
-        ProbForm::Reach { target: ReachTarget::Eventually(_), .. }) {
-        return Err(ProbabilityDocumentError::Unsupported);
-    }
-    subject_graph(system, claims, item, limits, cancel, false)?;
-    Ok(())
-}
-
 /// Build a transport document from solver values and independently derived
 /// target keys and acyclic height ranks. This does not grant acceptance.
 pub fn probability_certificate_document(
