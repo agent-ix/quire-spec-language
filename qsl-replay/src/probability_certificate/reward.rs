@@ -296,6 +296,11 @@ fn step_costs(
                 });
             }
             *remaining -= 1;
+            charge(
+                storage,
+                limits.storage_bytes,
+                std::mem::size_of::<Rational>() as u64,
+            )?;
             let Some((_, value)) = rewards.iter().find(|(name, _)| name == &objective.name) else {
                 return Ok(rational(0));
             };
@@ -317,8 +322,8 @@ fn step_costs(
             charge(
                 storage,
                 limits.storage_bytes,
-                (std::mem::size_of::<Rational>() as u64)
-                    .saturating_add(numerator.div_ceil(8))
+                numerator
+                    .div_ceil(8)
                     .saturating_add(denominator.div_ceil(8)),
             )?;
             let value = match (value, &objective.unit) {
@@ -394,6 +399,8 @@ fn step_costs(
                 .map_err(|_| ProbabilityDocumentError::Malformed)?;
             costs.push(value);
         }
+        rows.try_reserve_exact(1)
+            .map_err(|_| ProbabilityDocumentError::Malformed)?;
         rows.push(costs);
     }
     Ok(rows)
