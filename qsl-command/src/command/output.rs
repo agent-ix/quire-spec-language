@@ -622,7 +622,9 @@ mod tests {
         use qsl_semantics::model::refusal::OfferedSelection;
         use quire_checked::key::DeclarationKey;
 
-        let expected = qsl_semantics::model::domain_package::DomainPackageRef::fixture("expected");
+        let expected = qsl_semantics::model::domain_package::DomainPackageRef {
+            identity: "test/orders".to_owned(),
+        };
         let model = RunError {
             cause: RunCause::SpineRun(Box::new(RunRefusal::Admission {
                 position: 2,
