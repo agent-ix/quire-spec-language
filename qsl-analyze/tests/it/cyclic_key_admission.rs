@@ -139,16 +139,14 @@ fn cyclic_and_native_preserve_raw_post_and_full_key_identity_causes() {
     );
 }
 
-#[trace("TC-636", "FR-201-AC-26", "FR-282-AC-19")]
-#[test]
-fn real_owner_route_preserves_cumulative_stops_and_mid_operation_cancellation() {
+fn assert_mid_operation_cancellation(
+    run: impl Fn(&Cancel) -> Result<(), ProbabilityDocumentError>,
+) {
     use std::sync::atomic::{AtomicU32, Ordering};
     use std::sync::{Arc, OnceLock};
-    let world = world();
-    let system = ModelSystem::new(world.subject().simulation).unwrap();
     let live = Cancel::new();
     let _count = live.count_charges();
-    admit(&world, &system, limits(), IdentityLimits::default(), &live).unwrap();
+    run(&live).unwrap();
     let total = live.charges();
     assert!(total > 2);
     for at in [1, total / 2, total] {
@@ -167,13 +165,7 @@ fn real_owner_route_preserves_cumulative_stops_and_mid_operation_cancellation() 
         });
         slot.set(cancel.clone()).unwrap();
         assert_eq!(
-            admit(
-                &world,
-                &system,
-                limits(),
-                IdentityLimits::default(),
-                &cancel
-            ),
+            run(&cancel),
             Err(ProbabilityDocumentError::Cancelled(CancelCause::Deadline))
         );
         assert!(
@@ -181,6 +173,24 @@ fn real_owner_route_preserves_cumulative_stops_and_mid_operation_cancellation() 
             "the owner may poll again while unwinding its typed stop"
         );
     }
+}
+
+#[trace("TC-636", "FR-201-AC-26", "FR-282-AC-19")]
+#[test]
+fn real_owner_route_preserves_cumulative_stops_and_mid_operation_cancellation() {
+    let world = world();
+    let system = ModelSystem::new(world.subject().simulation).unwrap();
+    assert_mid_operation_cancellation(|cancel| {
+        admit(&world, &system, limits(), IdentityLimits::default(), cancel)
+    });
+    assert_mid_operation_cancellation(|cancel| {
+        qsl_replay::admit_acyclic_probabilistic_refutation_subject(
+            &system,
+            &qsl_replay::ExactProbLimits::default(),
+            cancel,
+        )
+        .map(|_| ())
+    });
     let mut storage = limits();
     storage.storage_bytes = 0;
     assert!(matches!(
