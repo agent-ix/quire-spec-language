@@ -163,6 +163,10 @@ impl CompileOutcome {
 
 /// Prepared function input retained with its native source correspondence.
 pub struct PreparedFunctionRun {
+    data: Box<FunctionRunData>,
+}
+
+struct FunctionRunData {
     source: FormalSource,
     libraries: Vec<FormalSource>,
     packages: qsl_semantics::model::intake::PackageInput,
@@ -187,12 +191,13 @@ pub struct FunctionRunInput {
 impl PreparedFunctionRun {
     /// Transfer the prepared typed values without executing a stage.
     pub fn into_input(self) -> FunctionRunInput {
+        let data = *self.data;
         FunctionRunInput {
-            package_name: package_name(self.source.source().identity()),
-            source: self.source.source().clone(),
-            packages: self.packages,
-            dependencies: self.dependencies,
-            call: self.call,
+            package_name: package_name(data.source.source().identity()),
+            source: data.source.source().clone(),
+            packages: data.packages,
+            dependencies: data.dependencies,
+            call: data.call,
         }
     }
 }
@@ -1151,11 +1156,13 @@ fn prepare_complete_run(
         request.limits.supplied.unwrap_or_default(),
     );
     Ok(PreparedRun::Function(PreparedFunctionRun {
-        source,
-        libraries: libraries.into_iter().map(|(_, source)| source).collect(),
-        packages,
-        dependencies,
-        call: spine_call,
+        data: Box::new(FunctionRunData {
+            source,
+            libraries: libraries.into_iter().map(|(_, source)| source).collect(),
+            packages,
+            dependencies,
+            call: spine_call,
+        }),
     }))
 }
 
@@ -1172,6 +1179,7 @@ fn execute_prepared(prepared: PreparedRun) -> Result<RunResult> {
             return output::clause_report(&report);
         }
     };
+    let prepared = *prepared.data;
     let source = &prepared.source;
     let outcome = qsl_replay::spine::run(
         source.source().identity().clone(),
