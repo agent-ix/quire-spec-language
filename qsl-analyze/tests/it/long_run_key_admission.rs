@@ -286,3 +286,53 @@ fn model_representation_bits_are_distinct_from_probability_value_bits() {
         matches!(result,Err(ProbabilityDocumentError::Accounting(ref x)) if x.limit_kind==LimitKind::IntegerBits)
     );
 }
+
+#[trace("TC-1401", "FR-201-AC-30")]
+#[test]
+fn full_product_parse_staging_and_output_share_the_raw_key_storage_scope() {
+    let world = availability();
+    let system = ModelSystem::new(world.subject().simulation).unwrap();
+    let initial = system.initial().pop().unwrap();
+    let binding = qsl_replay::claim_binding(&system, world.claim("Lower")).unwrap();
+    let reference = binding.as_ref().map(|b| &b.reference);
+    let cancel = Cancel::new();
+    let encode = |bound: u64,
+                  storage: &mut u64|
+     -> Result<qsl_replay::ProbabilityProductKey, ProbabilityDocumentError> {
+        let mut meter = Meter::new(limits().accounting).with_cancel(cancel.clone());
+        let mut admission = ProbabilityKeyAdmission::new(&mut meter, storage, bound, &cancel);
+        let raw = system
+            .state_key_bytes_with_budget(
+                &initial,
+                IdentityLimits::default(),
+                &mut admission,
+                &cancel,
+            )
+            .map_err(|error| admission.refusal(error))?;
+        qsl_replay::ProbabilityProductKey::for_model_state_with_budget(
+            reference,
+            &raw,
+            IdentityLimits::default(),
+            &mut admission,
+            &cancel,
+        )
+        .map_err(|error| admission.refusal(error))
+    };
+    let mut measured = 0;
+    let key = encode(limits().storage_bytes, &mut measured).unwrap();
+    assert!(measured > 0);
+    let raw = system.state_key(&initial).unwrap().0;
+    let expected = qsl_replay::ProbabilityProductKey::for_model_state(reference, &raw).unwrap();
+    assert_eq!(key, expected);
+    let mut exact = 0;
+    assert_eq!(encode(measured, &mut exact).unwrap(), expected);
+    assert_eq!(exact, measured);
+    let mut short = 0;
+    assert!(
+        matches!(encode(measured-1,&mut short),Err(ProbabilityDocumentError::Limit{limit:qsl_replay::ProbabilityDocumentLimit::StorageBytes,bound,..})if bound==measured-1)
+    );
+    assert!(
+        short < measured,
+        "the denied reservation must not be performed"
+    );
+}
