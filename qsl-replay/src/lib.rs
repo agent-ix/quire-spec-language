@@ -343,14 +343,15 @@ pub use probability_certificate::{
     ProbabilityBoundSide, ProbabilityCertificateDocument, ProbabilityCertificateLocus,
     ProbabilityCertificateRejection, ProbabilityCertificateRule, ProbabilityDocumentError,
     ProbabilityDocumentIoLimits, ProbabilityDocumentLimit, ProbabilityDocumentLimits,
-    ProbabilityObjective, ProbabilityProductKey, ProbabilitySourceError, ProbabilitySourceLimits,
-    ProbabilitySourceRequest, ProbabilityStateEvent, ProbabilityWitnessError,
-    ProbabilityWitnessPath, ProbabilityWitnessReplay, ProbabilityWitnessStep,
-    ReproducedProbabilityWitness,
+    ProbabilityKeyAdmission, ProbabilityObjective, ProbabilityProductKey, ProbabilitySourceError,
+    ProbabilitySourceLimits, ProbabilitySourceRequest, ProbabilityStateEvent,
+    ProbabilityWitnessError, ProbabilityWitnessPath, ProbabilityWitnessReplay,
+    ProbabilityWitnessStep, ReproducedProbabilityWitness,
 };
 #[cfg(feature = "test-support")]
 pub use probability_certificate::{
-    check_long_run_probability_certificate_observing, replay_probabilistic_witness_observing,
+    check_long_run_probability_certificate_observing,
+    check_long_run_probability_certificate_with_identity, replay_probabilistic_witness_observing,
     LongRunProbabilityPhase, ProbabilityWitnessSemanticPhase,
 };
 pub use product_action::{

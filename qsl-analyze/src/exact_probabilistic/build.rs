@@ -3,6 +3,9 @@
 //! "Behavior"): the product, its state numbering and its edge order are
 //! functions of the subject, the claim and the limits.
 
+use qsl_eval::simulation::model::{ModelKeyBudget, ModelKeyError, ModelKeyExpansionError};
+use qsl_foundation::IdentityLimits;
+use std::cell::RefCell;
 use std::collections::{BTreeMap, VecDeque};
 
 use qsl_eval::automaton::{AutomatonError, Monitor, PropertyAutomaton};
@@ -49,6 +52,64 @@ pub(crate) fn build_retaining_monitor(
     request: ProductRequest<'_>,
     cancel: &Cancel,
 ) -> Result<(ProbBuild, Option<Monitor<PropertyAutomaton>>), ProductRefusal> {
+    match build_configured(request, cancel, None) {
+        Ok(result) => Ok(result),
+        Err(BudgetedProductError::Product(error)) => Err(error),
+        Err(BudgetedProductError::Key(_) | BudgetedProductError::Undefined(_)) => {
+            Err(fault("legacy-builder-does-not-use-key-admission"))
+        }
+    }
+}
+
+/// One qualified build's original product failure or identity-owner stop.
+#[derive(Debug, thiserror::Error)]
+pub enum BudgetedProductError {
+    /// Existing product admission/evaluation semantics.
+    #[error(transparent)]
+    Product(#[from] ProductRefusal),
+    /// Raw identity failure, with a denied caller cause held by its budget.
+    #[error(transparent)]
+    Key(#[from] ModelKeyError),
+    /// Proof-only admission cannot create a native undefined refutation path.
+    #[error("the checked predicate is undefined: {0:?}")]
+    Undefined(UndefinedCause),
+}
+
+struct KeyPolicy<'a> {
+    identity: IdentityLimits,
+    budget: RefCell<&'a mut dyn ModelKeyBudget>,
+}
+
+/// Retain the semantic monitor while every key uses the same caller admission.
+pub(crate) fn build_retaining_monitor_with_budget(
+    request: ProductRequest<'_>,
+    identity: IdentityLimits,
+    budget: &mut dyn ModelKeyBudget,
+    cancel: &Cancel,
+) -> Result<(ProbBuild, Option<Monitor<PropertyAutomaton>>), BudgetedProductError> {
+    let policy = KeyPolicy {
+        identity,
+        budget: RefCell::new(budget),
+    };
+    build_configured(request, cancel, Some(&policy))
+}
+
+/// Exercise the production budgeted builder without changing public requests.
+#[cfg(feature = "test-support")]
+pub fn build_product_with_key_budget(
+    request: ProductRequest<'_>,
+    identity: IdentityLimits,
+    budget: &mut dyn ModelKeyBudget,
+    cancel: &Cancel,
+) -> Result<ProbBuild, BudgetedProductError> {
+    build_retaining_monitor_with_budget(request, identity, budget, cancel).map(|(build, _)| build)
+}
+
+fn build_configured(
+    request: ProductRequest<'_>,
+    cancel: &Cancel,
+    key_policy: Option<&KeyPolicy<'_>>,
+) -> Result<(ProbBuild, Option<Monitor<PropertyAutomaton>>), BudgetedProductError> {
     let ProductRequest {
         subject,
         claim,
@@ -66,21 +127,27 @@ pub(crate) fn build_retaining_monitor(
     })?;
     match TimedSystem::new(&system, &claim.subject.alias) {
         Ok(timed) => {
+            if key_policy.is_some() {
+                return Err(
+                    ModelKeyError::Unsupported("untimed budgeted probabilistic product").into(),
+                );
+            }
             return super::digital::build(&system, timed, claim, &limits_all, cancel)
                 .map(|build| (build, None))
+                .map_err(BudgetedProductError::Product);
         }
         Err(TimedSubjectRefusal::NoTimedModel { .. }) => {}
         Err(TimedSubjectRefusal::NotSimulated(refusal)) => {
-            return Err(ProductRefusal::NotSimulated(refusal));
+            return Err(ProductRefusal::NotSimulated(refusal).into());
         }
         Err(TimedSubjectRefusal::ParameterizedGuard { .. }) => {
-            return Err(fault("timed-guard-reads-no-operation-parameter"));
+            return Err(fault("timed-guard-reads-no-operation-parameter").into());
         }
         Err(TimedSubjectRefusal::NestedUnboundedCollection { .. }) => {
-            return Err(fault("timed-clocks-nest-no-unbounded-collections"));
+            return Err(fault("timed-clocks-nest-no-unbounded-collections").into());
         }
         Err(TimedSubjectRefusal::Unbounded { .. }) => {
-            return Err(fault("timed-clock-owners-have-universes"));
+            return Err(fault("timed-clock-owners-have-universes").into());
         }
     }
     let (kind, workload) = match &claim.scheduler {
@@ -117,6 +184,7 @@ pub(crate) fn build_retaining_monitor(
     };
     let builder = Builder {
         system: &system,
+        key_policy,
         workload,
         kind,
         plan,
@@ -211,6 +279,8 @@ mod tests {
 /// Why the exploration ended before it was exhausted.
 enum Halt {
     Refusal(ProductRefusal),
+    Key(ModelKeyError),
+    UndefinedReading(UndefinedCause),
     Undefined(Box<UndefinedPath>),
 }
 
@@ -280,8 +350,9 @@ struct TraceStep {
     probability: Rational,
 }
 
-struct Builder<'r, 'c> {
+struct Builder<'r, 'c, 'p, 'k> {
     system: &'r ModelSystem<'r>,
+    key_policy: Option<&'p KeyPolicy<'k>>,
     workload: Option<&'r Workload>,
     kind: ProductKind,
     plan: Plan<'c>,
@@ -294,7 +365,7 @@ struct Builder<'r, 'c> {
     nodes: Vec<Node>,
     index: BTreeMap<ProbKey, usize>,
     /// The predicates' truths at a model state, by binding and state key.
-    readings: BTreeMap<(usize, Vec<u8>), Vec<bool>>,
+    readings: BTreeMap<usize, BTreeMap<Vec<u8>, Vec<bool>>>,
     edges: Vec<ProbEdge>,
     queue: VecDeque<usize>,
     fairness_operations: Vec<FairnessOperationIdentity>,
@@ -309,14 +380,18 @@ struct Hit {
     model: Vec<u8>,
 }
 
-impl Builder<'_, '_> {
-    fn run(mut self) -> Result<(ProbBuild, Option<Monitor<PropertyAutomaton>>), ProductRefusal> {
+impl Builder<'_, '_, '_, '_> {
+    fn run(
+        mut self,
+    ) -> Result<(ProbBuild, Option<Monitor<PropertyAutomaton>>), BudgetedProductError> {
         match self.explore() {
             Ok(initial) => {
                 let (product, monitor) = self.finish(initial);
                 Ok((ProbBuild::Built(product), monitor))
             }
-            Err(Halt::Refusal(refusal)) => Err(refusal),
+            Err(Halt::Refusal(refusal)) => Err(BudgetedProductError::Product(refusal)),
+            Err(Halt::Key(error)) => Err(BudgetedProductError::Key(error)),
+            Err(Halt::UndefinedReading(cause)) => Err(BudgetedProductError::Undefined(cause)),
             Err(Halt::Undefined(path)) => Ok((ProbBuild::Undefined(*path), None)),
         }
     }
@@ -420,14 +495,60 @@ impl Builder<'_, '_> {
         }))
     }
 
+    fn key_bytes(&self, state: &ModelSimState) -> Step<Vec<u8>> {
+        match self.key_policy {
+            Some(policy) => self
+                .system
+                .state_key_bytes_with_budget(
+                    state,
+                    policy.identity,
+                    &mut **policy.budget.borrow_mut(),
+                    self.cancel,
+                )
+                .map_err(Halt::Key),
+            None => self
+                .system
+                .state_key(state)
+                .map(|(bytes, _)| bytes)
+                .map_err(|_| fault("state-key-encodes").into()),
+        }
+    }
+
+    fn reserve_key(&self, bytes: usize) -> Step<()> {
+        if let Some(policy) = self.key_policy {
+            policy
+                .budget
+                .borrow_mut()
+                .reserve(bytes)
+                .map_err(|_| Halt::Key(ModelKeyError::Denied))?;
+        }
+        Ok(())
+    }
+
+    fn expansion_error(error: ModelKeyExpansionError) -> Halt {
+        match error {
+            ModelKeyExpansionError::Key(error) => Halt::Key(error),
+            ModelKeyExpansionError::Expansion(stop) => ProductRefusal::Expansion(stop).into(),
+        }
+    }
+
     /// The truth of the claim's predicates at `state` under binding
     /// `binding`, or the first that has no value.
     fn truths(&mut self, state: &ModelSimState, binding: usize) -> Step<Result<Vec<bool>, Hit>> {
-        let (model, state_key) = self
-            .system
-            .state_key(state)
-            .map_err(|_| fault("state-key-encodes"))?;
-        if let Some(known) = self.readings.get(&(binding, model.clone())) {
+        let (model, state_key) = if self.key_policy.is_some() {
+            (self.key_bytes(state)?, None)
+        } else {
+            let (model, key) = self
+                .system
+                .state_key(state)
+                .map_err(|_| fault("state-key-encodes"))?;
+            (model, Some(key))
+        };
+        if let Some(known) = self
+            .readings
+            .get(&binding)
+            .and_then(|by_model| by_model.get(model.as_slice()))
+        {
             return Ok(Ok(known.clone()));
         }
         let over = self.bindings[binding].1.as_ref();
@@ -447,6 +568,11 @@ impl Builder<'_, '_> {
                 PredicateReading::True => truths.push(true),
                 PredicateReading::False => truths.push(false),
                 PredicateReading::Undefined { cause, .. } => {
+                    if self.key_policy.is_some() {
+                        return Err(Halt::UndefinedReading(cause));
+                    }
+                    let state_key =
+                        state_key.ok_or_else(|| fault("legacy-reading-retains-state-key"))?;
                     return Ok(Err(Hit {
                         read: *read,
                         cause,
@@ -459,7 +585,11 @@ impl Builder<'_, '_> {
                 }
             }
         }
-        self.readings.insert((binding, model), truths.clone());
+        self.reserve_key(std::mem::size_of::<(Vec<u8>, Vec<bool>)>().saturating_add(truths.len()))?;
+        self.readings
+            .entry(binding)
+            .or_default()
+            .insert(model, truths.clone());
         Ok(Ok(truths))
     }
 
@@ -471,10 +601,7 @@ impl Builder<'_, '_> {
         accumulator: Option<Accumulator>,
         pending: Option<Pending>,
     ) -> Step<ProbKey> {
-        let (model, _) = self
-            .system
-            .state_key(state)
-            .map_err(|_| fault("state-key-encodes"))?;
+        let model = self.key_bytes(state)?;
         Ok(ProbKey {
             binding: self.bindings[binding].0.clone(),
             model,
@@ -507,6 +634,15 @@ impl Builder<'_, '_> {
             .map(|parent| self.nodes[parent].initial)
             .unwrap_or(initial);
         let decided = target.key.monitor.is_some_and(MonitorState::is_decided);
+        self.reserve_key(
+            target
+                .key
+                .model
+                .len()
+                .saturating_add(std::mem::size_of::<ProbKey>())
+                .saturating_add(std::mem::size_of::<Node>())
+                .saturating_add(std::mem::size_of::<usize>()),
+        )?;
         self.index.insert(target.key.clone(), id);
         self.nodes.push(Node {
             key: target.key,
@@ -705,19 +841,31 @@ impl Builder<'_, '_> {
         let workload = self
             .workload
             .ok_or_else(|| fault("a-dtmc-has-a-workload"))?;
-        let result = self
-            .system
-            .weighted_steps_with_cancel(model, workload, self.cancel);
+        let result = match self.key_policy {
+            Some(policy) => self
+                .system
+                .weighted_steps_with_budget(
+                    model,
+                    workload,
+                    policy.identity,
+                    &mut **policy.budget.borrow_mut(),
+                    self.cancel,
+                )
+                .map_err(Self::expansion_error),
+            None => self
+                .system
+                .weighted_steps_with_cancel(model, workload, self.cancel)
+                .map_err(|stop| Halt::Refusal(ProductRefusal::Expansion(stop))),
+        };
         self.poll()?;
-        let steps = match result {
-            Ok(Ok(steps)) => steps,
-            Ok(Err(Unsteppable::NotMarkov(not_markov))) => {
+        let steps = match result? {
+            Ok(steps) => steps,
+            Err(Unsteppable::NotMarkov(not_markov)) => {
                 return Err(ProductRefusal::NotMarkov(Box::new(not_markov)).into());
             }
-            Ok(Err(Unsteppable::UndecidedSuccessor(undecided))) => {
+            Err(Unsteppable::UndecidedSuccessor(undecided)) => {
                 return Err(ProductRefusal::UndecidedSuccessor(undecided).into());
             }
-            Err(stop) => return Err(ProductRefusal::Expansion(stop).into()),
         };
         let mut planned = Vec::with_capacity(steps.len());
         for step in steps {
@@ -747,14 +895,27 @@ impl Builder<'_, '_> {
     /// An MDP state's edges: FR-187's actions, each draw an edge, or an
     /// intermediate state when it has several post-states (SCH-2).
     fn choices(&mut self, at: usize, model: &ModelSimState) -> Step<Vec<Planned>> {
-        let result = self.system.actions_with_cancel(model, self.cancel);
+        let result = match self.key_policy {
+            Some(policy) => self
+                .system
+                .actions_with_budget(
+                    model,
+                    policy.identity,
+                    &mut **policy.budget.borrow_mut(),
+                    self.cancel,
+                )
+                .map_err(Self::expansion_error),
+            None => self
+                .system
+                .actions_with_cancel(model, self.cancel)
+                .map_err(|stop| Halt::Refusal(ProductRefusal::Expansion(stop))),
+        };
         self.poll()?;
-        let actions = match result {
-            Ok(Ok(actions)) => actions,
-            Ok(Err(undecided)) => {
+        let actions = match result? {
+            Ok(actions) => actions,
+            Err(undecided) => {
                 return Err(ProductRefusal::UndecidedSuccessor(undecided).into());
             }
-            Err(stop) => return Err(ProductRefusal::Expansion(stop).into()),
         };
         if actions.is_empty() {
             let rewards = self.system.zero_rewards();
@@ -785,10 +946,7 @@ impl Builder<'_, '_> {
             let mut successors = draw.successors;
             match successors.len() {
                 0 => {
-                    let (state, _) = self
-                        .system
-                        .state_key(model)
-                        .map_err(|_| fault("state-key-encodes"))?;
+                    let state = self.key_bytes(model)?;
                     return Err(ProductRefusal::NotMarkov(Box::new(NotMarkov {
                         state: qsl_eval::simulation::StateKey::from_canonical_bytes(state),
                         transition: action.identity,

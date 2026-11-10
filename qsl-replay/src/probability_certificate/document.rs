@@ -10,14 +10,17 @@ use super::*;
 mod key;
 mod long_run;
 #[cfg(feature = "test-support")]
-pub use long_run::{check_long_run_probability_certificate_observing, LongRunProbabilityPhase};
+pub use long_run::{
+    check_long_run_probability_certificate_observing,
+    check_long_run_probability_certificate_with_identity, LongRunProbabilityPhase,
+};
 pub use long_run::{
     long_run_probability_certificate_document, read_long_run_probability_certificate,
     write_long_run_probability_certificate, LongRunProbabilityComponent,
     LongRunProbabilityDocument,
 };
 mod writer;
-pub(super) use key::model_product_key;
+pub(super) use key::{model_product_key, model_product_key_with_budget};
 
 const PROFILE: &str = "quire.probability-objective/reachability/v1";
 const STATE_PROFILE: &str = "quire.probability-objective/state-predicate/v1";
@@ -175,6 +178,16 @@ pub enum ProbabilityDocumentError {
     /// Independent subject admission or graph traversal stopped.
     #[error("probability certificate graph stopped: {0:?}")]
     Graph(ExactProbabilityGraphError),
+    /// Raw or full-product identity encoding retained its actual owner refusal.
+    #[error(transparent)]
+    KeyEncoding(qsl_eval::simulation::EncodingRefusal),
+    /// The owner could not represent a requested construction size.
+    #[error("resource_exhausted: model key construction size overflow")]
+    KeySizeOverflow,
+    /// A key budget denied admission without retaining its caller cause.
+    #[error("runtime_invariant: model key denial has no caller cause")]
+    KeyDenied,
+
     /// The checked state predicate is undefined, with its original cause.
     #[error("probability certificate predicate undefined: {0:?}")]
     UndefinedPredicate(qsl_eval::temporal::UndefinedCause),

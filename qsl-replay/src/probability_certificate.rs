@@ -20,6 +20,8 @@ use serde_json::{json, Value};
 use crate::identity::ObligationIdentity;
 
 mod bounded;
+mod key_admission;
+pub use key_admission::ProbabilityKeyAdmission;
 mod document;
 mod state_predicate;
 pub use bounded::probabilistic_formula_monitor_context;
@@ -80,6 +82,22 @@ impl ProbabilityProductKey {
         cancel: &Cancel,
     ) -> Result<Self, ProbabilityDocumentError> {
         document::model_product_key(binding, model_bytes, None, limits, cancel)
+    }
+
+    /// Construct a complete untimed key under the identity owner's byte policy.
+    /// The same caller budget admits canonical parsing, staging and output.
+    ///
+    /// # Errors
+    /// Caller denial, cancellation, identity byte or allocator refusal remain
+    /// distinct in the model owner's error vocabulary.
+    pub fn for_model_state_with_budget(
+        binding: Option<&ObjectReference>,
+        model_bytes: &[u8],
+        identity: qsl_foundation::IdentityLimits,
+        budget: &mut dyn qsl_eval::simulation::model::ModelKeyBudget,
+        cancel: &Cancel,
+    ) -> Result<Self, qsl_eval::simulation::model::ModelKeyError> {
+        document::model_product_key_with_budget(binding, model_bytes, identity, budget, cancel)
     }
 
     /// Construct a formula product using the parsed complete FR-338 key.
@@ -520,6 +538,58 @@ fn enumerate_model_graph_with_keys_and_reservation<P: StatePredicate>(
     ) -> Result<(), ExactProbabilityGraphError>,
     failure: &mut impl FnMut(crate::ExactProbBuildIssue),
 ) -> Result<CheckerGraph, ExactProbabilityGraphError> {
+    let mut distributions =
+        |state: &ModelSimState, failure: &mut dyn FnMut(crate::ExactProbBuildIssue)| {
+            model_distributions_observing(
+                system,
+                state,
+                workload,
+                cancel,
+                #[cfg(feature = "test-support")]
+                observe,
+                failure,
+            )
+        };
+    enumerate_model_graph_with_distributions(
+        system,
+        target,
+        binding,
+        max_states,
+        max_edges,
+        cancel,
+        stop_at_target,
+        key_of,
+        reserve,
+        &mut distributions,
+        visit,
+        failure,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn enumerate_model_graph_with_distributions<P: StatePredicate>(
+    system: &ModelSystem<'_>,
+    target: Option<&P>,
+    binding: Option<&ObjectReference>,
+    max_states: usize,
+    max_edges: usize,
+    cancel: &Cancel,
+    stop_at_target: bool,
+    key_of: &impl Fn(&ModelSimState) -> Result<ProbabilityProductKey, ExactProbabilityGraphError>,
+    reserve: &mut impl FnMut(usize) -> Result<(), ExactProbabilityGraphError>,
+    distributions: &mut impl FnMut(
+        &ModelSimState,
+        &mut dyn FnMut(crate::ExactProbBuildIssue),
+    ) -> Result<
+        Vec<Vec<(Rational, ModelSimState)>>,
+        ExactProbabilityGraphError,
+    >,
+    visit: &mut impl FnMut(
+        &ProbabilityProductKey,
+        &ModelSimState,
+    ) -> Result<(), ExactProbabilityGraphError>,
+    failure: &mut impl FnMut(crate::ExactProbBuildIssue),
+) -> Result<CheckerGraph, ExactProbabilityGraphError> {
     poll_cancel(cancel)?;
     let initial = system.initial();
     if initial.len() != 1 {
@@ -578,15 +648,7 @@ fn enumerate_model_graph_with_keys_and_reservation<P: StatePredicate>(
         let choices = if terminal.is_some() && stop_at_target {
             Vec::new()
         } else {
-            let distributions = model_distributions_observing(
-                system,
-                &state,
-                workload,
-                cancel,
-                #[cfg(feature = "test-support")]
-                observe,
-                failure,
-            )?;
+            let distributions = distributions(&state, failure)?;
             if distributions.is_empty() {
                 reserve(std::mem::size_of::<(ProbabilityProductKey, CheckerState)>())?;
                 states.insert(
@@ -702,7 +764,7 @@ fn model_distributions_observing(
     workload: Option<&Workload>,
     cancel: &Cancel,
     #[cfg(feature = "test-support")] observe: &mut dyn FnMut(ProbabilityWitnessSemanticPhase),
-    failure: &mut impl FnMut(crate::ExactProbBuildIssue),
+    failure: &mut dyn FnMut(crate::ExactProbBuildIssue),
 ) -> Result<Vec<Vec<(Rational, ModelSimState)>>, ExactProbabilityGraphError> {
     let mut expansion = |stop| {
         if let Err(error) = poll_cancel(cancel) {

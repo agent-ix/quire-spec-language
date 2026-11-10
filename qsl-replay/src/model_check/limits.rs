@@ -268,6 +268,8 @@ pub enum ModelCheckLimit {
     /// QSpec FR-415's bound on the live clocks of a timed state; setting
     /// `model_check.max_clocks`.
     MaxClocks,
+    /// FR-259: canonical model/product identity bytes; setting `identity.input_bytes`.
+    IdentityInputBytes,
     /// FR-245: the edges a zone certificate check reads.
     CertificateMaxEdges,
     /// FR-245: the bytes a zone certificate check reads.
@@ -333,6 +335,7 @@ impl ModelCheckLimit {
             Self::ZoneMaxAutomatonStates => "max_automaton_states",
             Self::ZoneMaxZoneBytes => "max_zone_bytes",
             Self::MaxClocks => "max_clocks",
+            Self::IdentityInputBytes => "input_bytes",
             Self::CertificateMaxEdges => "max_certificate_edges",
             Self::CertificateMaxBytes => "max_certificate_bytes",
             Self::CertificateMaxWorkingBytes => "max_working_bytes",
@@ -380,6 +383,7 @@ impl ModelCheckLimit {
             Self::ZoneMaxAutomatonStates => "zone_check.max_automaton_states",
             Self::ZoneMaxZoneBytes => "zone_check.max_zone_bytes",
             Self::MaxClocks => "model_check.max_clocks",
+            Self::IdentityInputBytes => "identity.input_bytes",
             Self::CertificateMaxEdges => "certificate_check.max_certificate_edges",
             Self::CertificateMaxBytes => "certificate_check.max_certificate_bytes",
             Self::CertificateMaxWorkingBytes => "certificate_check.max_working_bytes",
@@ -622,6 +626,7 @@ mod tests {
             }
             ModelCheckLimit::ZoneMaxZoneBytes => ("max_zone_bytes", "zone_check.max_zone_bytes"),
             ModelCheckLimit::MaxClocks => ("max_clocks", "model_check.max_clocks"),
+            ModelCheckLimit::IdentityInputBytes => ("input_bytes", "identity.input_bytes"),
             ModelCheckLimit::CertificateMaxEdges => (
                 "max_certificate_edges",
                 "certificate_check.max_certificate_edges",
@@ -674,6 +679,7 @@ mod tests {
             ModelCheckLimit::ZoneMaxAutomatonStates,
             ModelCheckLimit::ZoneMaxZoneBytes,
             ModelCheckLimit::MaxClocks,
+            ModelCheckLimit::IdentityInputBytes,
             ModelCheckLimit::CertificateMaxEdges,
             ModelCheckLimit::CertificateMaxBytes,
             ModelCheckLimit::CertificateMaxWorkingBytes,

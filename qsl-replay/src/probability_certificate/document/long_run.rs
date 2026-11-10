@@ -397,6 +397,7 @@ struct Context<'a> {
     cancel: &'a Cancel,
     meter: quire_exact::Meter,
     storage: u64,
+    identity: qsl_foundation::IdentityLimits,
     #[cfg(feature = "test-support")]
     observe: Option<&'a mut dyn FnMut(LongRunProbabilityPhase)>,
 }
@@ -407,6 +408,7 @@ impl<'a> Context<'a> {
             cancel,
             meter: quire_exact::Meter::new(limits.accounting).with_cancel(cancel.clone()),
             storage: 0,
+            identity: qsl_foundation::IdentityLimits::default(),
             #[cfg(feature = "test-support")]
             observe: None,
         }
@@ -453,6 +455,22 @@ impl<'a> Context<'a> {
                 None => ProbabilityDocumentError::Accounting(Box::new(error)),
             })
     }
+    fn model<T>(
+        &mut self,
+        operation: impl FnOnce(
+            &mut dyn qsl_eval::simulation::model::ModelKeyBudget,
+        )
+            -> Result<T, qsl_eval::simulation::model::ModelKeyExpansionError>,
+    ) -> Result<T, ProbabilityDocumentError> {
+        let mut admission = ProbabilityKeyAdmission::new(
+            &mut self.meter,
+            &mut self.storage,
+            self.limits.storage_bytes,
+            self.cancel,
+        );
+        operation(&mut admission).map_err(|error| admission.expansion_refusal(error))
+    }
+
     fn arithmetic(
         &mut self,
         operation: quire_exact::RationalArithmetic<'_>,
@@ -503,6 +521,7 @@ fn subject(
     let workload = claim_workload(system, claim)?.ok_or(ProbabilityDocumentError::Unsupported)?;
     let limits = cx.limits;
     let cancel = cx.cancel;
+    let identity = cx.identity;
     let cx = RefCell::new(cx);
     let stopped = RefCell::new(None);
     let key_of = |state: &ModelSimState| {
@@ -510,25 +529,16 @@ fn subject(
             #[cfg(feature = "test-support")]
             cx.borrow_mut().phase(LongRunProbabilityPhase::Key)?;
             cx.borrow_mut().work(1)?;
-            // Raw ModelSystem state-key construction owns its scratch allocation.
-            let (bytes, _) = system.state_key(state).map_err(|_| {
-                ProbabilityDocumentError::Graph(ExactProbabilityGraphError::ExpansionRefused)
-            })?;
-            let mut context = cx.borrow_mut();
-            context.reserve(bytes.len())?;
-            let remaining = limits.storage_bytes.saturating_sub(context.storage);
-            let key = model_product_key(
-                reference,
-                &bytes,
-                None,
-                ProbabilityDocumentIoLimits {
-                    bytes: limits.bytes,
-                    storage_bytes: remaining,
-                },
-                cancel,
-            )?;
-            context.reserve(key.as_bytes().len())?;
-            Ok(key)
+            cx.borrow_mut().model(|budget| {
+                use qsl_eval::simulation::model::ModelKeyExpansionError as Error;
+                let bytes = system
+                    .state_key_bytes_with_budget(state, identity, budget, cancel)
+                    .map_err(Error::Key)?;
+                ProbabilityProductKey::for_model_state_with_budget(
+                    reference, &bytes, identity, budget, cancel,
+                )
+                .map_err(Error::Key)
+            })
         })();
         encoded.map_err(|error| {
             *stopped.borrow_mut() = Some(error);
@@ -537,11 +547,10 @@ fn subject(
     };
     let mut predicate_keys = BTreeSet::new();
     let mut issue = None;
-    let graph = enumerate_model_graph_with_keys_and_reservation(
+    let graph = enumerate_model_graph_with_distributions(
         system,
         None::<&qsl_semantics::check::CheckedPredicate>,
         reference,
-        Some(workload),
         limits.states,
         limits.edges,
         cancel,
@@ -557,13 +566,46 @@ fn subject(
                 ExactProbabilityGraphError::ExpansionRefused
             })
         },
-        #[cfg(feature = "test-support")]
-        &mut |phase| {
-            if phase == ProbabilityWitnessSemanticPhase::ExpansionEntered {
-                if let Err(error) = cx.borrow_mut().phase(LongRunProbabilityPhase::Workload) {
-                    *stopped.borrow_mut() = Some(error);
+        &mut |state, failure| {
+            let evaluated = (|| {
+                #[cfg(feature = "test-support")]
+                cx.borrow_mut().phase(LongRunProbabilityPhase::Workload)?;
+                let steps = cx.borrow_mut().model(|budget| {
+                    system.weighted_steps_with_budget(state, workload, identity, budget, cancel)
+                })?;
+                let steps = steps.map_err(|stop| {
+                    failure(match stop {
+                        qsl_eval::simulation::model::Unsteppable::NotMarkov(_) => {
+                            crate::ExactProbBuildIssue::NotMarkov
+                        }
+                        qsl_eval::simulation::model::Unsteppable::UndecidedSuccessor(_) => {
+                            crate::ExactProbBuildIssue::UndecidedSuccessor
+                        }
+                    });
+                    ProbabilityDocumentError::Graph(ExactProbabilityGraphError::ExpansionRefused)
+                })?;
+                if steps.iter().any(|step| {
+                    matches!(
+                        step.transition,
+                        qsl_eval::simulation::model::TransitionId::Stutter
+                    )
+                }) {
+                    if steps.len() == 1 {
+                        return Ok(Vec::new());
+                    }
+                    return Err(ProbabilityDocumentError::Graph(
+                        ExactProbabilityGraphError::UnsupportedDraw,
+                    ));
                 }
-            }
+                Ok(vec![steps
+                    .into_iter()
+                    .map(|step| (step.probability, step.post))
+                    .collect()])
+            })();
+            evaluated.map_err(|error| {
+                *stopped.borrow_mut() = Some(error);
+                ExactProbabilityGraphError::ExpansionRefused
+            })
         },
         &mut |key, state| {
             let evaluated = (|| {
@@ -701,6 +743,22 @@ pub fn check_long_run_probability_certificate_observing(
 ) -> Result<ExactProbabilityCertificateCheck, ProbabilityDocumentError> {
     let mut cx = Context::new(limits, cancel);
     cx.observe = Some(observe);
+    check_with_context(system, claims, item, bytes, &mut cx)
+}
+
+/// Check using an explicit raw/full identity byte ceiling for resource controls.
+#[cfg(feature = "test-support")]
+pub fn check_long_run_probability_certificate_with_identity(
+    system: &ModelSystem<'_>,
+    claims: &[CheckedProbabilisticClaim],
+    item: &ObligationIdentity,
+    bytes: &[u8],
+    limits: ProbabilityDocumentLimits,
+    identity: qsl_foundation::IdentityLimits,
+    cancel: &Cancel,
+) -> Result<ExactProbabilityCertificateCheck, ProbabilityDocumentError> {
+    let mut cx = Context::new(limits, cancel);
+    cx.identity = identity;
     check_with_context(system, claims, item, bytes, &mut cx)
 }
 

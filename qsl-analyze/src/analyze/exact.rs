@@ -79,6 +79,8 @@ pub(crate) enum ExactReport {
         /// The certificate the record carries.
         evidence: Box<ExactProbabilityEvidence>,
     },
+    /// A construction overflow or actual allocator refusal exhausted resources.
+    ResourceExhausted,
     /// FR-203's map settled a stop of the build or the check.
     Settled(ExactProbBuildRecord),
 }
@@ -156,6 +158,14 @@ impl ExactReport {
                 Some(record) => (record, Some(evidence)),
                 None => (TerminalRecord::failed_with(index, backend, BROKEN), None),
             },
+            Self::ResourceExhausted => (
+                TerminalRecord::incomplete(
+                    index,
+                    backend,
+                    qsl_replay::IncompleteCause::ResourceExhausted,
+                ),
+                None,
+            ),
             Self::Settled(record) => (record.into_terminal(index, backend), None),
         };
         (record, evidence, None)
@@ -595,6 +605,32 @@ fn document_failure(error: ProbabilityDocumentError, subject: SubjectLimits<'_>)
             },
             subject,
         ),
+        ProbabilityDocumentError::KeyEncoding(qsl_eval::simulation::EncodingRefusal::Limit(
+            limit,
+        )) => settled(
+            &ExactProbBuildIssue::Limit {
+                limit: ModelCheckLimit::IdentityInputBytes,
+                value: limit.configured_bound(),
+            },
+            subject,
+        ),
+        ProbabilityDocumentError::KeyEncoding(
+            qsl_eval::simulation::EncodingRefusal::Allocation { .. },
+        )
+        | ProbabilityDocumentError::KeySizeOverflow => {
+            EngineReport::Exact(Box::new(ExactReport::ResourceExhausted))
+        }
+        ProbabilityDocumentError::KeyEncoding(
+            qsl_eval::simulation::EncodingRefusal::NoEncoding(_),
+        ) => EngineReport::Refused(Refusal::Declined(
+            qsl_replay::ProofRefusalCause::InvalidInput,
+            qsl_replay::DeclineCode::Qsl(qsl_foundation::diagnostic::Code::InvalidRuntimeInput),
+            quire_semantic_value::catalog::CatalogCode::new(
+                "invalid_runtime_input",
+                "invalid-value",
+            ),
+        )),
+        ProbabilityDocumentError::KeyDenied => broken(),
         ProbabilityDocumentError::Build(issue) => settled(&issue, subject),
         ProbabilityDocumentError::Unsupported | ProbabilityDocumentError::UndefinedPredicate(_) => {
             not_yet()

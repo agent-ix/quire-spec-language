@@ -211,7 +211,8 @@ fn source_failure(error: ProbabilitySourceError) -> Value {
         ) => "refused",
         ProbabilitySourceError::Document(Document::Unsupported) => "unsupported",
         ProbabilitySourceError::Document(
-            Document::UndefinedPredicate(_)
+            Document::KeyEncoding(qsl_eval::simulation::EncodingRefusal::NoEncoding(_))
+            | Document::UndefinedPredicate(_)
             | Document::MalformedMember(_)
             | Document::Malformed
             | Document::MissingMember(_)
@@ -223,7 +224,13 @@ fn source_failure(error: ProbabilitySourceError) -> Value {
         | ProbabilitySourceError::Source { .. }
         | ProbabilitySourceError::Packages(_) => "refused",
         ProbabilitySourceError::Document(
-            Document::Limit { .. }
+            Document::KeyEncoding(
+                qsl_eval::simulation::EncodingRefusal::Limit(_)
+                | qsl_eval::simulation::EncodingRefusal::Allocation { .. },
+            )
+            | Document::KeySizeOverflow
+            | Document::KeyDenied
+            | Document::Limit { .. }
             | Document::Cancelled(_)
             | Document::Accounting(_)
             | Document::IntegerText { .. }
@@ -235,6 +242,11 @@ fn source_failure(error: ProbabilitySourceError) -> Value {
         | ProbabilitySourceError::Subject(_) => "stopped",
     };
     let limit = match &error {
+        ProbabilitySourceError::Document(Document::KeyEncoding(
+            qsl_eval::simulation::EncodingRefusal::Limit(limit),
+        )) => Some(
+            json!({"setting":limit.setting().name(),"bound":limit.configured_bound(),"actual":limit.actual().to_string()}),
+        ),
         ProbabilitySourceError::Document(Document::Limit {
             limit,
             bound,

@@ -331,16 +331,38 @@ pub(super) fn encode_reserved(
     bytes: u64,
     admission: &RefCell<Admission<'_>>,
 ) -> Result<Vec<u8>, ProbabilityDocumentError> {
-    let mut output = Vec::new();
-    // The metered canonical writer retains output internally until finish.
-    // Charge its destination separately before the sink reserves that capacity.
-    struct Output<'a, 'c> {
-        bytes: &'a mut Vec<u8>,
-        admission: &'a RefCell<Admission<'c>>,
+    let result = encode_admitted(value, bytes, &mut Reserve(admission));
+    if let Some(error) = admission.borrow_mut().take_stop() {
+        return Err(error);
     }
-    impl Sink for Output<'_, '_> {
+    result.map_err(|error| match error {
+        Error::Limit(limit) => {
+            exceeded(ProbabilityDocumentLimit::Bytes, limit.bound, limit.required)
+        }
+        _ => ProbabilityDocumentError::Malformed,
+    })
+}
+
+/// Reserve canonical staging and destination capacity against the same caller.
+pub(super) fn encode_admitted(
+    value: &impl Encode,
+    bytes: u64,
+    reservation: &mut dyn Reservation,
+) -> Result<Vec<u8>, Error> {
+    let shared = RefCell::new(reservation);
+    struct Shared<'a, 'b>(&'a RefCell<&'b mut dyn Reservation>);
+    impl Reservation for Shared<'_, '_> {
+        fn reserve(&mut self, bytes: usize) -> Result<(), ReservationDenied> {
+            self.0.borrow_mut().reserve(bytes)
+        }
+    }
+    struct Output<'a, 'b, 'c> {
+        bytes: &'a mut Vec<u8>,
+        reservation: &'b RefCell<&'c mut dyn Reservation>,
+    }
+    impl Sink for Output<'_, '_, '_> {
         fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), Error> {
-            self.admission
+            self.reservation
                 .borrow_mut()
                 .reserve(bytes.len())
                 .map_err(|_| Error::ReservationDenied {
@@ -355,28 +377,17 @@ pub(super) fn encode_reserved(
             Ok(())
         }
     }
-    // Writer::finish holds its admitted output while copying to the sink. Its
-    // full cumulative reservation already includes that output; the sink's
-    // additional bytes are charged against the remaining working budget.
+    let mut output = Vec::new();
     let mut sink = Output {
         bytes: &mut output,
-        admission,
+        reservation: &shared,
     };
-    let result = quire_canonical::encode_with_reservation(
+    quire_canonical::encode_with_reservation(
         &mut sink,
         value,
         quire_canonical::Limits::new(bytes),
-        &mut Reserve(admission),
-    );
-    if let Some(error) = admission.borrow_mut().take_stop() {
-        return Err(error);
-    }
-    result.map_err(|error| match error {
-        Error::Limit(limit) => {
-            exceeded(ProbabilityDocumentLimit::Bytes, limit.bound, limit.required)
-        }
-        _ => ProbabilityDocumentError::Malformed,
-    })?;
+        &mut Shared(&shared),
+    )?;
     Ok(output)
 }
 

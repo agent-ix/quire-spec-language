@@ -2,10 +2,13 @@
 //! Candidate production for the independently checked DTMC long-run profile.
 
 use super::*;
-use crate::exact_probabilistic::{decide_long_run_workload, LongRunResult, ProductKind};
+use crate::exact_probabilistic::{
+    build_retaining_monitor_with_budget, decide_long_run_workload, BudgetedProductError,
+    LongRunResult, ProductKind,
+};
 use qsl_replay::{
     long_run_probability_certificate_document, write_long_run_probability_certificate,
-    LongRunProbabilityComponent, ProbabilityDocumentIoLimits,
+    LongRunProbabilityComponent, ProbabilityDocumentIoLimits, ProbabilityKeyAdmission,
 };
 
 pub(super) fn run(
@@ -65,24 +68,25 @@ pub(super) fn run(
         scalar_bits: limits.max_rational_bits,
         accounting: simulation.meter,
     };
-    // Independently admit the full graph, predicate and workload before solving.
     let claims = package.graph().probabilistic_model().claims();
-    let mut document = match long_run_probability_certificate_document(
-        &system,
-        claims,
-        &item,
-        Vec::new(),
-        Vec::new(),
-        document_limits,
-        cancel,
-    ) {
-        Ok(document) => document,
-        Err(error) => return document_failure(error, subject),
-    };
-    let product = match build_retaining_monitor(request, cancel) {
-        Ok((ProbBuild::Built(product), _)) => product,
-        Ok((ProbBuild::Undefined(_), _)) => return not_yet(),
-        Err(refusal) => return build_refusal(refusal, subject),
+    let mut candidate = CandidateBudget::new(document_limits, cancel);
+    let product = {
+        let identity = candidate.identity;
+        let mut admission = candidate.admission();
+        match build_retaining_monitor_with_budget(request, identity, &mut admission, cancel) {
+            Ok((ProbBuild::Built(product), _)) => product,
+            Ok((ProbBuild::Undefined(_), _)) => return not_yet(),
+            Err(BudgetedProductError::Product(error)) => return build_refusal(error, subject),
+            Err(BudgetedProductError::Key(error)) => {
+                return document_failure(admission.refusal(error), subject)
+            }
+            Err(BudgetedProductError::Undefined(cause)) => {
+                return document_failure(
+                    ProbabilityDocumentError::UndefinedPredicate(cause),
+                    subject,
+                )
+            }
+        }
     };
     if product.kind != ProductKind::Dtmc
         || product.initial.len() != 1
@@ -139,50 +143,34 @@ pub(super) fn run(
         return not_yet();
     }
     let reference = binding.as_ref().map(|b| &b.reference);
-    let mut retained = 0u64;
-    for (state, value) in product.states.iter().zip(&solution.values) {
-        let ExtRational::Finite(value) = value else {
-            return broken();
-        };
-        let bytes = state
-            .model
-            .len()
-            .saturating_mul(8)
-            .saturating_add(std::mem::size_of::<ExactProbabilityValue>())
-            .saturating_add(
-                usize::try_from(
-                    value
-                        .numerator()
-                        .magnitude_bits()
-                        .saturating_add(value.denominator().magnitude_bits())
-                        .div_ceil(8),
-                )
-                .unwrap_or(usize::MAX),
-            );
-        if let Err(error) = reserve(&mut retained, bytes, io, cancel) {
-            return document_failure(error, subject);
-        }
-    }
-    let mut certificate = match certificate_of(&product, reference, &solution.values, io, cancel) {
+    let mut certificate = match values(&product, reference, &solution.values, &mut candidate) {
         Ok(certificate) => certificate,
         Err(error) => return document_failure(error, subject),
     };
-    document.components = match components(
-        &product,
-        reference,
-        &solution,
-        io,
-        document_limits,
-        &mut retained,
-        cancel,
-    ) {
+    let components = match components(&product, reference, &solution, &mut candidate) {
         Ok(components) => components,
         Err(error) => return document_failure(error, subject),
     };
     if let Some(tamper) = tamper {
         tamper(&mut certificate);
     }
-    document.values = certificate.values.clone();
+    for row in &certificate.values {
+        if let Err(error) = candidate.retain_row(row) {
+            return document_failure(error, subject);
+        }
+    }
+    let document = match long_run_probability_certificate_document(
+        &system,
+        claims,
+        &item,
+        certificate.values.clone(),
+        components,
+        document_limits,
+        cancel,
+    ) {
+        Ok(document) => document,
+        Err(error) => return document_failure(error, subject),
+    };
     let checked = write_long_run_probability_certificate(&document, document_limits, cancel)
         .and_then(|bytes| {
             check_probability_certificate_document(
@@ -201,40 +189,30 @@ fn components(
     product: &ProbProduct,
     binding: Option<&ObjectReference>,
     solution: &LongRunResult,
-    io: ProbabilityDocumentIoLimits,
-    limits: ProbabilityDocumentLimits,
-    retained: &mut u64,
-    cancel: &Cancel,
+    budget: &mut CandidateBudget<'_>,
 ) -> Result<Vec<LongRunProbabilityComponent>, ProbabilityDocumentError> {
     if solution.components.len() != solution.gain_bias.len() {
         return Err(ProbabilityDocumentError::Malformed);
     }
-    let mut meter = quire_exact::Meter::new(limits.accounting).with_cancel(cancel.clone());
-    reserve(
-        retained,
+    budget.reserve(
         solution
             .components
             .len()
             .saturating_mul(std::mem::size_of::<LongRunProbabilityComponent>()),
-        io,
-        cancel,
     )?;
     let mut components = Vec::with_capacity(solution.components.len());
     for (component, evidence) in solution.components.iter().zip(&solution.gain_bias) {
-        if let Some(cause) = cancel.tripped() {
+        if let Some(cause) = budget.cancel.tripped() {
             return Err(ProbabilityDocumentError::Cancelled(cause));
         }
         if component.states.len() != evidence.bias.len() {
             return Err(ProbabilityDocumentError::Malformed);
         }
-        reserve(
-            retained,
+        budget.reserve(
             evidence
                 .bias
                 .len()
                 .saturating_mul(std::mem::size_of::<ExactProbabilityValue>()),
-            io,
-            cancel,
         )?;
         let mut bias = Vec::with_capacity(evidence.bias.len());
         for (state, value) in &evidence.bias {
@@ -242,32 +220,18 @@ fn components(
                 .states
                 .get(state.index())
                 .ok_or(ProbabilityDocumentError::Malformed)?;
-            reserve(
-                retained,
-                state.model.len().saturating_mul(8).saturating_add(
-                    usize::try_from(
-                        value
-                            .numerator()
-                            .magnitude_bits()
-                            .saturating_add(value.denominator().magnitude_bits())
-                            .div_ceil(8),
-                    )
-                    .unwrap_or(usize::MAX),
-                ),
-                io,
-                cancel,
-            )?;
+            budget.reserve(rational_bytes(value))?;
             bias.push(ExactProbabilityValue {
-                state: ProbabilityProductKey::for_model_state_with_limits(
-                    binding,
-                    &state.model,
-                    io,
-                    cancel,
-                )?,
+                state: budget.key(binding, &state.model)?,
                 value: value.clone(),
             });
         }
-        sort(&mut bias, |row| &row.state, &mut meter, cancel)?;
+        sort(
+            &mut bias,
+            |row| &row.state,
+            &mut budget.meter,
+            budget.cancel,
+        )?;
         let offset = bias
             .first()
             .ok_or(ProbabilityDocumentError::Malformed)?
@@ -277,11 +241,11 @@ fn components(
             row.value = match quire_exact::evaluate_rational_arithmetic(
                 quire_exact::RationalArithmetic::Subtract(&row.value, &offset),
                 None,
-                &mut meter,
+                &mut budget.meter,
             ) {
                 quire_exact::Outcome::Completed(value) => value,
                 quire_exact::Outcome::Incomplete(incomplete) => {
-                    return Err(match cancel.tripped() {
+                    return Err(match budget.cancel.tripped() {
                         Some(cause) => ProbabilityDocumentError::Cancelled(cause),
                         None => ProbabilityDocumentError::Accounting(Box::new(incomplete)),
                     })
@@ -298,31 +262,126 @@ fn components(
     sort(
         &mut components,
         |component| &component.bias[0].state,
-        &mut meter,
-        cancel,
+        &mut budget.meter,
+        budget.cancel,
     )?;
     Ok(components)
 }
 
-fn reserve(
-    retained: &mut u64,
-    bytes: usize,
-    limits: ProbabilityDocumentIoLimits,
-    cancel: &Cancel,
-) -> Result<(), ProbabilityDocumentError> {
-    if let Some(cause) = cancel.tripped() {
-        return Err(ProbabilityDocumentError::Cancelled(cause));
+fn rational_bytes(value: &Rational) -> usize {
+    usize::try_from(
+        value
+            .numerator()
+            .magnitude_bits()
+            .saturating_add(value.denominator().magnitude_bits())
+            .div_ceil(8),
+    )
+    .unwrap_or(usize::MAX)
+}
+
+struct CandidateBudget<'a> {
+    meter: quire_exact::Meter,
+    retained: u64,
+    storage_bound: u64,
+    identity: qsl_foundation::IdentityLimits,
+    cancel: &'a Cancel,
+}
+impl<'a> CandidateBudget<'a> {
+    fn new(limits: ProbabilityDocumentLimits, cancel: &'a Cancel) -> Self {
+        Self {
+            meter: quire_exact::Meter::new(limits.accounting).with_cancel(cancel.clone()),
+            retained: 0,
+            storage_bound: limits.storage_bytes,
+            identity: qsl_foundation::IdentityLimits::default(),
+            cancel,
+        }
     }
-    let actual = retained.saturating_add(bytes as u64);
-    if actual > limits.storage_bytes {
-        return Err(ProbabilityDocumentError::Limit {
-            limit: qsl_replay::ProbabilityDocumentLimit::StorageBytes,
-            bound: limits.storage_bytes,
-            actual,
+    fn admission(&mut self) -> ProbabilityKeyAdmission<'_> {
+        ProbabilityKeyAdmission::new(
+            &mut self.meter,
+            &mut self.retained,
+            self.storage_bound,
+            self.cancel,
+        )
+    }
+    fn reserve(&mut self, bytes: usize) -> Result<(), ProbabilityDocumentError> {
+        let mut admission = self.admission();
+        quire_exact::Reservation::reserve(&mut admission, bytes)
+            .map_err(|_| admission.refusal(qsl_eval::simulation::model::ModelKeyError::Denied))
+    }
+    fn key(
+        &mut self,
+        binding: Option<&ObjectReference>,
+        raw: &[u8],
+    ) -> Result<ProbabilityProductKey, ProbabilityDocumentError> {
+        let identity = self.identity;
+        let cancel = self.cancel;
+        let mut admission = self.admission();
+        ProbabilityProductKey::for_model_state_with_budget(
+            binding,
+            raw,
+            identity,
+            &mut admission,
+            cancel,
+        )
+        .map_err(|error| admission.refusal(error))
+    }
+    fn retain_row(&mut self, row: &ExactProbabilityValue) -> Result<(), ProbabilityDocumentError> {
+        self.reserve(
+            std::mem::size_of::<ExactProbabilityValue>()
+                .saturating_add(row.state.as_bytes().len())
+                .saturating_add(rational_bytes(&row.value)),
+        )?;
+        let mut admission = self.admission();
+        quire_exact::IntegerDecimalBudget::work(
+            &mut admission,
+            u64::try_from(
+                row.state
+                    .as_bytes()
+                    .len()
+                    .saturating_add(rational_bytes(&row.value)),
+            )
+            .unwrap_or(u64::MAX),
+        )
+        .map_err(|_| admission.refusal(qsl_eval::simulation::model::ModelKeyError::Denied))
+    }
+}
+
+fn values(
+    product: &ProbProduct,
+    binding: Option<&ObjectReference>,
+    values: &[ExtRational],
+    budget: &mut CandidateBudget<'_>,
+) -> Result<ExactProbabilityCertificate, ProbabilityDocumentError> {
+    if product.states.len() != values.len() {
+        return Err(ProbabilityDocumentError::Malformed);
+    }
+    budget.reserve(
+        values
+            .len()
+            .saturating_mul(std::mem::size_of::<ExactProbabilityValue>()),
+    )?;
+    let mut rows = Vec::with_capacity(values.len());
+    for (state, value) in product.states.iter().zip(values) {
+        let ExtRational::Finite(value) = value else {
+            return Err(ProbabilityDocumentError::Unsupported);
+        };
+        budget.reserve(rational_bytes(value))?;
+        rows.push(ExactProbabilityValue {
+            state: budget.key(binding, &state.model)?,
+            value: value.clone(),
         });
     }
-    *retained = actual;
-    Ok(())
+    sort(
+        &mut rows,
+        |row| &row.state,
+        &mut budget.meter,
+        budget.cancel,
+    )?;
+    if rows.windows(2).any(|pair| pair[0].state == pair[1].state) {
+        return Err(ProbabilityDocumentError::Malformed);
+    }
+    Ok(ExactProbabilityCertificate { values: rows })
 }
 
 // In-place insertion gives a fallible, allocation-free comparison boundary.
