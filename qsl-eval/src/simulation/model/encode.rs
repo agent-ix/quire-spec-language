@@ -1074,12 +1074,6 @@ pub(super) fn object_enc(
     projection::object(model, object, typing, placeholder)
 }
 
-/// A present clock place's shell, FR-230's
-/// `{"type":"tuple","name":"Clock","components":[]}`.
-pub(crate) fn clock_shell_enc() -> Enc {
-    projection::clock_shell()
-}
-
 /// FR-181's state key for a model state (FR-120 "State, state key and
 /// anchor"): the unused members are empty maps.
 pub(super) fn model_key(model: &StateModel, state: &ModelState, typing: Typing<'_>) -> ModelKey {

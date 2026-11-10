@@ -471,10 +471,6 @@ pub(super) fn object(
     retained(|sink| project_object(sink, model, source, typing, Some(placeholder)))
 }
 
-pub(super) fn clock_shell() -> Enc {
-    retained(project_clock_shell)
-}
-
 pub(super) fn model_state(model: &StateModel, state: &ModelState, typing: Typing<'_>) -> Enc {
     retained(|sink| project_model_state(sink, model, state, typing))
 }
@@ -743,6 +739,7 @@ pub(super) fn project_object<S: ValueSink>(
     })
 }
 
+/// FR-230's present clock shell: a Clock tuple with no data components.
 fn project_clock_shell<S: ValueSink>(sink: &mut S) -> Result<(), S::Error> {
     tagged(sink, "tuple", |sink| {
         sink.name("name")?;
