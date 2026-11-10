@@ -1117,16 +1117,30 @@ fn admit_reward_with_identity(
                 &super::reward::RewardControl::new(cancel),
             ) {
                 Ok(_) => Ok(()),
-                Err(error) if legacy_reward_may_retry(&error) => mdp::admit_reward(
-                    system,
-                    claims,
-                    item,
-                    limits,
-                    cancel,
-                    identity,
-                    &mut meter,
-                    &mut storage,
-                ),
+                Err(error) if legacy_reward_may_retry(&error) => {
+                    let stopped_predicate_failed = matches!(
+                        &error,
+                        ProbabilityDocumentError::UndefinedPredicate(_)
+                    ) || matches!(&error, ProbabilityDocumentError::Build(issue)
+                                if matches!(issue.as_ref(), crate::ExactProbBuildIssue::Predicate(_)));
+                    match mdp::admit_reward(
+                        system,
+                        claims,
+                        item,
+                        limits,
+                        cancel,
+                        identity,
+                        &mut meter,
+                        &mut storage,
+                    ) {
+                        // An inapplicable profile must not erase a predicate failure
+                        // already observed by the stopped traversal.
+                        Err(ProbabilityDocumentError::Unsupported) if stopped_predicate_failed => {
+                            Err(error)
+                        }
+                        result => result,
+                    }
+                }
                 Err(error) => Err(error),
             }
         }
