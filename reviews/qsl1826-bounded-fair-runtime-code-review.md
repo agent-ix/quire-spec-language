@@ -23,7 +23,7 @@ Independent code-review of frozen PR2667 head 3f9a89c53f1b4ba95c06235f1608aaf53f
 
 ## Verdict
 
-PASS — FND-001 fixed in disposition pass 1; no new scoped implementation finding. Merge hold and full-binary qualification remain.
+PASS — all scoped findings remain closed after integration pass 2; required exact-final-head full-binary gates remain pending.
 
 ## Findings
 
@@ -173,3 +173,13 @@ After excerpt:
                 }
             }
 ```
+
+## Disposition pass 2 integration evidence
+
+Disposition/integration pass 2 reviewed frozen local/remote head aaed59bd20ee0c3501ef334b107f6a5fd306dec2 on actual merged main 1f345f82e73a2bfce2a1ff949c9542d3b09fecb4 (#2668). Independently verified all20 implementation/custody commits retain identical patches in /tmp/qsl1826-bounded-fair-integration-range-diff.log. Diffing former custody head330b15e78 against this head changes only the shared document.rs upstream reward-fallback guard and upstream review artifacts. Bounded fair predicate handling and fairness metadata/identity code are byte-unchanged from the prior reviewed fix.
+
+The upstream stopped_predicate_failed guard is present byte-for-byte in the integrated admit_reward_with_identity fallback: after a stopped traversal has yielded actual UndefinedPredicate or Build(Predicate), an inapplicable MDP profile's Unsupported returns that original error. Actual cancellation/limits/accounting and nonpredicate failures are not covered by that guard and keep their own results. Both reward subject_graph calls explicitly use allow_fair=false; bounded fair uses its separate admitted fair route, full original query-free probe, source checked-set comparison and budgeted bounded reconstruction. Neither change overrides the other. FND-001's explicit budgeted UndefinedPredicate(cause) arm remains unchanged, as do exact-owner-cause and in/post-horizon regression controls.
+
+No outstanding finding required disposition this round: FND-001 was fixed in round1 and remains fixed. No new scoped integration defect found; original Findings and round1 Dispositions are preserved verbatim. No additional cargo/full/broad run was performed in disposition; root/coder will run complete required touched test binaries after copying these latest SRs into the final custody commit. This review does not claim those pending gates are green.
+
+The user has lifted the prior hold for PR2667 only, contingent on exact-final-head full-binary qualification plus independent review. That is not a release of held FR566/567 files or permission to touch terra's stack. Matrix assurance remains unavailable and external transition/private-reader/interpreter allocation boundaries remain explicit. From scoped code review all findings are closed; final custody and required full-binary gate results are still conditions before merge.
