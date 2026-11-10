@@ -2280,7 +2280,7 @@ mod conversion_budget_tests {
             ),
         ] {
             let error = normalized_quantity_threshold(from, to, &mut Meter::new(limits), &location)
-                .unwrap_err();
+                .expect_err("actual quantity conversion must enforce its representation and work ceilings");
             let CheckCause::ResourceExhausted(cause) = error.cause else {
                 panic!("actual conversion must retain its meter denial");
             };
@@ -2300,7 +2300,10 @@ mod conversion_budget_tests {
             });
             slot.set(cancel.clone()).unwrap();
             let mut meter = Meter::new(limits).with_cancel(cancel.clone());
-            assert!(normalized_quantity_threshold(from, to, &mut meter, &location).is_err());
+            assert!(
+                normalized_quantity_threshold(from, to, &mut meter, &location).is_err(),
+                "actual quantity conversion must stop during its own cancelled meter charge"
+            );
             assert_eq!(cancel.tripped(), Some(cause));
             assert!(
                 observed.load(Ordering::Relaxed),
