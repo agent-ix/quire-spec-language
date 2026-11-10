@@ -57,7 +57,6 @@ use quire_exact::{
     CompositeValue, FieldValue, ObjectId, ObjectReference, OptionValue, Quantity, UnionValue,
     Value, ValueType,
 };
-use quire_exact::{EffectiveId, NodeKey};
 use quire_exact::{
     evaluate_boolean, evaluate_integer_arithmetic, evaluate_rational_arithmetic, order_numbers,
     retain_boolean, ArithmeticOperator, BooleanConnective, IntegerArithmetic, OrderedOperands,
@@ -69,6 +68,7 @@ use quire_exact::{
     IntegerInterval, LimitKind, Meter, PopulationId,
 };
 use quire_exact::{DivisionMember, IntegerDomain};
+use quire_exact::{EffectiveId, NodeKey};
 use quire_exact::{FloatType, Rational};
 use quire_exact::{Outcome, Refusal, Undefined};
 use quire_semantic_value::catalog::{render_identity, InternalFault};
@@ -334,8 +334,10 @@ fn clock_place_reference(
     } else {
         slot_indices.join(".")
     };
-    let object = ObjectId::new(format!("place/v1/{owner_identity}/{place_identity}/{slots}"))
-        .map_err(|_| invariant("clock-place-reference-identity-empty"))?;
+    let object = ObjectId::new(format!(
+        "place/v1/{owner_identity}/{place_identity}/{slots}"
+    ))
+    .map_err(|_| invariant("clock-place-reference-identity-empty"))?;
     Ok(ObjectReference::new(
         owner.universe().clone(),
         clock_type,
@@ -5064,13 +5066,9 @@ mod tests {
         let place = crate::test_ids::node_key([4]);
         let expected_prefix = "place/v1/63616c6c/7b226f7264696e616c223a302c227061636b616765223a2266697874757265222c2270617468223a5b225b345d225d7d";
 
-        let unindexed = clock_place_reference(
-            owner.clone(),
-            clock_type.clone(),
-            &place,
-            Vec::new(),
-        )
-        .expect("an unindexed place reference is well formed");
+        let unindexed =
+            clock_place_reference(owner.clone(), clock_type.clone(), &place, Vec::new())
+                .expect("an unindexed place reference is well formed");
         assert_eq!(unindexed.object().as_str(), format!("{expected_prefix}/-"));
         assert_eq!(unindexed.universe(), owner.universe());
         assert_eq!(unindexed.object_type(), &clock_type);
@@ -5079,7 +5077,10 @@ mod tests {
             owner,
             clock_type,
             &place,
-            vec![Value::Integer(Integer::from(0_i64)), Value::Integer(Integer::from(1_i64))],
+            vec![
+                Value::Integer(Integer::from(0_i64)),
+                Value::Integer(Integer::from(1_i64)),
+            ],
         )
         .expect("an indexed place reference is well formed");
         assert_eq!(indexed.object().as_str(), format!("{expected_prefix}/0.1"));
