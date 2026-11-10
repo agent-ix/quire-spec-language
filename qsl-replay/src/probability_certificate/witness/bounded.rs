@@ -82,7 +82,7 @@ pub(super) fn replay(
         return Err(ExactProbabilityGraphError::UnsupportedInitial.into());
     };
     let root = monitor
-        .start(observes(system, predicate, reference, initial)?)
+        .start(observes(system, predicate, reference, initial, cancel)?)
         .map_err(monitor_error)?;
     let key_of = |state: &ModelSimState, control: StateId, monitor: &QualifiedBoundedMonitor| {
         let (bytes, _) = system
@@ -117,7 +117,9 @@ pub(super) fn replay(
     let mut cylinders: Vec<&ProbabilityWitnessPath> = Vec::new();
     for (key, action) in &witness.scheduler {
         poll_cancel(cancel)?;
-        let action = system.scheduled_identity_key(action).map_err(expansion)?;
+        let action = system
+            .scheduled_identity_key(action)
+            .map_err(|stop| cancelled_expansion(stop, cancel))?;
         retain(
             key.as_bytes().len().saturating_add(action.len()),
             &mut storage,
@@ -159,8 +161,8 @@ pub(super) fn replay(
             let mut candidates = Vec::new();
             if let Some(workload) = workload {
                 for candidate in system
-                    .weighted_steps(&state, workload)
-                    .map_err(expansion)?
+                    .weighted_steps_with_cancel(&state, workload, cancel)
+                    .map_err(|stop| cancelled_expansion(stop, cancel))?
                     .map_err(|_| ExactProbabilityGraphError::UnsupportedDraw)?
                 {
                     if candidate.identity.as_ref() == Some(&step.action)
@@ -172,8 +174,8 @@ pub(super) fn replay(
                 }
             } else {
                 for action in system
-                    .actions(&state)
-                    .map_err(expansion)?
+                    .actions_with_cancel(&state, cancel)
+                    .map_err(|stop| cancelled_expansion(stop, cancel))?
                     .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?
                 {
                     if action.identity != step.action {
@@ -195,7 +197,10 @@ pub(super) fn replay(
             for (step_mass, post) in candidates {
                 poll_cancel(cancel)?;
                 let next = monitor
-                    .step(control, observes(system, predicate, reference, &post)?)
+                    .step(
+                        control,
+                        observes(system, predicate, reference, &post, cancel)?,
+                    )
                     .map_err(monitor_error)?;
                 let post_key = key_of(&post, next, &monitor)?;
                 if post_key == step.post_key
@@ -233,7 +238,7 @@ pub(super) fn replay(
             // a second copy admits the explicit draw vector in the evidence.
             let action_bytes = system
                 .scheduled_identity_key(&step.action)
-                .map_err(expansion)?;
+                .map_err(|stop| cancelled_expansion(stop, cancel))?;
             let transition_bytes = system
                 .transition_key(&step.transition)
                 .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?;

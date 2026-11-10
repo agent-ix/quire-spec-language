@@ -549,8 +549,11 @@ fn enumerate_model_graph_with_keys_and_reservation<P: StatePredicate>(
         visit(&key, &state)?;
         let terminal = if let Some(target) = target {
             let reading = system
-                .state_predicates(&state, &[(target, binding)])
+                .state_predicates_with_cancel(&state, &[(target, binding)], cancel)
                 .map_err(|stop| {
+                    if let Err(error) = poll_cancel(cancel) {
+                        return error;
+                    }
                     failure(crate::ExactProbBuildIssue::Expansion(stop));
                     ExactProbabilityGraphError::ExpansionRefused
                 })?
@@ -672,12 +675,15 @@ fn model_distributions(
     failure: &mut impl FnMut(crate::ExactProbBuildIssue),
 ) -> Result<Vec<Vec<(Rational, ModelSimState)>>, ExactProbabilityGraphError> {
     let mut expansion = |stop| {
+        if let Err(error) = poll_cancel(cancel) {
+            return error;
+        }
         failure(crate::ExactProbBuildIssue::Expansion(stop));
         ExactProbabilityGraphError::ExpansionRefused
     };
     if let Some(workload) = workload {
         let steps = system
-            .weighted_steps(state, workload)
+            .weighted_steps_with_cancel(state, workload, cancel)
             .map_err(&mut expansion)?
             .map_err(|stop| {
                 failure(match stop {
@@ -708,7 +714,7 @@ fn model_distributions(
             .collect()]);
     }
     let actions = system
-        .actions(state)
+        .actions_with_cancel(state, cancel)
         .map_err(&mut expansion)?
         .map_err(|_| {
             failure(crate::ExactProbBuildIssue::UndecidedSuccessor);

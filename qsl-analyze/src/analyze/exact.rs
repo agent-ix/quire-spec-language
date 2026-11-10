@@ -372,7 +372,11 @@ fn run(
     let Ok(item) = qsl_replay::probabilistic_claim_identity(claim) else {
         return not_yet();
     };
-    let Ok(system) = ModelSystem::new(simulation) else {
+    let admitted = ModelSystem::new_with_cancel(simulation, cancel);
+    if let Some(cause) = cancel.tripped() {
+        return settled(&ExactProbBuildIssue::Cancelled(cause), subject);
+    }
+    let Ok(system) = admitted else {
         return broken();
     };
     let binding = match claim_binding(&system, claim) {
@@ -692,6 +696,69 @@ fn certificate_of(
     Ok(ExactProbabilityCertificate { values: entries })
 }
 
+fn witness_payload_bytes(
+    work: crate::exact_probabilistic::WitnessWork<'_>,
+    system: &ModelSystem<'_>,
+) -> Result<usize, Box<ExactProbBuildIssue>> {
+    use crate::exact_probabilistic::{ProductAction, WitnessWork};
+    let action_bytes = |action: &ProductAction| -> Result<usize, Box<ExactProbBuildIssue>> {
+        match action {
+            ProductAction::Identity(identity) => system
+                .scheduled_identity_key(identity)
+                .map(|bytes| bytes.len())
+                .map_err(|stop| Box::new(ExactProbBuildIssue::Expansion(stop))),
+            ProductAction::TerminalStutter => Ok(0),
+            _ => Err(Box::new(ExactProbBuildIssue::BrokenInvariant)),
+        }
+    };
+    match work {
+        WitnessWork::Visit | WitnessWork::MaterializedStep => Ok(0),
+        WitnessWork::Slots(bytes) => Ok(bytes),
+        WitnessWork::Action(action) => action_bytes(action),
+        WitnessWork::Step {
+            action,
+            draw,
+            probability,
+            rewards,
+        } => {
+            let mut bytes = action_bytes(action)?;
+            let mut value_bytes =
+                |value: &quire_exact::Value| -> Result<(), Box<ExactProbBuildIssue>> {
+                    let key = system
+                        .value_key(value)
+                        .map_err(|_| Box::new(ExactProbBuildIssue::BrokenInvariant))?;
+                    bytes = bytes.saturating_add(key.len());
+                    Ok(())
+                };
+            for value in draw.into_iter().flatten() {
+                value_bytes(value)?;
+            }
+            for (_, value) in rewards {
+                value_bytes(value)?;
+            }
+            bytes = bytes.saturating_add(draw.map_or(0, |draw| {
+                draw.len()
+                    .saturating_mul(std::mem::size_of::<quire_exact::Value>())
+            }));
+            for (name, _) in rewards {
+                bytes =
+                    bytes
+                        .saturating_add(name.as_str().len())
+                        .saturating_add(std::mem::size_of::<(
+                            quire_exact::Identifier,
+                            quire_exact::Value,
+                        )>());
+            }
+            for integer in [probability.numerator(), probability.denominator()] {
+                bytes = bytes.saturating_add(
+                    usize::try_from(integer.as_big().bits().div_ceil(8)).unwrap_or(usize::MAX),
+                );
+            }
+            Ok(bytes)
+        }
+    }
+}
+
 fn witness_charge(
     meter: &mut quire_exact::Meter,
     storage: &mut u64,
@@ -912,15 +979,17 @@ fn replay_refutation(
         .as_ref()
         .map(|outcomes| outcomes.iter().map(Option::is_some).collect::<Vec<_>>());
     let mut producer_issue = None;
-    let mut control = || {
-        witness_charge(
-            &mut producer_meter,
-            &mut producer_storage,
-            std::mem::size_of::<crate::exact_probabilistic::ProducedStep>(),
-            limits,
-            cancel,
-        )
-        .map_err(|issue| {
+    let mut control = |work| {
+        let result = witness_payload_bytes(work, system).and_then(|bytes| {
+            witness_charge(
+                &mut producer_meter,
+                &mut producer_storage,
+                bytes,
+                limits,
+                cancel,
+            )
+        });
+        result.map_err(|issue| {
             producer_issue = Some(issue);
             crate::exact_probabilistic::WitnessError::InvalidState
         })
@@ -1049,8 +1118,14 @@ fn replay_refutation(
                 ) {
                     return settled(&issue, subject);
                 }
-                let Ok(Ok(actions)) = system.actions(&state) else {
-                    return broken();
+                let result = system.actions_with_cancel(&state, cancel);
+                if let Some(cause) = cancel.tripped() {
+                    return settled(&ExactProbBuildIssue::Cancelled(cause), subject);
+                }
+                let actions = match result {
+                    Ok(Ok(actions)) => actions,
+                    Err(stop) => return settled(&ExactProbBuildIssue::Expansion(stop), subject),
+                    Ok(Err(_)) => return broken(),
                 };
                 let mut candidates = Vec::new();
                 for action in actions {

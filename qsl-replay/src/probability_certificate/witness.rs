@@ -283,13 +283,15 @@ pub fn replay_probabilistic_witness(
             .get(key)
             .ok_or(ProbabilityWitnessError::Refused)?;
         let enabled = system
-            .actions(state)
-            .map_err(expansion)?
+            .actions_with_cancel(state, cancel)
+            .map_err(|stop| cancelled_expansion(stop, cancel))?
             .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?;
         if !enabled.iter().any(|enabled| &enabled.identity == action) {
             return Err(ProbabilityWitnessError::Refused);
         }
-        let action_bytes = system.scheduled_identity_key(action).map_err(expansion)?;
+        let action_bytes = system
+            .scheduled_identity_key(action)
+            .map_err(|stop| cancelled_expansion(stop, cancel))?;
         bounded::retain(
             key.as_bytes().len().saturating_add(action_bytes.len()),
             &mut storage,
@@ -320,7 +322,7 @@ pub fn replay_probabilistic_witness(
                 .ok_or(ProbabilityWitnessError::Refused)?
                 .choices
                 .is_empty();
-            if outcome(system, target, reference, &state, terminal)?.is_some() {
+            if outcome(system, target, reference, &state, terminal, cancel)?.is_some() {
                 return Ok(ProbabilityWitnessReplay::Parity);
             }
             if step.elapsed != rational(0)
@@ -331,8 +333,8 @@ pub fn replay_probabilistic_witness(
             let mut found = None;
             if let Some(workload) = workload {
                 for candidate in system
-                    .weighted_steps(&state, workload)
-                    .map_err(expansion)?
+                    .weighted_steps_with_cancel(&state, workload, cancel)
+                    .map_err(|stop| cancelled_expansion(stop, cancel))?
                     .map_err(|_| ExactProbabilityGraphError::UnsupportedDraw)?
                 {
                     poll_cancel(cancel)?;
@@ -348,8 +350,8 @@ pub fn replay_probabilistic_witness(
                 }
             } else {
                 for action in system
-                    .actions(&state)
-                    .map_err(expansion)?
+                    .actions_with_cancel(&state, cancel)
+                    .map_err(|stop| cancelled_expansion(stop, cancel))?
                     .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?
                 {
                     poll_cancel(cancel)?;
@@ -403,7 +405,10 @@ pub fn replay_probabilistic_witness(
             .choices
             .is_empty();
         let accepting = matches!(
-            (bound, outcome(system, target, reference, &state, terminal)?),
+            (
+                bound,
+                outcome(system, target, reference, &state, terminal, cancel)?
+            ),
             (Bound::AtMost(_), Some(true)) | (Bound::AtLeast(_), Some(false))
         );
 
@@ -472,16 +477,17 @@ fn outcome(
     binding: Option<&ObjectReference>,
     state: &ModelSimState,
     terminal: bool,
+    cancel: &Cancel,
 ) -> Result<Option<bool>, ProbabilityWitnessError> {
     if let ReachTarget::Eventually(predicate) = target {
-        if observes(system, predicate, binding, state)? {
+        if observes(system, predicate, binding, state, cancel)? {
             return Ok(Some(true));
         }
     }
     match target {
         ReachTarget::Eventually(_) => Ok(terminal.then_some(false)),
         ReachTarget::Until(..) | ReachTarget::Always(_) => {
-            state_predicate::outcome(system, target, binding, state, terminal)
+            state_predicate::outcome(system, target, binding, state, terminal, cancel)
                 .map(|(verdict, _)| verdict)
                 .map_err(bounded::document_error)
         }
@@ -506,18 +512,26 @@ fn observes(
     predicate: &impl StatePredicate,
     binding: Option<&ObjectReference>,
     state: &ModelSimState,
+    cancel: &Cancel,
 ) -> Result<bool, ProbabilityWitnessError> {
-    match system
-        .state_predicates(state, &[(predicate, binding)])
-        .map_err(expansion)?
-        .first()
-    {
+    let readings = system.state_predicates_with_cancel(state, &[(predicate, binding)], cancel);
+    poll_cancel(cancel)?;
+    match readings.map_err(expansion)?.first() {
         Some(PredicateReading::True) => Ok(true),
         Some(PredicateReading::False) => Ok(false),
         Some(PredicateReading::Refused(outcome)) => Err(ProbabilityWitnessError::Build(Box::new(
             crate::ExactProbBuildIssue::Predicate(outcome.clone()),
         ))),
         _ => Err(ExactProbabilityGraphError::ExpansionRefused.into()),
+    }
+}
+fn cancelled_expansion(
+    stop: qsl_eval::simulation::ExpansionStop,
+    cancel: &Cancel,
+) -> ProbabilityWitnessError {
+    match poll_cancel(cancel) {
+        Err(error) => error.into(),
+        Ok(()) => expansion(stop),
     }
 }
 fn expansion(stop: qsl_eval::simulation::ExpansionStop) -> ProbabilityWitnessError {

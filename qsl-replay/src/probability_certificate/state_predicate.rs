@@ -97,8 +97,14 @@ pub(super) fn enumerate(
         let model = model_states
             .remove(&key)
             .ok_or(ProbabilityDocumentError::Malformed)?;
-        let (verdict, failure) =
-            outcome(system, target, binding, &model, state.choices.is_empty())?;
+        let (verdict, failure) = outcome(
+            system,
+            target,
+            binding,
+            &model,
+            state.choices.is_empty(),
+            cancel,
+        )?;
         state.terminal = verdict;
         if failure {
             failures.push(key.clone());
@@ -124,15 +130,14 @@ pub(super) fn outcome(
     binding: Option<&ObjectReference>,
     model: &ModelSimState,
     terminal: bool,
+    cancel: &Cancel,
 ) -> Result<(Option<bool>, bool), ProbabilityDocumentError> {
     let read = |predicate| -> Result<bool, ProbabilityDocumentError> {
-        let readings = system
-            .state_predicates(model, &[(predicate, binding)])
-            .map_err(|error| {
-                ProbabilityDocumentError::Build(Box::new(crate::ExactProbBuildIssue::Expansion(
-                    error,
-                )))
-            })?;
+        let readings = system.state_predicates_with_cancel(model, &[(predicate, binding)], cancel);
+        poll_cancel(cancel)?;
+        let readings = readings.map_err(|error| {
+            ProbabilityDocumentError::Build(Box::new(crate::ExactProbBuildIssue::Expansion(error)))
+        })?;
         match readings.into_iter().next() {
             Some(PredicateReading::True) => Ok(true),
             Some(PredicateReading::False) => Ok(false),

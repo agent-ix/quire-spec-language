@@ -57,7 +57,13 @@ pub(crate) fn build_retaining_monitor(
     let limits_all = limits;
     let limits = limits_all.model;
     let package = subject.simulation.package;
-    let system = ModelSystem::new(subject.simulation).map_err(ProductRefusal::Admission)?;
+    let system = ModelSystem::new_with_cancel(subject.simulation, cancel).map_err(|failure| {
+        if let Some(cause) = cancel.tripped() {
+            ProductRefusal::Stopped(ProductStop::Cancelled(cause))
+        } else {
+            ProductRefusal::Admission(failure)
+        }
+    })?;
     match TimedSystem::new(&system, &claim.subject.alias) {
         Ok(timed) => {
             return super::digital::build(&system, timed, claim, &limits_all, cancel)
@@ -429,8 +435,9 @@ impl Builder<'_, '_> {
             .collect();
         let readings = self
             .system
-            .state_predicates(state, &predicates)
-            .map_err(|stop| Halt::Refusal(ProductRefusal::Expansion(stop)))?;
+            .state_predicates_with_cancel(state, &predicates, self.cancel);
+        self.poll()?;
+        let readings = readings.map_err(|stop| Halt::Refusal(ProductRefusal::Expansion(stop)))?;
         let mut truths = Vec::with_capacity(readings.len());
         for ((read, _), reading) in self.reads.iter().zip(readings) {
             match reading {
@@ -695,7 +702,11 @@ impl Builder<'_, '_> {
         let workload = self
             .workload
             .ok_or_else(|| fault("a-dtmc-has-a-workload"))?;
-        let steps = match self.system.weighted_steps(model, workload) {
+        let result = self
+            .system
+            .weighted_steps_with_cancel(model, workload, self.cancel);
+        self.poll()?;
+        let steps = match result {
             Ok(Ok(steps)) => steps,
             Ok(Err(Unsteppable::NotMarkov(not_markov))) => {
                 return Err(ProductRefusal::NotMarkov(Box::new(not_markov)).into());
@@ -733,7 +744,9 @@ impl Builder<'_, '_> {
     /// An MDP state's edges: FR-187's actions, each draw an edge, or an
     /// intermediate state when it has several post-states (SCH-2).
     fn choices(&mut self, at: usize, model: &ModelSimState) -> Step<Vec<Planned>> {
-        let actions = match self.system.actions(model) {
+        let result = self.system.actions_with_cancel(model, self.cancel);
+        self.poll()?;
+        let actions = match result {
             Ok(Ok(actions)) => actions,
             Ok(Err(undecided)) => {
                 return Err(ProductRefusal::UndecidedSuccessor(undecided).into());

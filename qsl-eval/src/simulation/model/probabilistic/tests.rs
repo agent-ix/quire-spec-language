@@ -24,7 +24,7 @@ fn caller_cancellation_enters_qualified_contract_and_state_predicate_meters() {
     use std::sync::atomic::{AtomicU32, Ordering};
     use std::sync::{Arc, OnceLock};
     let mut model = world::link();
-    model.body.push_str("profile inf = \"quire.temporal.infinite-trace/v1\";\nprobabilistic Check using inf on M over (m: M::Msg) under every scheduler on origin { probability >= 0.5 [ eventually holds(m.delivered) ] }\n");
+    model.body.push_str("invariant Valid using v on M::Msg at current { self.attempts >= 0 }\nprofile inf = \"quire.temporal.infinite-trace/v1\";\nprobabilistic Check using inf on M over (m: M::Msg) under every scheduler on origin { probability >= 0.5 [ eventually holds(m.delivered) ] }\n");
     let world = World::new(&model);
     let system = world.system();
     let start = initial(&system);
@@ -58,19 +58,20 @@ fn caller_cancellation_enters_qualified_contract_and_state_predicate_meters() {
             .len(),
         4
     );
-    for (mode, at, cause) in [
-        ("actions", 2, CancelCause::Requested),
-        ("workload", 2, CancelCause::Deadline),
-        ("predicate", 1, CancelCause::Requested),
+    // Invariants run before candidate generation: the observer is entered
+    // by a qualified invariant/predicate meter, with no poll offset oracle.
+    for (mode, cause) in [
+        ("actions", CancelCause::Requested),
+        ("workload", CancelCause::Deadline),
+        ("predicate", CancelCause::Requested),
     ] {
         let slot = Arc::new(OnceLock::<Cancel>::new());
         let weak = Arc::downgrade(&slot);
         let calls = Arc::new(AtomicU32::new(0));
         let seen = Arc::clone(&calls);
         let cancel = Cancel::observing(move || {
-            if seen.fetch_add(1, Ordering::Relaxed) + 1 == at {
-                weak.upgrade().unwrap().get().unwrap().cancel(cause);
-            }
+            seen.fetch_add(1, Ordering::Relaxed);
+            weak.upgrade().unwrap().get().unwrap().cancel(cause);
         });
         slot.set(cancel.clone()).unwrap();
         let stopped = match mode {
@@ -85,7 +86,7 @@ fn caller_cancellation_enters_qualified_contract_and_state_predicate_meters() {
         };
         assert!(stopped, "{mode} must stop inside qualified evaluation");
         assert_eq!(cancel.tripped(), Some(cause));
-        assert_eq!(calls.load(Ordering::Relaxed), at);
+        assert!(calls.load(Ordering::Relaxed) > 0);
     }
     assert_eq!(system.actions(&start).unwrap().unwrap().len(), 2);
 }
