@@ -147,6 +147,60 @@ fn runtime_vectors_bind_positional_values_and_retain_real_outcome_bytes() {
     );
 }
 
+/// FR-353-AC-2: a recorded `results` entry is only checked for its vector
+/// reference. A planted `passed` entry for a vector that really fails does
+/// not qualify it, and a capability with no vectors stays `uncovered`
+/// whatever the corpus records: both runs are `not-qualified`, exit 1.
+#[test]
+#[trace("TC-880", "FR-353-AC-2")]
+fn a_recorded_passing_result_does_not_qualify_a_failing_or_uncovered_capability() {
+    let wrong = json!({"disposition":"value","value":{"kind":"completed","value":{"kind":"integer","decimal":"99"}}});
+    let mut fixture = Fixture::new("runtime", "run", COUNTER, wrong);
+    fixture.run_call(
+        json!([{"kind":"integer","decimal":"1"},{"kind":"integer","decimal":"2"}]),
+        json!({}),
+    );
+    fixture.value["results"] = json!([{
+        "subject": {"consumer_type": "runtime", "operation": "run"},
+        "run_id": "self-attested",
+        "vector_id": "V1-TOOL-004-operation",
+        "outcome": "passed",
+        "artifacts": ["inputs/unit.native"]
+    }]);
+    let failed = fixture.execute(&[]);
+    assert_eq!(failed.outcome.code, 1, "{}", failed.outcome.stdout);
+    let failed = report(&failed);
+    assert_eq!(failed["verdict"], "not-qualified");
+    assert_eq!(failed["capabilities"][0]["outcome"], "failed", "{failed}");
+
+    // The same planted entry on a corpus whose second capability has no
+    // vector: that capability is `uncovered`.
+    let right = json!({"disposition":"value","value":{"kind":"completed","value":{"kind":"integer","decimal":"12"}}});
+    let mut fixture = Fixture::new("runtime", "run", COUNTER, right);
+    fixture.run_call(
+        json!([{"kind":"integer","decimal":"1"},{"kind":"integer","decimal":"2"}]),
+        json!({}),
+    );
+    let mut second = fixture.value["coverage"]["primary"][0].clone();
+    second["capability_id"] = json!("V1-TOOL-005");
+    fixture.value["coverage"]["primary"]
+        .as_array_mut()
+        .unwrap()
+        .push(second);
+    fixture.value["results"] = json!([{
+        "subject": {"consumer_type": "runtime", "operation": "run"},
+        "run_id": "self-attested",
+        "vector_id": "V1-TOOL-004-operation",
+        "outcome": "passed",
+        "artifacts": ["inputs/unit.native"]
+    }]);
+    let uncovered = fixture.execute(&[]);
+    assert_eq!(uncovered.outcome.code, 1, "{}", uncovered.outcome.stdout);
+    let uncovered = report(&uncovered);
+    assert_eq!(uncovered["verdict"], "not-qualified");
+    assert_eq!(uncovered["counts"]["uncovered"], 1, "{uncovered}");
+}
+
 #[test]
 #[trace("TC-875", "FR-350-AC-3", "FR-350-AC-5")]
 fn runtime_limits_remain_incomplete_and_are_fresh_for_siblings() {
