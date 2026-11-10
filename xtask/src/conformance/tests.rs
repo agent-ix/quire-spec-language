@@ -325,6 +325,8 @@ fn ordinary_ci_cargo_lane_inherits_canonical_checkout() {
         "-o",
         "arch-lint-qualified-core",
         "-o",
+        "arch-lint-unsafe",
+        "-o",
         "build-no-std",
     ];
     run_ci_with(
