@@ -8,6 +8,7 @@
 //! settle `refuted` only when the profile has native witness production and
 //! independent FR-202 replay; long-run document evidence authorizes proofs.
 
+mod candidate;
 mod long_run;
 
 use qsl_eval::simulation::model::ModelSystem;
@@ -324,11 +325,36 @@ fn run(
         (ProbScheduler::Workload(_), _) => (UnboundedObjective::Min, None),
     };
 
-    let (product, monitor) = match build_retaining_monitor(request, cancel) {
-        Ok((ProbBuild::Built(product), monitor)) => (product, monitor),
-        // An undefined state refutes only after FR-202's replay.
-        Ok((ProbBuild::Undefined(_), _)) => return not_yet(),
-        Err(refusal) => return build_refusal(refusal, subject),
+    let mut candidate_budget =
+        expected_reward.then(|| candidate::CandidateBudget::new(document_limits, cancel));
+    let built = if let Some(budget) = candidate_budget.as_mut() {
+        use crate::exact_probabilistic::{
+            build_retaining_monitor_with_budget, BudgetedProductError,
+        };
+        let identity = budget.identity;
+        let mut admission = budget.admission();
+        match build_retaining_monitor_with_budget(request, identity, &mut admission, cancel) {
+            Ok(built) => built,
+            Err(BudgetedProductError::Product(error)) => return build_refusal(error, subject),
+            Err(BudgetedProductError::Key(error)) => {
+                return document_failure(admission.refusal(error), subject)
+            }
+            Err(BudgetedProductError::Undefined(cause)) => {
+                return document_failure(
+                    ProbabilityDocumentError::UndefinedPredicate(cause),
+                    subject,
+                )
+            }
+        }
+    } else {
+        match build_retaining_monitor(request, cancel) {
+            Ok(built) => built,
+            Err(error) => return build_refusal(error, subject),
+        }
+    };
+    let (product, monitor) = match built {
+        (ProbBuild::Built(product), monitor) => (product, monitor),
+        (ProbBuild::Undefined(_), _) => return not_yet(),
     };
     let [(_, _, start)] = product.initial.as_slice() else {
         return not_yet();
@@ -506,6 +532,12 @@ fn run(
                 cancel,
             )
         }
+        (None, _) if candidate_budget.is_some() => candidate::values(
+            &product,
+            reference,
+            &values,
+            candidate_budget.as_mut().expect("reward candidate budget"),
+        ),
         (None, _) => certificate_of(
             &product,
             reference,

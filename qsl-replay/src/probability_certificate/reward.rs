@@ -85,31 +85,37 @@ pub(super) fn enumerate(
     let failure = std::cell::RefCell::new(None);
     let mut issue = None;
     let mut remaining_edges = limits.edges;
+    let meter = std::cell::RefCell::new(
+        quire_exact::Meter::new(limits.accounting).with_cancel(cancel.clone()),
+    );
+    let identity = qsl_foundation::IdentityLimits::default();
     let key_of = |state: &ModelSimState| {
-        let (bytes, _) = system
-            .state_key(state)
-            .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?;
-        super::document::model_product_key_with_storage(
-            binding,
-            &bytes,
-            None,
-            ProbabilityDocumentIoLimits {
-                bytes: limits.bytes,
-                storage_bytes: limits.storage_bytes,
-            },
-            cancel,
-            &mut storage.borrow_mut(),
-        )
-        .map_err(|error| {
-            *failure.borrow_mut() = Some(error);
-            ExactProbabilityGraphError::ExpansionRefused
-        })
+        let mut meter = meter.borrow_mut();
+        let mut storage = storage.borrow_mut();
+        let mut admission =
+            ProbabilityKeyAdmission::new(&mut meter, &mut storage, limits.storage_bytes, cancel);
+        let encoded = (|| {
+            let bytes =
+                system.state_key_bytes_with_budget(state, identity, &mut admission, cancel)?;
+            ProbabilityProductKey::for_model_state_with_budget(
+                binding,
+                &bytes,
+                identity,
+                &mut admission,
+                cancel,
+            )
+        })();
+        encoded
+            .map_err(|error| admission.refusal(error))
+            .map_err(|error| {
+                *failure.borrow_mut() = Some(error);
+                ExactProbabilityGraphError::ExpansionRefused
+            })
     };
-    let result = enumerate_model_graph_with_keys_and_reservation(
+    let result = enumerate_model_graph_with_distributions(
         system,
         Some(until),
         binding,
-        workload,
         limits.states,
         limits.edges,
         cancel,
@@ -126,8 +132,28 @@ pub(super) fn enumerate(
                 ExactProbabilityGraphError::ExpansionRefused
             })
         },
-        #[cfg(feature = "test-support")]
-        &mut |_| {},
+        &mut |state, _| {
+            let mut meter = meter.borrow_mut();
+            let mut storage = storage.borrow_mut();
+            let mut admission = ProbabilityKeyAdmission::new(
+                &mut meter,
+                &mut storage,
+                limits.storage_bytes,
+                cancel,
+            );
+            model_distributions_with_budget(
+                system,
+                state,
+                workload,
+                identity,
+                &mut admission,
+                cancel,
+            )
+            .map_err(|error| {
+                *failure.borrow_mut() = Some(error);
+                ExactProbabilityGraphError::ExpansionRefused
+            })
+        },
         &mut |key, state| {
             let mut storage = storage.borrow_mut();
             let result = charge(
@@ -145,6 +171,7 @@ pub(super) fn enumerate(
                     limits,
                     cancel,
                     &mut storage,
+                    &mut meter.borrow_mut(),
                     &mut remaining_edges,
                 )
             });
@@ -302,12 +329,10 @@ fn step_costs(
     limits: ProbabilityDocumentLimits,
     cancel: &Cancel,
     storage: &mut u64,
+    meter: &mut quire_exact::Meter,
     remaining_edges: &mut usize,
 ) -> Result<Vec<Vec<Rational>>, ProbabilityDocumentError> {
     use qsl_eval::simulation::model::{TransitionId, Unsteppable};
-    let expansion = |stop| {
-        ProbabilityDocumentError::Build(Box::new(crate::ExactProbBuildIssue::Expansion(stop)))
-    };
     let unsteppable = |stop| {
         ProbabilityDocumentError::Build(Box::new(match stop {
             Unsteppable::NotMarkov(_) => crate::ExactProbBuildIssue::NotMarkov,
@@ -369,9 +394,18 @@ fn step_costs(
             Ok(value)
         };
     if let Some(workload) = workload {
-        let result = system.weighted_steps_with_cancel(state, workload, cancel);
-        poll_cancel(cancel)?;
-        let steps = result.map_err(expansion)?.map_err(unsteppable)?;
+        let mut admission =
+            ProbabilityKeyAdmission::new(meter, storage, limits.storage_bytes, cancel);
+        let steps = system
+            .weighted_steps_with_budget(
+                state,
+                workload,
+                qsl_foundation::IdentityLimits::default(),
+                &mut admission,
+                cancel,
+            )
+            .map_err(|error| admission.expansion_refusal(error))?
+            .map_err(unsteppable)?;
         if steps
             .iter()
             .any(|step| step.transition == TransitionId::Stutter)
@@ -400,11 +434,20 @@ fn step_costs(
         }
         return Ok(vec![costs]);
     }
-    let result = system.actions_with_cancel(state, cancel);
-    poll_cancel(cancel)?;
-    let actions = result.map_err(expansion)?.map_err(|_| {
-        ProbabilityDocumentError::Build(Box::new(crate::ExactProbBuildIssue::UndecidedSuccessor))
-    })?;
+    let mut admission = ProbabilityKeyAdmission::new(meter, storage, limits.storage_bytes, cancel);
+    let actions = system
+        .actions_with_budget(
+            state,
+            qsl_foundation::IdentityLimits::default(),
+            &mut admission,
+            cancel,
+        )
+        .map_err(|error| admission.expansion_refusal(error))?
+        .map_err(|_| {
+            ProbabilityDocumentError::Build(Box::new(
+                crate::ExactProbBuildIssue::UndecidedSuccessor,
+            ))
+        })?;
     let mut rows = Vec::new();
     for action in actions {
         poll_cancel(cancel)?;

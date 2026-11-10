@@ -21,7 +21,9 @@ pub use long_run::{
 };
 mod unit;
 mod writer;
-pub(super) use key::{model_product_key, model_product_key_with_budget, model_product_key_with_storage};
+pub(super) use key::{
+    model_product_key, model_product_key_with_budget,
+};
 
 const PROFILE: &str = "quire.probability-objective/reachability/v1";
 const STATE_PROFILE: &str = "quire.probability-objective/state-predicate/v1";
@@ -411,11 +413,23 @@ fn ordered(
 fn ratio(
     wire: WireRational,
     bits: u64,
+    meter: &mut quire_exact::Meter,
+    cancel: &Cancel,
+) -> Result<Rational, ProbabilityDocumentError> {
+    ratio_checked(wire, bits, meter, cancel, true)
+}
+
+fn reward_ratio(
+    wire: WireRational,
+    bits: u64,
     reward: bool,
     meter: &mut quire_exact::Meter,
     cancel: &Cancel,
 ) -> Result<Rational, ProbabilityDocumentError> {
-    let value = ratio_checked(wire, bits, meter, cancel, !reward)?;
+    if !reward {
+        return ratio(wire, bits, meter, cancel);
+    }
+    let value = ratio_checked(wire, bits, meter, cancel, false)?;
     if value < rational(0) {
         return Err(ProbabilityDocumentError::Malformed);
     }
@@ -649,7 +663,7 @@ fn read_document(
         poll(cancel)?;
         values.push(ExactProbabilityValue {
             state: decode_key(&row.state, limits)?,
-            value: ratio(row.value, limits.scalar_bits, reward_profile, meter, cancel)?,
+            value: reward_ratio(row.value, limits.scalar_bits, reward_profile, meter, cancel)?,
         });
     }
     ordered(values.iter().map(|row| row.state.clone()))?;

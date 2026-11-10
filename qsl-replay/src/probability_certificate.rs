@@ -793,22 +793,7 @@ fn model_distributions_observing(
             });
             ExactProbabilityGraphError::ExpansionRefused
         })?;
-        if steps.iter().any(|step| {
-            matches!(
-                step.transition,
-                qsl_eval::simulation::model::TransitionId::Stutter
-            )
-        }) {
-            return if steps.len() == 1 {
-                Ok(Vec::new())
-            } else {
-                Err(ExactProbabilityGraphError::UnsupportedDraw)
-            };
-        }
-        return Ok(vec![steps
-            .into_iter()
-            .map(|step| (step.probability, step.post))
-            .collect()]);
+        return workload_distribution(steps);
     }
     #[cfg(feature = "test-support")]
     observe(ProbabilityWitnessSemanticPhase::ExpansionEntered);
@@ -821,6 +806,69 @@ fn model_distributions_observing(
         failure(crate::ExactProbBuildIssue::UndecidedSuccessor);
         ExactProbabilityGraphError::ExpansionRefused
     })?;
+    action_distributions(actions, cancel)
+}
+
+fn model_distributions_with_budget(
+    system: &ModelSystem<'_>,
+    state: &ModelSimState,
+    workload: Option<&Workload>,
+    identity: qsl_foundation::IdentityLimits,
+    admission: &mut ProbabilityKeyAdmission<'_>,
+    cancel: &Cancel,
+) -> Result<Vec<Vec<(Rational, ModelSimState)>>, ProbabilityDocumentError> {
+    if let Some(workload) = workload {
+        let steps = system
+            .weighted_steps_with_budget(state, workload, identity, admission, cancel)
+            .map_err(|error| admission.expansion_refusal(error))?
+            .map_err(|stop| {
+                ProbabilityDocumentError::Build(Box::new(match stop {
+                    qsl_eval::simulation::model::Unsteppable::NotMarkov(_) => {
+                        crate::ExactProbBuildIssue::NotMarkov
+                    }
+                    qsl_eval::simulation::model::Unsteppable::UndecidedSuccessor(_) => {
+                        crate::ExactProbBuildIssue::UndecidedSuccessor
+                    }
+                }))
+            })?;
+        return workload_distribution(steps).map_err(Into::into);
+    }
+    let actions = system
+        .actions_with_budget(state, identity, admission, cancel)
+        .map_err(|error| admission.expansion_refusal(error))?
+        .map_err(|_| {
+            ProbabilityDocumentError::Build(Box::new(
+                crate::ExactProbBuildIssue::UndecidedSuccessor,
+            ))
+        })?;
+    action_distributions(actions, cancel).map_err(Into::into)
+}
+
+fn workload_distribution(
+    steps: Vec<qsl_eval::simulation::model::WeightedStep>,
+) -> Result<Vec<Vec<(Rational, ModelSimState)>>, ExactProbabilityGraphError> {
+    if steps.iter().any(|step| {
+        matches!(
+            step.transition,
+            qsl_eval::simulation::model::TransitionId::Stutter
+        )
+    }) {
+        return if steps.len() == 1 {
+            Ok(Vec::new())
+        } else {
+            Err(ExactProbabilityGraphError::UnsupportedDraw)
+        };
+    }
+    Ok(vec![steps
+        .into_iter()
+        .map(|step| (step.probability, step.post))
+        .collect()])
+}
+
+fn action_distributions(
+    actions: Vec<qsl_eval::simulation::model::Action>,
+    cancel: &Cancel,
+) -> Result<Vec<Vec<(Rational, ModelSimState)>>, ExactProbabilityGraphError> {
     let mut distributions = Vec::with_capacity(actions.len());
     for action in actions {
         poll_cancel(cancel)?;
