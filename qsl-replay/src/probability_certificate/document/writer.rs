@@ -199,7 +199,7 @@ impl<'a> Text<'a> {
         unit: Option<&quire_exact::UnitId>,
         writer: &mut Writer<'_, S>,
     ) -> Result<(), Error> {
-    match unit {
+        match unit {
             None => writer.null()?,
             Some(unit) => {
                 writer.begin_array()?;
@@ -225,7 +225,6 @@ impl<'a> Text<'a> {
         }
         Ok(())
     }
-
 }
 
 impl Encode for Events<'_> {

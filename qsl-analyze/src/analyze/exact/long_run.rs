@@ -8,9 +8,9 @@ use crate::exact_probabilistic::{
     LongRunResult, ProductKind,
 };
 use qsl_replay::{
-    long_run_probability_certificate_document, write_long_run_probability_certificate,
+    long_run_probability_certificate_document, weighted_long_run_probability_certificate_document,
+    write_long_run_probability_certificate, write_weighted_long_run_probability_certificate,
     LongRunProbabilityComponent, ProbabilityDocumentIoLimits,
-    weighted_long_run_probability_certificate_document, write_weighted_long_run_probability_certificate,
 };
 
 pub(super) fn run(
@@ -19,12 +19,7 @@ pub(super) fn run(
     tamper: Option<&dyn Fn(&mut ExactProbabilityCertificate)>,
 ) -> EngineReport {
     let claim = request.claim;
-    let ProbForm::LongRunFraction {
-        bound,
-        weight,
-        ..
-    } = &claim.form
-    else {
+    let ProbForm::LongRunFraction { bound, weight, .. } = &claim.form else {
         return not_yet();
     };
     if !matches!(claim.scheduler, ProbScheduler::Workload(_))
@@ -43,10 +38,10 @@ pub(super) fn run(
     };
     let system = match ModelSystem::new_with_cancel(simulation.clone(), cancel) {
         Ok(system) => system,
-        Err(_) => {
+        Err(error) => {
             return match cancel.tripped() {
                 Some(cause) => settled(&ExactProbBuildIssue::Cancelled(cause), subject),
-                None => broken(),
+                None => EngineReport::Refused(admission(&error)),
             };
         }
     };
@@ -106,7 +101,12 @@ pub(super) fn run(
     if let Some(cause) = cancel.tripped() {
         return settled(&ExactProbBuildIssue::Cancelled(cause), subject);
     }
-    let solution = match decide_long_run_workload(&product, &predicate, weight.as_ref().map(|name| name.as_str()), &limits) {
+    let solution = match decide_long_run_workload(
+        &product,
+        &predicate,
+        weight.as_ref().map(|name| name.as_str()),
+        &limits,
+    ) {
         Ok(solution) => solution,
         Err(UnboundedError::MaxRationalBits) => {
             return settled(
@@ -126,7 +126,9 @@ pub(super) fn run(
                 subject,
             )
         }
-        Err(UnboundedError::ZeroWeightComponent) => return EngineReport::Refused(Refusal::Unsupported("ZeroWeightComponent")),
+        Err(UnboundedError::ZeroWeightComponent) => {
+            return EngineReport::Refused(Refusal::Unsupported(ZERO_WEIGHT_COMPONENT))
+        }
         Err(UnboundedError::MissingReward) => return not_yet(),
         Err(_) => return broken(),
     };
@@ -165,16 +167,41 @@ pub(super) fn run(
     }
     let bytes = if weight.is_some() {
         weighted_long_run_probability_certificate_document(
-            &system, claims, &item, certificate.values.clone(), components, document_limits, cancel,
-        ).and_then(|document| write_weighted_long_run_probability_certificate(&document, document_limits, cancel))
+            &system,
+            claims,
+            &item,
+            certificate.values.clone(),
+            components,
+            document_limits,
+            cancel,
+        )
+        .and_then(|document| {
+            write_weighted_long_run_probability_certificate(&document, document_limits, cancel)
+        })
     } else {
         long_run_probability_certificate_document(
-            &system, claims, &item, certificate.values.clone(), components, document_limits, cancel,
-        ).and_then(|document| write_long_run_probability_certificate(&document, document_limits, cancel))
+            &system,
+            claims,
+            &item,
+            certificate.values.clone(),
+            components,
+            document_limits,
+            cancel,
+        )
+        .and_then(|document| {
+            write_long_run_probability_certificate(&document, document_limits, cancel)
+        })
     };
-    let checked = bytes.and_then(|bytes| check_probability_certificate_document(
-        &system, claims, &item, &bytes, document_limits, cancel,
-    ));
+    let checked = bytes.and_then(|bytes| {
+        check_probability_certificate_document(
+            &system,
+            claims,
+            &item,
+            &bytes,
+            document_limits,
+            cancel,
+        )
+    });
     checked_report(checked, certificate, binding, None, subject)
 }
 

@@ -27,11 +27,7 @@ pub(super) fn objective(
             reward.name() == name.as_str() && reward.operation().model() == claim.subject.alias
         })
         .ok_or(ProbabilityDocumentError::Unsupported)?;
-    charge(
-        storage,
-        limits.storage_bytes,
-        name.as_str().len() as u64,
-    )?;
+    charge(storage, limits.storage_bytes, name.as_str().len() as u64)?;
     let unit = match declared.value_type() {
         ValueType::Integer | ValueType::Int(_) => None,
         ValueType::Quantity(unit) => {
@@ -93,7 +89,14 @@ pub(super) fn enumerate(
 > {
     poll_cancel(cancel)?;
     let storage = std::cell::RefCell::new(0_u64);
-    let objective = objective(system, claim, name, limits, cancel, &mut storage.borrow_mut())?;
+    let objective = objective(
+        system,
+        claim,
+        name,
+        limits,
+        cancel,
+        &mut storage.borrow_mut(),
+    )?;
     let mut costs = BTreeMap::new();
     let failure = std::cell::RefCell::new(None);
     let mut issue = None;
@@ -415,9 +418,10 @@ fn step_costs(
             Unsteppable::UndecidedSuccessor(_) => crate::ExactProbBuildIssue::UndecidedSuccessor,
         }))
     };
-    let magnitude = |rewards: &[(Identifier, ExactValue)], storage: &mut u64, remaining: &mut usize| {
-        magnitude(rewards, objective, limits, cancel, storage, remaining)
-    };
+    let magnitude =
+        |rewards: &[(Identifier, ExactValue)], storage: &mut u64, remaining: &mut usize| {
+            magnitude(rewards, objective, limits, cancel, storage, remaining)
+        };
     if let Some(workload) = workload {
         let mut admission =
             ProbabilityKeyAdmission::new(meter, storage, limits.storage_bytes, cancel);

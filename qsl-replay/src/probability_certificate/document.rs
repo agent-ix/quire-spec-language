@@ -16,11 +16,10 @@ pub use long_run::{
 };
 pub use long_run::{
     long_run_probability_certificate_document, read_long_run_probability_certificate,
-    write_long_run_probability_certificate, LongRunProbabilityComponent,
-    LongRunProbabilityDocument, WeightedLongRunProbabilityDocument,
     read_weighted_long_run_probability_certificate,
-    write_weighted_long_run_probability_certificate,
-    weighted_long_run_probability_certificate_document,
+    weighted_long_run_probability_certificate_document, write_long_run_probability_certificate,
+    write_weighted_long_run_probability_certificate, LongRunProbabilityComponent,
+    LongRunProbabilityDocument, WeightedLongRunProbabilityDocument,
 };
 mod unit;
 mod writer;
