@@ -9,8 +9,8 @@ use qsl_semantics::model::state::{ModelState, StateField, StateModel, StateObjec
 use quire_canonical::{Error, Limits, Sink, Writer};
 use quire_checked::key::DeclarationKey;
 use quire_exact::{
-    CollectionKind, CompositeValue, EffectiveId, FieldValue, IeeeWidth, Integer, NodeKey,
-    ObjectReference, Timestamp, UnitId, Uuid, Value, VariantId,
+    CollectionKind, EffectiveId, FieldValue, IeeeWidth, Integer, NodeKey, ObjectReference,
+    Timestamp, UnitId, Uuid, Value, VariantId,
 };
 use quire_semantic_value::declaration::{CompositeDeclaration, CompositeShape, TypeEnvironment};
 
@@ -33,6 +33,7 @@ pub(super) enum Scalar<'a> {
     Effective(&'a EffectiveId),
     Declaration(DeclarationRecord<'a>),
     DeclarationKey(&'a DeclarationKey),
+    DeclarationNode(&'a NodeKey),
     ModelReference {
         model: &'a StateModel,
         object_type: &'a DeclarationKey,
@@ -72,6 +73,7 @@ pub(super) trait StructuralSink {
 /// Each sink owns its storage, scalar rendering, metadata lookup and ordering.
 /// The projection owns the complete field schema and traversal.
 pub(super) trait ValueSink: StructuralSink {
+    fn pending<T>(&mut self, stack: &mut Vec<T>, task: T) -> Result<(), Self::Error>;
     fn visit(&mut self) -> Result<(), Self::Error>;
     fn scalar(&mut self, source: Scalar<'_>) -> Result<(), Self::Error>;
     fn begin_array(&mut self, order: ArrayOrder) -> Result<(), Self::Error>;
@@ -189,6 +191,10 @@ fn map_key_bytes(value: &Enc) -> Vec<u8> {
 }
 
 impl ValueSink for Retained {
+    fn pending<T>(&mut self, stack: &mut Vec<T>, task: T) -> Result<(), Self::Error> {
+        stack.push(task);
+        Ok(())
+    }
     fn visit(&mut self) -> Result<(), Self::Error> {
         Ok(())
     }
@@ -209,6 +215,12 @@ impl ValueSink for Retained {
                 .text(Limits::new(super::super::identity_limits().input_bytes))
                 .map_or(Enc::Unencodable("a declaration identity"), Enc::Str),
             Scalar::DeclarationKey(value) => Enc::Declaration(value.clone()),
+            Scalar::DeclarationNode(value) => DeclarationRecord::of_node(value)
+                .and_then(|key| {
+                    key.text(Limits::new(super::super::identity_limits().input_bytes))
+                        .ok()
+                })
+                .map_or(Enc::Unencodable("a declaration identity"), Enc::Str),
             Scalar::ModelReference {
                 model,
                 object_type,
@@ -785,10 +797,7 @@ pub(super) fn project_model_state<S: ValueSink>(
 }
 
 fn declaration<S: ValueSink>(sink: &mut S, key: &NodeKey) -> Result<(), S::Error> {
-    sink.scalar(DeclarationRecord::of_node(key).map_or(
-        Scalar::Unencodable("a declaration identity"),
-        Scalar::Declaration,
-    ))
+    sink.scalar(Scalar::DeclarationNode(key))
 }
 
 pub(super) fn project_effective<S: StructuralSink>(
@@ -892,211 +901,278 @@ pub(super) fn project_unit<S: ValueSink>(sink: &mut S, source: &UnitId) -> Resul
     sink.end_object()
 }
 
-fn slot<S: ValueSink>(
-    sink: &mut S,
-    value: &FieldValue,
-    typing: Typing<'_>,
-    placeholder: Option<&Placeholder<'_>>,
-    normalize_decimal: bool,
-) -> Result<(), S::Error> {
+enum ValueTask<'a> {
+    Value(&'a Value, bool),
+    Scalar(Scalar<'a>),
+    Name(&'static str),
+    BeginObject,
+    EndObject,
+    BeginArray(ArrayOrder),
+    EndArray,
+}
+fn pending_slot<'a>(value: &'a FieldValue, normalize: bool) -> ValueTask<'a> {
     match value {
-        FieldValue::Present(inner) => {
-            project_value(sink, inner, typing, placeholder, normalize_decimal)
-        }
-        FieldValue::Absent | FieldValue::Null => sink.scalar(Scalar::Null),
+        FieldValue::Present(value) => ValueTask::Value(value, normalize),
+        FieldValue::Absent | FieldValue::Null => ValueTask::Scalar(Scalar::Null),
     }
 }
 
-fn composite<S: ValueSink>(
+pub(super) fn project_value<'a, S: ValueSink>(
     sink: &mut S,
-    value: &CompositeValue,
-    types: &TypeEnvironment,
-    typing: Typing<'_>,
+    value: &'a Value,
+    typing: Typing<'a>,
     placeholder: Option<&Placeholder<'_>>,
     normalize_decimal: bool,
 ) -> Result<(), S::Error> {
-    match sink
-        .composite(types, value.declaration())?
-        .map(CompositeDeclaration::shape)
-    {
-        Some(CompositeShape::Record(fields)) if fields.len() == value.slots().len() => {
-            tagged(sink, "record", |sink| {
-                sink.name("name")?;
-                declaration(sink, value.declaration())?;
-                sink.name("fields")?;
-                sink.begin_array(ArrayOrder::Retained)?;
-                for (field, value) in fields.iter().zip(value.slots()) {
-                    sink.visit()?;
-                    sink.begin_object()?;
-                    sink.name("name")?;
-                    sink.scalar(Scalar::Text(field.name()))?;
-                    sink.name("value")?;
-                    slot(sink, value, typing, placeholder, normalize_decimal)?;
-                    sink.end_object()?;
-                }
-                sink.end_array()
-            })
-        }
-        Some(CompositeShape::Tuple(_)) => tagged(sink, "tuple", |sink| {
-            sink.name("name")?;
-            declaration(sink, value.declaration())?;
-            sink.name("components")?;
-            sink.begin_array(ArrayOrder::Retained)?;
-            for value in value.slots() {
-                slot(sink, value, typing, placeholder, normalize_decimal)?;
+    let mut pending = Vec::new();
+    sink.pending(&mut pending, ValueTask::Value(value, normalize_decimal))?;
+    while let Some(task) = pending.pop() {
+        sink.visit()?;
+        let (value, normalize_decimal) = match task {
+            ValueTask::Value(value, normalize) => (value, normalize),
+            ValueTask::Scalar(value) => {
+                sink.scalar(value)?;
+                continue;
             }
-            sink.end_array()
-        }),
-        Some(CompositeShape::Record(_)) => sink.scalar(Scalar::Unencodable(
-            "a record whose slots are not its declared fields",
-        )),
-        Some(CompositeShape::Union(_)) | None => {
-            sink.scalar(Scalar::Unencodable("an undeclared record"))
-        }
-    }
-}
-
-pub(super) fn project_value<S: ValueSink>(
-    sink: &mut S,
-    value: &Value,
-    typing: Typing<'_>,
-    placeholder: Option<&Placeholder<'_>>,
-    normalize_decimal: bool,
-) -> Result<(), S::Error> {
-    sink.visit()?;
-    match value {
-        Value::Boolean(value) => tagged(sink, "boolean", |sink| {
-            sink.name("value")?;
-            sink.scalar(Scalar::Boolean(*value))
-        }),
-        Value::Integer(value) => tagged(sink, "integer", |sink| {
-            sink.name("value")?;
-            sink.scalar(Scalar::Integer(value))
-        }),
-        Value::Rational(value) => tagged(sink, "rational", |sink| {
-            sink.name("numerator")?;
-            sink.scalar(Scalar::Integer(value.numerator()))?;
-            sink.name("denominator")?;
-            sink.scalar(Scalar::Integer(value.denominator()))
-        }),
-        Value::Quantity(value) => tagged(sink, "rational", |sink| {
-            sink.name("numerator")?;
-            sink.scalar(Scalar::Integer(value.magnitude().numerator()))?;
-            sink.name("denominator")?;
-            sink.scalar(Scalar::Integer(value.magnitude().denominator()))?;
-            sink.name("unit")?;
-            sink.scalar(Scalar::UnitText(value.unit()))
-        }),
-        Value::Float(value) => {
-            let (tag, digits) = match value.width() {
-                IeeeWidth::Binary32 => ("float32", 8),
-                IeeeWidth::Binary64 => ("float64", 16),
-            };
-            tagged(sink, tag, |sink| {
-                sink.name("bits")?;
-                sink.scalar(Scalar::Hex {
-                    bits: value.bits(),
-                    digits,
-                })
-            })
-        }
-        Value::Text(value) => tagged(sink, "text", |sink| {
-            sink.name("value")?;
-            sink.scalar(Scalar::Text(value.retained()))
-        }),
-        Value::String(value) => tagged(sink, "text", |sink| {
-            sink.name("value")?;
-            sink.scalar(Scalar::Text(value.as_str()))
-        }),
-        Value::Option(value) => tagged(sink, "option", |sink| {
-            sink.name("value")?;
-            match value.payload() {
-                Some(value) => project_value(sink, value, typing, placeholder, normalize_decimal),
-                None => sink.scalar(Scalar::Null),
+            ValueTask::Name(name) => {
+                sink.name(name)?;
+                continue;
             }
-        }),
-        Value::Collection(value) => {
-            let (tag, order) = match value.collection_type().kind() {
-                CollectionKind::Sequence => ("sequence", ArrayOrder::Retained),
-                CollectionKind::Set => ("set", ArrayOrder::CanonicalBytes),
-                CollectionKind::Bag => ("bag", ArrayOrder::CanonicalBytes),
-                CollectionKind::OrderedSet => ("ordered-set", ArrayOrder::Retained),
-            };
-            let normalize_elements =
-                normalize_decimal || matches!(order, ArrayOrder::CanonicalBytes);
-            tagged(sink, tag, |sink| {
-                sink.name("elements")?;
+            ValueTask::BeginObject => {
+                sink.begin_object()?;
+                continue;
+            }
+            ValueTask::EndObject => {
+                sink.end_object()?;
+                continue;
+            }
+            ValueTask::BeginArray(order) => {
                 sink.begin_array(order)?;
-                for value in value.elements() {
-                    project_value(sink, value, typing, placeholder, normalize_elements)?;
+                continue;
+            }
+            ValueTask::EndArray => {
+                sink.end_array()?;
+                continue;
+            }
+        };
+        match value {
+            Value::Boolean(value) => tagged(sink, "boolean", |sink| {
+                sink.name("value")?;
+                sink.scalar(Scalar::Boolean(*value))
+            }),
+            Value::Integer(value) => tagged(sink, "integer", |sink| {
+                sink.name("value")?;
+                sink.scalar(Scalar::Integer(value))
+            }),
+            Value::Rational(value) => tagged(sink, "rational", |sink| {
+                sink.name("numerator")?;
+                sink.scalar(Scalar::Integer(value.numerator()))?;
+                sink.name("denominator")?;
+                sink.scalar(Scalar::Integer(value.denominator()))
+            }),
+            Value::Quantity(value) => tagged(sink, "rational", |sink| {
+                sink.name("numerator")?;
+                sink.scalar(Scalar::Integer(value.magnitude().numerator()))?;
+                sink.name("denominator")?;
+                sink.scalar(Scalar::Integer(value.magnitude().denominator()))?;
+                sink.name("unit")?;
+                sink.scalar(Scalar::UnitText(value.unit()))
+            }),
+            Value::Float(value) => {
+                let (tag, digits) = match value.width() {
+                    IeeeWidth::Binary32 => ("float32", 8),
+                    IeeeWidth::Binary64 => ("float64", 16),
+                };
+                tagged(sink, tag, |sink| {
+                    sink.name("bits")?;
+                    sink.scalar(Scalar::Hex {
+                        bits: value.bits(),
+                        digits,
+                    })
+                })
+            }
+            Value::Text(value) => tagged(sink, "text", |sink| {
+                sink.name("value")?;
+                sink.scalar(Scalar::Text(value.retained()))
+            }),
+            Value::String(value) => tagged(sink, "text", |sink| {
+                sink.name("value")?;
+                sink.scalar(Scalar::Text(value.as_str()))
+            }),
+            Value::Option(value) => {
+                sink.pending(&mut pending, ValueTask::EndObject)?;
+                sink.pending(&mut pending, ValueTask::Scalar(Scalar::Text("option")))?;
+                sink.pending(&mut pending, ValueTask::Name("type"))?;
+                sink.pending(
+                    &mut pending,
+                    value
+                        .payload()
+                        .map_or(ValueTask::Scalar(Scalar::Null), |value| {
+                            ValueTask::Value(value, normalize_decimal)
+                        }),
+                )?;
+                sink.pending(&mut pending, ValueTask::Name("value"))?;
+                sink.pending(&mut pending, ValueTask::BeginObject)?;
+                Ok(())
+            }
+            Value::Collection(value) => {
+                let (tag, order) = match value.collection_type().kind() {
+                    CollectionKind::Sequence => ("sequence", ArrayOrder::Retained),
+                    CollectionKind::Set => ("set", ArrayOrder::CanonicalBytes),
+                    CollectionKind::Bag => ("bag", ArrayOrder::CanonicalBytes),
+                    CollectionKind::OrderedSet => ("ordered-set", ArrayOrder::Retained),
+                };
+                let normalize_elements =
+                    normalize_decimal || matches!(order, ArrayOrder::CanonicalBytes);
+                sink.pending(&mut pending, ValueTask::EndObject)?;
+                sink.pending(&mut pending, ValueTask::Scalar(Scalar::Text(tag)))?;
+                sink.pending(&mut pending, ValueTask::Name("type"))?;
+                sink.pending(&mut pending, ValueTask::EndArray)?;
+                for value in value.elements().iter().rev() {
+                    sink.pending(&mut pending, ValueTask::Value(value, normalize_elements))?;
                 }
-                sink.end_array()
-            })
-        }
-        Value::Reference(value) => match placeholder.and_then(|replace| replace(value)) {
-            Some(value) => sink.scalar(Scalar::Replacement(value)),
-            None => project_reference(sink, value),
-        },
-        Value::Decimal(value) => {
-            let value = if normalize_decimal {
-                value.normalized()
-            } else {
-                value.representation()
-            };
-            tagged(sink, "decimal", |sink| {
-                sink.name("coefficient")?;
-                sink.scalar(Scalar::Integer(value.coefficient()))?;
-                sink.name("scale")?;
-                sink.scalar(Scalar::Scale(value.scale()))
-            })
-        }
-        Value::Uuid(value) => tagged(sink, "uuid", |sink| {
-            sink.name("value")?;
-            sink.scalar(Scalar::Uuid(value))
-        }),
-        Value::Timestamp(value) => tagged(sink, "timestamp", |sink| {
-            sink.name("nanoseconds")?;
-            sink.scalar(Scalar::Timestamp(value))
-        }),
-        Value::Enum(value) => {
-            let mut found = None;
-            'declarations: for declared in typing.variants {
-                sink.visit()?;
-                for case in declared.cases() {
-                    if sink.variant(case.variant_ref(), value.variant())? {
-                        found = Some((declared, case));
-                        break 'declarations;
+                sink.pending(&mut pending, ValueTask::BeginArray(order))?;
+                sink.pending(&mut pending, ValueTask::Name("elements"))?;
+                sink.pending(&mut pending, ValueTask::BeginObject)?;
+                Ok(())
+            }
+
+            Value::Reference(value) => match placeholder.and_then(|replace| replace(value)) {
+                Some(value) => sink.scalar(Scalar::Replacement(value)),
+                None => project_reference(sink, value),
+            },
+            Value::Decimal(value) => {
+                let value = if normalize_decimal {
+                    value.normalized()
+                } else {
+                    value.representation()
+                };
+                tagged(sink, "decimal", |sink| {
+                    sink.name("coefficient")?;
+                    sink.scalar(Scalar::Integer(value.coefficient()))?;
+                    sink.name("scale")?;
+                    sink.scalar(Scalar::Scale(value.scale()))
+                })
+            }
+            Value::Uuid(value) => tagged(sink, "uuid", |sink| {
+                sink.name("value")?;
+                sink.scalar(Scalar::Uuid(value))
+            }),
+            Value::Timestamp(value) => tagged(sink, "timestamp", |sink| {
+                sink.name("nanoseconds")?;
+                sink.scalar(Scalar::Timestamp(value))
+            }),
+            Value::Enum(value) => {
+                let mut found = None;
+                'declarations: for declared in typing.variants {
+                    sink.visit()?;
+                    for case in declared.cases() {
+                        if sink.variant(case.variant_ref(), value.variant())? {
+                            found = Some((declared, case));
+                            break 'declarations;
+                        }
+                    }
+                }
+                match found {
+                    Some((declared, case)) => tagged(sink, "enum", |sink| {
+                        sink.name("name")?;
+                        declaration(sink, declared.node_ref())?;
+                        sink.name("member")?;
+                        sink.scalar(Scalar::Text(case.name()))
+                    }),
+                    None => sink.scalar(Scalar::Unencodable("an undeclared enum value")),
+                }
+            }
+            Value::Population(_) => sink.scalar(Scalar::Unencodable("a population value")),
+            Value::Composite(value) => {
+                match match typing.types {
+                    Some(types) => sink.composite(types, value.declaration())?,
+                    None => None,
+                }
+                .map(CompositeDeclaration::shape)
+                {
+                    Some(CompositeShape::Record(fields)) if fields.len() == value.slots().len() => {
+                        sink.pending(&mut pending, ValueTask::EndObject)?;
+                        sink.pending(&mut pending, ValueTask::Scalar(Scalar::Text("record")))?;
+                        sink.pending(&mut pending, ValueTask::Name("type"))?;
+                        sink.pending(&mut pending, ValueTask::EndArray)?;
+                        for (field, value) in fields.iter().zip(value.slots()).rev() {
+                            sink.pending(&mut pending, ValueTask::EndObject)?;
+                            sink.pending(&mut pending, pending_slot(value, normalize_decimal))?;
+                            sink.pending(&mut pending, ValueTask::Name("value"))?;
+                            sink.pending(
+                                &mut pending,
+                                ValueTask::Scalar(Scalar::Text(field.name())),
+                            )?;
+                            sink.pending(&mut pending, ValueTask::Name("name"))?;
+                            sink.pending(&mut pending, ValueTask::BeginObject)?;
+                        }
+                        sink.pending(&mut pending, ValueTask::BeginArray(ArrayOrder::Retained))?;
+                        sink.pending(&mut pending, ValueTask::Name("fields"))?;
+                        sink.pending(
+                            &mut pending,
+                            ValueTask::Scalar(Scalar::DeclarationNode(value.declaration())),
+                        )?;
+                        sink.pending(&mut pending, ValueTask::Name("name"))?;
+                        sink.pending(&mut pending, ValueTask::BeginObject)?;
+                        Ok(())
+                    }
+                    Some(CompositeShape::Tuple(_)) => {
+                        sink.pending(&mut pending, ValueTask::EndObject)?;
+                        sink.pending(&mut pending, ValueTask::Scalar(Scalar::Text("tuple")))?;
+                        sink.pending(&mut pending, ValueTask::Name("type"))?;
+                        sink.pending(&mut pending, ValueTask::EndArray)?;
+                        for value in value.slots().iter().rev() {
+                            sink.pending(&mut pending, pending_slot(value, normalize_decimal))?;
+                        }
+                        sink.pending(&mut pending, ValueTask::BeginArray(ArrayOrder::Retained))?;
+                        sink.pending(&mut pending, ValueTask::Name("components"))?;
+                        sink.pending(
+                            &mut pending,
+                            ValueTask::Scalar(Scalar::DeclarationNode(value.declaration())),
+                        )?;
+                        sink.pending(&mut pending, ValueTask::Name("name"))?;
+                        sink.pending(&mut pending, ValueTask::BeginObject)?;
+                        Ok(())
+                    }
+                    Some(CompositeShape::Record(_)) => sink.scalar(Scalar::Unencodable(
+                        "a record whose slots are not its declared fields",
+                    )),
+                    Some(CompositeShape::Union(_)) | None => {
+                        sink.scalar(Scalar::Unencodable(if typing.types.is_some() {
+                            "an undeclared record"
+                        } else {
+                            "a record or tuple value"
+                        }))
                     }
                 }
             }
-            match found {
-                Some((declared, case)) => tagged(sink, "enum", |sink| {
-                    sink.name("name")?;
-                    declaration(sink, declared.node_ref())?;
-                    sink.name("member")?;
-                    sink.scalar(Scalar::Text(case.name()))
-                }),
-                None => sink.scalar(Scalar::Unencodable("an undeclared enum value")),
+            Value::Union(value) => {
+                sink.pending(&mut pending, ValueTask::EndObject)?;
+                sink.pending(&mut pending, ValueTask::Scalar(Scalar::Text("union")))?;
+                sink.pending(&mut pending, ValueTask::Name("type"))?;
+                sink.pending(&mut pending, ValueTask::EndArray)?;
+                for value in value.payload().iter().rev() {
+                    sink.pending(&mut pending, ValueTask::Value(value, normalize_decimal))?;
+                }
+                sink.pending(&mut pending, ValueTask::BeginArray(ArrayOrder::Retained))?;
+                sink.pending(&mut pending, ValueTask::Name("components"))?;
+                sink.pending(
+                    &mut pending,
+                    ValueTask::Scalar(Scalar::Text(value.member().identifier())),
+                )?;
+                sink.pending(&mut pending, ValueTask::Name("member"))?;
+                sink.pending(
+                    &mut pending,
+                    ValueTask::Scalar(Scalar::DeclarationNode(value.declaration())),
+                )?;
+                sink.pending(&mut pending, ValueTask::Name("name"))?;
+                sink.pending(&mut pending, ValueTask::BeginObject)?;
+                Ok(())
             }
-        }
-        Value::Population(_) => sink.scalar(Scalar::Unencodable("a population value")),
-        Value::Composite(value) => match typing.types {
-            Some(types) => composite(sink, value, types, typing, placeholder, normalize_decimal),
-            None => sink.scalar(Scalar::Unencodable("a record or tuple value")),
-        },
-        Value::Union(value) => tagged(sink, "union", |sink| {
-            sink.name("name")?;
-            declaration(sink, value.declaration())?;
-            sink.name("member")?;
-            sink.scalar(Scalar::Text(value.member().identifier()))?;
-            sink.name("components")?;
-            sink.begin_array(ArrayOrder::Retained)?;
-            for value in value.payload() {
-                project_value(sink, value, typing, placeholder, normalize_decimal)?;
-            }
-            sink.end_array()
-        }),
+        }?;
     }
+    Ok(())
 }
 
 #[cfg(test)]

@@ -135,11 +135,12 @@ impl Scope<'_> {
         self.canonical(|writer| writer.string(source))
     }
 
-    fn integer(&self, value: &Integer) -> Result<Vec<u8>, ModelKeyError> {
-        let text = self.decimal(value)?;
-        self.text(&text)
-    }
-    fn decimal(&self, value: &Integer) -> Result<String, ModelKeyError> {
+    fn decimal(
+        &self,
+        value: &Integer,
+        max_bytes: usize,
+        offset: usize,
+    ) -> Result<String, ModelKeyError> {
         self.poll()?;
         self.budget
             .borrow_mut()
@@ -147,10 +148,7 @@ impl Scope<'_> {
             .map_err(|_| ModelKeyError::Denied)?;
         let mut budget = DecimalProvision(self);
         let text = value
-            .try_to_decimal_string_with_budget(
-                usize::try_from(self.identity.input_bytes).unwrap_or(usize::MAX),
-                &mut budget,
-            )
+            .try_to_decimal_string_with_budget(max_bytes, &mut budget)
             .map_err(|error| match error {
                 IntegerDecimalBudgetError::Denied => self
                     .refused
@@ -163,7 +161,7 @@ impl Scope<'_> {
                     qsl_foundation::diagnostic::LimitExceeded::new(
                         Setting::IdentityInputBytes,
                         self.identity.input_bytes,
-                        required as u128,
+                        required as u128 + offset as u128,
                     ),
                 )),
                 IntegerDecimalBudgetError::Decimal(
@@ -174,6 +172,50 @@ impl Scope<'_> {
                 ) => ModelKeyError::SizeOverflow,
             })?;
         Ok(text)
+    }
+
+    fn string_length(&self, source: &str) -> Result<usize, ModelKeyError> {
+        struct Count<'s, 'a> {
+            scope: &'s Scope<'a>,
+            bytes: usize,
+        }
+        impl Sink for Count<'_, '_> {
+            fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), Error> {
+                self.scope
+                    .work(1)
+                    .map_err(|error| self.scope.refuse(error))?;
+                self.bytes = self
+                    .bytes
+                    .checked_add(bytes.len())
+                    .ok_or_else(|| self.scope.refuse(ModelKeyError::SizeOverflow))?;
+                Ok(())
+            }
+        }
+        self.work(source.len() as u64)?;
+        let mut count = Count {
+            scope: self,
+            bytes: 0,
+        };
+        let mut reservation = Provision(self);
+        let mut writer = Writer::with_reservation(
+            &mut count,
+            Limits::new(self.identity.input_bytes),
+            &mut reservation,
+        );
+        let result = writer
+            .string(source)
+            .and_then(|()| writer.finish().map(|_| ()));
+        self.poll()?;
+        if let Some(error) = self.refused.borrow_mut().take() {
+            return Err(error);
+        }
+        result.map_err(|error| match error {
+            Error::Limit(_) | Error::Allocation { .. } => {
+                ModelKeyError::Encoding(EncodingRefusal::of(&error, self.identity))
+            }
+            _ => ModelKeyError::Unsupported("canonical string measurement"),
+        })?;
+        Ok(count.bytes)
     }
 
     fn text_equal(&self, left: &str, right: &str) -> Result<bool, ModelKeyError> {
@@ -425,8 +467,73 @@ impl<'s, 'a> Bounded<'s, 'a> {
             .append(&mut bytes, if frame.object { b"}" } else { b"]" })?;
         self.push(Fragment { bytes, key })
     }
+    fn available(&self) -> Result<(usize, usize), ModelKeyError> {
+        let separator = usize::from(
+            self.stack
+                .last()
+                .is_some_and(|frame| !frame.object && !frame.members.is_empty()),
+        );
+        let offset = self
+            .produced
+            .checked_add(separator)
+            .ok_or(ModelKeyError::SizeOverflow)?;
+        self.scope.bytes(offset)?;
+        Ok((
+            usize::try_from(self.scope.identity.input_bytes)
+                .unwrap_or(usize::MAX)
+                .saturating_sub(offset),
+            offset,
+        ))
+    }
+    fn integer(&mut self, value: &Integer) -> Result<(), ModelKeyError> {
+        let (available, offset) = self.available()?;
+        if available < 2 {
+            self.scope
+                .bytes(offset.checked_add(2).ok_or(ModelKeyError::SizeOverflow)?)?;
+        }
+        let text = self
+            .scope
+            .decimal(value, available.saturating_sub(2), offset + 2)?;
+        self.text(&text)
+    }
+
     fn formatted(&mut self, source: impl std::fmt::Display) -> Result<(), ModelKeyError> {
         use std::fmt::Write;
+        struct Count<'s, 'a> {
+            scope: &'s Scope<'a>,
+            bytes: usize,
+            error: Option<ModelKeyError>,
+        }
+        impl std::fmt::Write for Count<'_, '_> {
+            fn write_str(&mut self, text: &str) -> std::fmt::Result {
+                self.scope.work(text.len() as u64).map_err(|error| {
+                    self.error = Some(error);
+                    std::fmt::Error
+                })?;
+                self.bytes = self.bytes.checked_add(text.len()).ok_or_else(|| {
+                    self.error = Some(ModelKeyError::SizeOverflow);
+                    std::fmt::Error
+                })?;
+                Ok(())
+            }
+        }
+        let mut count = Count {
+            scope: self.scope,
+            bytes: 0,
+            error: None,
+        };
+        if write!(count, "{source}").is_err() {
+            return Err(count
+                .error
+                .unwrap_or(ModelKeyError::Unsupported("scalar measurement")));
+        }
+        let (_, offset) = self.available()?;
+        self.scope.bytes(
+            offset
+                .checked_add(count.bytes)
+                .and_then(|bytes| bytes.checked_add(2))
+                .ok_or(ModelKeyError::SizeOverflow)?,
+        )?;
         struct Text<'s, 'a> {
             scope: &'s Scope<'a>,
             bytes: Vec<u8>,
@@ -481,7 +588,11 @@ impl StructuralSink for Bounded<'_, '_> {
         self.end()
     }
     fn text(&mut self, source: &str) -> Result<(), Self::Error> {
-        self.leaf(self.scope.text(source)?)
+        let length = self.scope.string_length(source)?;
+        self.separator()?;
+        self.charge(length)?;
+        let bytes = self.scope.text(source)?;
+        self.push(Fragment { bytes, key: None })
     }
     fn node(&mut self, source: &NodeKey) -> Result<(), Self::Error> {
         qsl_foundation::node_wire::project_node_key(source, self)
@@ -505,7 +616,10 @@ impl qsl_foundation::node_wire::NodeIdentitySink for Bounded<'_, '_> {
         StructuralSink::name(self, name)
     }
     fn ordinal(&mut self, ordinal: u64) -> Result<(), Self::Error> {
-        let text = self.scope.decimal(&Integer::from(ordinal))?;
+        let (available, offset) = self.available()?;
+        let text = self
+            .scope
+            .decimal(&Integer::from(ordinal), available, offset)?;
         self.leaf(text.into_bytes())
     }
     fn text(&mut self, text: &str) -> Result<(), Self::Error> {
@@ -532,15 +646,31 @@ impl qsl_foundation::node_wire::NodeIdentitySink for Bounded<'_, '_> {
 }
 
 impl ValueSink for Bounded<'_, '_> {
+    fn pending<T>(&mut self, stack: &mut Vec<T>, task: T) -> Result<(), Self::Error> {
+        self.scope.work(1)?;
+        self.scope.reserve(stack, 1)?;
+        stack.push(task);
+        Ok(())
+    }
     fn visit(&mut self) -> Result<(), Self::Error> {
         self.scope.work(1)
     }
     fn scalar(&mut self, source: Scalar<'_>) -> Result<(), Self::Error> {
         match source {
-            Scalar::Null => self.leaf(self.scope.canonical(|writer| writer.null())?),
-            Scalar::Boolean(value) => self.leaf(self.scope.canonical(|writer| writer.bool(value))?),
+            Scalar::Null => {
+                self.separator()?;
+                self.charge(4)?;
+                let bytes = self.scope.canonical(|writer| writer.null())?;
+                self.push(Fragment { bytes, key: None })
+            }
+            Scalar::Boolean(value) => {
+                self.separator()?;
+                self.charge(if value { 4 } else { 5 })?;
+                let bytes = self.scope.canonical(|writer| writer.bool(value))?;
+                self.push(Fragment { bytes, key: None })
+            }
             Scalar::Text(value) => self.text(value),
-            Scalar::Integer(value) => self.leaf(self.scope.integer(value)?),
+            Scalar::Integer(value) => self.integer(value),
             Scalar::Hex { bits, digits } => {
                 struct Hex(u64, usize);
                 impl std::fmt::Display for Hex {
@@ -550,13 +680,9 @@ impl ValueSink for Bounded<'_, '_> {
                 }
                 self.formatted(Hex(bits, digits))
             }
-            Scalar::Scale(value) => {
-                self.leaf(self.scope.integer(&Integer::from(u64::from(value)))?)
-            }
+            Scalar::Scale(value) => self.integer(&Integer::from(u64::from(value))),
             Scalar::Uuid(value) => self.formatted(value),
-            Scalar::Timestamp(value) => {
-                self.leaf(self.scope.integer(&Integer::from(value.nanoseconds()))?)
-            }
+            Scalar::Timestamp(value) => self.integer(&Integer::from(value.nanoseconds())),
             Scalar::Node(value) => self.node(value),
             Scalar::Effective(value) => self.effective(value),
             Scalar::Declaration(value) => {
@@ -570,6 +696,26 @@ impl ValueSink for Bounded<'_, '_> {
                     std::str::from_utf8(&bytes)
                         .map_err(|_| ModelKeyError::Unsupported("declaration UTF-8"))?,
                 )
+            }
+            Scalar::DeclarationNode(value) => {
+                let mut last = None;
+                let mut path = value.view().path();
+                loop {
+                    self.scope.work(1)?;
+                    match path.next() {
+                        Some(segment) => last = Some(segment),
+                        None => break,
+                    }
+                }
+                match last {
+                    Some(quire_exact::PathSegmentView::Text(node)) => {
+                        self.scalar(Scalar::Declaration(super::DeclarationRecord {
+                            package: value.view().package(),
+                            node,
+                        }))
+                    }
+                    _ => Err(ModelKeyError::Unsupported("a declaration identity")),
+                }
             }
             Scalar::DeclarationKey(value) => {
                 self.scalar(Scalar::Declaration(super::DeclarationRecord::of_key(value)))
@@ -820,7 +966,10 @@ mod tests {
             identity: IdentityLimits::default(),
             refused: RefCell::new(None),
         };
-        assert_eq!(scope.integer(&integer), Err(ModelKeyError::Denied));
+        assert_eq!(
+            scope.decimal(&integer, usize::MAX, 0),
+            Err(ModelKeyError::Denied)
+        );
         drop(scope);
         assert_eq!(budget.integers, 1);
         assert_eq!(budget.storage, 0);

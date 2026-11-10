@@ -1557,13 +1557,22 @@ impl Run<'_, '_, '_> {
                         .map_err(|_| stop(BROKEN)),
                     }?;
                     for (clause, evaluation) in undecided {
+                        super::key_budget::reserve(self.walk.key_policy, contract, 1)?;
                         contract.push(ContractFinding {
                             transition: self.transition_bytes.to_vec(),
-                            candidate: Some(state_key.as_bytes().to_vec()),
+                            candidate: Some(super::key_budget::copy_bytes(
+                                self.walk.key_policy,
+                                state_key.as_bytes(),
+                            )?),
                             clause: clause.clone(),
                             finding: ModelFinding::ContractUndetermined {
                                 transition: self.transition.clone(),
-                                candidate: Some(state_key.clone()),
+                                candidate: Some(crate::simulation::StateKey::from_canonical_bytes(
+                                    super::key_budget::copy_bytes(
+                                        self.walk.key_policy,
+                                        state_key.as_bytes(),
+                                    )?,
+                                )),
                                 clause,
                                 evaluation,
                             },

@@ -415,7 +415,28 @@ fn expand<'s>(
             )?;
         }
     }
-    findings.extend(sorted_contract_findings(contract));
+    match key_policy {
+        Some(policy) => {
+            super::key_budget::sort(policy, &mut contract, |left, right| {
+                let transition = policy.compare(&left.transition, &right.transition)?;
+                if !transition.is_eq() {
+                    return Ok(transition);
+                }
+                let candidate = match (&left.candidate, &right.candidate) {
+                    (Some(left), Some(right)) => policy.compare(left, right)?,
+                    (None, None) => std::cmp::Ordering::Equal,
+                    (None, Some(_)) => std::cmp::Ordering::Less,
+                    (Some(_), None) => std::cmp::Ordering::Greater,
+                };
+                if !candidate.is_eq() {
+                    return Ok(candidate);
+                }
+                policy.compare(left.clause.as_bytes(), right.clause.as_bytes())
+            })?;
+            findings.extend(contract.into_iter().map(|entry| entry.finding));
+        }
+        None => findings.extend(sorted_contract_findings(contract)),
+    }
     Ok(Expansion {
         successors: successors
             .into_iter()

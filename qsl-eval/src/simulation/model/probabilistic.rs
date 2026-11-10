@@ -716,7 +716,8 @@ impl ModelSystem<'_> {
                 &arguments,
                 self.typing(),
             )?;
-            let mut reached = Vec::with_capacity(vector.successors.len());
+            let mut reached = Vec::new();
+            super::key_budget::reserve(key_policy, &mut reached, vector.successors.len())?;
             for index in vector.successors.clone() {
                 let successor = successors
                     .get_mut(index)
@@ -730,7 +731,12 @@ impl ModelSystem<'_> {
                 };
                 reached.push((key, successor));
             }
-            reached.sort_by(|left, right| left.0.cmp(&right.0));
+            match key_policy {
+                Some(policy) => super::key_budget::sort(policy, &mut reached, |left, right| {
+                    policy.compare(left.0.as_bytes(), right.0.as_bytes())
+                })?,
+                None => reached.sort_by(|left, right| left.0.cmp(&right.0)),
+            };
             let draw = Draw {
                 random,
                 probability,
@@ -866,7 +872,7 @@ impl ModelSystem<'_> {
             for draw in &action.draws {
                 if draw.successors.len() != 1 {
                     return Ok(Err(Unsteppable::NotMarkov(NotMarkov {
-                        state: key.clone(),
+                        state: key,
                         transition: action.identity.clone(),
                         random: draw.random.clone(),
                         post_states: u32::try_from(draw.successors.len()).unwrap_or(u32::MAX),
