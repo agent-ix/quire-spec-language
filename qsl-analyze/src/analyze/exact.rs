@@ -480,7 +480,10 @@ fn run(
                 document_limits,
                 cancel,
             ) {
-                return document_failure(error, subject);
+                return match error {
+                    ProbabilityDocumentError::Graph(ExactProbabilityGraphError::Cycle) => not_yet(),
+                    other => document_failure(other, subject),
+                };
             }
         }
         let bounded_monitor = match (bounded_formula, monitor) {

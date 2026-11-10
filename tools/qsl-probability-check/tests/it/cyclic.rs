@@ -191,6 +191,42 @@ fn target_free_recurrence_forces_zero_and_early_target_cannot_hide_scheduler_cho
         "an original choice beyond target must not be accepted: {output}"
     );
     assert_eq!(output["status"], "unsupported");
+    let (emitted, settlement) = request_with(
+        &claim(
+            &model(false),
+            "every scheduler",
+            ">=",
+            "rational(3,5)",
+            "m.delivered",
+        ),
+        SNAPSHOT,
+        ExactProbLimits::default(),
+        domain().as_bytes(),
+    );
+    assert!(emitted.is_none(), "cyclic threshold miss has no proof");
+    assert!(
+        matches!(settlement, qsl_analyze::analyze::Settlement::Disposed(disposed)
+        if disposed.kind == qsl_analyze::analyze::DispositionKind::Unsupported),
+        "cyclic threshold miss must not enter native acyclic witness construction"
+    );
+}
+
+#[trace("TC-636", "FR-201-AC-23", "FR-201-AC-25", "FR-282-AC-19")]
+#[test]
+fn explicit_cyclic_profile_admits_acyclic_dtmc_and_target_precedence() {
+    for (target, op, threshold) in [("true", ">=", "1"), ("m.delivered", "<=", "0")] {
+        let base = model(false).replace("self.attempts = 2 and not self.delivered", "true");
+        let request = proof(&claim(&base, "every scheduler", op, threshold, target));
+        assert_eq!(
+            document(&request)["objective"]["profile"],
+            "quire.probability-objective/reachability/v1"
+        );
+        let explicit = mutate(&request, |doc| {
+            doc["objective"]["profile"] =
+                json!("quire.probability-objective/cyclic-dtmc-eventual/v1")
+        });
+        accepted(&explicit, threshold, "1");
+    }
 }
 
 #[trace("TC-636", "FR-201-AC-24", "FR-201-AC-25", "FR-282-AC-18")]
