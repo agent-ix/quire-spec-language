@@ -1123,10 +1123,10 @@ mod tests {
     pub(super) fn model_bytes(index: usize) -> &'static [u8] {
         match index {
             0 => include_bytes!(
-                "../../../qsl-probability-check/tests/fixtures/link.model-key-0.json"
+                "../../../tools/qsl-probability-check/tests/fixtures/link.model-key-0.json"
             ),
             1 => include_bytes!(
-                "../../../qsl-probability-check/tests/fixtures/link.model-key-1.json"
+                "../../../tools/qsl-probability-check/tests/fixtures/link.model-key-1.json"
             ),
             _ => panic!("two production model-state vectors"),
         }
