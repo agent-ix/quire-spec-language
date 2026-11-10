@@ -1392,6 +1392,29 @@ mod tests {
     use super::*;
     use ix_trace_rs::trace;
 
+    #[trace("TC-636", "FR-201-AC-25", "FR-282-AC-19")]
+    #[test]
+    fn cyclic_profile_roundtrip_retains_its_explicit_selection() {
+        let cancel = Cancel::new();
+        let mut cyclic = document();
+        cyclic.cyclic_dtmc = true;
+        let bytes = write_probability_certificate(&cyclic, limits(), &cancel).unwrap();
+        let decoded = read_probability_certificate(&bytes, limits(), &cancel).unwrap();
+        assert_eq!(decoded, cyclic);
+        assert_eq!(
+            write_probability_certificate(&decoded, limits(), &cancel).unwrap(),
+            bytes
+        );
+        let old = document();
+        let old_bytes = write_probability_certificate(&old, limits(), &cancel).unwrap();
+        assert_ne!(old_bytes, bytes);
+        assert!(
+            !read_probability_certificate(&old_bytes, limits(), &cancel)
+                .unwrap()
+                .cyclic_dtmc
+        );
+    }
+
     #[trace("TC-636", "FR-201-AC-21", "FR-201-AC-22")]
     #[test]
     fn reward_codec_preserves_large_values_and_closed_objective_without_changing_probability_codec()
