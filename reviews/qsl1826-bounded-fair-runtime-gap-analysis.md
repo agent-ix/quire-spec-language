@@ -23,7 +23,7 @@ Independent gap-analysis of frozen PR2667 head 3f9a89c53f1b4ba95c06235f1608aaf53
 
 ## Verdict
 
-CONDITIONAL — computed repository matrix unavailable; implementation finding FND-001 is recorded by code-review.
+CONDITIONAL — no outstanding scoped implementation finding after disposition pass 1; computed repository matrix and full-binary qualification remain unavailable/pending.
 
 ## Findings
 
@@ -147,3 +147,11 @@ bindings:
   ac_id: FR-201-AC-49
   trace: correct
 ```
+
+## Disposition pass 1 evidence
+
+Disposition pass 1 reviewed frozen remote/local head 069d6d46c7eddf880ec5c2c1fbc153e2d9ea2061 (fix 8f47b841f plus format 069d6d46). The exact original Findings rows remain unchanged. The budgeted/new-fair bounded route now matches PredicateReading::Undefined explicitly and returns ProbabilityDocumentError::UndefinedPredicate(cause). The legacy unbudgeted route retains ExpansionRefused, and Refused/expansion/cancellation behavior is unchanged. Native regression reads the actual owner predicate, asserts it is Undefined, and compares the exact cause rather than a fabricated expected code. The process control requires the typed undefined facade while the existing post-horizon control still accepts.
+
+The independent scratch reproduction was repeated against the corrected fresh checker: status=refused, reason=probability certificate predicate undefined: Kernel(DivisionByZero), exit2. This replaces the observed generic stopped/ExpansionRefused result from the original finding. Log: /tmp/qsl1826-bounded-fair-runtime-review/disposition-1-reproduction.log. No branch edit or additional cargo build was needed for that fresh-process reproduction. Coder's completed fix checks were read: process11/native4 and scoped Clippy all pass with exit0 in /tmp/qsl1826-bounded-fair-fix1-{process,native,clippy}.log; format/diff checks pass. Inspected fix diff and tests for new regressions; none found. No broad/full binary run was duplicated during disposition.
+
+All scoped concrete findings are closed. This is not authorization to merge: the user hold pending terra's QSL12 stack remains, and root/coder must complete the required full test binaries on the exact final head after main-fix integration. Computed repository matrix remains unavailable; external private-reader/interpreter boundaries remain explicit. No whole-parent or full FR201AC30 qualification claim.
