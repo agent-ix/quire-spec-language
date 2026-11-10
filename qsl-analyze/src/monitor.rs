@@ -17,7 +17,9 @@ use qsl_replay::spine::{
     PackagesStage, RunRefusal, SpineLimits, TemporalIndeterminateReason, TemporalTraceRefusal,
     TemporalUndefinedCause, TemporalVerdict, TraceInput,
 };
-use qsl_replay::{ClauseRunNotAnItem, OutcomeDocument, OutcomeItem, OutcomeStage};
+use qsl_replay::{
+    ClauseRunNotAnItem, Operation, OutcomeDiagnostic, OutcomeDocument, OutcomeItem, OutcomeStage,
+};
 use qsl_semantics::check::TemporalClauseNode;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::PackageInput;
@@ -240,6 +242,45 @@ pub enum MonitorRefusal {
         /// The source the region names.
         source: SourceIdentity,
     },
+}
+
+impl MonitorRefusal {
+    /// The FR-286 `monitor` document of a whole-request refusal: the
+    /// refusal's category and one diagnostic with its catalog code and cause,
+    /// and no item.
+    pub fn document(&self) -> OutcomeDocument {
+        let refused = |catalog: CatalogCode, message: String| {
+            let category =
+                qsl_foundation::diagnostic::category_of(&catalog).unwrap_or(Category::Refusal);
+            OutcomeDocument::new(Operation::Monitor, None, category).with_diagnostics(vec![
+                OutcomeDiagnostic::new(Some(catalog.cause()), catalog.code(), None, message),
+            ])
+        };
+        match self {
+            Self::TraceDocument { record, pointer } => refused(
+                record.catalog,
+                format!("trace document defect at `{pointer}`"),
+            ),
+            Self::Admission { position, failure } => crate::analyze::refusal_document(
+                Operation::Monitor,
+                failure,
+                format!("trace position {position}: {failure}"),
+            ),
+            Self::ClauseRefused { clause, failure } => crate::analyze::refusal_document(
+                Operation::Monitor,
+                failure,
+                format!("clause `{clause}`: {failure}"),
+            ),
+            Self::UnknownClause { name } => refused(
+                CatalogCode::new("missing_declaration", "missing-name"),
+                format!("the package declares no temporal clause `{name}`"),
+            ),
+            Self::SourceNotSupplied { clause, source } => refused(
+                CatalogCode::new("invalid_runtime_input", "missing-member"),
+                format!("clause `{clause}` needs the source `{source:?}`, which `sources` lacks"),
+            ),
+        }
+    }
 }
 
 type Failure = StageFailure<MonitorRefusal>;

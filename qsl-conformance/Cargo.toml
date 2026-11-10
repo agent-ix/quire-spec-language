@@ -1,0 +1,44 @@
+[package]
+name = "qsl-conformance"
+version = "0.1.0"
+publish = false
+edition = "2021"
+rust-version = "1.98"
+license = "AGPL-3.0-or-later"
+description = "FR-564, FR-565 (ADR-029 CB-4): the lifecycle conformance matrix the library half and the driver CLI half both run."
+
+# The matrix runs QSL's lifecycle operations (`qsl-replay`'s spine, `qsl-analyze`'s
+# `analyze`, `monitor` and provider entry), so it depends on the layers those
+# name and on nothing else; the driver depends on this crate, never the reverse.
+[dependencies]
+qsl-analyze = { path = "../qsl-analyze" }
+qsl-eval = { path = "../qsl-eval" }
+qsl-foundation = { path = "../qsl-foundation" }
+qsl-route = { path = "../qsl-route" }
+qsl-package = { path = "../qsl-package" }
+qsl-replay = { path = "../qsl-replay" }
+qsl-semantics = { path = "../qsl-semantics" }
+quire-checked = { workspace = true }
+quire-eval = { workspace = true }
+quire-exact = { workspace = true }
+quire-semantic-value = { workspace = true }
+thiserror = "2.0.20"
+
+[dev-dependencies]
+serde_json = "1.0.151"
+tempfile = "3.27.0"
+qsl-cst = { path = "../qsl-cst" }
+qsl-forms = { path = "../qsl-forms" }
+ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }
+qsl-analyze = { path = "../qsl-analyze", features = ["test-support"] }
+
+[[test]]
+name = "it"
+path = "tests/it/main.rs"
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+
+[lints.clippy]
+all = "deny"

@@ -25,7 +25,7 @@
 
 use crate::hybrid::{BoundDimension, SolverHorizon};
 use qsl_cst::format::FormatRefusal;
-use qsl_foundation::diagnostic::{Code, Locus, StageFailure, Staged};
+use qsl_foundation::diagnostic::{Code, Locus, StageFailure, Staged, Stopped};
 use qsl_foundation::source::provenance::{OccurrenceKey, RawSourceRef};
 use qsl_foundation::source::{SourceLabel, SourceReadCause};
 use qsl_foundation::{LocatedSpan, RequestIndex};
@@ -313,6 +313,15 @@ impl WireLocus {
 enum CauseLimit {
     Name(&'static str),
     Bytes(u64),
+}
+
+/// The diagnostic a disposition-settled item carries: its catalog code and
+/// cause, and its `detail` keyed by FR-272 payload names (QSpec FR-331).
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct ItemDiagnostic {
+    code: &'static str,
+    cause: &'static str,
+    detail: serde_json::Map<String, serde_json::Value>,
 }
 
 /// The typed cause an item's terminal record carries: its FR-331 spelling in
@@ -762,6 +771,11 @@ pub struct OutcomeItem {
     request_index: usize,
     result: ItemLabel,
     cause: Option<ItemCause>,
+    /// The FR-272 diagnostic of a record settled by an `unsupported` or
+    /// `invalid-request` disposition (FR-286). An `unsupported` item carries
+    /// it and no `cause`; a `declined` item carries both.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    diagnostic: Option<ItemDiagnostic>,
     #[serde(skip_serializing_if = "Option::is_none")]
     basis: Option<ProofBasis>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -881,6 +895,7 @@ impl OutcomeItem {
                 .inconclusive_cause()
                 .map(|cause| ItemCause::inconclusive(&cause)),
             TerminalValue::Proved { .. } | TerminalValue::Tested | TerminalValue::Refuted => None,
+            TerminalValue::Unsupported(UnavailabilityCause::Disposition) => None,
             TerminalValue::Declined { cause, code } => Some(ItemCause {
                 code: Some(match code {
                     DeclineCode::Qsl(code) => code.as_str().to_owned(),
@@ -928,6 +943,7 @@ impl OutcomeItem {
                     UnavailabilityCause::SolverAbsent
                     | UnavailabilityCause::HybridProviderAbsent
                     | UnavailabilityCause::BackendAbsent
+                    | UnavailabilityCause::Disposition
                     | UnavailabilityCause::MissingFairnessPremise { .. }
                     | UnavailabilityCause::UnsupportedReduction { .. }
                     | UnavailabilityCause::HiddenFieldLiveness
@@ -1012,10 +1028,19 @@ impl OutcomeItem {
             | TerminalValue::Failed
             | TerminalValue::ToolFailed(_) => None,
         };
+        let diagnostic = match (record.disposition_detail(), record.diagnostic()) {
+            (Some(detail), Some(code)) => Some(ItemDiagnostic {
+                code: code.code(),
+                cause: code.cause(),
+                detail: detail.clone(),
+            }),
+            _ => None,
+        };
         Self {
             request_index: record.request_index().get(),
             result,
             cause,
+            diagnostic,
             basis,
             certification,
             measured,
@@ -1071,6 +1096,7 @@ impl OutcomeItem {
             request_index: request_index.get(),
             result: ItemLabel::Refuted,
             cause: Some(ItemCause::undefined_evaluation(at, cause)),
+            diagnostic: None,
             basis: None,
             certification: None,
             measured: None,
@@ -1130,6 +1156,7 @@ impl OutcomeItem {
         Ok(Self {
             request_index: request_index.get(),
             result,
+            diagnostic: None,
             cause: clause_run_cause(report),
             position: record.position,
             counterexample: record.counterexample,
@@ -1705,6 +1732,26 @@ impl OutcomeDocument {
             }
             StageFailure::Cancelled(cause) => Self::cancelled(operation, *cause),
             StageFailure::Fault(fault) => Self::faulted(operation, fault),
+        }
+    }
+
+    /// The document of an `operation` whose stage stopped without a result:
+    /// a reached limit is incomplete at its stage (as `check` and `package`
+    /// write it), a cancel is incomplete at no stage with the cancel's cause,
+    /// and a fault is an internal failure at no stage (FR-286).
+    pub fn from_stopped(operation: Operation, stopped: Stopped) -> Self {
+        match stopped {
+            Stopped::Limit(limit) => {
+                let refusal = CompileRefusal::Limit(limit);
+                Self::new(
+                    operation,
+                    Some(refusal.stage().into()),
+                    Category::Incomplete,
+                )
+                .with_diagnostics(vec![OutcomeDiagnostic::from_compile_refusal(&refusal)])
+            }
+            Stopped::Cancelled(cause) => Self::cancelled(operation, cause),
+            Stopped::Fault(fault) => Self::faulted(operation, &fault),
         }
     }
 

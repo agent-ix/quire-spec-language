@@ -168,7 +168,7 @@ fn an_unbounded_extent_clause_settles_unsupported_through_the_provider_entry() {
     ] {
         assert_eq!(
             record.value(),
-            &TerminalValue::Unsupported(UnavailabilityCause::BackendAbsent)
+            &TerminalValue::Unsupported(UnavailabilityCause::Disposition)
         );
         assert_eq!(
             record.diagnostic(),

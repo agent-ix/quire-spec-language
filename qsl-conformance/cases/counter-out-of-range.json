@@ -1,0 +1,1 @@
+{"anchor":{"kind":"initialization","name":"start"},"format":"quire.state.snapshot/v1","identity":{"authority":"test","identity":"out-of-range"},"model":{"identity":"test/counter"},"observation":"current","populations":[{"complete":true,"objects":[{"fields":{"value":{"integer":"9"}},"key":"c1","type":"ix://test/counter/Counter"}],"population":"ix://test/counter/counters"}]}

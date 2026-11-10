@@ -1,0 +1,10 @@
+language "ix:native" edition "1-draft";
+profile v = "quire.value.complete/v1";
+profile pp = "quire.protocol.finite-global/v1";
+model M = "test/counter";
+protocol Flow using pp over (input: M::Counter) on origin {
+  role R on M::Counter;
+  role S on M::Counter;
+  run repeat Loop by R visible () while { true } check Only using v { true };
+  finish End as (outcome: Boolean) { true };
+}
