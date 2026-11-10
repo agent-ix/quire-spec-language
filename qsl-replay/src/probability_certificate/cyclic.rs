@@ -177,62 +177,24 @@ pub(super) fn enumerate<P: StatePredicate>(
     workload: Option<&Workload>,
     limits: ProbabilityDocumentLimits,
     cancel: &Cancel,
+    identity: qsl_foundation::IdentityLimits,
     meter: &mut quire_exact::Meter,
 ) -> Result<(CheckerGraph, BTreeMap<ProbabilityProductKey, u64>), ProbabilityDocumentError> {
     let meter = std::cell::RefCell::new(meter);
     let used = std::cell::RefCell::new(0_u64);
-    let failure = std::cell::RefCell::new(None);
-    let mut issue = None;
-    let key_of = |state: &ModelSimState| {
-        let (bytes, _) = system
-            .state_key(state)
-            .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?;
-        document::model_product_key_with_storage(
-            binding,
-            &bytes,
-            None,
-            ProbabilityDocumentIoLimits {
-                bytes: limits.bytes,
-                storage_bytes: limits.storage_bytes,
-            },
-            cancel,
-            &mut used.borrow_mut(),
-        )
-        .map_err(|error| {
-            *failure.borrow_mut() = Some(error);
-            ExactProbabilityGraphError::ExpansionRefused
-        })
-    };
-    let result = enumerate_model_graph_with_keys_and_reservation(
+    let mut graph = enumerate_graph(
         system,
         Some(target),
         binding,
         workload,
-        limits.states,
-        limits.edges,
+        limits,
         cancel,
+        identity,
+        &mut meter.borrow_mut(),
+        &mut used.borrow_mut(),
         false,
-        &key_of,
-        &mut |bytes| {
-            visit(cancel, &mut meter.borrow_mut())
-                .and_then(|()| charge(&mut used.borrow_mut(), limits.storage_bytes, bytes))
-                .map_err(|error| {
-                    *failure.borrow_mut() = Some(error);
-                    ExactProbabilityGraphError::ExpansionRefused
-                })
-        },
-        #[cfg(feature = "test-support")]
-        &mut |_| {},
-        &mut |_, _| Ok(()),
-        &mut |failure| issue = Some(failure),
-    );
-    if let Some(error) = failure.into_inner() {
-        return Err(error);
-    }
-    if let Some(issue) = issue {
-        return Err(ProbabilityDocumentError::Build(Box::new(issue)));
-    }
-    let mut graph = result?;
+        true,
+    )?;
     for state in graph.states.values() {
         visit(cancel, &mut meter.borrow_mut())?;
         if !state.choices.is_empty() && state.choices.len() != 1 {

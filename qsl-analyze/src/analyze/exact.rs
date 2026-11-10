@@ -325,8 +325,15 @@ fn run(
         (ProbScheduler::Workload(_), _) => (UnboundedObjective::Min, None),
     };
 
-    let mut candidate_budget =
-        expected_reward.then(|| candidate::CandidateBudget::new(document_limits, cancel));
+    let eventual = matches!(
+        claim.form,
+        ProbForm::Reach {
+            target: ReachTarget::Eventually(_),
+            ..
+        }
+    );
+    let mut candidate_budget = (expected_reward || eventual)
+        .then(|| candidate::CandidateBudget::new(document_limits, cancel));
     let built = if let Some(budget) = candidate_budget.as_mut() {
         use crate::exact_probabilistic::{
             build_retaining_monitor_with_budget, BudgetedProductError,
@@ -478,7 +485,7 @@ fn run(
             ) {
                 Ok(true) => {}
                 Ok(false) => return not_yet(),
-                Err(issue) => return settled(&issue, subject),
+                Err(error) => return document_failure(error, subject),
             }
         }
         let bounded_monitor = match (bounded_formula, monitor) {
@@ -551,7 +558,9 @@ fn run(
             &product,
             reference,
             &values,
-            candidate_budget.as_mut().expect("reward candidate budget"),
+            candidate_budget
+                .as_mut()
+                .expect("quantitative candidate budget"),
         ),
         (None, _) => certificate_of(
             &product,

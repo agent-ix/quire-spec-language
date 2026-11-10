@@ -727,6 +727,8 @@ fn subject_graph(
         limits,
         cancel,
         qsl_foundation::IdentityLimits::default(),
+        cyclic_dtmc,
+        meter,
     )
 }
 
@@ -737,6 +739,8 @@ fn subject_graph_with_identity(
     limits: ProbabilityDocumentLimits,
     cancel: &Cancel,
     identity: qsl_foundation::IdentityLimits,
+    cyclic_dtmc: bool,
+    meter: &mut quire_exact::Meter,
 ) -> Result<SubjectGraph, ProbabilityDocumentError> {
     use qsl_eval::simulation::model::{TimedSubjectRefusal, TimedSystem};
     if !std::ptr::eq(
@@ -826,32 +830,30 @@ fn subject_graph_with_identity(
         } if cyclic_dtmc => (
             bound,
             super::cyclic::enumerate(
-                system, predicate, reference, workload, limits, cancel, meter,
+                system, predicate, reference, workload, limits, cancel, identity, meter,
             )
             .map(|(graph, ranks)| (graph, Some(ranks))),
         ),
         ProbForm::Reach {
             bound,
             target: ReachTarget::Eventually(predicate),
-        } => (
-            bound,
-            enumerate_model_graph(
+        } => (bound, {
+            let mut storage = 0;
+            super::cyclic::enumerate_graph(
                 system,
-                predicate,
+                Some(predicate),
                 reference,
                 workload,
-                limits.states,
-                limits.edges,
+                limits,
                 cancel,
+                identity,
+                meter,
+                &mut storage,
                 true,
-                &mut |_, _| {},
-                &mut |failure| {
-                    issue = Some(failure);
-                },
+                true,
             )
             .map(|graph| (graph, None))
-            .map_err(ProbabilityDocumentError::from),
-        ),
+        }),
         ProbForm::Probability {
             bound,
             event:
@@ -964,7 +966,10 @@ pub fn admit_expected_reward_certificate_subject_with_identity(
     ) {
         return Err(ProbabilityDocumentError::Unsupported);
     }
-    subject_graph_with_identity(system, claims, item, limits, cancel, identity)?;
+    let mut meter = quire_exact::Meter::new(limits.accounting).with_cancel(cancel.clone());
+    subject_graph_with_identity(
+        system, claims, item, limits, cancel, identity, false, &mut meter,
+    )?;
     Ok(())
 }
 
