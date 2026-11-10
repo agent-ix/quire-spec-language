@@ -193,11 +193,26 @@ fn weighted_draws_and_transients_use_component_fractions_not_pooled_payoffs() {
             assert!(!accepted(&world, "Fraction", &bad));
             // Under the upper bound,8/9 would meet the threshold. Its rejection
             // must therefore come from the independent transient equation.
-            let upper_bytes=produce(&world,"Upper");
-            let mut upper=read_weighted_long_run_probability_certificate(&upper_bytes,limits(),&Cancel::new()).unwrap();
-            upper.certificate.values.iter_mut().find(|row|row.value==ratio(11,12)).unwrap().value=ratio(8,9);
-            let bytes=write_weighted_long_run_probability_certificate(&upper,limits(),&Cancel::new()).unwrap();
-            assert!(matches!(check(&world,"Upper",&bytes,&Cancel::new(),limits()).unwrap(),ExactProbabilityCertificateCheck::Rejected(ref rejection) if rejection.rule==qsl_replay::ProbabilityCertificateRule::InequalityFails));
+            let upper_bytes = produce(&world, "Upper");
+            let mut upper = read_weighted_long_run_probability_certificate(
+                &upper_bytes,
+                limits(),
+                &Cancel::new(),
+            )
+            .unwrap();
+            upper
+                .certificate
+                .values
+                .iter_mut()
+                .find(|row| row.value == ratio(11, 12))
+                .unwrap()
+                .value = ratio(8, 9);
+            let bytes =
+                write_weighted_long_run_probability_certificate(&upper, limits(), &Cancel::new())
+                    .unwrap();
+            assert!(
+                matches!(check(&world,"Upper",&bytes,&Cancel::new(),limits()).unwrap(),ExactProbabilityCertificateCheck::Rejected(ref rejection) if rejection.rule==qsl_replay::ProbabilityCertificateRule::InequalityFails)
+            );
         }
         let swapped = periodic(initial, "3: 1, 1: 1", "1", false);
         assert!(accepted(&swapped, "Fraction", &doc));
@@ -283,6 +298,7 @@ fn weighted_phase_controls_preserve_actual_cancellation_and_limits() {
     for phase in [
         Phase::Admission,
         Phase::Key,
+        Phase::Unit,
         Phase::Weight,
         Phase::Predicate,
         Phase::Workload,
@@ -326,6 +342,27 @@ fn weighted_phase_controls_preserve_actual_cancellation_and_limits() {
             assert!(reached);
         }
     }
+    // The row-sum phase must be observed after component membership, rather
+    // than the earlier expected-weight arithmetic that uses the same meter.
+    for cause in [None,Some(CancelCause::Requested),Some(CancelCause::Deadline)] {
+        let cancel=Cancel::new();let mut membership=false;let mut reached=false;
+        let result=check_long_run_probability_certificate_observing(&system,world.package.graph().probabilistic_model().claims(),&identity,&bytes,limits(),&cancel,&mut |phase| {
+            if phase==Phase::Membership {membership=true;}
+            if membership && phase==Phase::Arithmetic {reached=true;if let Some(cause)=cause {cancel.cancel(cause);}}
+        });
+        assert!(reached);
+        match cause {Some(cause)=>assert_eq!(result,Err(ProbabilityDocumentError::Cancelled(cause))),None=>assert!(matches!(result.unwrap(),ExactProbabilityCertificateCheck::Accepted(_)))}
+    }
+    let mut exact_bytes=limits();exact_bytes.bytes=bytes.len() as u64;
+    assert!(matches!(check(&world,"Lower",&bytes,&Cancel::new(),exact_bytes).unwrap(),ExactProbabilityCertificateCheck::Accepted(_)));
+    exact_bytes.bytes-=1;
+    assert!(matches!(check(&world,"Lower",&bytes,&Cancel::new(),exact_bytes),Err(ProbabilityDocumentError::Limit{limit:qsl_replay::ProbabilityDocumentLimit::Bytes,bound,actual}) if bound+1==actual && actual==bytes.len() as u64));
+    // Independent numeric oracle:2000 is the largest normalized magnitude in
+    // this two-state proof and its original probabilities (eleven bits).
+    let mut exact_bits=limits();exact_bits.scalar_bits=11;
+    assert!(matches!(check(&world,"Lower",&bytes,&Cancel::new(),exact_bits).unwrap(),ExactProbabilityCertificateCheck::Accepted(_)));
+    exact_bits.scalar_bits=10;
+    assert!(check(&world,"Lower",&bytes,&Cancel::new(),exact_bits).is_err());
     for control in 0..5 {
         let mut cap = limits();
         match control {
@@ -428,14 +465,25 @@ fn global_negative_admission_precedes_proofs_and_zero_binding_invents_nothing() 
 }
 
 fn deferred_reward_model(transient: bool, undefined: bool) -> Model {
-    let mut model = periodic_model(if transient {2} else {0}, "1: 1, 3: 1", "1", false);
-    let operation = if transient {2} else {0};
-    model.operations[operation].parameters.push(("who", format!("ix://{}/Server", model.package)));
-    let expression = if undefined {"if who = who then (1 mod 0) else 1"} else {"if who = who then -1 else 1"};
-    if transient {
-        model.body.push_str(&format!("\nreward duration on Server::enter = {expression};\n"));
+    let mut model = periodic_model(if transient { 2 } else { 0 }, "1: 1, 3: 1", "1", false);
+    let operation = if transient { 2 } else { 0 };
+    model.operations[operation]
+        .parameters
+        .push(("who", format!("ix://{}/Server", model.package)));
+    let expression = if undefined {
+        "if who = who then (1 mod 0) else 1"
     } else {
-        model.body = model.body.replace("reward duration on Server::a = d;", &format!("reward duration on Server::a = {expression};"));
+        "if who = who then -1 else 1"
+    };
+    if transient {
+        model.body.push_str(&format!(
+            "\nreward duration on Server::enter = {expression};\n"
+        ));
+    } else {
+        model.body = model.body.replace(
+            "reward duration on Server::a = d;",
+            &format!("reward duration on Server::a = {expression};"),
+        );
     }
     model
 }
@@ -443,33 +491,81 @@ fn deferred_reward_model(transient: bool, undefined: bool) -> Model {
 #[trace("TC-1402", "FR-201-AC-34")]
 #[test]
 fn admitted_object_parameter_draws_do_not_coerce_negative_weight_to_zero() {
-    for transient in [false,true] {
-        let world=World::new(&deferred_reward_model(transient,false));
-        let system=ModelSystem::new(world.subject().simulation).expect("object-domain reward is deferred by FR187 admission");
-        let identity=qsl_replay::probabilistic_claim_identity(world.claim("Fraction")).unwrap();
-        assert_eq!(qsl_replay::weighted_long_run_probability_certificate_document(&system,world.package.graph().probabilistic_model().claims(),&identity,vec![],vec![],limits(),&Cancel::new()),Err(ProbabilityDocumentError::Unsupported));
-        let records=analyze_items(&Engines::qsl().unwrap(),vec![exact_probabilistic_item(RequestIndex::new(0),world.request("Fraction",ModelCheckLimits::default()))],&Cancel::new());
-        let Settlement::Disposed(disposed)=&records[0].settlement else {panic!("{:?}",records[0]);};
-        assert_eq!(disposed.kind,DispositionKind::Unsupported);assert!(records[0].terminal().is_none());assert!(records[0].exact_probabilistic.is_none());
+    for transient in [false, true] {
+        let world = World::new(&deferred_reward_model(transient, false));
+        let system = ModelSystem::new(world.subject().simulation)
+            .expect("object-domain reward is deferred by FR187 admission");
+        let identity = qsl_replay::probabilistic_claim_identity(world.claim("Fraction")).unwrap();
+        assert_eq!(
+            qsl_replay::weighted_long_run_probability_certificate_document(
+                &system,
+                world.package.graph().probabilistic_model().claims(),
+                &identity,
+                vec![],
+                vec![],
+                limits(),
+                &Cancel::new()
+            ),
+            Err(ProbabilityDocumentError::Unsupported)
+        );
+        let records = analyze_items(
+            &Engines::qsl().unwrap(),
+            vec![exact_probabilistic_item(
+                RequestIndex::new(0),
+                world.request("Fraction", ModelCheckLimits::default()),
+            )],
+            &Cancel::new(),
+        );
+        let Settlement::Disposed(disposed) = &records[0].settlement else {
+            panic!("{:?}", records[0]);
+        };
+        assert_eq!(disposed.kind, DispositionKind::Unsupported);
+        assert!(records[0].terminal().is_none());
+        assert!(records[0].exact_probabilistic.is_none());
     }
 }
 
 #[trace("TC-1402", "FR-201-AC-34")]
 #[test]
 fn undefined_actual_weights_and_predicates_preserve_typed_nonacceptance() {
-    for transient in [false,true] {
-        let world=World::new(&deferred_reward_model(transient,true));
-        let system=ModelSystem::new(world.subject().simulation).expect("object-domain reward is deferred by FR187 admission");
-        let identity=qsl_replay::probabilistic_claim_identity(world.claim("Fraction")).unwrap();
-        assert!(matches!(qsl_replay::weighted_long_run_probability_certificate_document(&system,world.package.graph().probabilistic_model().claims(),&identity,vec![],vec![],limits(),&Cancel::new()),Err(ProbabilityDocumentError::Build(_))));
-        let records=analyze_items(&Engines::qsl().unwrap(),vec![exact_probabilistic_item(RequestIndex::new(0),world.request("Fraction",ModelCheckLimits::default()))],&Cancel::new());
+    for transient in [false, true] {
+        let world = World::new(&deferred_reward_model(transient, true));
+        let system = ModelSystem::new(world.subject().simulation)
+            .expect("object-domain reward is deferred by FR187 admission");
+        let identity = qsl_replay::probabilistic_claim_identity(world.claim("Fraction")).unwrap();
+        assert!(matches!(
+            qsl_replay::weighted_long_run_probability_certificate_document(
+                &system,
+                world.package.graph().probabilistic_model().claims(),
+                &identity,
+                vec![],
+                vec![],
+                limits(),
+                &Cancel::new()
+            ),
+            Err(ProbabilityDocumentError::Build(_))
+        ));
+        let records = analyze_items(
+            &Engines::qsl().unwrap(),
+            vec![exact_probabilistic_item(
+                RequestIndex::new(0),
+                world.request("Fraction", ModelCheckLimits::default()),
+            )],
+            &Cancel::new(),
+        );
         assert!(records[0].exact_probabilistic.is_none());
-        assert!(!matches!(records[0].terminal().map(|record|record.value()),Some(qsl_replay::TerminalValue::Proved{..}|qsl_replay::TerminalValue::Refuted)));
+        assert!(!matches!(
+            records[0].terminal().map(|record| record.value()),
+            Some(qsl_replay::TerminalValue::Proved { .. } | qsl_replay::TerminalValue::Refuted)
+        ));
     }
     let source="reward duration on Coin::drop = 1;\nprobabilistic Fraction using inf on M over (c: M::Coin) under Even on origin { long_run_fraction holds(c.v = 0) weighted by duration >= rational(1,2) }\n";
-    let world=World::new(&prob_world::coin(source));let system=ModelSystem::new(world.subject().simulation).unwrap();
-    let identity=qsl_replay::probabilistic_claim_identity(world.claim("Fraction")).unwrap();
-    assert!(matches!(qsl_replay::weighted_long_run_probability_certificate_document(&system,world.package.graph().probabilistic_model().claims(),&identity,vec![],vec![],limits(),&Cancel::new()),Err(ProbabilityDocumentError::UndefinedPredicate(qsl_eval::temporal::UndefinedCause::Family(ref cause))) if cause.reason==quire_semantic_value::catalog::UndefinedReason::AbsentKey));
+    let world = World::new(&prob_world::coin(source));
+    let system = ModelSystem::new(world.subject().simulation).unwrap();
+    let identity = qsl_replay::probabilistic_claim_identity(world.claim("Fraction")).unwrap();
+    assert!(
+        matches!(qsl_replay::weighted_long_run_probability_certificate_document(&system,world.package.graph().probabilistic_model().claims(),&identity,vec![],vec![],limits(),&Cancel::new()),Err(ProbabilityDocumentError::UndefinedPredicate(qsl_eval::temporal::UndefinedCause::Family(ref cause))) if cause.reason==quire_semantic_value::catalog::UndefinedReason::AbsentKey)
+    );
 }
 
 fn quantity_availability(tick: &str, repair: &str) -> World {

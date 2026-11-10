@@ -17,7 +17,9 @@ pub enum LongRunProbabilityPhase {
     Predicate,
     /// Qualified workload expansion.
     Workload,
-    /// Independently evaluated checked weight and unit.
+    /// Checked named weight and selected unit resolution.
+    Unit,
+    /// Actual outgoing draw, before reading its checked weight magnitude.
     Weight,
     /// Positive-support component traversal.
     Components,
@@ -138,7 +140,9 @@ pub(super) fn has_profile(
 }
 
 pub(super) fn certificate_identity(
-    bytes: &[u8], limits: ProbabilityDocumentLimits, cancel: &Cancel,
+    bytes: &[u8],
+    limits: ProbabilityDocumentLimits,
+    cancel: &Cancel,
 ) -> Result<ObligationIdentity, ProbabilityDocumentError> {
     let mut cx = Context::new(limits, cancel);
     Ok(read(bytes, &mut cx)?.document.identity)
@@ -663,7 +667,7 @@ fn subject(
     let objective = match weight {
         Some(name) => {
             #[cfg(feature = "test-support")]
-            cx.phase(LongRunProbabilityPhase::Weight)?;
+            cx.phase(LongRunProbabilityPhase::Unit)?;
             cx.work(1)?;
             Some(super::super::reward::objective(
                 system,
@@ -767,8 +771,6 @@ fn subject(
             let evaluated =
                 (|| {
                     if let Some(objective) = &objective {
-                        #[cfg(feature = "test-support")]
-                        cx.borrow_mut().phase(LongRunProbabilityPhase::Weight)?;
                         let mut context = cx.borrow_mut();
                         let steps = context
                             .model(|budget| {
@@ -795,6 +797,8 @@ fn subject(
                             ) {
                                 continue;
                             }
+                            #[cfg(feature = "test-support")]
+                            context.phase(LongRunProbabilityPhase::Weight)?;
                             let magnitude = {
                                 let context = &mut **context;
                                 super::super::reward::magnitude(
@@ -807,7 +811,9 @@ fn subject(
                                     &mut context.meter,
                                 )?
                             };
-                            if step.probability == rational(0) { continue; }
+                            if step.probability == rational(0) {
+                                continue;
+                            }
                             let term =
                                 context.arithmetic(quire_exact::RationalArithmetic::Multiply(
                                     &step.probability,
