@@ -19,9 +19,18 @@ use quire_exact::{
     ReservationDenied,
 };
 
-fn growth() -> World {
+fn growth_model() -> Model {
     let package = "test/long-run-growth";
-    World::new(&Model{package,object:"Server",population:"servers",key:"s",integers:vec![("Level",0,99)],fields:vec![("level",format!("ix://{package}/Level"))],operations:vec![Operation{name:"grow",parameters:vec![],modifies:vec!["level"],deletes:false}],body:"pre Live using v on M::Server::grow { self.level = 0 }\npost Grown using v on M::Server::grow { self.level = 99 }\nterminal Done using v on M when { self.level = 99 };\nworkload Steady on M { weight Server::grow = 1; }\nprobabilistic Growth using inf on M over (s: M::Server) under Steady on origin { long_run_fraction holds(s.level = 99) >= rational(1,2) }".to_owned(),initial:serde_json::json!({"level":{"integer":"0"}})})
+    Model{package,object:"Server",population:"servers",key:"s",integers:vec![("Level",0,99)],fields:vec![("level",format!("ix://{package}/Level"))],operations:vec![Operation{name:"grow",parameters:vec![],modifies:vec!["level"],deletes:false}],body:"pre Live using v on M::Server::grow { self.level = 0 }\npost Grown using v on M::Server::grow { self.level = 99 }\nterminal Done using v on M when { self.level = 99 };\nworkload Steady on M { weight Server::grow = 1; }\nprobabilistic Growth using inf on M over (s: M::Server) under Steady on origin { long_run_fraction holds(s.level = 99) >= rational(1,2) }".to_owned(),initial:serde_json::json!({"level":{"integer":"0"}})}
+}
+
+fn growth() -> World {
+    World::new(&growth_model())
+}
+fn undecided_candidate() -> World {
+    let mut model = growth_model();
+    model.body=model.body.replace("post Grown using v on M::Server::grow { self.level = 99 }","post Grown using vc on M::Server::grow { self.level = 99 or (self.level = 10 and 1 mod (self.level - 10) = 0) }");
+    World::with_value_profile(&model)
 }
 
 #[trace("TC-1401", "FR-201-AC-30")]
@@ -119,7 +128,7 @@ struct CancelLarge<'a> {
     inner: ProbabilityKeyAdmission<'a>,
     cancel: &'a Cancel,
     reached: bool,
-    cause: CancelCause,
+    cause: Option<CancelCause>,
 }
 impl Reservation for CancelLarge<'_> {
     fn reserve(&mut self, bytes: usize) -> Result<(), ReservationDenied> {
@@ -137,7 +146,9 @@ impl ModelKeyBudget for CancelLarge<'_> {
         // the frame enumerates candidates, before the external post-key call.
         if value >= &Integer::from(10_i64) && value < &Integer::from(99_i64) {
             self.reached = true;
-            self.cancel.cancel(self.cause);
+            if let Some(cause) = self.cause {
+                self.cancel.cancel(cause);
+            }
         }
         self.inner.integer(value)
     }
@@ -146,8 +157,12 @@ impl ModelKeyBudget for CancelLarge<'_> {
 #[trace("TC-1401", "FR-201-AC-30")]
 #[test]
 fn producer_cancellation_observes_real_larger_candidate_representation() {
-    let world = growth();
-    for cause in [CancelCause::Requested, CancelCause::Deadline] {
+    let world = undecided_candidate();
+    for cause in [
+        None,
+        Some(CancelCause::Requested),
+        Some(CancelCause::Deadline),
+    ] {
         let cancel = Cancel::new();
         let mut meter = Meter::new(limits().accounting).with_cancel(cancel.clone());
         let mut storage = 0;
@@ -172,19 +187,11 @@ fn producer_cancellation_observes_real_larger_candidate_representation() {
             budget.reached,
             "the owner must consult the caller for a larger frame candidate"
         );
-        match result {
-            Err(BudgetedProductError::Key(error)) => assert_eq!(
-                budget.inner.refusal(error),
-                ProbabilityDocumentError::Cancelled(cause)
-            ),
-            Err(BudgetedProductError::Product(
-                qsl_analyze::exact_probabilistic::ProductRefusal::Stopped(
-                    qsl_analyze::exact_probabilistic::ProductStop::Cancelled(actual),
-                ),
-            )) => assert_eq!(actual, cause),
-            other => {
-                panic!("candidate cancellation must retain the actual caller cause, got {other:?}")
-            }
+        match (cause,result) {
+            (None,Err(BudgetedProductError::Product(qsl_analyze::exact_probabilistic::ProductRefusal::UndecidedSuccessor(_))))=>{},
+            (Some(cause),Err(BudgetedProductError::Key(error)))=>assert_eq!(budget.inner.refusal(error),ProbabilityDocumentError::Cancelled(cause)),
+            (Some(cause),Err(BudgetedProductError::Product(qsl_analyze::exact_probabilistic::ProductRefusal::Stopped(qsl_analyze::exact_probabilistic::ProductStop::Cancelled(actual)))))=>assert_eq!(actual,cause),
+            (cause,other)=>panic!("candidate control {cause:?} must retain actual undecided/cancellation semantics, got {other:?}"),
         }
     }
 }
