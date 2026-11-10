@@ -105,10 +105,10 @@ fn geometric_rewards_include_entry_once_and_ignore_post_target_cycles() {
             let bytes = write_probability_certificate(&bad, limits(), &Cancel::new()).unwrap();
             assert!(matches!(
                 check(&world, &bytes, &Cancel::new(), limits()).unwrap(),
-                ExactProbabilityCertificateCheck::Rejected {
+                ExactProbabilityCertificateCheck::Rejected(ProbabilityCertificateRejection {
                     rule: ProbabilityCertificateRule::RankBroken,
                     ..
-                }
+                })
             ));
         }
     }
@@ -155,10 +155,10 @@ fn zero_reward_still_requires_properness_and_initial_target_is_zero() {
     let bytes = write_probability_certificate(&document, limits(), &Cancel::new()).unwrap();
     assert_eq!(
         check(&closed, &bytes, &Cancel::new(), limits()).unwrap(),
-        ExactProbabilityCertificateCheck::Rejected {
+        ExactProbabilityCertificateCheck::Rejected(ProbabilityCertificateRejection {
             rule: ProbabilityCertificateRule::RankBroken,
-            at: ProbabilityCertificateLocus::State(key)
-        }
+            at: ProbabilityCertificateLocus::ProductState(key)
+        })
     );
     let records = analyze_items(
         &Engines::qsl().unwrap(),

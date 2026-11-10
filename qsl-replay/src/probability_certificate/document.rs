@@ -726,29 +726,6 @@ type SubjectGraph = (
     Option<super::reward::RewardGraph>,
 );
 
-fn subject_graph(
-    system: &ModelSystem<'_>,
-    claims: &[CheckedProbabilisticClaim],
-    item: &ObligationIdentity,
-    limits: ProbabilityDocumentLimits,
-    cancel: &Cancel,
-    cyclic_dtmc: bool,
-    meter: &mut quire_exact::Meter,
-) -> Result<SubjectGraph, ProbabilityDocumentError> {
-    subject_graph_with_identity(
-        system,
-        claims,
-        item,
-        limits,
-        cancel,
-        qsl_foundation::IdentityLimits::default(),
-        cyclic_dtmc,
-        meter,
-        &mut 0,
-        &super::reward::RewardControl::new(cancel),
-    )
-}
-
 #[allow(clippy::too_many_arguments)]
 fn subject_graph_with_identity(
     system: &ModelSystem<'_>,
