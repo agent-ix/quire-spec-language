@@ -30,11 +30,10 @@ use quire_semantic_value::supplied_stop::SuppliedLimits;
 
 use super::{
     admit_parsed_unit_list, check, check_units, check_units_with_options,
-    check_with_refinement_internals, execute, failure_of, package,
-    package_with_temporal_selections, parse, preflight_unit_list, refusal_or_fault, select,
-    select_units, temporal_selections_for_source, AdmittedModels, CheckedUnit, EmittedUnit,
-    ExecuteRequest, FrontEndFailure, PackageLimits, ParseRequest, ParsedUnitSource,
-    UnitCheckOptions,
+    check_with_refinement_internals, failure_of, package, package_with_temporal_selections, parse,
+    preflight_unit_list, refusal_or_fault, select, select_units, temporal_selections_for_source,
+    AdmittedModels, CheckedUnit, EmittedUnit, FrontEndFailure, PackageLimits, ParseRequest,
+    ParsedUnitSource, UnitCheckOptions,
 };
 use crate::bounds::ReplayLimits;
 use crate::limits::CallerLimits;
@@ -2610,23 +2609,38 @@ fn seven() -> QualifiedName {
     QualifiedName::unqualified("seven").expect("an identifier")
 }
 
+fn interpret(
+    checked: &CheckedUnit,
+    function: QualifiedName,
+    accounting: quire_exact::ScalarLimits,
+    cancel: &Cancel,
+) -> Result<quire_eval::Evaluation, CallFailure> {
+    qsl_eval::execution::execute(
+        checked.package(),
+        &qsl_eval::execution::ExecuteRequest {
+            selection: qsl_eval::execution::ExecuteSelection::Function {
+                name: function,
+                arguments: Vec::new(),
+                environment: ObjectEnvironment::default(),
+            },
+            backend: quire_eval::ExecutionBackendChoice::Interpreter,
+        },
+        &qsl_eval::execution::SuppliedBackends::default(),
+        &qsl_eval::execution::ExecuteLimits {
+            accounting,
+            supplied: SuppliedLimits::default(),
+            prepare: qsl_eval::execution::PrepareLimits::default(),
+        },
+        cancel,
+    )
+}
+
 fn call_seven(
     checked: &CheckedUnit,
     accounting: quire_exact::ScalarLimits,
     cancel: &Cancel,
 ) -> Result<quire_eval::Evaluation, CallFailure> {
-    let function = seven();
-    execute(
-        checked,
-        &ExecuteRequest {
-            function: &function,
-            arguments: &[],
-            objects: &ObjectEnvironment::default(),
-            supplied: SuppliedLimits::default(),
-        },
-        accounting,
-        cancel,
-    )
+    interpret(checked, seven(), accounting, cancel)
 }
 
 /// FR-275-AC-1 (TC-755 steps 1 to 3): `parse`, `select`, `check` and
@@ -3250,14 +3264,9 @@ fn an_execute_cancelled_from_another_thread_returns_no_value() {
     let gate = gated(Some(1_000));
     let function = QualifiedName::unqualified("d23").expect("an identifier");
     let outcome = gate.run(CancelCause::Requested, |cancel| {
-        execute(
+        interpret(
             &chain.checked,
-            &ExecuteRequest {
-                function: &function,
-                arguments: &[],
-                objects: &ObjectEnvironment::default(),
-                supplied: SuppliedLimits::default(),
-            },
+            function,
             default_accounting(u64::MAX),
             cancel,
         )
@@ -3304,6 +3313,7 @@ fn a_cancel_tripped_mid_run_is_cancelled_with_its_cause_never_a_fault() {
                 arguments: Vec::new(),
                 accounting: default_accounting(DEFAULT_WORK_UNITS),
                 supplied: SuppliedLimits::default(),
+                backend: quire_eval::ExecutionBackendChoice::Interpreter,
             },
             &ObjectEnvironment::default(),
             cancel,

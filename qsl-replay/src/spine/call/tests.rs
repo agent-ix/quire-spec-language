@@ -34,6 +34,7 @@ fn call(function: &str, arguments: Vec<CallArgument>) -> Call {
         arguments,
         accounting: default_accounting(1_000_000),
         supplied: Default::default(),
+        backend: quire_eval::ExecutionBackendChoice::Interpreter,
     }
 }
 
@@ -253,6 +254,7 @@ fn tc_792_source_compiled_lookup_driver_preserves_present_and_absent_paths() {
                 ],
                 accounting: default_accounting(1_000_000),
                 supplied: Default::default(),
+                backend: quire_eval::ExecutionBackendChoice::Interpreter,
             },
             &objects,
             &Cancel::new(),
@@ -305,6 +307,7 @@ fn tc_792_source_driver_admits_unused_parameters_before_body_evaluation() {
             ],
             accounting: default_accounting(1_000_000),
             supplied: Default::default(),
+            backend: quire_eval::ExecutionBackendChoice::Interpreter,
         },
         &objects,
         &Cancel::new(),
@@ -338,6 +341,7 @@ fn tc_792_source_driver_binding_precedence_precedes_value_admission() {
             }],
             accounting: default_accounting(1_000_000),
             supplied: Default::default(),
+            backend: quire_eval::ExecutionBackendChoice::Interpreter,
         },
         &objects,
         &Cancel::new(),
@@ -378,6 +382,7 @@ fn tc_792_source_driver_cancellation_returns_no_lookup_result() {
             ],
             accounting: default_accounting(1_000_000),
             supplied: Default::default(),
+            backend: quire_eval::ExecutionBackendChoice::Interpreter,
         },
         &objects,
         &cancel,
@@ -407,6 +412,7 @@ fn tc_792_typed_call_contract_is_not_an_integer_only_facade() {
         }],
         accounting: default_accounting(1_000_000),
         supplied: Default::default(),
+        backend: quire_eval::ExecutionBackendChoice::Interpreter,
     };
     let result = run(
         source(),
@@ -2286,6 +2292,7 @@ fn run_admission_spends_one_cumulative_budget_and_denies_before_the_call() {
     };
     let with = |admission: u64| Call {
         supplied: SuppliedLimits::default().with_admission_work_units(admission),
+        backend: quire_eval::ExecutionBackendChoice::Interpreter,
         ..call("lesser", vec![arg("x", 1), arg("y", 2)])
     };
     let outcome = run_fixture(SUPPLIED_UNIT, &with(2)).expect("two visits admit");
@@ -2395,4 +2402,93 @@ fn argument_value_refuses_map_and_bounded_quantity_parameters() {
             Err(RunRefusal::WrongValueKind { position: 1 })
         ));
     }
+}
+
+/// FR-286-AC-7 (TC-792): the present lookup through the public run entry
+/// serializes through `OutcomeDocument::from_run` as one `execute` document
+/// whose `result` carries the returned Reference's universe, type and object
+/// identity, and a function returning its second admitted Reference
+/// serializes that one, not its first argument.
+#[test]
+#[trace("TC-792", "FR-286-AC-7")]
+fn tc_792_reference_completions_serialize_the_returned_reference() {
+    use crate::outcome::OutcomeDocument;
+
+    let fixture = lookup_driver_fixture(
+        "function query using v(p: Population<M::Gadget>[1], r: M::Gadget): M::Gadget pure { lookup<M::Gadget>(p, r) absent refused }\n\
+         function second using v(a: M::Gadget, b: M::Gadget): M::Gadget pure { b }",
+    );
+    let (objects, population, present, other) = lookup_driver_context(&fixture);
+    let invoke = |function: &str, arguments: Vec<CallArgument>| {
+        run(
+            source(),
+            "fixture".to_owned(),
+            "tc-792-lookup.native",
+            fixture.source.as_bytes(),
+            &fixture.packages,
+            &DependencyInput::default(),
+            SpineLimits::default(),
+            &Call::new(
+                function.to_owned(),
+                arguments,
+                default_accounting(1_000_000),
+                Default::default(),
+            ),
+            &objects,
+            &Cancel::new(),
+        )
+    };
+    let argument = |parameter: &str, value| CallArgument {
+        parameter: parameter.to_owned(),
+        value,
+    };
+    let document_of = |result: &Result<CallOutcome, Box<RunRefusal>>,
+                       expected: &quire_exact::ObjectReference| {
+        let document: serde_json::Value = serde_json::from_slice(
+            &OutcomeDocument::from_run(result)
+                .to_bytes()
+                .expect("encodes"),
+        )
+        .expect("is JSON");
+        assert_eq!(document["format"], "quire-outcome/1");
+        assert_eq!(document["operation"], "execute");
+        assert_eq!(document["category"], "success");
+        assert_eq!(document["artifacts"], serde_json::json!([]));
+        assert_eq!(
+            document["result"],
+            serde_json::json!({"kind": "completed", "value": {
+                "kind": "reference",
+                "universe": expected.universe().root_type().to_string(),
+                "type": crate::spine::effective_spelling(expected.object_type()),
+                "object_identity": expected.object().as_str(),
+            }})
+        );
+    };
+
+    let looked_up = invoke(
+        "query",
+        vec![
+            argument("p", Value::Population(population)),
+            argument("r", Value::Reference(present.clone())),
+        ],
+    );
+    assert!(matches!(
+        &looked_up,
+        Ok(CallOutcome::Completed(CallValue::Reference(got))) if *got == present
+    ));
+    document_of(&looked_up, &present);
+
+    assert_ne!(present, other);
+    let returned = invoke(
+        "second",
+        vec![
+            argument("a", Value::Reference(present)),
+            argument("b", Value::Reference(other.clone())),
+        ],
+    );
+    assert!(matches!(
+        &returned,
+        Ok(CallOutcome::Completed(CallValue::Reference(got))) if *got == other
+    ));
+    document_of(&returned, &other);
 }

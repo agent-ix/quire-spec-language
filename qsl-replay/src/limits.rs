@@ -8,6 +8,7 @@
 //! same [`SettingLimits::set_bound`], so one name raises one limit at every
 //! entry point.
 
+use qsl_eval::execution::PrepareLimits;
 use qsl_eval::simulation::model::ExpansionLimits;
 use qsl_eval::simulation::Limits as ExploreLimits;
 use qsl_eval::temporal::evidence::TemporalEvidenceLimits;
@@ -141,44 +142,6 @@ impl SettingLimits for RenderLimits {
             return false;
         }
         self.output_bytes = usize::try_from(bound).unwrap_or(usize::MAX);
-        true
-    }
-}
-
-/// FR-294: the translation work and generated code size one execution
-/// backend `prepare` may use, the FR-255 settings `prepare.compile_work_units`
-/// and `prepare.code_bytes`. Each bound is used as given, including zero.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct PrepareLimits {
-    /// Compile work units one `prepare` may charge.
-    pub compile_work_units: u64,
-    /// Generated code bytes one `prepare` may keep.
-    pub code_bytes: u64,
-}
-
-impl Default for PrepareLimits {
-    fn default() -> Self {
-        Self {
-            compile_work_units: 16_777_216,
-            code_bytes: 67_108_864,
-        }
-    }
-}
-
-impl SettingLimits for PrepareLimits {
-    fn bounds(&self) -> Vec<(Setting, u64)> {
-        vec![
-            (Setting::PrepareCompileWorkUnits, self.compile_work_units),
-            (Setting::PrepareCodeBytes, self.code_bytes),
-        ]
-    }
-
-    fn set_bound(&mut self, setting: Setting, bound: u64) -> bool {
-        match setting {
-            Setting::PrepareCompileWorkUnits => self.compile_work_units = bound,
-            Setting::PrepareCodeBytes => self.code_bytes = bound,
-            _ => return false,
-        }
         true
     }
 }

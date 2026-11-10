@@ -1081,7 +1081,19 @@ fn run(engines: &Engines, item: AnalyzeItem<'_>, cancel: &Cancel) -> AnalyzeReco
             IncompleteCause::Cancelled { source },
         )));
     }
-    settle(index, kind, engine, work(cancel, engine))
+    let report = work(cancel, engine);
+    // An item whose charge saw the cancel was still open when the handle was
+    // cancelled and settles `incomplete` with its cause (FR-276); a handle
+    // cancelled after the item's last charge is not tripped and the verdict
+    // stands.
+    if let Some(source) = cancel.tripped() {
+        return record(terminal(TerminalRecord::incomplete(
+            index,
+            backend,
+            IncompleteCause::Cancelled { source },
+        )));
+    }
+    settle(index, kind, engine, report)
 }
 
 fn terminal(record: TerminalRecord) -> Settlement {
@@ -1959,5 +1971,123 @@ mod tests {
         assert_eq!(terminal.value(), &TerminalValue::Failed);
         assert_eq!(terminal.diagnostic(), Some(wrong));
         assert_eq!(terminal.backend(), Some(&BackendId::new("test-a")));
+    }
+    /// FR-276-AC-4: the test engine settles the first item, then blocks on
+    /// the second until the handle is cancelled from another thread. The
+    /// first record is unchanged, the item still open settles `incomplete`
+    /// with the cancellation cause, and a later item runs no work.
+    #[trace("TC-757", "FR-276-AC-4")]
+    #[test]
+    fn a_cancel_settles_the_item_still_open_incomplete_and_keeps_the_settled_one() {
+        fn failed() -> EngineReport {
+            EngineReport::Refused(Refusal::Failed(CatalogCode::new(
+                "runtime_invariant",
+                "established-invariant-broken",
+            )))
+        }
+        fn item<'a>(
+            index: usize,
+            work: impl FnOnce(&Cancel) -> EngineReport + 'a,
+        ) -> AnalyzeItem<'a> {
+            AnalyzeItem::new(
+                RequestIndex::new(index),
+                Capability::OperationContract,
+                Some(DeclarationFamily::StateModel),
+                Mode::Bounded,
+                "test-all",
+                work,
+            )
+        }
+        let mut engines = Engines::default();
+        engines.with(engine_all("test-all")).expect("one engine");
+        let uncancelled = analyze_items(&engines, vec![item(0, |_| failed())], &Cancel::new());
+
+        let cancel = Cancel::new();
+        let (blocked, wait_for_block) = std::sync::mpsc::channel();
+        let canceller = {
+            let cancel = cancel.clone();
+            std::thread::spawn(move || {
+                wait_for_block
+                    .recv_timeout(std::time::Duration::from_secs(10))
+                    .expect("the second item blocked");
+                cancel.cancel(CancelCause::Requested);
+            })
+        };
+        let third_ran = std::cell::Cell::new(false);
+        let items = vec![
+            item(0, |_| failed()),
+            item(1, move |cancel| {
+                blocked.send(()).expect("the canceller waits");
+                let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+                while !cancel.poll() {
+                    assert!(
+                        std::time::Instant::now() < deadline,
+                        "the handle was never cancelled"
+                    );
+                    std::thread::yield_now();
+                }
+                failed()
+            }),
+            item(2, |_| {
+                third_ran.set(true);
+                failed()
+            }),
+        ];
+        let records = analyze_items(&engines, items, &cancel);
+        canceller.join().expect("the canceller finished");
+
+        let cancelled = Some(&TerminalValue::Incomplete(IncompleteCause::Cancelled {
+            source: CancelCause::Requested,
+        }));
+        assert_eq!(records.len(), 3);
+        assert_eq!(records[0].terminal(), uncancelled[0].terminal());
+        assert_eq!(records[1].terminal().map(TerminalRecord::value), cancelled);
+        assert_eq!(records[2].terminal().map(TerminalRecord::value), cancelled);
+        assert!(!third_ran.get());
+    }
+    /// FR-276 Behavior: the operation reads the handle's `tripped()` cause. A
+    /// handle cancelled after an item's last charge is not tripped, so that
+    /// item's verdict stands.
+    #[trace("TC-757", "FR-276-AC-4")]
+    #[test]
+    fn a_cancel_after_the_last_charge_leaves_the_verdict_standing() {
+        let failed = || {
+            EngineReport::Refused(Refusal::Failed(CatalogCode::new(
+                "runtime_invariant",
+                "established-invariant-broken",
+            )))
+        };
+        let mut engines = Engines::default();
+        engines.with(engine_all("test-all")).expect("one engine");
+        let cancel = Cancel::new();
+        let item = AnalyzeItem::new(
+            RequestIndex::new(0),
+            Capability::OperationContract,
+            Some(DeclarationFamily::StateModel),
+            Mode::Bounded,
+            "test-all",
+            |cancel: &Cancel| {
+                assert!(!cancel.poll(), "the item's last charge sees no cancel");
+                cancel.cancel(CancelCause::Requested);
+                failed()
+            },
+        );
+        let records = analyze_items(&engines, vec![item], &cancel);
+
+        assert_eq!(cancel.cause(), Some(CancelCause::Requested));
+        assert_eq!(cancel.tripped(), None);
+        let expected = analyze_items(
+            &engines,
+            vec![AnalyzeItem::new(
+                RequestIndex::new(0),
+                Capability::OperationContract,
+                Some(DeclarationFamily::StateModel),
+                Mode::Bounded,
+                "test-all",
+                |_| failed(),
+            )],
+            &Cancel::new(),
+        );
+        assert_eq!(records[0].terminal(), expected[0].terminal());
     }
 }

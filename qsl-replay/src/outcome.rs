@@ -1853,6 +1853,17 @@ impl OutcomeDocument {
                     None,
                     refusal.to_string(),
                 )]),
+                RunRefusal::Unsupported(entry) => Self::new(
+                    Operation::Execute,
+                    Some(OutcomeStage::S6a),
+                    refusal.category(),
+                )
+                .with_diagnostics(vec![OutcomeDiagnostic::new(
+                    Some(entry.catalog_code().cause()),
+                    refusal.code().as_str(),
+                    None,
+                    refusal.to_string(),
+                )]),
                 RunRefusal::SourceNotSupplied { .. } => Self::new(
                     Operation::Execute,
                     Some(OutcomeStage::S6a),
@@ -1872,6 +1883,7 @@ impl OutcomeDocument {
                 | RunRefusal::WrongValueKind { .. }
                 | RunRefusal::Admission { .. }
                 | RunRefusal::Storage { .. }
+                | RunRefusal::PrepareLimit(_)
                 | RunRefusal::DanglingReference { .. } => Self::new(
                     Operation::Execute,
                     Some(OutcomeStage::S6a),
@@ -2995,6 +3007,7 @@ mod tests {
                 arguments: Vec::new(),
                 accounting,
                 supplied: Default::default(),
+                backend: quire_eval::ExecutionBackendChoice::Interpreter,
             };
             let outcome = run(
                 SourceIdentity::new("agent-ix", "test:outcome"),
@@ -3034,6 +3047,7 @@ mod tests {
             arguments: Vec::new(),
             accounting: default_accounting(1_000_000),
             supplied: Default::default(),
+            backend: quire_eval::ExecutionBackendChoice::Interpreter,
         };
         let outcome = run(
             SourceIdentity::new("agent-ix", "test:outcome"),
@@ -3317,6 +3331,7 @@ mod tests {
                 arguments: Vec::new(),
                 accounting: default_accounting(1_000_000),
                 supplied: Default::default(),
+                backend: quire_eval::ExecutionBackendChoice::Interpreter,
             },
             &ObjectEnvironment::default(),
             cancel,
