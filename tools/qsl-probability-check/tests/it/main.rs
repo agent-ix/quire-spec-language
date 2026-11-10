@@ -10,5 +10,5 @@ mod cyclic_reward;
 
 mod cyclic_mdp;
 
-mod cyclic_mdp_reward;
 mod bounded_fair;
+mod cyclic_mdp_reward;

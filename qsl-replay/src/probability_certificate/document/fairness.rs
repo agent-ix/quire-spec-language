@@ -120,13 +120,17 @@ impl Admission<'_> {
         struct Reserve<'a, 'b>(&'a mut ProbabilityKeyAdmission<'b>);
         impl quire_canonical::Reservation for Reserve<'_, '_> {
             fn reserve(&mut self, bytes: usize) -> Result<(), quire_canonical::ReservationDenied> {
-                quire_exact::IntegerDecimalBudget::work(self.0, u64::try_from(bytes).unwrap_or(u64::MAX))
-                    .map_err(|_| quire_canonical::ReservationDenied)?;
+                quire_exact::IntegerDecimalBudget::work(
+                    self.0,
+                    u64::try_from(bytes).unwrap_or(u64::MAX),
+                )
+                .map_err(|_| quire_canonical::ReservationDenied)?;
                 quire_exact::Reservation::reserve(self.0, bytes)
                     .map_err(|_| quire_canonical::ReservationDenied)
             }
         }
-        let result = writer::encode_admitted(record, self.limits.bytes, &mut Reserve(&mut admission));
+        let result =
+            writer::encode_admitted(record, self.limits.bytes, &mut Reserve(&mut admission));
         result.map_err(|error| match error {
             Error::ReservationDenied { .. } => {
                 admission.refusal(qsl_eval::simulation::model::ModelKeyError::Denied)

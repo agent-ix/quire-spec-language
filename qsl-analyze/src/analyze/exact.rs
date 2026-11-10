@@ -492,7 +492,7 @@ fn run(
     };
     let reference = binding.as_ref().map(|bound| &bound.reference);
     if !holds {
-        if expected_reward {
+        if expected_reward || bounded_fair {
             return not_yet();
         }
         if matches!(
