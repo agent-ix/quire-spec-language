@@ -435,7 +435,7 @@ fn missing_document_values_reject_but_identity_and_objective_mismatches_refuse()
 
 #[trace("TC-764", "FR-201-AC-11", "FR-282-AC-12")]
 #[test]
-fn analyzer_document_budgets_stop_after_solving_without_certification() {
+fn analyzer_document_budgets_preserve_stage_specific_stops_without_certification() {
     use std::sync::atomic::AtomicBool;
     let world = World::new(&prob_world::link(CLAIMS));
     let engines = Engines::qsl().unwrap();
@@ -453,15 +453,16 @@ fn analyzer_document_budgets_stop_after_solving_without_certification() {
         } else {
             request.limits.document.bytes = 0;
         }
-        let reached_emission = Arc::new(AtomicBool::new(false));
-        let observed = Arc::clone(&reached_emission);
+        let reached_candidate = Arc::new(AtomicBool::new(false));
+        let observed = Arc::clone(&reached_candidate);
         let item = exact_probabilistic_item_tampered(RequestIndex::new(0), request, move |_| {
             observed.store(true, Ordering::Relaxed);
         });
         let record = analyze_items(&engines, vec![item], &Cancel::new()).remove(0);
-        assert!(
-            reached_emission.load(Ordering::Relaxed),
-            "graph enumeration and solve must have succeeded"
+        assert_eq!(
+            reached_candidate.load(Ordering::Relaxed),
+            !storage,
+            "zero output bytes must reach a candidate; zero working storage must stop before one exists"
         );
         let expected = if storage {
             ModelCheckLimit::CertificateMaxWorkingBytes
@@ -483,6 +484,12 @@ fn analyzer_document_budgets_stop_after_solving_without_certification() {
                 "certificate_check.max_certificate_bytes"
             }
         );
+        assert!(record.terminal().unwrap().exact_certificate().is_none());
+        assert!(record
+            .terminal()
+            .unwrap()
+            .exact_certificate_document()
+            .is_none());
         assert!(record.exact_probabilistic.is_none());
     }
 }
