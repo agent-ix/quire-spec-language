@@ -71,6 +71,17 @@ pub fn admit_acyclic_probabilistic_refutation_subject(
     let result = result.and_then(|graph| {
         for (key, state) in &graph.states {
             poll_cancel(cancel)?;
+            if let Err(incomplete) = meter.charge(quire_exact::Charge::new(
+                quire_exact::ChargePoint::CollectionVisit,
+            )) {
+                admission_issue = Some(match cancel.tripped() {
+                    Some(cause) => crate::ExactProbBuildIssue::Cancelled(cause),
+                    None => crate::ExactProbBuildIssue::Predicate(
+                        qsl_eval::simulation::model::ClauseOutcome::Incomplete(incomplete),
+                    ),
+                });
+                return Err(ExactProbabilityGraphError::ExpansionRefused);
+            }
             let bytes = key
                 .as_bytes()
                 .len()
@@ -89,6 +100,17 @@ pub fn admit_acyclic_probabilistic_refutation_subject(
             *used.borrow_mut() = actual;
             for edge in state.choices.iter().flatten() {
                 poll_cancel(cancel)?;
+                if let Err(incomplete) = meter.charge(quire_exact::Charge::new(
+                    quire_exact::ChargePoint::CollectionMemberTest,
+                )) {
+                    admission_issue = Some(match cancel.tripped() {
+                        Some(cause) => crate::ExactProbBuildIssue::Cancelled(cause),
+                        None => crate::ExactProbBuildIssue::Predicate(
+                            qsl_eval::simulation::model::ClauseOutcome::Incomplete(incomplete),
+                        ),
+                    });
+                    return Err(ExactProbabilityGraphError::ExpansionRefused);
+                }
                 if edge.probability.numerator().magnitude_bits() > limits.max_rational_bits
                     || edge.probability.denominator().magnitude_bits() > limits.max_rational_bits
                 {
