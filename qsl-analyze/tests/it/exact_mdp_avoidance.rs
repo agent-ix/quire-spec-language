@@ -213,13 +213,17 @@ fn acyclic_failure_sibling_does_not_require_other_successors_to_be_targets() {
 #[test]
 fn positive_nonreach_has_infinite_expected_until_even_with_zero_costs() {
     let mut product = two_actions();
+    let qualitative_limits = ExactProbLimits {
+        max_policy_iterations: 0,
+        ..ExactProbLimits::default()
+    };
     for objective in [UnboundedObjective::Min, UnboundedObjective::Max] {
         let result = decide_expected_reward(
             &product,
             &[false, true, false],
             "cost",
             objective,
-            &ExactProbLimits::default(),
+            &qualitative_limits,
         )
         .expect("nonreach is decided qualitatively");
         assert_eq!(result.values[0], ExtRational::PlusInfinity);
