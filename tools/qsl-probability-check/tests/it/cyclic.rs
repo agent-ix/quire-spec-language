@@ -33,7 +33,7 @@ fn model(transient: bool) -> String {
         profile v = \"quire.model.complete/v1\";\n\
         profile inf = \"quire.temporal.infinite-trace/v1\";\n\
         model M = \"test/link\";\n\
-        pre A using v on M::Msg::send_a {{ true }}\n\
+        pre A using v on M::Msg::send_a {{ self.attempts < 2 or self.delivered }}\n\
         post A_done using v on M::Msg::send_a {{ {post} }}\n\
         pre B using v on M::Msg::send_b {{ false }}\n\
         post B_done using v on M::Msg::send_b {{ self.attempts = 0 and not self.delivered }}\n\
@@ -227,7 +227,7 @@ fn explicit_cyclic_profile_admits_acyclic_dtmc_and_target_precedence() {
         let base = model(false)
             .replace("self.attempts = 2 and not self.delivered", "true")
             .replace(
-                "pre A using v on M::Msg::send_a { true }",
+                "pre A using v on M::Msg::send_a { self.attempts < 2 or self.delivered }",
                 "pre A using v on M::Msg::send_a { false }",
             );
         let request = proof(&claim(&base, "every scheduler", op, threshold, target));
@@ -247,7 +247,7 @@ fn explicit_cyclic_profile_admits_acyclic_dtmc_and_target_precedence() {
 #[test]
 fn authored_workload_checks_its_resolved_rational_distribution() {
     let base = model(false)
-        .replace("pre B using v on M::Msg::send_b { false }", "pre B using v on M::Msg::send_b { true }")
+        .replace("pre B using v on M::Msg::send_b { false }", "pre B using v on M::Msg::send_b { self.attempts < 2 or self.delivered }")
         .replace("post A_done using v on M::Msg::send_a { self.attempts - (if lost = 0 then 0 else 2) = 0 and self.delivered = (lost = 1) }", "post A_done using v on M::Msg::send_a { self.attempts = pre(self.attempts) and self.delivered = pre(self.delivered) }")
         .replace("post B_done using v on M::Msg::send_b { self.attempts = 0 and not self.delivered }", "post B_done using v on M::Msg::send_b { self.attempts = 2 and self.delivered = (lost = 0) }");
     let base = format!("{base}\nworkload Even on M {{ weight Msg::send_a = 1; weight Msg::send_b = 1; weight Msg::send_c = 1; }}\n");
@@ -406,7 +406,7 @@ fn native_acyclicity_probe_uses_native_counts_and_working_storage_without_transp
     let terminal = source
         .replace("self.attempts = 2 and not self.delivered", "true")
         .replace(
-            "pre A using v on M::Msg::send_a { true }",
+            "pre A using v on M::Msg::send_a { self.attempts < 2 or self.delivered }",
             "pre A using v on M::Msg::send_a { false }",
         );
     assert_eq!(probe(&terminal, exact, &Cancel::new()), Ok(true));
