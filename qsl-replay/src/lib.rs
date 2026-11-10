@@ -334,6 +334,7 @@ pub use probability_certificate::admit_acyclic_probabilistic_refutation_subject;
 pub use probability_certificate::{
     admit_acyclic_probabilistic_refutation_subject_with_identity,
     admit_cyclic_eventual_certificate_subject_with_identity,
+    check_cyclic_reward_probability_certificate_observing, RewardProbabilityPhase,
 };
 pub use probability_certificate::{
     admit_expected_reward_certificate_subject, check_claim_exact_reachability,

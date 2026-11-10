@@ -11,6 +11,69 @@ pub(super) enum RewardProfile {
     CyclicDtmc,
 }
 
+/// Actual independently checked cyclic reward stages.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RewardProbabilityPhase {
+    /// Checked reward identity and unit resolution.
+    Unit,
+    /// Full original-subject admission.
+    Original,
+    /// Raw and full key construction.
+    Key,
+    /// Initial first-target traversal.
+    Stopped,
+    /// A stopped-traversal predicate has actually been read.
+    Predicate,
+    /// Qualified outgoing draws have actually been expanded.
+    Draw,
+    /// One actual draw's reward is about to be evaluated.
+    Reward,
+    /// Reverse-distance witness construction.
+    Ranks,
+    /// Offered properness rank checking.
+    Progress,
+    /// Exact reward Bellman arithmetic.
+    Arithmetic,
+}
+
+pub(super) struct RewardControl<'a> {
+    cancel: &'a Cancel,
+    #[cfg(feature = "test-support")]
+    observe: std::cell::RefCell<Option<&'a mut dyn FnMut(RewardProbabilityPhase)>>,
+}
+impl<'a> RewardControl<'a> {
+    pub(super) fn new(cancel: &'a Cancel) -> Self {
+        Self {
+            cancel,
+            #[cfg(feature = "test-support")]
+            observe: std::cell::RefCell::new(None),
+        }
+    }
+    #[cfg(feature = "test-support")]
+    pub(super) fn observing(
+        cancel: &'a Cancel,
+        observe: &'a mut dyn FnMut(RewardProbabilityPhase),
+    ) -> Self {
+        Self {
+            cancel,
+            observe: std::cell::RefCell::new(Some(observe)),
+        }
+    }
+    pub(super) fn phase(
+        &self,
+        phase: RewardProbabilityPhase,
+    ) -> Result<(), ProbabilityDocumentError> {
+        #[cfg(feature = "test-support")]
+        if let Some(observe) = self.observe.borrow_mut().as_mut() {
+            observe(phase);
+        }
+        #[cfg(not(feature = "test-support"))]
+        let _ = phase;
+        poll_cancel(self.cancel)?;
+        Ok(())
+    }
+}
+
 pub(super) struct RewardGraph {
     pub(super) objective: ProbabilityRewardObjective,
     pub(super) costs: BTreeMap<ProbabilityProductKey, Vec<Vec<Rational>>>,
@@ -88,6 +151,7 @@ pub(super) fn enumerate(
     profile: RewardProfile,
     meter: &mut quire_exact::Meter,
     used: &mut u64,
+    control: &RewardControl<'_>,
 ) -> Result<
     (
         CheckerGraph,
@@ -98,6 +162,7 @@ pub(super) fn enumerate(
 > {
     poll_cancel(cancel)?;
     let storage = std::cell::RefCell::new(used);
+    control.phase(RewardProbabilityPhase::Unit)?;
     let objective = objective(
         system,
         claim,
@@ -112,6 +177,12 @@ pub(super) fn enumerate(
     let mut remaining_edges = limits.edges;
     let meter = std::cell::RefCell::new(meter);
     let key_of = |state: &ModelSimState| {
+        control
+            .phase(RewardProbabilityPhase::Key)
+            .map_err(|error| {
+                *failure.borrow_mut() = Some(error);
+                ExactProbabilityGraphError::ExpansionRefused
+            })?;
         let mut meter = meter.borrow_mut();
         let mut storage = storage.borrow_mut();
         let mut admission =
@@ -184,6 +255,14 @@ pub(super) fn enumerate(
                 ModelVisitPhase::AfterTarget
             },
             &mut |key, state, terminal| {
+                if collect_costs.get() && profile == RewardProfile::CyclicDtmc {
+                    control
+                        .phase(RewardProbabilityPhase::Predicate)
+                        .map_err(|error| {
+                            *failure.borrow_mut() = Some(error);
+                            ExactProbabilityGraphError::ExpansionRefused
+                        })?;
+                }
                 if !collect_costs.get()
                     || profile == RewardProfile::CyclicDtmc && terminal == Some(true)
                 {
@@ -208,6 +287,7 @@ pub(super) fn enumerate(
                         &mut storage,
                         &mut meter.borrow_mut(),
                         &mut remaining_edges,
+                        control,
                     )
                 });
                 match result {
@@ -230,6 +310,7 @@ pub(super) fn enumerate(
         }
         // Original model admission does not evaluate the query predicate or
         // accumulated costs. Its full exploration remains caller-controlled.
+        control.phase(RewardProbabilityPhase::Original)?;
         let original = finish_graph(explore(None, false), &failure, &issue)?;
         for state in original.states.values() {
             poll_cancel(cancel)?;
@@ -239,6 +320,9 @@ pub(super) fn enumerate(
         }
     }
     collect_costs.set(true);
+    if profile == RewardProfile::CyclicDtmc {
+        control.phase(RewardProbabilityPhase::Stopped)?;
+    }
     let mut graph = finish_graph(
         explore(Some(until), profile == RewardProfile::CyclicDtmc),
         &failure,
@@ -252,6 +336,7 @@ pub(super) fn enumerate(
             cancel,
             &mut storage.borrow_mut(),
             &mut meter.borrow_mut(),
+            control,
         )?;
         return Ok((graph, ranks, RewardGraph { objective, costs }));
     }
@@ -369,11 +454,13 @@ fn progress_ranks(
     cancel: &Cancel,
     storage: &mut u64,
     meter: &mut quire_exact::Meter,
+    control: &RewardControl<'_>,
 ) -> Result<BTreeMap<ProbabilityProductKey, u64>, ProbabilityDocumentError> {
     let mut reverse = BTreeMap::<&ProbabilityProductKey, Vec<&ProbabilityProductKey>>::new();
     let mut ranks = BTreeMap::<ProbabilityProductKey, u64>::new();
     let mut pending = VecDeque::new();
     for (key, state) in &graph.states {
+        control.phase(RewardProbabilityPhase::Ranks)?;
         visit(cancel, meter)?;
         charge(
             storage,
@@ -584,6 +671,7 @@ fn step_costs(
     storage: &mut u64,
     meter: &mut quire_exact::Meter,
     remaining_edges: &mut usize,
+    control: &RewardControl<'_>,
 ) -> Result<Vec<Vec<Rational>>, ProbabilityDocumentError> {
     use qsl_eval::simulation::model::{TransitionId, Unsteppable};
     let unsteppable = |stop| {
@@ -599,6 +687,7 @@ fn step_costs(
             .weighted_steps_with_budget(state, workload, identity, &mut admission, cancel)
             .map_err(|error| admission.expansion_refusal(error))?
             .map_err(unsteppable)?;
+        control.phase(RewardProbabilityPhase::Draw)?;
         if steps
             .iter()
             .any(|step| step.transition == TransitionId::Stutter)
@@ -618,6 +707,7 @@ fn step_costs(
         for step in steps {
             poll_cancel(cancel)?;
             if step.probability != rational(0) {
+                control.phase(RewardProbabilityPhase::Reward)?;
                 let value = magnitude(
                     &step.rewards,
                     objective,
@@ -644,6 +734,7 @@ fn step_costs(
                 crate::ExactProbBuildIssue::UndecidedSuccessor,
             ))
         })?;
+    control.phase(RewardProbabilityPhase::Draw)?;
     let mut rows = Vec::new();
     for action in actions {
         poll_cancel(cancel)?;
@@ -661,6 +752,7 @@ fn step_costs(
             if draw.successors.len() != 1 {
                 return Err(ProbabilityDocumentError::Unsupported);
             }
+            control.phase(RewardProbabilityPhase::Reward)?;
             let value = magnitude(
                 &draw.rewards,
                 objective,

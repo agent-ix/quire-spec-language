@@ -28,6 +28,8 @@ pub use cyclic::admit_acyclic_probabilistic_refutation_subject;
 pub use cyclic::admit_acyclic_probabilistic_refutation_subject_with_identity;
 mod document;
 mod reward;
+#[cfg(feature = "test-support")]
+pub use reward::RewardProbabilityPhase;
 mod state_predicate;
 pub use bounded::probabilistic_formula_monitor_context;
 mod source;
