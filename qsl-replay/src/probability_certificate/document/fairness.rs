@@ -475,13 +475,15 @@ mod tests {
     use ix_trace_rs::trace;
 
     fn limits() -> ProbabilityDocumentLimits {
+        let mut accounting = crate::AccountingLimits::default().0;
+        accounting.work_units = u64::MAX;
         ProbabilityDocumentLimits {
             bytes: 1_000_000,
             storage_bytes: 64_000_000,
             states: 128,
             edges: 1024,
             scalar_bits: 128,
-            accounting: crate::AccountingLimits::default().0,
+            accounting,
         }
     }
 
