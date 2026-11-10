@@ -533,4 +533,26 @@ impl StateModel {
     ) -> Result<ObjectReference, AdmissionFailure> {
         state_reference(&self.views, type_key, object)
     }
+
+    /// Borrow the effective object type and its normalized object universe
+    /// that [`Self::object_reference`] uses, without constructing a reference.
+    /// The first matching model view and its validated reverse identity index
+    /// are selected in the same order as reference admission.
+    ///
+    /// `None` means the type or its universe cannot be resolved. The caller
+    /// remains responsible for validating the object's nonempty identity.
+    pub fn reference_components(
+        &self,
+        type_key: &DeclarationKey,
+    ) -> Option<(&EffectiveId, &crate::model::normalize::ObjectUniverse)> {
+        let effective = self
+            .views
+            .iter()
+            .find_map(|view| view.view.type_identities().get(type_key))?;
+        let (view, declaration) = self.views.iter().find_map(|view| {
+            view.declaration_key_borrowed(effective)
+                .map(|key| (view, key))
+        })?;
+        Some((effective, view.view.object_universe_of(declaration)?))
+    }
 }

@@ -1960,6 +1960,25 @@ fn raw_model_key_preserves_legacy_reference_enum_and_extent_vectors() {
             .as_bytes(),
         "literal bytes captured from the unchanged legacy encoder"
     );
+    let model = enums.model();
+    let (effective, universe) = model
+        .reference_components(&counter())
+        .expect("reference parts");
+    let reference = enums.reference("c1");
+    assert_eq!(effective, reference.object_type());
+    let universe_bytes = quire_canonical::to_vec(
+        &universe
+            .identity_view()
+            .expect("borrowed universe identity"),
+        quire_canonical::Limits::new(1 << 20),
+    )
+    .expect("borrowed identity encodes");
+    assert_eq!(
+        universe_bytes,
+        br#"{"ordinal":0,"package":"test/counters","path":["model","object_type","ix://test/counters/Counter"]}"#,
+        "the borrowed view preserves the old captured reference's universe bytes"
+    );
+    assert!(model.reference_components(&key("Missing")).is_none());
 
     let mut extents = build_world_with(Vec::new(), "", false, vec![link_relationship()])
         .expect("relationship fixture checks");

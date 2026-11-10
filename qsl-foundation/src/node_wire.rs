@@ -242,32 +242,102 @@ pub fn node_key_to_text(key: &NodeKey) -> Result<String, NodeWireError> {
 /// # Errors
 ///
 /// The writer's byte, reservation, allocation or scalar refusal.
+fn encode_node_head<S: quire_canonical::Sink + ?Sized>(
+    package: &str,
+    ordinal: u64,
+    writer: &mut quire_canonical::Writer<'_, S>,
+) -> Result<(), quire_canonical::Error> {
+    writer.begin_object()?;
+    writer.name("ordinal")?;
+    writer.integer(i128::from(ordinal))?;
+    writer.name("package")?;
+    writer.string(package)?;
+    writer.name("path")?;
+    writer.begin_array()
+}
+
+/// A validated structural node identity with a fixed borrowed text path.
+/// It uses the same canonical projection as [`encode_node_key`] without
+/// constructing an owned node identity, text or JSON tree.
+#[derive(Clone, Copy, Debug)]
+pub struct TextNodeIdentity<'a, const N: usize> {
+    package: &'a str,
+    path: [&'a str; N],
+    ordinal: u64,
+}
+
+impl<'a, const N: usize> TextNodeIdentity<'a, N> {
+    /// Validate the same package, nonempty path and ordinal constraints as
+    /// [`NodeKey::new`], without allocating. Path text is opaque.
+    ///
+    /// # Errors
+    ///
+    /// [`InvalidNodeKey::EmptyPackage`], [`InvalidNodeKey::EmptyPath`] or
+    /// [`InvalidNodeKey::OrdinalOutOfRange`] for invalid structural input.
+    pub fn new(package: &'a str, path: [&'a str; N], ordinal: u64) -> Result<Self, InvalidNodeKey> {
+        if package.is_empty() {
+            return Err(InvalidNodeKey::EmptyPackage);
+        }
+        if N == 0 {
+            return Err(InvalidNodeKey::EmptyPath);
+        }
+        if ordinal > quire_exact::MAX_NODE_ORDINAL {
+            return Err(InvalidNodeKey::OrdinalOutOfRange);
+        }
+        Ok(Self {
+            package,
+            path,
+            ordinal,
+        })
+    }
+
+    /// The owning package text.
+    pub fn package(&self) -> &'a str {
+        self.package
+    }
+
+    /// The direct opaque path segments.
+    pub fn path(&self) -> &[&'a str; N] {
+        &self.path
+    }
+}
+
+impl<const N: usize> quire_canonical::Encode for TextNodeIdentity<'_, N> {
+    fn encode_into<S: quire_canonical::Sink + ?Sized>(
+        &self,
+        writer: &mut quire_canonical::Writer<'_, S>,
+    ) -> Result<(), quire_canonical::Error> {
+        encode_node_head(self.package, self.ordinal, writer)?;
+        for segment in self.path {
+            writer.string(segment)?;
+        }
+        writer.end_array()?;
+        writer.end_object()
+    }
+}
+
+/// Emit a structural node identity directly into a canonical writer.
+///
+/// The writer admits its own storage and this traversal's stack before growth.
+/// No intermediate identity text or JSON tree is retained.
+///
+/// # Errors
+///
+/// The writer's byte, reservation, allocation or scalar refusal.
 pub fn encode_node_key<S: quire_canonical::Sink + ?Sized>(
     key: &NodeKey,
     writer: &mut quire_canonical::Writer<'_, S>,
 ) -> Result<(), quire_canonical::Error> {
-    fn head<S: quire_canonical::Sink + ?Sized>(
-        view: NodeKeyView<'_>,
-        writer: &mut quire_canonical::Writer<'_, S>,
-    ) -> Result<(), quire_canonical::Error> {
-        writer.begin_object()?;
-        writer.name("ordinal")?;
-        writer.integer(i128::from(view.ordinal()))?;
-        writer.name("package")?;
-        writer.string(view.package())?;
-        writer.name("path")?;
-        writer.begin_array()
-    }
     let mut stack = Vec::new();
     let root = key.view();
-    head(root, writer)?;
+    encode_node_head(root.package(), root.ordinal(), writer)?;
     writer.reserve_list(&mut stack, 1)?;
     stack.push(root.path());
     while let Some(path) = stack.last_mut() {
         match path.next() {
             Some(PathSegmentView::Text(text)) => writer.string(text)?,
             Some(PathSegmentView::Node(view)) => {
-                head(view, writer)?;
+                encode_node_head(view.package(), view.ordinal(), writer)?;
                 writer.reserve_list(&mut stack, 1)?;
                 stack.push(view.path());
             }
@@ -450,6 +520,37 @@ pub fn node_key_from_text(text: &str) -> Result<NodeKey, NodeWireError> {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[ix_trace_rs::trace("TC-728", "FR-259-AC-1")]
+    #[test]
+    fn borrowed_text_node_identity_keeps_literal_bytes_and_shape_validation() {
+        let view = TextNodeIdentity::new("pkg", ["model", "object_type", "node\"\\\n"], 0)
+            .expect("valid borrowed node identity");
+        let bytes = quire_canonical::to_vec(&view, quire_canonical::Limits::new(1024))
+            .expect("borrowed identity encodes");
+        assert_eq!(
+            bytes,
+            br#"{"ordinal":0,"package":"pkg","path":["model","object_type","node\"\\\n"]}"#
+        );
+        assert!(matches!(
+            TextNodeIdentity::new("", ["p"], 0),
+            Err(InvalidNodeKey::EmptyPackage)
+        ));
+        assert!(matches!(
+            TextNodeIdentity::new("pkg", [], 0),
+            Err(InvalidNodeKey::EmptyPath)
+        ));
+        assert!(matches!(
+            TextNodeIdentity::new("pkg", ["p"], quire_exact::MAX_NODE_ORDINAL + 1),
+            Err(InvalidNodeKey::OrdinalOutOfRange)
+        ));
+        let upper = TextNodeIdentity::new("pkg", ["p"], quire_exact::MAX_NODE_ORDINAL)
+            .expect("maximum exact ordinal");
+        assert_eq!(
+            quire_canonical::to_vec(&upper, quire_canonical::Limits::new(1024)).unwrap(),
+            br#"{"ordinal":9007199254740991,"package":"pkg","path":["p"]}"#,
+        );
+    }
 
     fn text(value: &str) -> PathSegment {
         PathSegment::Text(value.into())

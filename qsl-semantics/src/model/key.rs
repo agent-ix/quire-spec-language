@@ -22,7 +22,7 @@
 //! use quire_checked::key::DeclarationKey;
 //! let _ = DeclarationKey { package: String::new(), node: String::new() };
 //! ```
-use quire_canonical::{FixedShape, Limits};
+use quire_canonical::{Encode, Error, FixedShape, Limits, Sink, Writer};
 use quire_checked::key::DeclarationKey;
 use quire_exact::{InvalidNodeKey, NodeKey, OriginalDeclarationKey};
 use serde::Serialize;
@@ -55,11 +55,50 @@ pub fn model_node_key(
     form: &str,
     node: &str,
 ) -> Result<NodeKey, InvalidNodeKey> {
-    crate::check::declared_node_key(
-        package.to_owned(),
-        vec![form_tag.to_owned(), form.to_owned(), node.to_owned()],
-        0,
-    )
+    ModelNodeIdentity::new(package, form_tag, form, node)?.to_node_key()
+}
+
+/// A borrowed model declaration's structural node identity, using the same
+/// package/path recipe and validation as [`model_node_key`].
+#[derive(Clone, Copy, Debug)]
+pub struct ModelNodeIdentity<'a> {
+    node: qsl_foundation::node_wire::TextNodeIdentity<'a, 3>,
+}
+
+impl<'a> ModelNodeIdentity<'a> {
+    /// Validate a borrowed model declaration identity without retaining a key.
+    /// The nonempty path has ordinal zero; its text segments are opaque.
+    ///
+    /// # Errors
+    ///
+    /// [`InvalidNodeKey::EmptyPackage`] when `package` is empty.
+    pub fn new(
+        package: &'a str,
+        form_tag: &'a str,
+        form: &'a str,
+        node: &'a str,
+    ) -> Result<Self, InvalidNodeKey> {
+        qsl_foundation::node_wire::TextNodeIdentity::new(package, [form_tag, form, node], 0)
+            .map(|node| Self { node })
+    }
+
+    pub(crate) fn to_node_key(self) -> Result<NodeKey, InvalidNodeKey> {
+        crate::check::declared_node_key(
+            self.node.package().to_owned(),
+            self.node
+                .path()
+                .iter()
+                .map(|segment| (*segment).to_owned())
+                .collect(),
+            0,
+        )
+    }
+}
+
+impl Encode for ModelNodeIdentity<'_> {
+    fn encode_into<S: Sink + ?Sized>(&self, writer: &mut Writer<'_, S>) -> Result<(), Error> {
+        self.node.encode_into(writer)
+    }
 }
 
 /// The structural node identity of the object type `key` declares.

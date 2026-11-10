@@ -68,17 +68,10 @@ impl Encode for Enc {
                 }
                 writer.end_array()
             }
-            Self::Node(key) => {
-                let json = node_key_to_json(key)
-                    .map_err(|_| Error::Serialize("a node identity nested too deeply".into()))?;
-                write_json(writer, &json)
-            }
-            Self::Effective(id) => write_effective(writer, id),
+            Self::Node(key) => BorrowedIdentity::Node(key).encode_into(writer),
+            Self::Effective(id) => BorrowedIdentity::Effective(id).encode_into(writer),
             Self::Shared(shared) => shared.value.encode_into(writer),
-            Self::Declaration(key) => match declaration_text(key, Limits::new(u64::MAX)) {
-                Ok(text) => writer.string(&text),
-                Err(_) => Err(unencodable(UNENCODABLE_DECLARATION)),
-            },
+            Self::Declaration(key) => BorrowedIdentity::Declaration(key).encode_into(writer),
             Self::Object(members) => {
                 writer.begin_object()?;
                 for (name, value) in members {
@@ -277,14 +270,14 @@ impl Canonicalizer {
                 }
                 out.push(b"]")
             }
-            Enc::Node(key) => Self::identity(&self.nodes, key, || Enc::Node(key.clone()), out),
+            Enc::Node(key) => Self::identity(&self.nodes, key, &BorrowedIdentity::Node(key), out),
             Enc::Effective(id) => {
-                Self::identity(&self.effective, id, || Enc::Effective(id.clone()), out)
+                Self::identity(&self.effective, id, &BorrowedIdentity::Effective(id), out)
             }
             Enc::Declaration(key) => Self::identity(
                 &self.declarations,
                 key,
-                || Enc::Declaration(key.clone()),
+                &BorrowedIdentity::Declaration(key),
                 out,
             ),
             Enc::Shared(shared) => match &shared.bytes {
@@ -316,10 +309,10 @@ impl Canonicalizer {
     }
 
     /// An identity's bytes, encoded on first use and reused after.
-    fn identity<K: Clone + Eq + std::hash::Hash>(
+    fn identity<K: Clone + Eq + std::hash::Hash, E: Encode>(
         memo: &RwLock<HashMap<K, Arc<[u8]>>>,
         key: &K,
-        leaf: impl FnOnce() -> Enc,
+        leaf: &E,
         out: &mut Out,
     ) -> Option<()> {
         let known = memo
@@ -330,7 +323,7 @@ impl Canonicalizer {
         let bytes = match known {
             Some(bytes) => bytes,
             None => {
-                let bytes: Arc<[u8]> = quire_canonical::to_vec(&leaf(), Limits::new(u64::MAX))
+                let bytes: Arc<[u8]> = quire_canonical::to_vec(leaf, Limits::new(u64::MAX))
                     .ok()?
                     .into();
                 memo.write()
@@ -462,34 +455,42 @@ impl Encode for ModelKey {
     }
 }
 
-/// Write the node identity object `json` (a [`node_key_to_json`] value,
-/// nested no deeper than the codec's bound).
-fn write_json<S: Sink + ?Sized>(writer: &mut Writer<'_, S>, json: &Json) -> Result<(), Error> {
-    match json {
-        Json::Null => writer.null(),
-        Json::Bool(value) => writer.bool(*value),
-        Json::Number(number) => {
-            let value = number
-                .as_u64()
-                .ok_or_else(|| Error::Serialize("a node ordinal is an unsigned integer".into()))?;
-            writer.integer(i128::from(value))
+/// The identity leaves shared by the retained tree and its canonical cache.
+enum BorrowedIdentity<'a> {
+    Node(&'a NodeKey),
+    Effective(&'a EffectiveId),
+    Declaration(&'a DeclarationKey),
+}
+
+impl Encode for BorrowedIdentity<'_> {
+    fn encode_into<S: Sink + ?Sized>(&self, writer: &mut Writer<'_, S>) -> Result<(), Error> {
+        match self {
+            Self::Node(key) => qsl_foundation::node_wire::encode_node_key(key, writer),
+            Self::Effective(id) => write_effective(writer, id),
+            Self::Declaration(key) => match declaration_text(key, Limits::new(u64::MAX)) {
+                Ok(text) => writer.string(&text),
+                Err(_) => Err(unencodable(UNENCODABLE_DECLARATION)),
+            },
         }
-        Json::String(text) => writer.string(text),
-        Json::Array(items) => {
-            writer.begin_array()?;
-            for item in items {
-                write_json(writer, item)?;
-            }
-            writer.end_array()
+    }
+}
+
+/// The one declaration-record projection, used as an owned tree or borrowed
+/// canonical events before its text is embedded as a string value.
+fn declaration_members(key: &DeclarationKey) -> [(&'static str, &str); 2] {
+    [("node", &key.node), ("package", &key.package)]
+}
+
+struct DeclarationRecord<'a>(&'a DeclarationKey);
+
+impl Encode for DeclarationRecord<'_> {
+    fn encode_into<S: Sink + ?Sized>(&self, writer: &mut Writer<'_, S>) -> Result<(), Error> {
+        writer.begin_object()?;
+        for (name, value) in declaration_members(self.0) {
+            writer.name(name)?;
+            writer.string(value)?;
         }
-        Json::Object(members) => {
-            writer.begin_object()?;
-            for (name, value) in members {
-                writer.name(name)?;
-                write_json(writer, value)?;
-            }
-            writer.end_object()
-        }
+        writer.end_object()
     }
 }
 
@@ -523,15 +524,18 @@ fn write_effective<S: Sink + ?Sized>(
 /// the same text `qsl_semantics::model::key::declaration_identity_text`
 /// gives, which checked clauses lower operation labels to.
 pub(crate) fn declaration_enc(key: &DeclarationKey) -> Enc {
-    Enc::Object(vec![
-        ("node", Enc::text(key.node.clone())),
-        ("package", Enc::text(key.package.clone())),
-    ])
+    Enc::Object(
+        declaration_members(key)
+            .into_iter()
+            .map(|(name, value)| (name, Enc::text(value)))
+            .collect(),
+    )
 }
 
 /// The declaration identity text of `key`.
 pub(super) fn declaration_text(key: &DeclarationKey, limits: Limits) -> Result<String, Error> {
-    declaration_enc(key).canonical_text(limits)
+    let bytes = quire_canonical::to_vec(&DeclarationRecord(key), limits)?;
+    String::from_utf8(bytes).map_err(|_| Error::Serialize("canonical text is UTF-8".into()))
 }
 
 /// FR-181's reference triple.
