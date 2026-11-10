@@ -130,3 +130,5 @@ mod zone_replay;
 mod zone_search;
 
 mod long_run_certificate;
+
+mod long_run_key_admission;

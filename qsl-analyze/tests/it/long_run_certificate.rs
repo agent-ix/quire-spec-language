@@ -17,7 +17,7 @@ use quire_exact::{Cancel, CancelCause, Integer, Rational};
 fn ratio(n: i64, d: i64) -> Rational {
     Rational::new(Integer::from(n), Integer::from(d)).unwrap()
 }
-fn limits() -> ProbabilityDocumentLimits {
+pub(super) fn limits() -> ProbabilityDocumentLimits {
     ProbabilityDocumentLimits {
         bytes: 1_000_000,
         storage_bytes: 16_000_000,
@@ -30,7 +30,7 @@ fn limits() -> ProbabilityDocumentLimits {
 fn claim(name: &str, predicate: &str, bound: &str) -> String {
     format!("probabilistic {name} using inf on M over (s: M::Server) under Steady on origin {{ long_run_fraction holds({predicate}) {bound} }}\n")
 }
-fn availability() -> World {
+pub(super) fn availability() -> World {
     let package = "test/longrun-availability";
     let claims = [
         claim("Lower", "s.phase = 0", ">= rational(1800,1801)"),
@@ -47,7 +47,7 @@ fn availability() -> World {
     })
 }
 
-fn produce(world: &World, name: &str) -> Vec<u8> {
+pub(super) fn produce(world: &World, name: &str) -> Vec<u8> {
     let records = analyze_items(
         &Engines::qsl().unwrap(),
         vec![exact_probabilistic_item(
