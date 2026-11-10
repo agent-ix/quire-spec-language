@@ -57,6 +57,9 @@ The crate holds the only copy of a case (FR-565).
 
 ## Known gaps
 
+- FR-566-AC-1 remains untagged: document and live-plugin controls are
+  present, but the package-byte equality control is not asserted.
+
 - FR-564-AC-4 and AC-6 are not tagged: the `refuted` cells do not yet produce
   an `ItemCounterexample` of the case's outcome; `AnalyzeOutcome::counterexamples`
   is not read yet.

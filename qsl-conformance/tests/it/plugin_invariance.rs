@@ -15,7 +15,7 @@ use qsl_route::{
     descriptor_from_manifest, BackendDescriptor, Candidate, CandidateOutcome, ManifestMembers,
     ProviderOrigin, Registry,
 };
-use qsl_semantics::check::{Capability, PackageDeclarations};
+use qsl_semantics::check::{BodyTerm, Capability, PackageDeclarations};
 use qsl_semantics::model::intake::SelectedModels;
 use qsl_semantics::value::{admit_integer_division, DefinitionRole};
 use quire_exact::Cancel;
@@ -103,8 +103,10 @@ fn configurations() -> [(Registry, Engines); 3] {
 /// which FR-566 permits; configuration 3 differs only in `Engines`. The
 /// `package` case is FR-275-AC-1's package: the package operation takes
 /// neither registry nor engines, so its output cannot change, and the typed
-/// package document, which holds no bytes, is the surface compared.
-#[trace("TC-1395", "FR-566-AC-1")]
+/// package document, which holds no bytes, is the surface compared. The
+/// FR-566-AC-1 tag stays open because its package-byte equality control is
+/// not asserted here.
+#[trace("TC-1395")]
 #[test]
 fn every_case_is_unchanged_by_the_registered_descriptors_and_the_plugin_provider() {
     let configurations = configurations();
@@ -162,7 +164,7 @@ fn guarded_package() -> CheckedPackage {
 /// FR-566-AC-1's control: in configuration 3 FR-281-AC-14's item settled
 /// `Supported(qsl.test-plugin)` runs on the plugin provider, and its record
 /// names `qsl.test-plugin` with certification `trusted`.
-#[trace("TC-1395", "FR-566-AC-1")]
+#[trace("TC-1395")]
 #[test]
 fn configuration_3_runs_an_item_on_the_plugin_provider() {
     let package = guarded_package();
@@ -174,7 +176,16 @@ fn configuration_3_runs_an_item_on_the_plugin_provider() {
             record.requirements().kind() == Capability::ValueValidity && record.owner() == Some("q")
         })
         .map(|(key, _)| key.clone())
-        .find(|key| format!("{:?}", key.node()).contains("quire.op.integer.div"))
+        .find(|key| {
+            package
+                .graph()
+                .semantic_graph()
+                .node(key.node().clone())
+                .is_some_and(|node| {
+                    matches!(node.body(), BodyTerm::Application(application)
+                    if application.operation.identity() == "quire.op.integer.div")
+                })
+        })
         .expect("the division's value-validity requirement");
     let target = ValueTarget::select(&package, "q", &key);
     let records = analyze_items(
