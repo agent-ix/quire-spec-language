@@ -437,7 +437,7 @@ fn borrowed_run_failure_projection_preserves_cancellation_and_fault_categories()
     };
     let outcome = document(&error.outcome_document(Operation::Execute));
     assert_eq!(outcome["last_stage"], Value::Null);
-    assert_eq!(outcome["category"], "internal_failure");
+    assert_eq!(outcome["category"], "internal-failure");
     assert_eq!(outcome["diagnostics"][0]["code"], "runtime_invariant");
     assert_eq!(
         outcome["diagnostics"][0]["cause"],
