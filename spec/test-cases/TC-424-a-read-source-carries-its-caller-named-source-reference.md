@@ -16,7 +16,7 @@ on the authority and identity but not on the source bytes. This catches a
 defaulted or path-derived label, a reference that carries any other member,
 and source content that leaks into a node key.
 
-Scope: FR-001-AC-5 to FR-001-AC-15.
+Scope: FR-001-AC-5 to FR-001-AC-16.
 
 ## Test Procedure
 
@@ -50,6 +50,14 @@ Scope: FR-001-AC-5 to FR-001-AC-15.
 10. Repeat projection with ceilings below and above 1 MiB. For source-read
     refusals reachable through `Source::read_typed`, compare direct
     projection with `read_source` under the same inputs and ceiling.
+11. From outside Foundation, borrow each typed refusal through
+    `qsl_foundation::diagnostic::source_refusal`, using its original offered
+    bytes and ceiling. Repeat with distinctive identity, path and message,
+    with ceilings below and above 1 MiB, and with no region and an
+    unrenderable region. After the native projection, consume the same
+    refusal through CST's projection. For every source-read refusal
+    reachable through `Source::read_typed`, compare the direct borrowed
+    native projection with `Source::read` under equal inputs and ceiling.
 
 Tag the tests `#[trace("TC-424", "FR-001-AC-n")]` with the AC each backs.
 
@@ -85,3 +93,11 @@ Tag the tests `#[trace("TC-424", "FR-001-AC-n")]` with the AC each backs.
 - Step 10: only byte-budget refusals carry a syntax limit, with precisely
   the supplied bound. Direct projection and `read_source` agree on every
   diagnostic field, including the limit and optional region.
+- Step 11: the native diagnostic retains the exact mapping, phase, identity,
+  path, message, identity cause and byte-budget context FR-001 specifies.
+  Located refusals retain their offered-byte coordinates; absent or
+  unrenderable regions retain only the native zero-width origin fallback.
+  The original refusal remains available and unchanged for CST, whose
+  region stays absent or retains its original endpoints. Direct native
+  projection and `Source::read` agree on every native field, with no
+  second admission or dummy source.
