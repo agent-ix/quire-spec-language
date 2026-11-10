@@ -200,7 +200,7 @@ fn mixed_infinite_minimum_and_false_terminal_forgery_never_become_finite_proofs(
 fn checked_comparison_unit_converts_exactly_and_rejects_foreign_unit_identity() {
     let src = source(false, "1 ms", "2 ms", "<= 0.004 s", "m.delivered")
          .replace("reward cost on Msg::send_c = 100;", "reward cost on Msg::send_c = 100 ms;")
-        + "\ndimension Time;\nunit ms : Time = rational(1,1);\nunit s : Time = rational(1000,1) * ms;\nunit other : Time = rational(1,1);\n";
+        + "\ndimension Time;\nunit ms : Time = rational(1,1);\nunit s : Time = rational(1000,1) * ms;\nunit other : Time = rational(1,1) * ms;\n";
     let request = proof(&src);
     assert_eq!(run(&request).0, 0);
     let d = document(&request);
@@ -210,7 +210,7 @@ fn checked_comparison_unit_converts_exactly_and_rejects_foreign_unit_identity() 
     assert_eq!(out["status"], "refused");
     let foreign_source = source(false, "1 other", "2 other", "<= 4 other", "m.delivered")
         .replace("reward cost on Msg::send_c = 100;", "reward cost on Msg::send_c = 100 other;")
-        + "\ndimension Time;\nunit ms : Time = rational(1,1);\nunit s : Time = rational(1000,1) * ms;\nunit other : Time = rational(1,1);\n";
+        + "\ndimension Time;\nunit ms : Time = rational(1,1);\nunit s : Time = rational(1000,1) * ms;\nunit other : Time = rational(1,1) * ms;\n";
     let foreign = proof(&foreign_source);
     let foreign_unit = document(&foreign)["objective"]["unit"].clone();
     assert_ne!(foreign_unit, d["objective"]["unit"]);
