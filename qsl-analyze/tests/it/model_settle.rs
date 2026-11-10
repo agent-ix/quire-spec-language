@@ -77,6 +77,11 @@ impl Case {
         }
     }
 
+    /// The case's checked package.
+    pub(crate) fn checked(&self) -> &CheckedPackage {
+        &self.checked
+    }
+
     /// The deadlock-freedom item's certificate request over the case's
     /// subject.
     pub(crate) fn request(&self) -> CertificateRequest<'_> {

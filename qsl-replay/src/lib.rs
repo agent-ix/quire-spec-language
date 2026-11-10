@@ -321,9 +321,10 @@ pub use quire_semantic_value::declaration::EqualityOperator;
 // this crate alone, names them without naming `qsl_foundation`.
 pub use outcome::undefined_reason;
 pub use outcome::{
-    ClauseRunNotAnItem, ExecuteResult, ItemCause, ItemLabel, Operation, OutcomeDiagnostic,
-    OutcomeDocument, OutcomeItem, OutcomeLocus, OutcomeStage, OutcomeWriteError, ParityReason,
-    ResultLimit, ResultValue, OUTCOME_FORMAT,
+    assignments_wire, probabilistic_wire, protocol_temporal_wire, temporal_wire,
+    ClauseRunNotAnItem, CounterexampleWireError, ExecuteResult, ItemCause, ItemLabel, Operation,
+    OutcomeDiagnostic, OutcomeDocument, OutcomeItem, OutcomeItemError, OutcomeLocus, OutcomeStage,
+    OutcomeWriteError, ParityReason, ProtocolWire, ResultLimit, ResultValue, OUTCOME_FORMAT,
 };
 pub use planner::{
     read_premise_item, read_result_entry, read_settlement_request, Budget, PlannerDeclaration,

@@ -39,6 +39,7 @@ mod selection;
 mod settle;
 mod steps;
 mod tso;
+mod wire;
 
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
@@ -101,6 +102,9 @@ pub use selection::{
     MemorySelection, MemorySelectionRefusal, ResolvedMemory, ResolvedParallel, SubjectMemory,
 };
 pub use tso::{Buffered, Tso, TsoComponent, DEFAULT_MEMORY_BOUND};
+pub use wire::{
+    blocked_json, fairness_json, location_json, over_reference, send_record_json, transition_json,
+};
 
 /// A construct this protocol system does not step yet.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

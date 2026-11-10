@@ -695,6 +695,76 @@ impl<'s, 'a> ContractTarget<'s, 'a> {
         }))
     }
 
+    /// `counterexample` in FR-286's `contract-counterexample` spelling:
+    /// states as their FR-120 state keys, values in their FR-181 typed
+    /// form, each execution beside the operation node it applied.
+    ///
+    /// # Errors
+    ///
+    /// [`CounterexampleWireError::Unspelled`] when a node, state or value has
+    /// no encoding.
+    pub fn wire(
+        &self,
+        counterexample: &ContractCounterexample,
+    ) -> Result<serde_json::Value, crate::CounterexampleWireError> {
+        use crate::CounterexampleWireError::Unspelled;
+        use qsl_foundation::node_wire::node_key_to_json;
+        use serde_json::json;
+        let node = |key: &NodeKey| node_key_to_json(key).map_err(|_| Unspelled("contract node"));
+        let state = |state: &ModelState| {
+            let (_, key) = self
+                .concrete
+                .state_key_of(state)
+                .map_err(|_| Unspelled("contract state"))?;
+            serde_json::to_value(crate::outcome::TimedStateWire::from(&key))
+                .map_err(|_| Unspelled("contract state"))
+        };
+        let scope = self.package.graph().scope();
+        let value = |value: &Value| {
+            qsl_eval::simulation::model::typed_value_json(
+                value,
+                scope.types(),
+                scope.variant_types(),
+            )
+            .ok_or(Unspelled("contract value"))
+        };
+        let executions = counterexample
+            .executions
+            .iter()
+            .map(|execution| {
+                let arguments = execution
+                    .arguments
+                    .iter()
+                    .enumerate()
+                    .map(|(ordinal, argument)| {
+                        Ok(json!({"parameter": ordinal, "value": value(argument)?}))
+                    })
+                    .collect::<Result<Vec<_>, crate::CounterexampleWireError>>()?;
+                Ok(json!({
+                    "operation": execution.operation.as_ref().map(node).transpose()?,
+                    "pre_state": state(&execution.pre_state)?,
+                    "arguments": arguments,
+                    "result": execution.result.as_ref().map(value).transpose()?,
+                    "post_state": execution.post_state.as_ref().map(state).transpose()?,
+                }))
+            })
+            .collect::<Result<Vec<_>, crate::CounterexampleWireError>>()?;
+        let violated = &counterexample.violated;
+        Ok(json!({
+            "type": "contract-counterexample",
+            "obligation": counterexample.obligation.as_str(),
+            "violated": {
+                "node": node(violated.node())?,
+                "occurrence": {
+                    "role": violated.origin().role().to_string(),
+                    "ordinal": violated.origin().ordinal(),
+                },
+            },
+            "bound": counterexample.bound,
+            "executions": executions,
+        }))
+    }
+
     /// The claim's form.
     pub fn form(&self) -> ContractForm {
         self.claim.form

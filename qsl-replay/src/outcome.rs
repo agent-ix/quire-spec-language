@@ -23,6 +23,12 @@
 //! violation; the label `undefined` appears only as the category of a
 //! non-proof evaluation outcome such as `execute`.
 
+mod counterexample;
+pub use counterexample::{
+    assignments_wire, probabilistic_wire, protocol_temporal_wire, temporal_wire,
+    CounterexampleWireError, ProtocolWire,
+};
+
 use crate::hybrid::{BoundDimension, SolverHorizon};
 use qsl_cst::format::FormatRefusal;
 use qsl_foundation::diagnostic::{Code, Locus, StageFailure, Staged, Stopped};
@@ -227,6 +233,17 @@ pub enum ClauseRunNotAnItem {
     /// The run's clause-run record could not be written.
     #[error("the clause-run record could not be written: {0}")]
     Record(#[from] crate::spine::NativeRunResultError),
+}
+
+/// Why an `analyze` or `prove` record is not an outcome item (FR-286).
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum OutcomeItemError {
+    /// A `refuted` record arrived without its one `ItemCounterexample`.
+    #[error("a refuted record needs its one counterexample")]
+    MissingCounterexample,
+    /// The record's counterexample has no wire spelling.
+    #[error(transparent)]
+    Unspelled(#[from] CounterexampleWireError),
 }
 
 /// Why a replay settled inconclusive: its disagreement reason and the two
@@ -450,7 +467,7 @@ enum ItemCauseStates {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-struct TimedStateWire {
+pub(crate) struct TimedStateWire {
     key: String,
 }
 
@@ -1079,6 +1096,35 @@ impl OutcomeItem {
             clause: None,
             category: value.category(),
         }
+    }
+
+    /// The item an `analyze` or `prove` terminal record settles, with the
+    /// wire spelling of the record's one counterexample (FR-286 "Analyze
+    /// items and their counterexamples"). Only a `refuted` item carries it. A
+    /// refutation by a claim evaluation undefined at a state, given as
+    /// `undefined` (where, why), is `refuted` with cause `undefined-evaluation`
+    /// and never the `undefined` label (FR-281).
+    ///
+    /// # Errors
+    ///
+    /// [`OutcomeItemError::MissingCounterexample`] for a `refuted` record
+    /// given no counterexample; no item is built.
+    pub fn from_analyze(
+        record: &TerminalRecord,
+        counterexample: Option<serde_json::Value>,
+        undefined: Option<(String, String)>,
+    ) -> Result<Self, OutcomeItemError> {
+        let mut item = match undefined {
+            Some((at, cause)) if matches!(record.value(), TerminalValue::Refuted) => {
+                Self::undefined_evaluation(record.request_index(), at, cause)
+            }
+            _ => Self::from_terminal(record),
+        };
+        if item.result == ItemLabel::Refuted {
+            item.counterexample =
+                Some(counterexample.ok_or(OutcomeItemError::MissingCounterexample)?);
+        }
+        Ok(item)
     }
 
     /// The FR-331 item for one settled state-graph claim instance, including

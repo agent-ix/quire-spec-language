@@ -46,13 +46,16 @@ pub use request::{
 use qsl_eval::simulation::model::PopulationUniverse;
 use qsl_eval::simulation::protocol::ProtocolTransition;
 use qsl_foundation::diagnostic::category_of;
+use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::{BackendId, RequestIndex};
 use qsl_package::CheckedPackage;
 use qsl_replay::statistical::StatisticalRecord;
-use qsl_replay::{CounterexampleKind, TemporalCounterexample};
+use qsl_replay::{
+    CounterexampleKind, CounterexampleWireError, OutcomeItemError, TemporalCounterexample,
+};
 use qsl_replay::{
     DeclineCode, IncompleteCause, ModelCheckRecord, Operation, OutcomeDiagnostic, OutcomeDocument,
-    OutcomeItem, ProofRefusalCause, TerminalRecord, TerminalValue, UndefinedEvaluation,
+    OutcomeItem, ProofRefusalCause, TerminalRecord, TerminalValue,
 };
 use qsl_route::routing::Disposition;
 use qsl_route::{BackendDescriptor, Candidate, Mode, ProviderOrigin, RegistrationRefusal};
@@ -61,7 +64,7 @@ use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::observation::{
     AdmissionFailure, DocumentProvision, DocumentRef, ObservationLimits,
 };
-use quire_exact::{Cancel, ScalarLimits};
+use quire_exact::{Cancel, ObjectReference, ScalarLimits};
 use quire_semantic_value::catalog::{CatalogCode, Category};
 
 pub use crate::contract_check::contract_item;
@@ -408,21 +411,65 @@ pub struct ItemCounterexample {
     pub backend: BackendId,
     /// The reproduced counterexample payload.
     pub counterexample: Counterexample,
+    /// The counterexample in FR-286's wire spelling, written where the
+    /// run's package is at hand.
+    pub wire: Result<serde_json::Value, CounterexampleWireError>,
 }
 
-/// The native counterexample families delivered by the operation.
+/// Two counterexamples are equal when they name the same item and engine and
+/// spell the same wire (FR-286), the surface a comparison reads.
+impl PartialEq for ItemCounterexample {
+    fn eq(&self, other: &Self) -> bool {
+        self.request_index == other.request_index
+            && self.backend == other.backend
+            && self.wire == other.wire
+    }
+}
+
+/// The reproduced counterexample of a `refuted` item, one variant per kind
+/// the in-process engines produce.
 #[derive(Debug)]
 pub enum Counterexample {
-    /// A temporal trace over a model subject.
-    Temporal(Box<TemporalCounterexample>),
-    /// A temporal trace over a protocol subject.
-    Protocol(Box<TemporalCounterexample<ProtocolTransition>>),
-    /// A value-validity assignment reproduced by the evaluator.
-    Assignments(Box<value_check::ValueCounterexample>),
-    /// A contract counterexample reproduced by the evaluator.
-    Contract(Box<qsl_replay::contract_check::ContractCounterexample>),
-    /// A probabilistic path set independently reproduced by the qualified core.
+    /// EN-1 and EN-6's temporal counterexample over a model subject, with
+    /// the object its `over` parameter is bound to when the run named one.
+    Temporal {
+        /// The counterexample.
+        counterexample: Box<TemporalCounterexample>,
+        /// The object the clause's `over` parameter is bound to.
+        over: Option<ObjectReference>,
+    },
+    /// EN-1's temporal counterexample over a protocol subject.
+    Protocol {
+        /// The counterexample.
+        counterexample: Box<TemporalCounterexample<ProtocolTransition>>,
+        /// The subject it was found over.
+        subject: Box<qsl_replay::ProtocolWire>,
+    },
+    /// EN-5's replayed probabilistic witness.
     Probabilistic(Box<qsl_replay::ReproducedProbabilityWitness>),
+    /// The value-validity arm's, or an external provider's, violating
+    /// assignment.
+    Assignments(Box<value_check::ValueCounterexample>),
+    /// The operation-contract arm's counterexample.
+    Contract(Box<qsl_replay::contract_check::ContractCounterexample>),
+}
+
+/// A reproduced counterexample with its FR-286 spelling, written where the
+/// engine's subject was at hand.
+#[derive(Debug)]
+pub struct Spelled<T> {
+    /// The reproduced counterexample.
+    pub found: Box<T>,
+    /// Its wire spelling.
+    pub wire: Result<serde_json::Value, CounterexampleWireError>,
+}
+
+impl<T> std::ops::Deref for Spelled<T> {
+    type Target = T;
+
+    fn deref(&self) -> &T {
+        &self.found
+    }
 }
 
 impl AnalyzeRefusal {
@@ -474,20 +521,58 @@ pub(crate) fn refusal_document(
 
 impl AnalyzeOutcome {
     /// The FR-286 `analyze` document of these records: one item per record in
-    /// request order (FR-286-AC-3).
-    pub fn document(&self) -> OutcomeDocument {
-        analyze_document(&self.records)
+    /// request order (FR-286-AC-3), a `refuted` item carrying its one
+    /// counterexample.
+    ///
+    /// # Errors
+    ///
+    /// [`OutcomeItemError`] for a `refuted` record without its counterexample
+    /// or whose counterexample has no wire spelling.
+    pub fn document(&self) -> Result<OutcomeDocument, OutcomeItemError> {
+        analyze_document(&self.records, &self.counterexamples)
     }
 }
 
 /// The FR-286 `analyze` document of `records`, one item per record in
-/// request order. Its category is the most severe item's (ADR-029 CB-4).
-pub fn analyze_document(records: &[TerminalRecord]) -> OutcomeDocument {
-    OutcomeDocument::settled(
-        Operation::Analyze,
-        None,
-        records.iter().map(OutcomeItem::from_terminal).collect(),
-    )
+/// request order, each `refuted` item carrying its counterexample from
+/// `counterexamples`. Its category is the most severe item's (ADR-029 CB-4).
+/// `provider::run`'s results build the same document through this function,
+/// so the two serialize to equal bytes (FR-286-AC-14).
+///
+/// # Errors
+///
+/// [`OutcomeItemError::MissingCounterexample`] for a `refuted` record with
+/// none in `counterexamples`, and [`OutcomeItemError::Unspelled`] for one
+/// whose counterexample has no wire spelling.
+pub fn analyze_document(
+    records: &[TerminalRecord],
+    counterexamples: &[ItemCounterexample],
+) -> Result<OutcomeDocument, OutcomeItemError> {
+    let items = records
+        .iter()
+        .map(|record| analyze_item(record, counterexamples))
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(OutcomeDocument::settled(Operation::Analyze, None, items))
+}
+
+/// The FR-286 item of `record`, with its counterexample from
+/// `counterexamples` when it is `refuted`: the one item `analyze` and
+/// `prove` both write. A claim evaluation undefined at a state keeps its
+/// `undefined-evaluation` cause beside the counterexample.
+///
+/// # Errors
+///
+/// As [`analyze_document`].
+pub fn analyze_item(
+    record: &TerminalRecord,
+    counterexamples: &[ItemCounterexample],
+) -> Result<OutcomeItem, OutcomeItemError> {
+    let found = counterexamples
+        .iter()
+        .find(|found| found.request_index == record.request_index());
+    let wire = found.map(|found| found.wire.clone()).transpose()?;
+    let undefined = found.and_then(|found| found.counterexample.undefined_cause());
+    OutcomeItem::from_analyze(record, wire, undefined)
 }
 
 impl Engines {
@@ -689,9 +774,15 @@ pub struct Disposed {
 pub(crate) enum EngineReport {
     /// EN-1's record, settled by `settle_model_check`.
     Model(Box<ModelCheckRecord>),
+    /// EN-1's record over an authored clause, with the object the clause's
+    /// `over` parameter is bound to in its counterexample.
+    Clause(Box<ModelCheckRecord>, Option<ObjectReference>),
     /// EN-1's record over a protocol subject, settled by
     /// `settle_protocol_check`.
-    Protocol(Box<ModelCheckRecord<ProtocolTransition>>),
+    Protocol(
+        Box<ModelCheckRecord<ProtocolTransition>>,
+        Option<qsl_replay::ProtocolWire>,
+    ),
     /// EN-4's record, settled by FR-192's map.
     Statistical(Box<StatisticalRecord>),
     /// The value-validity arm's finding.
@@ -702,7 +793,7 @@ pub(crate) enum EngineReport {
     Provider(Box<ProviderReport>),
     /// EN-6's record, settled by FR-235's map, or a timed refinement's by
     /// FR-144's rows over EN-6's causes.
-    Zone(Box<ZoneCheckRecord>),
+    Zone(Box<ZoneCheckRecord>, Option<ObjectReference>),
     /// EN-5's report, settled by FR-203 and the exact certificate check.
     Exact(Box<exact::ExactReport>),
     /// The engine refused the item, and its settlement map gives the refusal
@@ -743,6 +834,9 @@ pub struct AnalyzeItem<'a> {
     work: Option<Work<'a>>,
     /// The caller's requiredness for this request index (FR-507-AC-5).
     required: bool,
+    /// The claim the item is read at, the locus of a counterexample that
+    /// names an undefined evaluation.
+    claim: Option<OccurrenceKey>,
 }
 
 impl<'a> AnalyzeItem<'a> {
@@ -765,6 +859,7 @@ impl<'a> AnalyzeItem<'a> {
             diagnostic: None,
             work: Some(Box::new(move |cancel, _| work(cancel))),
             required: false,
+            claim: None,
         }
     }
 
@@ -787,6 +882,7 @@ impl<'a> AnalyzeItem<'a> {
             diagnostic: None,
             work: Some(Box::new(work)),
             required: false,
+            claim: None,
         }
     }
 
@@ -807,6 +903,7 @@ impl<'a> AnalyzeItem<'a> {
             diagnostic: Some(unsupported_kind(kind)),
             work: None,
             required: false,
+            claim: None,
         }
     }
 
@@ -838,9 +935,17 @@ impl<'a> AnalyzeItem<'a> {
         mut self,
         package: &CheckedPackage,
         item_kind: qsl_route::request::ItemKind,
-        claim: &qsl_foundation::source::provenance::OccurrenceKey,
+        claim: &OccurrenceKey,
     ) -> Self {
         self.family = crate::claim_family::claim_family(package, item_kind, claim);
+        self.claimed(claim.clone())
+    }
+
+    /// This item at the claim `claim`, the locus of a counterexample that
+    /// names an undefined evaluation.
+    #[must_use]
+    pub(crate) fn claimed(mut self, claim: OccurrenceKey) -> Self {
+        self.claim = Some(claim);
         self
     }
 
@@ -886,6 +991,8 @@ fn unsupported_kind(kind: Capability) -> Diagnostic {
 pub struct AnalyzeRecord {
     /// The item's request index.
     pub request_index: RequestIndex,
+    /// The item's claim, when the request named one.
+    pub claim: Option<OccurrenceKey>,
     /// The item's settlement.
     pub settlement: Settlement,
     /// EN-1's full record, carrying the counterexample of a `refuted` item.
@@ -899,12 +1006,18 @@ pub struct AnalyzeRecord {
     pub value_check: Option<Box<value_check::ValueCounterexample>>,
     /// The operation-contract arm's counterexample, carried by a `refuted`
     /// item.
-    pub contract_check: Option<Box<qsl_replay::contract_check::ContractCounterexample>>,
+    pub contract_check: Option<Spelled<qsl_replay::contract_check::ContractCounterexample>>,
     /// The certificate EN-5's checker accepted, carried by a `proved` item
     /// (FR-281-AC-1).
     pub exact_probabilistic: Option<Box<ExactProbabilityEvidence>>,
     /// The independently replayed EN-5 probabilistic counterexample.
-    pub probabilistic_counterexample: Option<Box<qsl_replay::ReproducedProbabilityWitness>>,
+    pub probabilistic_counterexample: Option<Spelled<qsl_replay::ReproducedProbabilityWitness>>,
+    /// The object an EN-1 clause counterexample's `over` parameter is bound
+    /// to, which only the run's subject can name (QSpec FR-364).
+    pub over_reference: Option<ObjectReference>,
+    /// The protocol subject an EN-1 protocol counterexample was found over
+    /// (QSpec FR-433's `subject`).
+    pub protocol_subject: Option<qsl_replay::ProtocolWire>,
 }
 
 /// How an item settled.
@@ -917,6 +1030,112 @@ pub enum Settlement {
 }
 
 impl AnalyzeRecord {
+    /// A record of `settlement` that holds no engine record.
+    fn of(request_index: RequestIndex, settlement: Settlement) -> Self {
+        Self {
+            request_index,
+            claim: None,
+            settlement,
+            model_check: None,
+            protocol_check: None,
+            zone_check: None,
+            value_check: None,
+            contract_check: None,
+            exact_probabilistic: None,
+            probabilistic_counterexample: None,
+            over_reference: None,
+            protocol_subject: None,
+        }
+    }
+
+    /// The counterexample's FR-286 spelling, written where the run's
+    /// `package` is at hand; `None` when the record holds none.
+    fn spell(
+        &self,
+        package: &CheckedPackage,
+    ) -> Option<Result<serde_json::Value, CounterexampleWireError>> {
+        let claim = self.claim.as_ref();
+        if let Some(found) = self
+            .model_check
+            .as_ref()
+            .and_then(|record| record.counterexample.as_ref())
+            .or_else(|| {
+                self.zone_check
+                    .as_ref()
+                    .and_then(|record| record.counterexample.as_ref())
+            })
+        {
+            return Some(qsl_replay::temporal_wire(
+                found,
+                self.over_reference.as_ref(),
+                claim,
+            ));
+        }
+        if let Some(found) = self.protocol_counterexample() {
+            return Some(match &self.protocol_subject {
+                Some(subject) => qsl_replay::protocol_temporal_wire(found, subject, claim),
+                None => Err(CounterexampleWireError::Unspelled("protocol subject")),
+            });
+        }
+        if let Some(found) = &self.value_check {
+            let scope = package.graph().scope();
+            return Some(qsl_replay::assignments_wire(
+                &found.parameters,
+                found.reproduced.assignment(),
+                scope.types(),
+                scope.variant_types(),
+            ));
+        }
+        if let Some(found) = &self.contract_check {
+            return Some(found.wire.clone());
+        }
+        self.probabilistic_counterexample
+            .as_ref()
+            .map(|found| found.wire.clone())
+    }
+
+    /// Move out the counterexample the engine that settled this record
+    /// holds.
+    fn take_counterexample(&mut self) -> Option<Counterexample> {
+        if let Some(found) = self
+            .model_check
+            .as_mut()
+            .and_then(|record| record.counterexample.take())
+            .or_else(|| {
+                self.zone_check
+                    .as_mut()
+                    .and_then(|record| record.counterexample.take())
+            })
+        {
+            return Some(Counterexample::Temporal {
+                counterexample: Box::new(found),
+                over: self.over_reference.take(),
+            });
+        }
+        if let Some(found) = self
+            .protocol_check
+            .as_mut()
+            .and_then(|record| record.counterexample.take())
+        {
+            // Without a subject the item has no spelling; `spell` reports
+            // that, and `split_records` settles the item `failed`.
+            let subject = self.protocol_subject.take()?;
+            return Some(Counterexample::Protocol {
+                counterexample: Box::new(found),
+                subject: Box::new(subject),
+            });
+        }
+        if let Some(found) = self.value_check.take() {
+            return Some(Counterexample::Assignments(found));
+        }
+        if let Some(found) = self.contract_check.take() {
+            return Some(Counterexample::Contract(found.found));
+        }
+        self.probabilistic_counterexample
+            .take()
+            .map(|found| Counterexample::Probabilistic(found.found))
+    }
+
     /// The terminal record, when the item settled one.
     pub fn terminal(&self) -> Option<&TerminalRecord> {
         match &self.settlement {
@@ -945,28 +1164,16 @@ impl AnalyzeRecord {
             .and_then(|record| record.counterexample.as_ref())
     }
 
-    /// The outcome item (FR-286) this record writes. An item refuted by a
-    /// claim evaluation undefined at a state is `refuted`, category
-    /// violation, with cause `undefined-evaluation` naming that state and
-    /// the undefined reason, and never the `undefined` label (FR-281).
-    /// `None` for a record settled by a disposition, which the driver writes
-    /// from its own disposition and diagnostic.
-    pub fn outcome_item(&self) -> Option<OutcomeItem> {
+    /// The outcome item (FR-286) this record writes, with its counterexample
+    /// spelled over `package`: the item [`analyze_item`] writes for the same
+    /// record, so `analyze` and `prove` agree. `None` for a record settled by
+    /// a disposition, which the driver writes from its own disposition and
+    /// diagnostic.
+    pub fn outcome_item(
+        &self,
+        package: &CheckedPackage,
+    ) -> Option<Result<OutcomeItem, OutcomeItemError>> {
         let terminal = self.terminal()?;
-        if let (Some(value), TerminalValue::Refuted) = (&self.value_check, terminal.value()) {
-            if let Some(undefined) = &value.reproduced.violation().undefined {
-                return Some(OutcomeItem::undefined_evaluation(
-                    self.request_index,
-                    format!(
-                        "node {}, occurrence {}/{}",
-                        undefined.locus.node(),
-                        undefined.locus.origin().role().as_str(),
-                        undefined.locus.origin().ordinal()
-                    ),
-                    undefined.reason,
-                ));
-            }
-        }
         let kind = self
             .counterexample()
             .map(|counterexample| &counterexample.kind)
@@ -974,32 +1181,65 @@ impl AnalyzeRecord {
                 self.protocol_counterexample()
                     .map(|counterexample| &counterexample.kind)
             });
-        let undefined = kind.and_then(|kind| match kind {
-            CounterexampleKind::UndefinedEvaluation(evaluation) => Some(evaluation),
-            CounterexampleKind::Formula
-            | CounterexampleKind::Deadlock
-            | CounterexampleKind::Race(_)
-            | CounterexampleKind::TimeLock => None,
-        });
-        Some(match undefined {
-            Some(evaluation) if matches!(terminal.value(), TerminalValue::Refuted) => {
-                undefined_item(self.request_index, evaluation)
-            }
-            Some(_) | None => OutcomeItem::from_terminal(terminal),
-        })
+        let undefined = undefined_cause(kind, self.value_check.as_deref());
+        let wire = self.spell(package).transpose();
+        Some(
+            wire.map_err(OutcomeItemError::from)
+                .and_then(|wire| OutcomeItem::from_analyze(terminal, wire, undefined)),
+        )
     }
 }
 
-fn undefined_item(index: RequestIndex, evaluation: &UndefinedEvaluation) -> OutcomeItem {
-    OutcomeItem::undefined_evaluation(
-        index,
-        format!(
-            "position {}, state {}",
-            evaluation.site.position,
-            evaluation.site.state_key.hex()
-        ),
-        qsl_replay::undefined_reason(&evaluation.cause),
-    )
+/// The cause of a claim evaluation undefined at a state: where and why. An
+/// item so refuted is `refuted`, category violation, with cause
+/// `undefined-evaluation`, never the `undefined` label (FR-281).
+fn undefined_cause(
+    kind: Option<&CounterexampleKind>,
+    value: Option<&value_check::ValueCounterexample>,
+) -> Option<(String, String)> {
+    if let Some(undefined) = value.and_then(|found| found.reproduced.violation().undefined.as_ref())
+    {
+        return Some((
+            format!(
+                "node {}, occurrence {}/{}",
+                undefined.locus.node(),
+                undefined.locus.origin().role().as_str(),
+                undefined.locus.origin().ordinal()
+            ),
+            undefined.reason.to_owned(),
+        ));
+    }
+    match kind? {
+        CounterexampleKind::UndefinedEvaluation(evaluation) => Some((
+            format!(
+                "position {}, state {}",
+                evaluation.site.position,
+                evaluation.site.state_key.hex()
+            ),
+            qsl_replay::undefined_reason(&evaluation.cause).to_owned(),
+        )),
+        CounterexampleKind::Formula
+        | CounterexampleKind::Deadlock
+        | CounterexampleKind::Race(_)
+        | CounterexampleKind::TimeLock => None,
+    }
+}
+
+impl Counterexample {
+    /// Where and why this counterexample's claim evaluation was undefined,
+    /// when it was.
+    fn undefined_cause(&self) -> Option<(String, String)> {
+        match self {
+            Self::Temporal { counterexample, .. } => {
+                undefined_cause(Some(&counterexample.kind), None)
+            }
+            Self::Protocol { counterexample, .. } => {
+                undefined_cause(Some(&counterexample.kind), None)
+            }
+            Self::Assignments(found) => undefined_cause(None, Some(found)),
+            Self::Probabilistic(_) | Self::Contract(_) => None,
+        }
+    }
 }
 
 /// FR-281: run `items` on `engines` and settle each as one record, in
@@ -1103,40 +1343,74 @@ pub fn aggregate(
 /// record settled by a disposition is written from that disposition and its
 /// diagnostic, as FR-281 states.
 pub fn terminal_records(records: Vec<AnalyzeRecord>) -> Vec<TerminalRecord> {
-    records
-        .into_iter()
-        .map(|record| match record.settlement {
-            Settlement::Terminal(terminal) => *terminal,
-            Settlement::Disposed(disposed) => {
-                let detail = disposed
-                    .diagnostic
-                    .as_ref()
-                    .map(|diagnostic| diagnostic.payload.detail())
-                    .unwrap_or_default();
-                let diagnostic = disposed
-                    .diagnostic
-                    .map(|diagnostic| diagnostic.code)
-                    .unwrap_or(CatalogCode::new(
-                        "runtime_invariant",
-                        "established-invariant-broken",
-                    ));
-                match disposed.kind {
-                    DispositionKind::RequiresBound | DispositionKind::Unsupported => {
-                        TerminalRecord::disposition_unsupported(
-                            record.request_index,
-                            diagnostic,
-                            detail,
-                        )
-                    }
-                    DispositionKind::InvalidRequest => TerminalRecord::disposition_invalid_request(
+    records.into_iter().map(into_terminal).collect()
+}
+
+/// The terminal records of `records` and, for each `refuted` one, its one
+/// counterexample (FR-281). A counterexample with no wire spelling is no
+/// reproduced evidence of FR-286's form, so its item settles `failed`, an
+/// engine fault, and the rest of the document is unaffected.
+pub fn split_records(
+    records: Vec<AnalyzeRecord>,
+    package: &CheckedPackage,
+) -> (Vec<TerminalRecord>, Vec<ItemCounterexample>) {
+    let mut terminals = Vec::with_capacity(records.len());
+    let mut counterexamples = Vec::new();
+    for mut record in records {
+        let wire = record.spell(package);
+        let counterexample = record.take_counterexample();
+        let mut terminal = into_terminal(record);
+        if matches!(terminal.value(), TerminalValue::Refuted) {
+            if let (Some(Err(_)), Some(backend)) = (&wire, terminal.backend()) {
+                terminal = TerminalRecord::failed(terminal.request_index(), backend.clone());
+            } else if let (Some(counterexample), Some(wire), Some(backend)) =
+                (counterexample, wire, terminal.backend())
+            {
+                counterexamples.push(ItemCounterexample {
+                    request_index: terminal.request_index(),
+                    backend: backend.clone(),
+                    wire,
+                    counterexample,
+                });
+            }
+        }
+        terminals.push(terminal);
+    }
+    (terminals, counterexamples)
+}
+
+fn into_terminal(record: AnalyzeRecord) -> TerminalRecord {
+    match record.settlement {
+        Settlement::Terminal(terminal) => *terminal,
+        Settlement::Disposed(disposed) => {
+            let detail = disposed
+                .diagnostic
+                .as_ref()
+                .map(|diagnostic| diagnostic.payload.detail())
+                .unwrap_or_default();
+            let diagnostic = disposed
+                .diagnostic
+                .map(|diagnostic| diagnostic.code)
+                .unwrap_or(CatalogCode::new(
+                    "runtime_invariant",
+                    "established-invariant-broken",
+                ));
+            match disposed.kind {
+                DispositionKind::RequiresBound | DispositionKind::Unsupported => {
+                    TerminalRecord::disposition_unsupported(
                         record.request_index,
                         diagnostic,
                         detail,
-                    ),
+                    )
                 }
+                DispositionKind::InvalidRequest => TerminalRecord::disposition_invalid_request(
+                    record.request_index,
+                    diagnostic,
+                    detail,
+                ),
             }
-        })
-        .collect()
+        }
+    }
 }
 
 fn run(engines: &Engines, item: AnalyzeItem<'_>, cancel: &Cancel) -> AnalyzeRecord {
@@ -1149,18 +1423,9 @@ fn run(engines: &Engines, item: AnalyzeItem<'_>, cancel: &Cancel) -> AnalyzeReco
         diagnostic,
         work,
         required: _,
+        claim,
     } = item;
-    let record = |settlement| AnalyzeRecord {
-        request_index: index,
-        settlement,
-        model_check: None,
-        protocol_check: None,
-        zone_check: None,
-        value_check: None,
-        contract_check: None,
-        exact_probabilistic: None,
-        probabilistic_counterexample: None,
-    };
+    let record = |settlement| AnalyzeRecord::of(index, settlement);
     let disposed = |kind, diagnostic| {
         record(Settlement::Disposed(Disposed {
             kind,
@@ -1232,7 +1497,10 @@ fn run(engines: &Engines, item: AnalyzeItem<'_>, cancel: &Cancel) -> AnalyzeReco
             IncompleteCause::Cancelled { source },
         )));
     }
-    settle(index, kind, engine, report)
+    AnalyzeRecord {
+        claim,
+        ..settle(index, kind, engine, report)
+    }
 }
 
 fn terminal(record: TerminalRecord) -> Settlement {
@@ -1252,15 +1520,8 @@ fn settle(
 ) -> AnalyzeRecord {
     let backend = engine.id().clone();
     let record = |settlement, model_check| AnalyzeRecord {
-        request_index: index,
-        settlement,
         model_check,
-        protocol_check: None,
-        zone_check: None,
-        value_check: None,
-        contract_check: None,
-        exact_probabilistic: None,
-        probabilistic_counterexample: None,
+        ..AnalyzeRecord::of(index, settlement)
     };
     let disposed = |kind, diagnostic: Diagnostic, backend| {
         record(
@@ -1283,6 +1544,11 @@ fn settle(
             ),
             Some(model),
         ),
+        EngineReport::Clause(model, over) => {
+            let mut settled = settle(index, kind, engine, EngineReport::Model(model));
+            settled.over_reference = over;
+            settled
+        }
         EngineReport::Value(report) => {
             let (settled_record, counterexample) = value_check::settle(*report, index, backend);
             let mut settled = record(terminal(settled_record), None);
@@ -1299,26 +1565,26 @@ fn settle(
         EngineReport::Contract(report) => {
             let (settled_record, counterexample) = contract_check::settle(*report, index, backend);
             let mut settled = record(terminal(settled_record), None);
-            settled.contract_check = counterexample.map(Box::new);
+            settled.contract_check = counterexample.map(|(found, wire)| Spelled {
+                found: Box::new(found),
+                wire,
+            });
             settled
         }
-        EngineReport::Protocol(protocol) => AnalyzeRecord {
-            request_index: index,
+        EngineReport::Protocol(protocol, subject) => {
             // A refuted value without its reproduced counterexample is an
             // engine fault, never a verdict.
-            settlement: terminal(
+            let settlement = terminal(
                 protocol
                     .to_terminal(index, backend.clone())
                     .unwrap_or_else(|_| TerminalRecord::failed(index, backend)),
-            ),
-            model_check: None,
-            protocol_check: Some(protocol),
-            zone_check: None,
-            value_check: None,
-            contract_check: None,
-            exact_probabilistic: None,
-            probabilistic_counterexample: None,
-        },
+            );
+            AnalyzeRecord {
+                protocol_check: Some(protocol),
+                protocol_subject: subject,
+                ..AnalyzeRecord::of(index, settlement)
+            }
+        }
         EngineReport::Statistical(statistical) => {
             record(terminal(statistical.into_terminal(index, backend)), None)
         }
@@ -1326,14 +1592,14 @@ fn settle(
             let (settled_record, evidence, counterexample) = exact.settle(index, backend);
             let mut settled = record(terminal(settled_record), None);
             settled.exact_probabilistic = evidence;
-            settled.probabilistic_counterexample = counterexample;
+            settled.probabilistic_counterexample =
+                counterexample.map(|(found, wire)| Spelled { found, wire });
             settled
         }
-        EngineReport::Zone(zone) => AnalyzeRecord {
-            request_index: index,
+        EngineReport::Zone(zone, zone_over) => {
             // A refuted value without its reproduced counterexample is an
             // engine fault, never a verdict.
-            settlement: terminal(
+            let settlement = terminal(
                 TerminalRecord::of_model_settlement(
                     index,
                     backend.clone(),
@@ -1341,15 +1607,13 @@ fn settle(
                     zone.counterexample.as_ref(),
                 )
                 .unwrap_or_else(|_| TerminalRecord::failed(index, backend)),
-            ),
-            model_check: None,
-            protocol_check: None,
-            zone_check: Some(zone),
-            value_check: None,
-            contract_check: None,
-            exact_probabilistic: None,
-            probabilistic_counterexample: None,
-        },
+            );
+            AnalyzeRecord {
+                zone_check: Some(zone),
+                over_reference: zone_over,
+                ..AnalyzeRecord::of(index, settlement)
+            }
+        }
         EngineReport::Refused(Refusal::Declined(cause, code, diagnostic)) => record(
             terminal(TerminalRecord::declined_with(
                 index, backend, cause, code, diagnostic,

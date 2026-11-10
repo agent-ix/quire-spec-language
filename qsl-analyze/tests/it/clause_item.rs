@@ -89,6 +89,25 @@ fn a_clause_a_transition_breaks_settles_refuted_with_a_replayed_counterexample()
         .and_then(|model| model.counterexample.clone())
         .expect("the record carries the counterexample");
     assert_eq!(counterexample.kind, CounterexampleKind::Formula);
+    let found = {
+        let mut engines = Engines::default();
+        engines
+            .with(Engine::model_check().expect("EN-1's own manifest is admitted"))
+            .expect("one engine");
+        let records = analyze_items(
+            &engines,
+            vec![subject(&world, ClauseLimits::default()).item(RequestIndex::new(0))],
+            &Cancel::new(),
+        );
+        qsl_analyze::analyze::split_records(records, &world.package).1
+    };
+    let [found] = found.as_slice() else {
+        panic!("one counterexample")
+    };
+    let spelled = found.wire.as_ref().expect("spelled");
+    assert_eq!(spelled["kind"], "formula");
+    assert_eq!(spelled["over_binding"]["type"], "reference");
+    assert!(spelled["interval"].is_null());
     let replay = subject(&world, ClauseLimits::default())
         .replay_counterexample(&counterexample)
         .expect("the counterexample replays");
@@ -103,6 +122,149 @@ fn a_clause_a_transition_breaks_settles_refuted_with_a_replayed_counterexample()
         "{:?}",
         replay.settlement
     );
+}
+
+/// FR-281-AC-7 over a real authored clause: a claim whose evaluation divides
+/// by zero at the one initial state settles `refuted`; its counterexample is
+/// the `undefined-evaluation` envelope naming that state and the zero modulus,
+/// the production replay reproduces the undefined value there, and the
+/// record is no `undefined` label.
+#[trace("TC-763", "FR-281-AC-7")]
+#[test]
+fn a_claim_that_takes_a_modulus_by_zero_settles_refuted_with_a_replayed_undefined_counterexample() {
+    let world = World::new(
+        model_world::counter(),
+        CONTRACT,
+        INFINITE,
+        &[Clause {
+            activation: "on each (q: M::Counter)",
+            formula: "always holds(6 mod (2 - c.value) >= 0)",
+        }],
+        &[("c", json!({"value": {"integer": "2"}}))],
+    );
+    let record = run(&world, ClauseLimits::default());
+    let terminal = record.terminal().expect("a terminal record");
+    assert_eq!(terminal.value(), &TerminalValue::Refuted);
+    assert_eq!(terminal.value().category(), Category::Violation);
+    let counterexample = record
+        .model_check
+        .as_ref()
+        .and_then(|model| model.counterexample.clone())
+        .expect("the record carries the counterexample");
+    let CounterexampleKind::UndefinedEvaluation(evaluation) = &counterexample.kind else {
+        panic!("an undefined evaluation: {:?}", counterexample.kind);
+    };
+    assert_eq!(evaluation.site.position, 0);
+    let replay = subject(&world, ClauseLimits::default())
+        .replay_counterexample(&counterexample)
+        .expect("the counterexample replays");
+    assert!(
+        matches!(
+            &replay.settlement,
+            ModelTraceSettlement::Reproduced {
+                value: ModelTraceValue::Undefined(reproduced),
+                ..
+            } if reproduced.cause == evaluation.cause && reproduced.site == evaluation.site
+        ),
+        "{:?}",
+        replay.settlement
+    );
+    let (terminals, found) = {
+        let subject = subject(&world, ClauseLimits::default());
+        let mut engines = Engines::default();
+        engines
+            .with(Engine::model_check().expect("EN-1's own manifest is admitted"))
+            .expect("one engine");
+        let records = analyze_items(
+            &engines,
+            vec![subject.item(RequestIndex::new(0))],
+            &Cancel::new(),
+        );
+        qsl_analyze::analyze::split_records(records, &world.package)
+    };
+    let [found_one] = found.as_slice() else {
+        panic!("one counterexample")
+    };
+    let wire = found_one.wire.clone().expect("the envelope is spelled");
+    assert_eq!(wire["kind"]["type"], "undefined-evaluation");
+    assert_eq!(wire["kind"]["cause"], "division-by-zero");
+    assert_eq!(wire["kind"]["where"]["position"], 0);
+    assert!(wire["kind"]["where"]["state_key"]["key"].is_string());
+    assert!(wire["kind"]["where"]["locus"]["node"].is_object());
+    assert_eq!(
+        wire["kind"]["where"]["locus"]["occurrence"]["role"],
+        "claim"
+    );
+    assert_eq!(wire["trace_position"], 0);
+    // The item the document writes keeps the cause beside the counterexample:
+    // `refuted`, never `undefined`, and FR-285 maps it to exit 10.
+    let item = qsl_analyze::analyze::analyze_item(&terminals[0], &found).expect("an item");
+    assert_eq!(item.category(), Category::Violation);
+    assert_eq!(item.category().exit_code(), 10);
+    let written = serde_json::to_value(&item).expect("an item is JSON");
+    assert_eq!(written["result"], "refuted");
+    assert_eq!(written["cause"]["kind"], "undefined-evaluation");
+    assert_eq!(written["cause"]["cause"], "division-by-zero");
+    assert!(
+        written["cause"]["where"]
+            .as_str()
+            .is_some_and(|at| at.starts_with("position 0, state ")),
+        "{written}"
+    );
+    assert_eq!(written["counterexample"], wire);
+}
+
+/// FR-281 and FR-286 on the real path: a refuted record whose counterexample
+/// was not kept is no item (`MissingCounterexample`), and one whose
+/// counterexample has no wire spelling settles `failed`, so one such item
+/// leaves the rest of the document intact.
+#[trace("TC-770", "FR-286-AC-14")]
+#[test]
+fn an_unspelled_counterexample_fails_its_item_and_not_the_document() {
+    let world = World::new(
+        model_world::counter(),
+        CONTRACT,
+        INFINITE,
+        &[Clause {
+            activation: "on each (q: M::Counter)",
+            formula: "always holds(6 mod (2 - c.value) >= 0)",
+        }],
+        &[("c", json!({"value": {"integer": "2"}}))],
+    );
+    let item = |world: &World| {
+        let mut engines = Engines::default();
+        engines
+            .with(Engine::model_check().expect("EN-1's own manifest is admitted"))
+            .expect("one engine");
+        analyze_items(
+            &engines,
+            vec![subject(world, ClauseLimits::default()).item(RequestIndex::new(0))],
+            &Cancel::new(),
+        )
+    };
+    // The real record, its counterexample not handed on.
+    let records = item(&world);
+    let terminals = qsl_analyze::analyze::terminal_records(records);
+    assert_eq!(terminals[0].value(), &TerminalValue::Refuted);
+    assert_eq!(
+        qsl_analyze::analyze::analyze_item(&terminals[0], &[]).unwrap_err(),
+        qsl_replay::OutcomeItemError::MissingCounterexample
+    );
+    assert_eq!(
+        qsl_analyze::analyze::analyze_document(&terminals, &[]).unwrap_err(),
+        qsl_replay::OutcomeItemError::MissingCounterexample
+    );
+    // The same record with no claim to locate its undefined evaluation.
+    let mut records = item(&world);
+    records[0].claim = None;
+    let (terminals, found) = qsl_analyze::analyze::split_records(records, &world.package);
+    assert!(found.is_empty());
+    assert_eq!(terminals[0].value(), &TerminalValue::Failed);
+    let document = qsl_analyze::analyze::analyze_document(&terminals, &found)
+        .expect("a failed item is an item");
+    let written = serde_json::to_value(&document).expect("a document is JSON");
+    assert_eq!(written["items"][0]["result"], "failed");
+    assert!(written["items"][0].get("counterexample").is_none());
 }
 
 /// Supplementary EN-1 case (FR-281-AC-6's budget row is the EN-5 item's): the

@@ -20,6 +20,18 @@ pub struct ProviderResults {
     pub counterexamples: Vec<ItemCounterexample>,
 }
 
+impl ProviderResults {
+    /// The FR-286 document of these results: the one [`analyze_document`]
+    /// writes for the same records.
+    ///
+    /// # Errors
+    ///
+    /// As [`analyze_document`].
+    pub fn document(&self) -> Result<qsl_replay::OutcomeDocument, qsl_replay::OutcomeItemError> {
+        crate::analyze::analyze_document(&self.records, &self.counterexamples)
+    }
+}
+
 /// Run the caller's negotiated items over its checked package, source bytes
 /// and subject binding. This boundary chooses no engine and reads no file.
 pub fn run(

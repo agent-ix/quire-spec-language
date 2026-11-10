@@ -71,7 +71,7 @@ fn every_case_gives_its_expected_stable_document() {
         let label = format!("{:?}/{:?}", case.verb, case.kind);
         let first = run_case(case).unwrap_or_else(|error| panic!("{label}: {error}"));
         let second = run_case(case).unwrap_or_else(|error| panic!("{label}: {error}"));
-        assert_eq!(first, second, "{label}");
+        crate::support::assert_same_outcome(&first, &second, &label);
         // FR-564-AC-7: serializing each document twice gives equal bytes.
         let bytes = |outcome: &qsl_conformance::CaseOutcome| {
             serde_json::to_vec(&crate::support::written(outcome)).expect("an outcome is JSON")

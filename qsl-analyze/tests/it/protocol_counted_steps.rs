@@ -219,6 +219,105 @@ impl Case {
     }
 }
 
+impl Case {
+    /// [`Self::protocol_item`] with the production replay of FR-217 behind
+    /// it, so a refutation settles `refuted` through `analyze_items`.
+    fn replaying_protocol_item<'a>(
+        &'a self,
+        protocol: &'a str,
+        letters: &'a dyn ModelLetters,
+    ) -> ProtocolItem<'a> {
+        let mut item = self.protocol_item(protocol, letters);
+        let unit = unit_text(&self.body).into_bytes();
+        let node = &self.checked.graph().temporal_clauses()[0];
+        let clause_node = node.identity().clone();
+        let occurrence = OccurrenceKey::new(clause_node.clone(), node.claim().clone());
+        item.replay = Box::new(move |payload| {
+            let subject = self.subject(protocol);
+            replay_protocol_trace_with_temporal_selections(
+                request(
+                    &self.checked,
+                    &self.temporal_clock_selections,
+                    &document(),
+                    self.documents.snapshots.iter(),
+                    &unit,
+                ),
+                &ProtocolTraceSubject {
+                    model: ModelTraceSubject {
+                        timed: None,
+                        initial: self.initial.clone(),
+                        universes: universe(&["c"]),
+                        expansion: ExpansionLimits {
+                            max_candidates: 1_000_000,
+                        },
+                    },
+                    protocol: protocol.to_owned(),
+                    over: instance("c"),
+                    roles: subject.roles,
+                    memory: subject.memory,
+                    max_store_buffer: None,
+                    max_messages: None,
+                    max_live_instances: None,
+                },
+                &envelope_at(payload.clone(), clause_node.clone(), occurrence.clone()),
+                letters,
+                &self.temporal_clock_selections,
+                ReplayLimits::default(),
+            )
+        });
+        item
+    }
+}
+
+/// FR-281 over a protocol subject: the refuted `Fill` clause settles through
+/// `analyze_items` with its one counterexample, the replayed protocol
+/// `TemporalCounterexample`, written as FR-433 gives it: the model-check
+/// members, the `subject` naming the protocol and its `over` reference, steps
+/// carrying protocol transition identities, and `max_live_instances`.
+#[trace("TC-770", "FR-286-AC-14")]
+#[test]
+fn a_refuted_protocol_clause_carries_its_spelled_counterexample() {
+    use qsl_analyze::analyze::{analyze_items, protocol_item, split_records, Engines};
+    use qsl_foundation::RequestIndex;
+    use qsl_replay::TerminalValue;
+
+    let case = repaired_fill("eventually[0,1] holds(k.v = 3)");
+    let letters = CellV(|value| value == 3);
+    let item = protocol_item(
+        RequestIndex::new(0),
+        case.replaying_protocol_item("Fill", &letters),
+    )
+    .expect("a clause run");
+    let records = analyze_items(
+        &Engines::qsl().expect("the linked engines register"),
+        vec![item],
+        &Cancel::new(),
+    );
+    let (terminals, found) = split_records(records, &case.checked);
+    assert_eq!(terminals[0].value(), &TerminalValue::Refuted);
+    let [found] = found.as_slice() else {
+        panic!("one counterexample: {found:?}");
+    };
+    let wire = found
+        .wire
+        .as_ref()
+        .expect("a protocol counterexample is spelled");
+    assert_eq!(wire["trace"], "model");
+    assert_eq!(wire["kind"], "formula");
+    assert_eq!(wire["subject"]["type"], "protocol-subject");
+    assert_eq!(wire["subject"]["protocol"], "Fill");
+    assert_eq!(wire["subject"]["over"]["type"], "reference");
+    // `Fill` activates `on origin`, so no instance budget applies (FR-433).
+    assert!(wire.get("max_live_instances").is_none());
+    assert!(wire.get("blocked").is_none());
+    let steps = wire["prefix"].as_array().expect("steps");
+    assert!(!steps.is_empty());
+    for step in steps {
+        assert_eq!(step["transition"]["type"], "protocol-transition");
+        assert!(step["post_state"]["key"].is_string());
+    }
+}
+
 /// QSL FR-507 (TC-1302): a protocol clause item is a `temporal-trace` claim
 /// (its clause is a `temporal_clause` node, QSpec FR-290), so
 /// `temporal-satisfaction` applies and EN-1 settles it; read as a `protocol`

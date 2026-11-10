@@ -83,7 +83,10 @@ pub use contract::{
 pub(crate) use contracts::{verdict, Verdict};
 pub(crate) use domain::enumerable;
 use encode::declaration_text;
-pub use encode::{encode_reference, reference_canonical_text, ModelKey};
+pub use encode::{
+    canonical_json, declaration_identity_text, encode_reference, reference_canonical_text,
+    typed_value_json, value_json, ModelKey,
+};
 pub use footprints::{FootprintError, FootprintViolation, WithinStop};
 pub use frames::judge::{
     operation_identity_text, AbstractApplication, Judged, Judgement, Rejection, ResolvedStep,

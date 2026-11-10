@@ -416,7 +416,19 @@ fn an_undefined_claim_evaluation_settles_refuted_with_the_undefined_cause() {
         .and_then(|model| model.counterexample.as_mut())
         .expect("the record carries the counterexample")
         .kind = CounterexampleKind::UndefinedEvaluation(evaluation.clone());
-    let item = record.outcome_item().expect("an item");
+    let (node, origin, _) = case
+        .checked()
+        .graph()
+        .occurrences()
+        .next()
+        .expect("the package holds an occurrence");
+    record.claim = Some(qsl_foundation::source::provenance::OccurrenceKey::new(
+        node, origin,
+    ));
+    let item = record
+        .outcome_item(case.checked())
+        .expect("an item")
+        .expect("the counterexample is spelled");
     assert_eq!(item.category(), Category::Violation);
     let written = serde_json::to_value(&item).expect("writes");
     assert_eq!(written["result"], "refuted");

@@ -122,8 +122,9 @@ fn every_case_is_unchanged_by_the_registered_descriptors_and_the_plugin_provider
                     .unwrap_or_else(|error| panic!("{:?}/{:?}: {error}", case.verb, case.kind))
             })
             .collect();
-        assert_eq!(outcomes[0], outcomes[1], "{:?}/{:?}", case.verb, case.kind);
-        assert_eq!(outcomes[1], outcomes[2], "{:?}/{:?}", case.verb, case.kind);
+        let label = format!("{:?}/{:?}", case.verb, case.kind);
+        crate::support::assert_same_outcome(&outcomes[0], &outcomes[1], &label);
+        crate::support::assert_same_outcome(&outcomes[1], &outcomes[2], &label);
     }
 }
 

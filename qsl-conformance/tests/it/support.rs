@@ -49,3 +49,74 @@ pub fn diagnostic(outcome: &CaseOutcome) -> (String, Option<String>) {
         diagnostic.cause().map(str::to_owned),
     )
 }
+
+/// The one `ItemCounterexample` of a `refuted` EN-1 case, asserted to be the
+/// formula counterexample of the one record, and the item written with it in
+/// FR-364's wire form (FR-286 `from_analyze`).
+pub fn assert_one_formula_counterexample(outcome: &CaseOutcome) {
+    use qsl_analyze::analyze::Counterexample;
+    use qsl_replay::{CounterexampleKind, OutcomeItem, OutcomeItemError};
+
+    let [record] = outcome.records() else {
+        panic!("one record: {:?}", outcome.records());
+    };
+    let [found] = outcome.counterexamples() else {
+        panic!("one counterexample: {:?}", outcome.counterexamples());
+    };
+    assert_eq!(found.request_index, record.request_index());
+    assert_eq!(Some(&found.backend), record.backend());
+    assert_eq!(found.backend.as_str(), "en-1");
+    let Counterexample::Temporal {
+        counterexample: temporal,
+        ..
+    } = &found.counterexample
+    else {
+        panic!("a temporal counterexample: {found:?}");
+    };
+    assert!(matches!(temporal.kind, CounterexampleKind::Formula));
+    assert!(
+        !temporal.prefix.is_empty(),
+        "the violation is reached by steps"
+    );
+    // A refuted record without its counterexample is no item.
+    assert_eq!(
+        OutcomeItem::from_analyze(record, None, None).unwrap_err(),
+        OutcomeItemError::MissingCounterexample
+    );
+    // The item written carries the counterexample in FR-364's wire form.
+    let item = match outcome.report() {
+        Report::Item(item) => serde_json::to_value(item),
+        Report::Document(document) => serde_json::to_value(document).map(|d| d["items"][0].clone()),
+    }
+    .expect("an outcome is JSON");
+    let wire = &item["counterexample"];
+    assert_eq!(wire["trace"], "model");
+    assert_eq!(wire["kind"], "formula");
+    assert_eq!(wire["initial_state"], 0);
+    assert_eq!(wire["over_binding"]["type"], "reference");
+    assert_eq!(wire["loop"], serde_json::json!([]));
+    assert_eq!(wire["trace_position"], temporal.prefix.len());
+    assert_eq!(
+        wire["prefix"].as_array().map(Vec::len),
+        Some(temporal.prefix.len())
+    );
+    for step in wire["prefix"].as_array().expect("steps") {
+        assert_eq!(step["transition"]["type"], "transition");
+        assert!(step["post_state"]["key"].is_string());
+    }
+    assert!(item.get("position").is_none());
+    assert!(item.get("decisive").is_none());
+    assert!(item.get("witness").is_none());
+}
+
+/// A case that does not refute holds no counterexample.
+pub fn assert_no_counterexample(outcome: &CaseOutcome) {
+    assert!(outcome.counterexamples().is_empty());
+}
+
+/// Two outcomes agree: the same report, records and counterexamples.
+pub fn assert_same_outcome(left: &CaseOutcome, right: &CaseOutcome, label: &str) {
+    assert_eq!(left.report(), right.report(), "{label}");
+    assert_eq!(left.records(), right.records(), "{label}");
+    assert_eq!(left.counterexamples(), right.counterexamples(), "{label}");
+}

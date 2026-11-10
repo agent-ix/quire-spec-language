@@ -177,6 +177,13 @@ impl ClauseLetters<'_, '_> {
             .map_err(|_| fault("instance-key-names-a-reference"))
     }
 
+    /// The reference the clause's `over` parameter reads as under
+    /// `instance`'s key (QSpec FR-364's `over_binding`), or `None` when the
+    /// model refuses a reference under the key.
+    pub fn instance_reference(&self, instance: &ModelInstance) -> Option<ObjectReference> {
+        self.key_reference(instance).ok()
+    }
+
     /// How many states these letters have observed: a state read again, by
     /// another atom or instance, is not observed again.
     pub fn observations(&self) -> u64 {

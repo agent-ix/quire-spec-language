@@ -1892,7 +1892,11 @@ fn analyzed(items: Vec<qsl_analyze::analyze::AnalyzeItem<'_>>) -> Vec<AnalyzeRec
 #[test]
 fn a_protocol_subjects_derived_items_settle_through_analyze_on_en1() {
     let selection = ra();
-    let run = |case: &Case| -> Vec<(usize, String, TerminalValue, Option<CounterexampleKind>)> {
+    #[allow(clippy::type_complexity)]
+    let run = |case: &Case| -> (
+        Vec<(usize, String, TerminalValue, Option<CounterexampleKind>)>,
+        Vec<qsl_analyze::analyze::ItemCounterexample>,
+    ) {
         let written = derived_request(case, &DerivedLimits::default());
         let kinds: Vec<_> = written.items().iter().map(RequestItem::item_kind).collect();
         assert_eq!(
@@ -1918,7 +1922,8 @@ fn a_protocol_subjects_derived_items_settle_through_analyze_on_en1() {
             .expect("the derived run")
         })
         .collect();
-        analyzed(items)
+        let records = analyzed(items);
+        let summary = records
             .iter()
             .map(|record| {
                 let (backend, value) = settled(record);
@@ -1931,10 +1936,15 @@ fn a_protocol_subjects_derived_items_settle_through_analyze_on_en1() {
                         .map(|counterexample| counterexample.kind.clone()),
                 )
             })
-            .collect()
+            .collect();
+        (
+            summary,
+            qsl_analyze::analyze::split_records(records, case.checked()).1,
+        )
     };
 
-    let ordered = run(&profiled_stores("y"));
+    let (ordered, none) = run(&profiled_stores("y"));
+    assert!(none.is_empty());
     let [(1, deadlock_backend, deadlock, None), (2, race_backend, race, None)] = &ordered[..]
     else {
         panic!("{ordered:?}");
@@ -1948,7 +1958,7 @@ fn a_protocol_subjects_derived_items_settle_through_analyze_on_en1() {
     assert!(matches!(race, TerminalValue::Proved { .. }), "{race:?}");
 
     let racing = profiled_stores("x");
-    let racy = run(&racing);
+    let (racy, wires) = run(&racing);
     let [(1, _, deadlock, None), (2, race_backend, TerminalValue::Refuted, Some(kind))] = &racy[..]
     else {
         panic!("{racy:?}");
@@ -1962,6 +1972,56 @@ fn a_protocol_subjects_derived_items_settle_through_analyze_on_en1() {
         panic!("{kind:?}");
     };
     assert_eq!(race.location, location_of(&racing, "x"));
+    // FR-438 "Race counterexample": `kind: race` and the `race` member naming
+    // the location and the two positions, over FR-433's protocol subject.
+    let [found] = wires.as_slice() else {
+        panic!("one counterexample: {wires:?}");
+    };
+    let wire = found.wire.as_ref().expect("a race is spelled");
+    assert_eq!(wire["kind"], "race");
+    assert_eq!(wire["race"]["earlier"], race.earlier.to_string());
+    assert_eq!(wire["race"]["later"], race.later.to_string());
+    assert!(wire["race"]["location"].is_object());
+    assert_eq!(wire["subject"]["type"], "protocol-subject");
+    assert_eq!(wire["subject"]["protocol"], "SB");
+    assert_eq!(wire["subject"]["over"]["type"], "reference");
+    // `SB` activates `on origin`: no instance budget applies (FR-433).
+    assert!(wire.get("max_live_instances").is_none());
+    assert!(wire.get("blocked").is_none());
+    for step in wire["prefix"].as_array().expect("steps") {
+        assert_eq!(step["transition"]["type"], "protocol-transition");
+        assert!(step["post_state"]["key"].is_string());
+    }
+}
+
+/// FR-281-AC-2: a refuted protocol item whose subject is unavailable cannot
+/// be spelled. It settles `failed` and the document survives, rather than
+/// staying `refuted` with no counterexample.
+#[trace("TC-762", "FR-281-AC-2")]
+#[test]
+fn a_refuted_protocol_item_without_a_subject_settles_failed() {
+    let case = profiled_stores("x");
+    let selection = ra();
+    let written = derived_request(&case, &DerivedLimits::default());
+    let (derived, obligation) = written_item(&written, ItemKind::RaceFreedom);
+    let item = derived_protocol_item(
+        &derived,
+        &obligation,
+        protocol_run(
+            &case,
+            &selection,
+            ModelCheckItem::RaceFreedom,
+            ModelCheckItem::RaceFreedom,
+        ),
+    )
+    .expect("the derived run");
+    let mut records = analyzed(vec![item]);
+    assert!(records[0].protocol_counterexample().is_some());
+    records[0].protocol_subject = None;
+    let (terminals, found) = qsl_analyze::analyze::split_records(records, case.checked());
+    assert!(found.is_empty());
+    assert_eq!(terminals[0].value(), &TerminalValue::Failed);
+    qsl_analyze::analyze::analyze_document(&terminals, &found).expect("the document survives");
 }
 
 /// FR-411-AC-6 for a protocol subject: the public `protocol_item` refuses a

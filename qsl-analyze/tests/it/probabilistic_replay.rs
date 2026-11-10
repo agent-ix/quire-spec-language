@@ -79,6 +79,71 @@ fn real_link_refutations_replay_target_hits_and_terminal_nonreach() {
         );
     }
 }
+#[trace("TC-770", "FR-286-AC-14")]
+#[test]
+fn a_refuted_exact_probabilistic_item_is_spelled_and_its_path_set_replays() {
+    let world = World::new(&prob_world::link(CLAIMS));
+    let engines = Engines::qsl().unwrap();
+    let records = analyze_items(
+        &engines,
+        vec![exact_probabilistic_item(
+            RequestIndex::new(0),
+            world.request("TooMuch", ModelCheckLimits::default()),
+        )],
+        &Cancel::new(),
+    );
+    let (terminals, counterexamples) = qsl_analyze::analyze::split_records(records, &world.package);
+    let [item] = counterexamples.as_slice() else {
+        panic!("one refuted item");
+    };
+    let wire = item.wire.as_ref().expect("a path set is spelled");
+    assert_eq!(wire["type"], "probabilistic");
+    assert_eq!(wire["initial_state"], 0);
+    assert!(wire["binding"].is_object(), "the over binding");
+    assert_eq!(wire["bound"]["comparison"], "<=");
+    assert_eq!(wire["bound"]["threshold"]["numerator"], "1");
+    assert_eq!(wire["bound"]["threshold"]["denominator"], "2");
+    assert_eq!(wire["evidence"]["type"], "path-set");
+    let paths = wire["evidence"]["paths"].as_array().expect("paths");
+    assert!(!paths.is_empty());
+    for step in paths.iter().flat_map(|path| path.as_array().unwrap()) {
+        assert_eq!(step["transition"]["type"], "transition");
+        assert!(step["post_state"]["key"].is_string());
+        assert!(step["random"].is_array());
+    }
+    let entries = wire["scheduler"]["entries"]
+        .as_array()
+        .expect("every scheduler");
+    assert!(entries
+        .iter()
+        .all(|entry| entry["state"]["key"].is_string() && !entry["choice"]["operation"].is_null()));
+    let document = qsl_analyze::analyze::analyze_document(&terminals, &counterexamples)
+        .expect("the refuted item carries its counterexample");
+    let written = serde_json::to_value(&document).expect("serializes");
+    assert_eq!(written["items"][0]["counterexample"], *wire);
+    // Replay reproduces the spelled evidence's path set.
+    let qsl_analyze::analyze::Counterexample::Probabilistic(witness) = &item.counterexample else {
+        panic!("a probabilistic counterexample");
+    };
+    // FR-413: one entry per product state key of the witness scheduler, each
+    // key once.
+    assert_eq!(entries.len(), witness.evidence().scheduler.len());
+    let keys: std::collections::BTreeSet<String> = entries
+        .iter()
+        .map(|entry| entry["state"]["key"].as_str().expect("a key").to_owned())
+        .collect();
+    assert_eq!(keys.len(), entries.len());
+    assert_eq!(
+        mass(replay(
+            &world,
+            witness.evidence(),
+            &ExactProbLimits::default(),
+            &Cancel::new()
+        )),
+        ratio(9, 10)
+    );
+}
+
 #[trace("TC-637", "FR-202-AC-10")]
 #[test]
 fn semantic_mutations_cannot_obtain_a_reproduced_token() {
