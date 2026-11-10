@@ -249,7 +249,7 @@ pub enum RunCause {
     Native(#[from] Box<Diagnostic>),
     /// One source refusal retained in native and canonical typed projections.
     #[error("{0}")]
-    Source(Box<SourceFailure>),
+    Source(#[source] Box<SourceFailure>),
     /// A `1-draft` program's request selects what spine compile does not
     /// take.
     #[error("a complete-V1 program compiles alone; the request selects {0}")]
@@ -279,6 +279,7 @@ pub enum RunCause {
 #[derive(Debug, thiserror::Error)]
 #[error("{native}")]
 pub struct SourceFailure {
+    #[source]
     native: Box<Diagnostic>,
     diagnostic: Box<qsl_cst::diagnostic::CompleteDiagnostic>,
 }
@@ -434,14 +435,28 @@ impl RunError {
                 OutcomeDocument::new(operation, None, self.category())
                     .with_diagnostics(vec![projected])
             }
-            _ => OutcomeDocument::new(operation, None, self.category()).with_diagnostics(vec![
-                OutcomeDiagnostic::new(
-                    None,
-                    self.cause.code().as_str(),
-                    None,
-                    self.outcome_message(),
-                ),
-            ]),
+            RunCause::Io { .. }
+            | RunCause::Json(_)
+            | RunCause::ClauseRequest { .. }
+            | RunCause::Output(_)
+            | RunCause::ClauseOutput(_)
+            | RunCause::Format
+            | RunCause::Limit(_)
+            | RunCause::Identifier(_)
+            | RunCause::CompleteSelection(_)
+            | RunCause::ExtractionRequiresRun
+            | RunCause::EmptyCompileProgram
+            | RunCause::Libraries(_)
+            | RunCause::CompleteRunSelection(_) => {
+                OutcomeDocument::new(operation, None, self.category()).with_diagnostics(vec![
+                    OutcomeDiagnostic::new(
+                        None,
+                        self.cause.code().as_str(),
+                        None,
+                        self.outcome_message(),
+                    ),
+                ])
+            }
         }
     }
 
