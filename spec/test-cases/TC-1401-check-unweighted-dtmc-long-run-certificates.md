@@ -22,8 +22,9 @@ profile or its bounded key owner is already implemented.
 1. Compile and admit ADR-028 §15.3's availability claim under Steady. Use
    fixture model identities whose complete key ordering puts up before
    down. Produce and independently check the AC-27 component document,
-   including both inclusive threshold sides. Offer it at the two
-   beyond-side thresholds. Alter each bias/gain/value separately and try
+   including both inclusive threshold sides. Offer it at the admitted
+   beyond-side thresholds AtLeast 1801/1802 and AtMost 999/1000.
+   Alter each bias/gain/value separately and try
    a reachability-profile document for the same source.
 2. Compile and admit AC-28's three-state graph under a fully resolving
    workload, and its periodic two-state graph. Check exact component
@@ -44,7 +45,8 @@ profile or its bounded key owner is already implemented.
    each operation listed in AC-30 using observed phase entry rather than
    a fixed poll count. Include undefined reachable P and workload inputs,
    each excluded shape/kind/profile (including weighted claims), and zero
-   admitted instances. Independently retain FR-199's existing weighted
+   admitted instances at direct claim binding and the direct EN-5 item.
+   Independently retain FR-199's existing weighted
    zero-weight component control through its own solver entry.
    Preserve explicit typed outcomes and
    control consumption rather than merely testing that acceptance failed.
@@ -56,7 +58,10 @@ original-gain assertion; no test should rewrite that result to zero.
 ## Expected Results
 
 - Step 1 accepts exactly the AC-27 conditions at equality and rejects the
-  beyond-side thresholds with `ThresholdMissed`. Component equations use
+  beyond-side thresholds with `ThresholdMissed`. The comparison thresholds
+  stay strictly inside (0,1); no endpoint admission change is implied.
+  Exact terminal/component values 0 and 1 in step 2 remain valid evidence.
+  Component equations use
   centered gain zero while the transported gain remains 1800/1801.
 - Step 2 accepts values 1/3,1,0 with singleton BSCCs and accepts the
   periodic chain at 1/2. Independent BSCC comparison rejects false
@@ -72,4 +77,7 @@ original-gain assertion; no test should rewrite that result to zero.
 - Step 4 preserves typed limit/cancellation/undefined/refusal or explicit
   unsupported outcomes without truth values or an accepted document.
   A weighted zero-weight case remains `Unsupported(ZeroWeightComponent)`.
-  Zero instances retain vacuous settlement without invented evidence.
+  Zero over instances retain `UnsupportedBinding` at direct claim binding
+  and an unsupported disposition at the direct EN-5 item, without terminal
+  verdict, certificate, counterexample or invented binding/evidence. This
+  procedure asserts no higher-level planner behavior.
