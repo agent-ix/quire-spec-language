@@ -154,6 +154,9 @@ fn preparation_retains_owned_inputs_and_the_existing_run_outcomes() {
             panic!("the request's integer argument retains its typed value");
         };
         assert_eq!(value, &quire_exact::Integer::from(2));
+        for file in ["program.native", "library.native", "model.json", "run.json"] {
+            std::fs::remove_file(directory.path().join(file)).unwrap();
+        }
         let result = spine::run(
             input.source.identity().clone(),
             input.package_name,
@@ -243,4 +246,149 @@ fn stage_refusals_preserve_the_reached_stage_and_available_location() {
         );
         assert_eq!(native["code"], code);
     }
+}
+
+#[test]
+#[trace("TC-771", "FR-287-AC-11", "TC-424", "FR-001-AC-16")]
+fn source_intake_retains_both_native_and_canonical_projections_of_one_failure() {
+    for (authority, identity, bytes, code, cause, label, region) in [
+        (
+            " ",
+            "unit",
+            b"ok".as_slice(),
+            "invalid_source_identity",
+            "blank-label",
+            Some("authority"),
+            None,
+        ),
+        (
+            "issuer",
+            "\u{3000}",
+            b"ok".as_slice(),
+            "invalid_source_identity",
+            "blank-label",
+            Some("identity"),
+            None,
+        ),
+        (
+            "issuer",
+            "unit",
+            b"a\xffb".as_slice(),
+            "invalid_utf8",
+            "invalid_utf8",
+            None,
+            Some((1, 1)),
+        ),
+        (
+            "issuer",
+            "unit",
+            b"\xef\xbb\xbftext".as_slice(),
+            "invalid_syntax",
+            "invalid-token",
+            None,
+            Some((0, 3)),
+        ),
+        (
+            "issuer",
+            "unit",
+            b"ab\0c".as_slice(),
+            "invalid_syntax",
+            "invalid-token",
+            None,
+            Some((2, 3)),
+        ),
+    ] {
+        let directory = tempfile::tempdir().unwrap();
+        let path = compile_request(directory.path(), bytes);
+        let mut request: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        request["request"]["program"]["source"]["authority"] = json!(authority);
+        request["request"]["program"]["source"]["identity"] = json!(identity);
+        std::fs::write(&path, serde_json::to_vec(&request).unwrap()).unwrap();
+        let error = command::compile_outcome(&path)
+            .err()
+            .expect("source intake refuses");
+        let outcome = document(&error.outcome_document(Operation::Package));
+        assert_eq!(outcome["last_stage"], Value::Null);
+        assert_eq!(outcome["diagnostics"][0]["code"], code);
+        assert_eq!(outcome["diagnostics"][0]["cause"], cause);
+        assert_eq!(
+            outcome["diagnostics"][0]
+                .get("label")
+                .and_then(Value::as_str),
+            label
+        );
+        let locus = &outcome["diagnostics"][0]["locus"];
+        if let Some((start, end)) = region {
+            assert_eq!(locus["kind"], "region");
+            assert_eq!(locus["start"], start);
+            assert_eq!(locus["end"], end);
+        } else {
+            assert_eq!(locus, &Value::Null);
+        }
+        let original = qsl_foundation::Source::read(
+            SourceIdentity::new(authority, identity),
+            "program.native",
+            bytes,
+            8_388_608,
+        )
+        .unwrap_err();
+        let native = error.value().unwrap();
+        assert_eq!(native["stage"], "source");
+        assert_eq!(native["code"], original.code.as_str());
+        assert_eq!(native["message"], original.to_string());
+        assert_eq!(native["details"]["message"], original.message);
+        assert_eq!(
+            native["details"]["span"],
+            serde_json::to_value(original.span).unwrap()
+        );
+        assert_eq!(
+            native["details"]["source"],
+            serde_json::to_value(original.source).unwrap()
+        );
+    }
+}
+
+#[test]
+#[trace("TC-771", "FR-287-AC-10")]
+fn preparation_does_not_compile_the_source_and_retains_caller_byte_limits() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = run_request(directory.path(), 1_000);
+    std::fs::write(
+        directory.path().join("program.native"),
+        b"not a native program",
+    )
+    .unwrap();
+    let PreparedRun::Function(prepared) =
+        command::prepare_run(&path, RunLimits::default()).unwrap()
+    else {
+        panic!("the request still selects a function");
+    };
+    assert_eq!(prepared.into_input().source.text(), "not a native program");
+    let request_bytes = std::fs::read(&path).unwrap().len();
+    let error = command::prepare_run(
+        &path,
+        RunLimits {
+            request_bytes: request_bytes - 1,
+            ..RunLimits::default()
+        },
+    )
+    .err()
+    .expect("the caller's request ceiling is used");
+    assert!(
+        matches!(error.cause, command::RunCause::Limit(command::LimitKind::RequestBytes { maximum })
+        if maximum == request_bytes - 1)
+    );
+    let error = command::prepare_run(
+        &path,
+        RunLimits {
+            dependent_bytes: 2,
+            ..RunLimits::default()
+        },
+    )
+    .err()
+    .expect("the caller's dependent ceiling is used");
+    assert!(matches!(
+        error.cause,
+        command::RunCause::Limit(command::LimitKind::DependentBytes { maximum: 2 })
+    ));
 }

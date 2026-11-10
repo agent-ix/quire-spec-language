@@ -247,6 +247,9 @@ pub enum RunCause {
     /// Existing source/parser/profile failure with no linking or checking context.
     #[error("{0}")]
     Native(#[from] Box<Diagnostic>),
+    /// One source refusal retained in native and canonical typed projections.
+    #[error("{0}")]
+    Source(Box<SourceFailure>),
     /// A `1-draft` program's request selects what spine compile does not
     /// take.
     #[error("a complete-V1 program compiles alone; the request selects {0}")]
@@ -270,6 +273,14 @@ pub enum RunCause {
     /// FR-100: the spine run entry refused, at its own stage and cause code.
     #[error("{0}")]
     SpineRun(Box<qsl_replay::spine::RunRefusal>),
+}
+
+/// The two owner projections of the same source-intake refusal.
+#[derive(Debug, thiserror::Error)]
+#[error("{native}")]
+pub struct SourceFailure {
+    native: Box<Diagnostic>,
+    diagnostic: Box<qsl_cst::diagnostic::CompleteDiagnostic>,
 }
 
 /// A request selection FR-100 does not admit for a `1-draft` program's
@@ -324,6 +335,7 @@ impl RunCause {
             Self::Limit(_) => Code::ResourceExhausted,
             Self::Identifier(_) => Code::InvalidIdentifier,
             Self::Native(error) => error.code,
+            Self::Source(error) => error.diagnostic.code,
             Self::CompleteSelection(_)
             | Self::Libraries(_)
             | Self::CompleteRunSelection(_)
@@ -389,6 +401,10 @@ impl RunError {
                 &failure.refusal,
             )]),
             RunCause::SpineRun(refusal) => OutcomeDocument::from_run_refusal(operation, refusal),
+            RunCause::Source(failure) => OutcomeDocument::new(operation, None, self.category())
+                .with_diagnostics(vec![OutcomeDiagnostic::from_source_diagnostic(
+                    &failure.diagnostic,
+                )]),
             RunCause::Native(diagnostic) => {
                 let projected = if let Some(cause) = diagnostic.identity_cause() {
                     let source = qsl_cst::diagnostic::source_refusal(
@@ -532,7 +548,17 @@ impl Intake<'_> {
     fn source(&mut self, selected: &wire::SourceFile) -> Result<FormalSource> {
         let identity = selected.identity.bind()?;
         let bytes = self.file(&selected.file, self.remaining)?;
-        let source = Source::read(identity.native, &selected.file, &bytes, self.maximum)?;
+        let source = Source::read_typed(identity.native, &selected.file, &bytes, self.maximum)
+            .map_err(|refusal| {
+                RunCause::Source(Box::new(SourceFailure {
+                    native: qsl_foundation::diagnostic::source_refusal(
+                        &refusal,
+                        &bytes,
+                        self.maximum,
+                    ),
+                    diagnostic: qsl_cst::diagnostic::source_refusal(*refusal, self.maximum),
+                }))
+            })?;
         Ok(FormalSource::new(source, identity.formal))
     }
 }

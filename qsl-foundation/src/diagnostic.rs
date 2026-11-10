@@ -537,7 +537,7 @@ impl crate::source::Source {
         byte_limit: usize,
     ) -> Result<Self, Box<Diagnostic>> {
         Self::read_typed(identity, path, bytes, byte_limit)
-            .map_err(|refusal| source_refusal(*refusal, bytes, byte_limit))
+            .map_err(|refusal| source_refusal(&refusal, bytes, byte_limit))
     }
 }
 
@@ -546,8 +546,10 @@ impl crate::source::Source {
 /// region renders byte 0, because this lane-private `Diagnostic` requires a
 /// span: retained native-v1 debt (ADR-013 §6, FR-001 "Where an S0 refusal
 /// is located"), not the canonical refusal's location.
-fn source_refusal(
-    refusal: crate::source::SourceReadRefusal,
+/// Borrowing leaves the typed refusal available for its canonical projection.
+/// The offered bytes are used only to render the native lane's coordinates.
+pub fn source_refusal(
+    refusal: &crate::source::SourceReadRefusal,
     bytes: &[u8],
     byte_limit: usize,
 ) -> Box<Diagnostic> {
@@ -583,10 +585,10 @@ fn source_refusal(
     Box::new(Diagnostic {
         phase: Phase::Source,
         code,
-        source: refusal.error.source,
-        path: refusal.error.path,
+        source: refusal.error.source.clone(),
+        path: refusal.error.path.clone(),
         span,
-        message: refusal.error.message,
+        message: refusal.error.message.clone(),
         limit,
         identity_cause: matches!(
             refusal.cause,

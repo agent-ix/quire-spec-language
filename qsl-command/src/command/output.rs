@@ -113,6 +113,10 @@ pub(super) fn error(error: &RunError, artifact: bool) -> Result<Value, serde_jso
             types::Stage::Native(error.phase),
             types::Details::Native(diagnostic(error)),
         ),
+        RunCause::Source(error) => (
+            types::Stage::Native(error.native.phase),
+            types::Details::Native(diagnostic(&error.native)),
+        ),
         RunCause::CompleteSelection(_)
         | RunCause::Libraries(_)
         | RunCause::CompleteRunSelection(_)
