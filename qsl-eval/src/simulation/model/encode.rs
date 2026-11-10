@@ -1070,6 +1070,24 @@ mod tests {
 
     use super::*;
 
+    fn value_enc(value: &Value, typing: Typing<'_>) -> Enc {
+        let retained = super::value_enc(value, typing);
+        let legacy = retained.canonical_text(Limits::new(1 << 20));
+        let admitted = super::bounded::value_for_test(value, typing);
+        match (legacy, admitted) {
+            (Ok(expected), Ok(bytes)) => assert_eq!(
+                bytes,
+                expected.as_bytes(),
+                "bounded value projection must satisfy the same literal oracle"
+            ),
+            (Err(_), Err(super::super::ModelKeyError::Unsupported(_))) => {}
+            (legacy, admitted) => {
+                panic!("legacy/bounded refusal mismatch: {legacy:?} / {admitted:?}")
+            }
+        }
+        retained
+    }
+
     /// FR-181's integer form is an exact decimal string.
     #[trace("TC-471", "FR-120-AC-4")]
     #[test]
@@ -1259,7 +1277,7 @@ mod tests {
     /// Boolean }` (node `11…`), `Pair(Boolean, Integer)` (`22…`) and `Shape`
     /// with the nullary member `none` and the member `tagged(Tag)` (`33…`),
     /// and the values `Tag { sku }`, `Pair(true, -3)` and `none`.
-    fn declared() -> (TypeEnvironment, impl Fn(i64) -> Value, Value, Value) {
+    pub(super) fn declared() -> (TypeEnvironment, impl Fn(i64) -> Value, Value, Value) {
         use quire_exact::{from_admitted_slots, Presence, UnionMember, UnionValue};
         use quire_semantic_value::declaration::{
             CompositeDeclaration, FieldDeclaration, UnionMemberDeclaration,

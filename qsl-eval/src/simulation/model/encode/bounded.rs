@@ -857,6 +857,40 @@ pub(crate) fn model_bytes(
 }
 
 #[cfg(test)]
+pub(super) fn value_for_test(value: &Value, typing: Typing<'_>) -> Result<Vec<u8>, ModelKeyError> {
+    struct Admit;
+    impl quire_exact::Reservation for Admit {
+        fn reserve(&mut self, _: usize) -> Result<(), ReservationDenied> {
+            Ok(())
+        }
+    }
+    impl IntegerDecimalBudget for Admit {
+        fn work(&mut self, _: u64) -> Result<(), ReservationDenied> {
+            Ok(())
+        }
+    }
+    impl ModelKeyBudget for Admit {
+        fn integer(&mut self, _: &Integer) -> Result<(), ReservationDenied> {
+            Ok(())
+        }
+    }
+    let cancel = Cancel::new();
+    let mut budget = Admit;
+    let scope = Scope {
+        budget: RefCell::new(&mut budget),
+        cancel: &cancel,
+        identity: IdentityLimits::default(),
+        refused: RefCell::new(None),
+    };
+    let mut sink = Bounded::new(&scope);
+    projection::project_value(&mut sink, value, typing, None, false)?;
+    Ok(sink
+        .root
+        .ok_or(ModelKeyError::Unsupported("value root"))?
+        .bytes)
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use ix_trace_rs::trace;
@@ -869,6 +903,7 @@ mod tests {
         work_limit: u64,
         integers: usize,
         deny_integer: bool,
+        cancel_after_storage: Option<Cancel>,
     }
     impl quire_exact::Reservation for Admission {
         fn reserve(&mut self, bytes: usize) -> Result<(), ReservationDenied> {
@@ -882,6 +917,11 @@ mod tests {
     }
     impl IntegerDecimalBudget for Admission {
         fn work(&mut self, units: u64) -> Result<(), ReservationDenied> {
+            if self.storage > 0 {
+                if let Some(cancel) = &self.cancel_after_storage {
+                    cancel.cancel(quire_exact::CancelCause::Requested);
+                }
+            }
             let next = self.work.checked_add(units).ok_or(ReservationDenied)?;
             if next > self.work_limit {
                 return Err(ReservationDenied);
@@ -974,5 +1014,58 @@ mod tests {
         assert_eq!(budget.integers, 1);
         assert_eq!(budget.storage, 0);
         assert_eq!(budget.work, 0);
+    }
+
+    #[test]
+    #[trace("TC-471", "FR-120-AC-4")]
+    fn borrowed_node_comparison_denies_and_cancels_inside_actual_path_traversal() {
+        use quire_exact::{NodeKey, PathSegment};
+        let node = |tail: &str| {
+            let mut key =
+                NodeKey::new("fixture", vec![PathSegment::Text(tail.to_owned())], 0).unwrap();
+            for _ in 0..128 {
+                key = NodeKey::new("fixture", vec![PathSegment::Node(key)], 0).unwrap();
+            }
+            key
+        };
+        let left = node("left");
+        let equal = node("left");
+        let other = node("right");
+        let cancel = Cancel::new();
+        let mut budget = Admission {
+            storage_limit: usize::MAX,
+            work_limit: u64::MAX,
+            ..Admission::default()
+        };
+        let scope = Scope {
+            budget: RefCell::new(&mut budget),
+            cancel: &cancel,
+            identity: IdentityLimits::default(),
+            refused: RefCell::new(None),
+        };
+        assert_eq!(scope.node_equal(&left, &equal), Ok(true));
+        assert_eq!(scope.node_equal(&left, &other), Ok(false));
+        drop(scope);
+        assert!(budget.storage > 0);
+        let mut budget = Admission {
+            storage_limit: usize::MAX,
+            work_limit: u64::MAX,
+            cancel_after_storage: Some(cancel.clone()),
+            ..Admission::default()
+        };
+        let scope = Scope {
+            budget: RefCell::new(&mut budget),
+            cancel: &cancel,
+            identity: IdentityLimits::default(),
+            refused: RefCell::new(None),
+        };
+        assert_eq!(
+            scope.node_equal(&left, &equal),
+            Err(ModelKeyError::Cancelled(
+                quire_exact::CancelCause::Requested
+            ))
+        );
+        drop(scope);
+        assert!(budget.storage > 0);
     }
 }
