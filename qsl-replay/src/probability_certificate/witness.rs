@@ -113,6 +113,24 @@ impl From<ExactProbabilityGraphError> for ProbabilityWitnessError {
     }
 }
 
+/// Observation points of actual semantic work, for cancellation regression tests.
+#[cfg(feature = "test-support")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ProbabilityWitnessSemanticPhase {
+    /// The original graph is about to call the semantic operation/workload owner.
+    ExpansionEntered,
+    /// That semantic call returned without observing cancellation.
+    ExpansionReturned,
+    /// A direct state predicate is about to enter its qualified evaluator.
+    PredicateEntered,
+    /// That predicate call returned without observing cancellation.
+    PredicateReturned,
+    /// Independent path replay is entering its actual operation/workload call.
+    StepEntered,
+    /// That path-step call returned without observing cancellation.
+    StepReturned,
+}
+
 /// Replay a typed path set against the exact package and admitted system.
 /// The claim, binding, predicates, probabilities and terminal leaves are all
 /// independently derived. This entry accepts no analyzer graph or wire data.
@@ -128,6 +146,43 @@ pub fn replay_probabilistic_witness(
     witness: &ProbabilisticCounterexample,
     limits: &ExactProbLimits,
     cancel: &Cancel,
+) -> Result<ProbabilityWitnessReplay, ProbabilityWitnessError> {
+    replay_probabilistic_witness_impl(
+        package,
+        system,
+        item,
+        witness,
+        limits,
+        cancel,
+        #[cfg(feature = "test-support")]
+        &mut |_| {},
+    )
+}
+
+/// Replay through the ordinary semantic path with a test-only phase observer.
+#[cfg(feature = "test-support")]
+#[allow(clippy::too_many_arguments)]
+pub fn replay_probabilistic_witness_observing(
+    package: &CheckedPackage,
+    system: &ModelSystem<'_>,
+    item: &ObligationIdentity,
+    witness: &ProbabilisticCounterexample,
+    limits: &ExactProbLimits,
+    cancel: &Cancel,
+    observe: &mut impl FnMut(ProbabilityWitnessSemanticPhase),
+) -> Result<ProbabilityWitnessReplay, ProbabilityWitnessError> {
+    replay_probabilistic_witness_impl(package, system, item, witness, limits, cancel, observe)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn replay_probabilistic_witness_impl(
+    package: &CheckedPackage,
+    system: &ModelSystem<'_>,
+    item: &ObligationIdentity,
+    witness: &ProbabilisticCounterexample,
+    limits: &ExactProbLimits,
+    cancel: &Cancel,
+    #[cfg(feature = "test-support")] observe: &mut dyn FnMut(ProbabilityWitnessSemanticPhase),
 ) -> Result<ProbabilityWitnessReplay, ProbabilityWitnessError> {
     poll_cancel(cancel)?;
     if !std::ptr::eq(package, system.package()) || item != &witness.item {
@@ -195,6 +250,8 @@ pub fn replay_probabilistic_witness(
                 ExactProbabilityGraphError::ExpansionRefused
             })
         },
+        #[cfg(feature = "test-support")]
+        observe,
         &mut |key, state| {
             bounded::visit(&mut meter, cancel).map_err(|error| {
                 *key_error.borrow_mut() = Some(error);
@@ -322,7 +379,18 @@ pub fn replay_probabilistic_witness(
                 .ok_or(ProbabilityWitnessError::Refused)?
                 .choices
                 .is_empty();
-            if outcome(system, target, reference, &state, terminal, cancel)?.is_some() {
+            if outcome(
+                system,
+                target,
+                reference,
+                &state,
+                terminal,
+                cancel,
+                #[cfg(feature = "test-support")]
+                observe,
+            )?
+            .is_some()
+            {
                 return Ok(ProbabilityWitnessReplay::Parity);
             }
             if step.elapsed != rational(0)
@@ -332,8 +400,14 @@ pub fn replay_probabilistic_witness(
             }
             let mut found = None;
             if let Some(workload) = workload {
-                for candidate in system
-                    .weighted_steps_with_cancel(&state, workload, cancel)
+                #[cfg(feature = "test-support")]
+                observe(ProbabilityWitnessSemanticPhase::StepEntered);
+                let candidates = system.weighted_steps_with_cancel(&state, workload, cancel);
+                #[cfg(feature = "test-support")]
+                if cancel.tripped().is_none() {
+                    observe(ProbabilityWitnessSemanticPhase::StepReturned);
+                }
+                for candidate in candidates
                     .map_err(|stop| cancelled_expansion(stop, cancel))?
                     .map_err(|_| ExactProbabilityGraphError::UnsupportedDraw)?
                 {
@@ -349,8 +423,14 @@ pub fn replay_probabilistic_witness(
                     }
                 }
             } else {
-                for action in system
-                    .actions_with_cancel(&state, cancel)
+                #[cfg(feature = "test-support")]
+                observe(ProbabilityWitnessSemanticPhase::StepEntered);
+                let actions = system.actions_with_cancel(&state, cancel);
+                #[cfg(feature = "test-support")]
+                if cancel.tripped().is_none() {
+                    observe(ProbabilityWitnessSemanticPhase::StepReturned);
+                }
+                for action in actions
                     .map_err(|stop| cancelled_expansion(stop, cancel))?
                     .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?
                 {
@@ -407,7 +487,16 @@ pub fn replay_probabilistic_witness(
         let accepting = matches!(
             (
                 bound,
-                outcome(system, target, reference, &state, terminal, cancel)?
+                outcome(
+                    system,
+                    target,
+                    reference,
+                    &state,
+                    terminal,
+                    cancel,
+                    #[cfg(feature = "test-support")]
+                    observe
+                )?
             ),
             (Bound::AtMost(_), Some(true)) | (Bound::AtLeast(_), Some(false))
         );
@@ -478,6 +567,7 @@ fn outcome(
     state: &ModelSimState,
     terminal: bool,
     cancel: &Cancel,
+    #[cfg(feature = "test-support")] observe: &mut dyn FnMut(ProbabilityWitnessSemanticPhase),
 ) -> Result<Option<bool>, ProbabilityWitnessError> {
     if let ReachTarget::Eventually(predicate) = target {
         if observes(system, predicate, binding, state, cancel)? {
@@ -486,11 +576,18 @@ fn outcome(
     }
     match target {
         ReachTarget::Eventually(_) => Ok(terminal.then_some(false)),
-        ReachTarget::Until(..) | ReachTarget::Always(_) => {
-            state_predicate::outcome(system, target, binding, state, terminal, cancel)
-                .map(|(verdict, _)| verdict)
-                .map_err(bounded::document_error)
-        }
+        ReachTarget::Until(..) | ReachTarget::Always(_) => state_predicate::outcome(
+            system,
+            target,
+            binding,
+            state,
+            terminal,
+            cancel,
+            #[cfg(feature = "test-support")]
+            observe,
+        )
+        .map(|(verdict, _)| verdict)
+        .map_err(bounded::document_error),
     }
 }
 

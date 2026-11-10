@@ -104,6 +104,8 @@ pub(super) fn enumerate(
             &model,
             state.choices.is_empty(),
             cancel,
+            #[cfg(feature = "test-support")]
+            &mut |_| {},
         )?;
         state.terminal = verdict;
         if failure {
@@ -124,6 +126,7 @@ pub(super) fn enumerate(
 }
 
 /// Direct infinite-trace first-state outcome and explicit predicate-failure label.
+#[allow(clippy::too_many_arguments)]
 pub(super) fn outcome(
     system: &ModelSystem<'_>,
     target: &ReachTarget,
@@ -131,9 +134,18 @@ pub(super) fn outcome(
     model: &ModelSimState,
     terminal: bool,
     cancel: &Cancel,
+    #[cfg(feature = "test-support")] observe: &mut dyn FnMut(ProbabilityWitnessSemanticPhase),
 ) -> Result<(Option<bool>, bool), ProbabilityDocumentError> {
-    let read = |predicate| -> Result<bool, ProbabilityDocumentError> {
+    // The test-only observer makes this closure mutable in that build.
+    #[allow(unused_mut)]
+    let mut read = |predicate| -> Result<bool, ProbabilityDocumentError> {
+        #[cfg(feature = "test-support")]
+        observe(ProbabilityWitnessSemanticPhase::PredicateEntered);
         let readings = system.state_predicates_with_cancel(model, &[(predicate, binding)], cancel);
+        #[cfg(feature = "test-support")]
+        if cancel.tripped().is_none() {
+            observe(ProbabilityWitnessSemanticPhase::PredicateReturned);
+        }
         poll_cancel(cancel)?;
         let readings = readings.map_err(|error| {
             ProbabilityDocumentError::Build(Box::new(crate::ExactProbBuildIssue::Expansion(error)))

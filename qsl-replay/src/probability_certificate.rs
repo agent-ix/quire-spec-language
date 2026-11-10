@@ -494,6 +494,8 @@ fn enumerate_model_graph_with_keys<P: StatePredicate>(
         stop_at_target,
         key_of,
         &mut |_| Ok(()),
+        #[cfg(feature = "test-support")]
+        &mut |_| {},
         visit,
         failure,
     )
@@ -511,6 +513,7 @@ fn enumerate_model_graph_with_keys_and_reservation<P: StatePredicate>(
     stop_at_target: bool,
     key_of: &impl Fn(&ModelSimState) -> Result<ProbabilityProductKey, ExactProbabilityGraphError>,
     reserve: &mut impl FnMut(usize) -> Result<(), ExactProbabilityGraphError>,
+    #[cfg(feature = "test-support")] observe: &mut dyn FnMut(ProbabilityWitnessSemanticPhase),
     visit: &mut impl FnMut(
         &ProbabilityProductKey,
         &ModelSimState,
@@ -575,7 +578,11 @@ fn enumerate_model_graph_with_keys_and_reservation<P: StatePredicate>(
         let choices = if terminal.is_some() && stop_at_target {
             Vec::new()
         } else {
+            #[cfg(feature = "test-support")]
+            observe(ProbabilityWitnessSemanticPhase::ExpansionEntered);
             let distributions = model_distributions(system, &state, workload, cancel, failure)?;
+            #[cfg(feature = "test-support")]
+            observe(ProbabilityWitnessSemanticPhase::ExpansionReturned);
             if distributions.is_empty() {
                 reserve(std::mem::size_of::<(ProbabilityProductKey, CheckerState)>())?;
                 states.insert(

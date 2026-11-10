@@ -445,6 +445,7 @@ pub(crate) enum WitnessWork<'a> {
         rewards: &'a [(Identifier, Value)],
     },
     MaterializedStep,
+    Rational(&'a Rational),
 }
 
 fn slots(count: usize, size: usize) -> Result<usize, WitnessError> {
@@ -622,20 +623,27 @@ fn reaching(
         control(WitnessWork::Visit)?;
         for step in steps {
             control(WitnessWork::Visit)?;
-            control(WitnessWork::Slots(
-                std::mem::size_of::<(ProbStateId, Vec<ProbStateId>)>()
-                    .saturating_add(std::mem::size_of::<ProbStateId>())
-                    .saturating_add(std::mem::size_of::<ProbStateId>().saturating_mul(2)),
-            ))?;
+            if !predecessors.contains_key(&step.to) {
+                control(WitnessWork::Slots(std::mem::size_of::<(
+                    ProbStateId,
+                    Vec<ProbStateId>,
+                )>()))?;
+            }
+            control(WitnessWork::Slots(std::mem::size_of::<ProbStateId>()))?;
             let predecessors = predecessors.entry(step.to).or_default();
             predecessors
                 .try_reserve_exact(1)
                 .map_err(|_| WitnessError::InvalidState)?;
             predecessors.push(*state);
-            if accepting.get(step.to.index()).copied().unwrap_or(false) && reaching.insert(*state) {
+            if accepting.get(step.to.index()).copied().unwrap_or(false) && !reaching.contains(state)
+            {
+                control(WitnessWork::Slots(
+                    std::mem::size_of::<ProbStateId>().saturating_mul(2),
+                ))?;
                 queue
                     .try_reserve_exact(1)
                     .map_err(|_| WitnessError::InvalidState)?;
+                reaching.insert(*state);
                 queue.push_back(*state);
             }
         }
@@ -643,13 +651,15 @@ fn reaching(
     while let Some(state) = queue.pop_front() {
         control(WitnessWork::Visit)?;
         for predecessor in predecessors.get(&state).into_iter().flatten() {
-            control(WitnessWork::Slots(
-                std::mem::size_of::<ProbStateId>().saturating_mul(2),
-            ))?;
-            if reaching.insert(*predecessor) {
+            control(WitnessWork::Visit)?;
+            if !reaching.contains(predecessor) {
+                control(WitnessWork::Slots(
+                    std::mem::size_of::<ProbStateId>().saturating_mul(2),
+                ))?;
                 queue
                     .try_reserve_exact(1)
                     .map_err(|_| WitnessError::InvalidState)?;
+                reaching.insert(*predecessor);
                 queue.push_back(*predecessor);
             }
         }
@@ -731,6 +741,7 @@ pub(crate) fn produce_witness_stopping(
         return Err(rational_limit());
     }
     control(WitnessWork::Slots(std::mem::size_of::<Partial>()))?;
+    control(WitnessWork::Rational(&rational(1)))?;
     let mut frontier = BinaryHeap::from([Partial {
         probability: rational(1),
         sequence: 0,
@@ -793,7 +804,7 @@ pub(crate) fn produce_witness_stopping(
                     }
                 }
                 return Ok(Some(ProducedWitness {
-                    entries: entries(&induced, scope),
+                    entries: entries(&induced, scope)?,
                     paths,
                 }));
             }
@@ -844,12 +855,24 @@ pub(crate) fn produce_witness_stopping(
 /// The scope's entries on every state the induced chain reaches before it
 /// accepts: the evidence states the paths leave and the continuation states
 /// beside them.
-fn entries(induced: &Induced, scope: WitnessScope) -> Vec<(ProbStateId, ProductAction)> {
-    induced
-        .iter()
-        .filter(|(_, (action, _))| resolves(scope, action))
-        .map(|(state, (action, _))| (*state, action.clone()))
-        .collect()
+fn entries(
+    induced: &Induced,
+    scope: WitnessScope,
+) -> Result<Vec<(ProbStateId, ProductAction)>, WitnessError> {
+    let count = induced
+        .values()
+        .filter(|(action, _)| resolves(scope, action))
+        .count();
+    let mut entries = Vec::new();
+    entries
+        .try_reserve_exact(count)
+        .map_err(|_| WitnessError::InvalidState)?;
+    for (state, (action, _)) in induced {
+        if resolves(scope, action) {
+            entries.push((*state, action.clone()));
+        }
+    }
+    Ok(entries)
 }
 
 /// Whether `scope`'s witness scheduler names `action`'s choice.
@@ -906,6 +929,106 @@ mod tests {
             labels: vec![vec![false]],
             fairness_operations: Vec::new(),
             fairness: Vec::new(),
+        }
+    }
+
+    #[trace("TC-637", "FR-202-AC-22")]
+    #[test]
+    fn wide_native_action_is_reserved_before_any_step_is_materialized() {
+        let width = 128usize;
+        let mut product = terminal_product();
+        let mut edge = product.edges.remove(0);
+        edge.probability = Rational::new(Integer::from(1_i64), Integer::from(width)).unwrap();
+        product.edges = vec![edge; width];
+        let probability = &product.edges[0].probability;
+        let scalar_bytes = [probability.numerator(), probability.denominator()]
+            .iter()
+            .map(|integer| usize::try_from(integer.as_big().bits().div_ceil(8)).unwrap())
+            .sum::<usize>();
+        let exact = std::mem::size_of::<ProbStateId>()
+            + width
+                * (std::mem::size_of::<ProducedStep>()
+                    + std::mem::size_of::<ProbStateId>()
+                    + scalar_bytes)
+            + std::mem::size_of::<(ProbStateId, (ProductAction, Vec<ProducedStep>))>();
+        for budget in [exact - 1, exact] {
+            let mut retained = 0usize;
+            let mut materialized = 0usize;
+            let mut control = |work: WitnessWork<'_>| {
+                let bytes = match work {
+                    WitnessWork::Slots(bytes) => bytes,
+                    WitnessWork::Action(action) => {
+                        assert!(matches!(action, ProductAction::TerminalStutter));
+                        0
+                    }
+                    WitnessWork::Step {
+                        action,
+                        draw,
+                        probability,
+                        rewards,
+                    } => {
+                        assert!(matches!(action, ProductAction::TerminalStutter));
+                        assert!(draw.is_none() && rewards.is_empty());
+                        [probability.numerator(), probability.denominator()]
+                            .iter()
+                            .map(|integer| {
+                                usize::try_from(integer.as_big().bits().div_ceil(8)).unwrap()
+                            })
+                            .sum()
+                    }
+                    WitnessWork::Visit => 0,
+                    WitnessWork::Rational(probability) => {
+                        [probability.numerator(), probability.denominator()]
+                            .iter()
+                            .map(|integer| {
+                                usize::try_from(integer.as_big().bits().div_ceil(8)).unwrap()
+                            })
+                            .sum()
+                    }
+                    WitnessWork::MaterializedStep => {
+                        materialized += 1;
+                        0
+                    }
+                };
+                retained = retained.saturating_add(bytes);
+                if retained > budget {
+                    return Err(WitnessError::Limit {
+                        limit: ModelCheckLimit::CertificateMaxWorkingBytes,
+                        value: u64::try_from(budget).unwrap(),
+                    });
+                }
+                Ok(())
+            };
+            let result = induce(
+                &product,
+                &[Some(0)],
+                ProbStateId(0),
+                &[false],
+                Some(&[false]),
+                &mut control,
+            );
+            if budget == exact {
+                let induced = result.expect("the exact logical retention budget is admitted");
+                assert_eq!(induced.len(), 1);
+                assert_eq!(induced[&ProbStateId(0)].1.len(), width);
+                assert_eq!(
+                    materialized, width,
+                    "the admitted action actually materializes its full fanout"
+                );
+                assert_eq!(retained, exact);
+            } else {
+                assert!(matches!(
+                    result,
+                    Err(WitnessError::Limit {
+                        limit: ModelCheckLimit::CertificateMaxWorkingBytes,
+                        ..
+                    })
+                ));
+                assert_eq!(
+                    materialized, 0,
+                    "one byte short must stop before the first owned step clone"
+                );
+            }
         }
     }
 

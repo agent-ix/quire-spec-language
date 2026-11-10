@@ -541,3 +541,94 @@ fn maximum_mass_equal_to_the_authored_threshold_yields_parity() {
         ));
     }
 }
+
+#[trace("TC-637", "FR-202-AC-22")]
+#[test]
+fn cancellation_inside_qualified_expansion_step_and_predicate_returns_no_token() {
+    use qsl_replay::{
+        replay_probabilistic_witness_observing, ExactProbabilityGraphError,
+        ProbabilityWitnessSemanticPhase as Phase,
+    };
+    use std::sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, OnceLock,
+    };
+    for event in [UNTIL, ALWAYS] {
+        for scheduler in ["every scheduler", "Even"] {
+            let mut fixture = model(event, scheduler, ">=", "0.5");
+            // Workload rejection mass is 1/2, so use its strict interior bound.
+            if scheduler == "Even" {
+                fixture.body = fixture.body.replace(">= 0.5", ">= 0.6");
+            }
+            fixture.body.push_str(
+                "\ninvariant Valid using v on M::Msg at current { self.attempts >= 0 }\n",
+            );
+            let world = World::new(&fixture);
+            let witness = evidence(&world);
+            let system = ModelSystem::new(world.subject().simulation).unwrap();
+            for (entered, returned) in [
+                (Phase::ExpansionEntered, Phase::ExpansionReturned),
+                (Phase::PredicateEntered, Phase::PredicateReturned),
+                (Phase::StepEntered, Phase::StepReturned),
+            ] {
+                let mut saw_entered = false;
+                let mut saw_returned = false;
+                let control = replay_probabilistic_witness_observing(
+                    system.package(),
+                    &system,
+                    &witness.item,
+                    &witness,
+                    &ExactProbLimits::default(),
+                    &Cancel::new(),
+                    &mut |phase| {
+                        saw_entered |= phase == entered;
+                        saw_returned |= phase == returned;
+                    },
+                )
+                .unwrap();
+                assert!(matches!(control, ProbabilityWitnessReplay::Reproduced(_)));
+                assert!(
+                    saw_entered && saw_returned,
+                    "uncancelled control traverses the same semantic call"
+                );
+                let armed = Arc::new(AtomicBool::new(false));
+                let observing = Arc::clone(&armed);
+                let slot = Arc::new(OnceLock::<Cancel>::new());
+                let weak = Arc::downgrade(&slot);
+                let cancel = Cancel::observing(move || {
+                    if observing.load(Ordering::Relaxed) {
+                        weak.upgrade()
+                            .unwrap()
+                            .get()
+                            .unwrap()
+                            .cancel(quire_exact::CancelCause::Deadline);
+                    }
+                });
+                slot.set(cancel.clone()).unwrap();
+                let mut completed = false;
+                let result = replay_probabilistic_witness_observing(
+                    system.package(),
+                    &system,
+                    &witness.item,
+                    &witness,
+                    &ExactProbLimits::default(),
+                    &cancel,
+                    &mut |phase| {
+                        if phase == entered {
+                            armed.store(true, Ordering::Relaxed);
+                        }
+                        completed |= phase == returned;
+                    },
+                );
+                assert!(armed.load(Ordering::Relaxed));
+                assert!(!completed, "{scheduler} {entered:?}: cancellation must trip inside the qualified call, before it returns uncancelled");
+                assert!(matches!(
+                    result,
+                    Err(ProbabilityWitnessError::Graph(
+                        ExactProbabilityGraphError::Cancelled(quire_exact::CancelCause::Deadline)
+                    ))
+                ));
+            }
+        }
+    }
+}

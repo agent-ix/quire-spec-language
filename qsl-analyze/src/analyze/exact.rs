@@ -713,6 +713,14 @@ fn witness_payload_bytes(
     };
     match work {
         WitnessWork::Visit | WitnessWork::MaterializedStep => Ok(0),
+        WitnessWork::Rational(probability) => {
+            Ok([probability.numerator(), probability.denominator()]
+                .iter()
+                .map(|integer| {
+                    usize::try_from(integer.as_big().bits().div_ceil(8)).unwrap_or(usize::MAX)
+                })
+                .fold(0usize, usize::saturating_add))
+        }
         WitnessWork::Slots(bytes) => Ok(bytes),
         WitnessWork::Action(action) => action_bytes(action),
         WitnessWork::Step {
@@ -979,7 +987,7 @@ fn replay_refutation(
         .as_ref()
         .map(|outcomes| outcomes.iter().map(Option::is_some).collect::<Vec<_>>());
     let mut producer_issue = None;
-    let mut control = |work| {
+    let mut control = |work: crate::exact_probabilistic::WitnessWork<'_>| {
         let result = witness_payload_bytes(work, system).and_then(|bytes| {
             witness_charge(
                 &mut producer_meter,
