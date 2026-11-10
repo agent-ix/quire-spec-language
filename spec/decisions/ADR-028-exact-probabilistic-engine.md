@@ -353,6 +353,35 @@ fresh-process qualified checking. Raw-model-key owner budget admission remains
 open, as does shared FR-413 wire. No FR-202 cyclic native refutation, reward,
 long-run, timed or fairness coverage follows from this proof increment.
 
+#### Closed cyclic MDP eventual proof profile
+
+FR-201's separate `quire.probability-objective/cyclic-mdp-eventual/v1`
+admits finite untimed every-scheduler eventual proofs using existing exact
+values/ranking transport. The checker independently reconstructs ALL
+semantic actions. Existing S3 selects minimum for AtLeast and maximum for
+AtMost; no new comparison modes or source endpoint policy are introduced.
+Neither a producer policy nor shared FR-413 action transport is required.
+
+Bellman equality alone admits spurious cyclic fixed points. The progress
+boundary is targets together with zero-valued states. For minimum, every
+action outside that boundary has a positive-probability lower-rank
+successor, and each live zero state has a zero-support action. Every
+policy almost surely reaches the boundary; tight minimizing choices then
+realize the vector. For maximum, a tight maximizing action at each
+positive non-target state must progress in rank; arbitrary nontight
+progress is insufficient. Those choices form a proper policy realizing
+the vector, while all-action Bellman inequalities bound every other
+policy from above. Finite MDP optimal vectors admit these progress rankings.
+
+Ranks may descend to probability-zero VALUE states, unlike the old
+positive-successor-value rule, but never through probability-zero EDGES.
+Targets and zeros have rank zero. Values and ranks cover the initial
+first-target stopped graph; original-subject identity, action/Markov
+admission and budgets remain authoritative beyond an early target.
+FR-201 defines strict transport, failure loci, typed limits/cancellation
+and earlier profile preservation. No fairness, reward, timed, refutation,
+implementation qualification or new shared-wire contract follows.
+
 ### 12. Limits
 
 | ID | Rule |
