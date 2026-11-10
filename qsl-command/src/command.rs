@@ -202,7 +202,7 @@ pub enum PreparedRun {
     /// A function selection for the existing execution pipeline.
     Function(PreparedFunctionRun),
     /// A clause selection for the existing clause runner.
-    Clause(qsl_replay::spine::ClauseRunRequest),
+    Clause(Box<qsl_replay::spine::ClauseRunRequest>),
 }
 
 /// Original intake failure, without recovering typed data from display messages.
@@ -1090,7 +1090,8 @@ fn prepare_complete_run(
                 reason: "call and clause are mutually exclusive".to_owned(),
             });
         }
-        return clause::read(intake, request, clause, source).map(PreparedRun::Clause);
+        return clause::read(intake, request, clause, source)
+            .map(|request| PreparedRun::Clause(Box::new(request)));
     }
     if request.models.iter().any(|model| !is_domain_package(model)) {
         return Err(RunCause::CompleteRunSelection(
@@ -1162,7 +1163,7 @@ fn execute_prepared(prepared: PreparedRun) -> Result<RunResult> {
     let prepared = match prepared {
         PreparedRun::Function(prepared) => prepared,
         PreparedRun::Clause(request) => {
-            let report = qsl_replay::spine::run_clause(request).map_err(|error| {
+            let report = qsl_replay::spine::run_clause(*request).map_err(|error| {
                 RunCause::ClauseRequest {
                     member: "clause".to_owned(),
                     reason: error.to_string(),
