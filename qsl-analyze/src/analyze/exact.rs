@@ -863,6 +863,12 @@ fn replay_refutation(
                 ) {
                     return settled(&issue, subject);
                 }
+                if !matches!(
+                    edge.choice,
+                    ProductAction::Identity(_) | ProductAction::TerminalStutter
+                ) {
+                    return not_yet();
+                }
                 if !matches!(edge.choice, ProductAction::TerminalStutter) {
                     let Some(terminal) = terminal.get_mut(edge.from.index()) else {
                         return broken();
