@@ -13,4 +13,3 @@ random Server::attempt(d) ~ { 1: 90, 3: 7, 12: 3 };
 random Server::attempt(ok) ~ { true: 98, false: 2 };
 reward duration on Server::attempt = d;
 workload Steady on M { weight Server::request = 1; weight Server::attempt = 1; weight Server::reset = 1; }
-

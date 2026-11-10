@@ -14,4 +14,3 @@ random Server::attempt(ok) ~ { true: 98, false: 2 };
 reward duration on Server::attempt = d;
 workload Steady on M { weight Server::request = 1; weight Server::attempt = 1; weight Server::reset = 1; }
 probabilistic Two using ev on M over (s: M::Server) under Steady on origin with alpha 0.01, beta 0.01, indifference 0.01 { quantile 0.95 of (accumulate duration from holds(s.phase = 1) until holds(s.phase = 2) within 10) <= 2 }
-
