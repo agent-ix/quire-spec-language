@@ -1544,15 +1544,18 @@ impl Run<'_, '_, '_> {
                 }
                 Conjunction::False(_) => {}
                 Conjunction::Undecided(undecided) => {
-                    let state_key = key::canonical_state_key(
-                        &encode::model_key(
-                            &self.walk.system.model,
-                            &candidate,
-                            self.walk.system.typing(),
-                        ),
-                        identity_limits(),
-                    )
-                    .map_err(|_| stop(BROKEN))?;
+                    let state_key = match self.walk.key_policy {
+                        Some(policy) => policy.key(self.walk.system, &candidate),
+                        None => key::canonical_state_key(
+                            &encode::model_key(
+                                &self.walk.system.model,
+                                &candidate,
+                                self.walk.system.typing(),
+                            ),
+                            identity_limits(),
+                        )
+                        .map_err(|_| stop(BROKEN)),
+                    }?;
                     for (clause, evaluation) in undecided {
                         contract.push(ContractFinding {
                             transition: self.transition_bytes.to_vec(),

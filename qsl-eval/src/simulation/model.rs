@@ -25,7 +25,7 @@ mod footprints;
 mod frames;
 mod key_budget;
 mod letters;
-pub use key_budget::{ModelKeyBudget, ModelKeyError};
+pub use key_budget::{ModelKeyBudget, ModelKeyError, ModelKeyExpansionError};
 pub(crate) mod probabilistic;
 mod refine;
 mod state_predicate;

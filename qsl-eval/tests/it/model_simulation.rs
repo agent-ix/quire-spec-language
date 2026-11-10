@@ -1934,6 +1934,36 @@ fn link_repeated(source: &str, target: &str, times: usize) -> Json {
 #[trace("TC-471", "FR-120-AC-4", "FR-120-AC-27")]
 #[test]
 fn raw_model_key_preserves_legacy_reference_enum_and_extent_vectors() {
+    struct Admission;
+    impl quire_exact::Reservation for Admission {
+        fn reserve(&mut self, _: usize) -> Result<(), quire_exact::ReservationDenied> {
+            Ok(())
+        }
+    }
+    impl quire_exact::IntegerDecimalBudget for Admission {
+        fn work(&mut self, _: u64) -> Result<(), quire_exact::ReservationDenied> {
+            Ok(())
+        }
+    }
+    impl qsl_eval::simulation::model::ModelKeyBudget for Admission {
+        fn integer(
+            &mut self,
+            _: &quire_exact::Integer,
+        ) -> Result<(), quire_exact::ReservationDenied> {
+            Ok(())
+        }
+    }
+    fn bounded(system: &ModelSystem<'_>, state: &ModelSimState) -> Vec<u8> {
+        system
+            .state_key_bytes_with_budget(
+                state,
+                qsl_foundation::IdentityLimits::default(),
+                &mut Admission,
+                &quire_exact::Cancel::new(),
+            )
+            .expect("bounded key")
+    }
+
     let mut enums = build_world_with_enum_mode(Vec::new(), "").expect("enum fixture checks");
     let first = enums.start(
         "enum-forward",
@@ -1946,6 +1976,7 @@ fn raw_model_key_preserves_legacy_reference_enum_and_extent_vectors() {
     let enum_system = self::system(&enums, vec![first, second], &["c1", "c2"], UNLIMITED);
     let states = enum_system.initial();
     let first = enum_system.state_key(&states[0]).expect("enum key");
+    assert_eq!(bounded(&enum_system, &states[0]), first.0);
     let second = enum_system
         .state_key(&states[1])
         .expect("permuted enum key");
@@ -1997,6 +2028,8 @@ fn raw_model_key_preserves_legacy_reference_enum_and_extent_vectors() {
     let states = extent_system.initial();
     let linked = extent_system.state_key(&states[0]).expect("extent key");
     let unlinked = extent_system.state_key(&states[1]).expect("unlinked key");
+    assert_eq!(bounded(&extent_system, &states[0]), linked.0);
+    assert_eq!(bounded(&extent_system, &states[1]), unlinked.0);
     assert_ne!(
         linked, unlinked,
         "repeated relationship pairs belong to the key"

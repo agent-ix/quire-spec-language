@@ -114,6 +114,7 @@ impl Row {
 /// What an expansion reads: the system, the expanded state, its observation
 /// and its objects in ascending (population, key) order.
 pub(super) struct Walk<'s, 'a> {
+    pub(super) key_policy: Option<&'s dyn super::key_budget::KeyPolicy>,
     pub(super) cancel: Option<quire_exact::Cancel>,
     pub(super) system: &'s ModelSystem<'a>,
     pub(super) state: &'s ModelSimState,
@@ -278,6 +279,7 @@ pub(super) fn walk_of<'s, 'a>(
         .map_err(|_| stop(BROKEN))?;
     Ok(Walk {
         cancel: None,
+        key_policy: None,
         system,
         state,
         observation,
@@ -302,7 +304,7 @@ pub(super) fn expand_state(
     state: &ModelSimState,
     enforcement: Option<&Enforcement<'_>>,
 ) -> Result<Expansion<ModelTransition, ModelSimState, ModelFinding>, ExpansionStop> {
-    expand(system, state, enforcement, None, None, None)
+    expand(system, state, enforcement, None, None, None, None)
 }
 
 /// [`expand_state`] with no footprint enforcement, also returning every
@@ -316,7 +318,15 @@ pub(super) fn expand_enabled<'s>(
     post_presence: Option<PostPresence<'s>>,
 ) -> Result<(ModelExpansion, Vec<frames::EnabledVector>), ExpansionStop> {
     let mut enabled = Vec::new();
-    let expansion = expand(system, state, None, Some(&mut enabled), post_presence, None)?;
+    let expansion = expand(
+        system,
+        state,
+        None,
+        Some(&mut enabled),
+        post_presence,
+        None,
+        None,
+    )?;
     Ok((expansion, enabled))
 }
 
@@ -326,7 +336,34 @@ pub(super) fn expand_enabled_with_cancel<'s>(
     cancel: &quire_exact::Cancel,
 ) -> Result<(ModelExpansion, Vec<frames::EnabledVector>), ExpansionStop> {
     let mut enabled = Vec::new();
-    let expansion = expand(system, state, None, Some(&mut enabled), None, Some(cancel))?;
+    let expansion = expand(
+        system,
+        state,
+        None,
+        Some(&mut enabled),
+        None,
+        Some(cancel),
+        None,
+    )?;
+    Ok((expansion, enabled))
+}
+
+pub(super) fn expand_enabled_with_key_policy<'s>(
+    system: &'s ModelSystem<'_>,
+    state: &'s ModelSimState,
+    cancel: &quire_exact::Cancel,
+    key_policy: &'s dyn super::key_budget::KeyPolicy,
+) -> Result<(ModelExpansion, Vec<frames::EnabledVector>), ExpansionStop> {
+    let mut enabled = Vec::new();
+    let expansion = expand(
+        system,
+        state,
+        None,
+        Some(&mut enabled),
+        None,
+        Some(cancel),
+        Some(key_policy),
+    )?;
     Ok((expansion, enabled))
 }
 
@@ -337,6 +374,7 @@ fn expand<'s>(
     mut enabled: Option<&mut Vec<frames::EnabledVector>>,
     post_presence: Option<PostPresence<'s>>,
     cancel: Option<&quire_exact::Cancel>,
+    key_policy: Option<&'s dyn super::key_budget::KeyPolicy>,
 ) -> Result<Expansion<ModelTransition, ModelSimState, ModelFinding>, ExpansionStop> {
     // FR-120: every expansion entry point runs the bound check first, so an
     // expansion never meets a granted field with no finite domain.
@@ -346,6 +384,7 @@ fn expand<'s>(
     );
     let mut walk = walk_of(system, state, enforcement)?;
     walk.cancel = cancel.cloned();
+    walk.key_policy = key_policy;
     walk.post_presence = post_presence;
     let mut budget = system.budget();
     budget.cancel = cancel.cloned();

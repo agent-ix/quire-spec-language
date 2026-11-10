@@ -36,3 +36,67 @@ pub enum ModelKeyError {
     #[error("model key size overflow")]
     SizeOverflow,
 }
+
+/// A qualified expansion either failed its identity admission or stopped for
+/// one of the existing semantic expansion reasons.
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum ModelKeyExpansionError {
+    /// Identity construction or ordering was refused.
+    #[error(transparent)]
+    Key(#[from] ModelKeyError),
+    /// The model's ordinary expansion stopped.
+    #[error("model expansion stopped: {0:?}")]
+    Expansion(crate::simulation::ExpansionStop),
+}
+
+pub(super) trait KeyPolicy {
+    fn key(
+        &self,
+        system: &super::ModelSystem<'_>,
+        state: &qsl_semantics::model::state::ModelState,
+    ) -> Result<crate::simulation::StateKey, crate::simulation::ExpansionStop>;
+}
+
+pub(super) struct KeyScope<'a> {
+    pub identity: qsl_foundation::IdentityLimits,
+    pub budget: std::cell::RefCell<&'a mut dyn ModelKeyBudget>,
+    pub cancel: &'a quire_exact::Cancel,
+    pub refused: std::cell::RefCell<Option<ModelKeyError>>,
+}
+impl KeyScope<'_> {
+    pub fn finish<T>(
+        &self,
+        result: Result<T, crate::simulation::ExpansionStop>,
+    ) -> Result<T, ModelKeyExpansionError> {
+        if let Some(error) = self.refused.borrow_mut().take() {
+            return Err(error.into());
+        }
+        result.map_err(ModelKeyExpansionError::Expansion)
+    }
+}
+impl KeyPolicy for KeyScope<'_> {
+    fn key(
+        &self,
+        system: &super::ModelSystem<'_>,
+        state: &qsl_semantics::model::state::ModelState,
+    ) -> Result<crate::simulation::StateKey, crate::simulation::ExpansionStop> {
+        match super::encode::bounded::model_bytes(
+            &system.model,
+            state,
+            system.typing(),
+            self.identity,
+            &mut **self.budget.borrow_mut(),
+            self.cancel,
+        ) {
+            Ok(bytes) => Ok(crate::simulation::StateKey::from_canonical_bytes(bytes)),
+            Err(error) => {
+                *self.refused.borrow_mut() = Some(error);
+                Err(super::exhausted(
+                    crate::simulation::ExpansionLimit::EvaluationMeter(
+                        quire_exact::LimitKind::WorkUnits,
+                    ),
+                ))
+            }
+        }
+    }
+}

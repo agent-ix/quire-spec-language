@@ -99,7 +99,7 @@ impl Scope<'_> {
 
     fn canonical(
         &self,
-        encode: impl FnOnce(&mut Writer<'_, Output<'_>>) -> Result<(), Error>,
+        encode: impl FnOnce(&mut Writer<'_, Output<'_, '_>>) -> Result<(), Error>,
     ) -> Result<Vec<u8>, ModelKeyError> {
         let mut output = Output {
             scope: self,
@@ -177,8 +177,8 @@ impl Scope<'_> {
     }
 }
 
-struct Provision<'a>(&'a Scope<'a>);
-impl quire_canonical::Reservation for Provision<'_> {
+struct Provision<'s, 'a>(&'s Scope<'a>);
+impl quire_canonical::Reservation for Provision<'_, '_> {
     fn reserve(&mut self, bytes: usize) -> Result<(), quire_canonical::ReservationDenied> {
         self.0.admit(bytes).map_err(|error| {
             self.0.refuse(error);
@@ -186,8 +186,8 @@ impl quire_canonical::Reservation for Provision<'_> {
         })
     }
 }
-struct DecimalProvision<'a>(&'a Scope<'a>);
-impl quire_exact::Reservation for DecimalProvision<'_> {
+struct DecimalProvision<'s, 'a>(&'s Scope<'a>);
+impl quire_exact::Reservation for DecimalProvision<'_, '_> {
     fn reserve(&mut self, bytes: usize) -> Result<(), ReservationDenied> {
         self.0.admit(bytes).map_err(|error| {
             self.0.refuse(error);
@@ -195,7 +195,7 @@ impl quire_exact::Reservation for DecimalProvision<'_> {
         })
     }
 }
-impl IntegerDecimalBudget for DecimalProvision<'_> {
+impl IntegerDecimalBudget for DecimalProvision<'_, '_> {
     fn work(&mut self, units: u64) -> Result<(), ReservationDenied> {
         self.0.work(units).map_err(|error| {
             self.0.refuse(error);
@@ -203,11 +203,11 @@ impl IntegerDecimalBudget for DecimalProvision<'_> {
         })
     }
 }
-struct Output<'a> {
-    scope: &'a Scope<'a>,
+struct Output<'s, 'a> {
+    scope: &'s Scope<'a>,
     bytes: Vec<u8>,
 }
-impl Sink for Output<'_> {
+impl Sink for Output<'_, '_> {
     fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), Error> {
         self.scope
             .append(&mut self.bytes, bytes)
@@ -229,14 +229,14 @@ struct Frame {
     order: ArrayOrder,
     name: Option<&'static str>,
 }
-struct Bounded<'a> {
-    scope: &'a Scope<'a>,
+struct Bounded<'s, 'a> {
+    scope: &'s Scope<'a>,
     stack: Vec<Frame>,
     root: Option<Fragment>,
     produced: usize,
 }
-impl<'a> Bounded<'a> {
-    fn new(scope: &'a Scope<'a>) -> Self {
+impl<'s, 'a> Bounded<'s, 'a> {
+    fn new(scope: &'s Scope<'a>) -> Self {
         Self {
             scope,
             stack: Vec::new(),
@@ -361,12 +361,12 @@ impl<'a> Bounded<'a> {
     }
     fn formatted(&mut self, source: impl std::fmt::Display) -> Result<(), ModelKeyError> {
         use std::fmt::Write;
-        struct Text<'a> {
-            scope: &'a Scope<'a>,
+        struct Text<'s, 'a> {
+            scope: &'s Scope<'a>,
             bytes: Vec<u8>,
             error: Option<ModelKeyError>,
         }
-        impl std::fmt::Write for Text<'_> {
+        impl std::fmt::Write for Text<'_, '_> {
             fn write_str(&mut self, text: &str) -> std::fmt::Result {
                 self.scope
                     .append(&mut self.bytes, text.as_bytes())
@@ -392,7 +392,7 @@ impl<'a> Bounded<'a> {
     }
 }
 
-impl StructuralSink for Bounded<'_> {
+impl StructuralSink for Bounded<'_, '_> {
     type Error = ModelKeyError;
     fn begin_object(&mut self) -> Result<(), Self::Error> {
         self.begin(true, ArrayOrder::Retained)
@@ -430,7 +430,7 @@ impl StructuralSink for Bounded<'_> {
         )
     }
 }
-impl ValueSink for Bounded<'_> {
+impl ValueSink for Bounded<'_, '_> {
     fn visit(&mut self) -> Result<(), Self::Error> {
         self.scope.work(1)
     }
@@ -569,7 +569,7 @@ impl ValueSink for Bounded<'_> {
     }
 }
 
-pub(super) fn model_bytes(
+pub(crate) fn model_bytes(
     model: &StateModel,
     state: &ModelState,
     typing: Typing<'_>,
