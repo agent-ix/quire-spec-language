@@ -149,7 +149,7 @@ fn periodic_model(initial: i64, a_rewards: &str, b_reward: &str, terminal: bool)
         integers:vec![("Phase",0,3),("Weight",1,6)],fields:vec![("phase",format!("ix://{package}/Phase"))],operations,
         body: format!("pre A using v on M::Server::a {{ self.phase = 0 }}\npost NextA using v on M::Server::a {{ self.phase = 1 }}\npre B using v on M::Server::b {{ self.phase = 1 }}\npost NextB using v on M::Server::b {{ self.phase = 0 }}\npre Enter using v on M::Server::enter {{ self.phase = 2 }}\npost Entered using v on M::Server::enter {{ (heads and self.phase = 0) or (not heads and self.phase = 3) }}\npre Stay using v on M::Server::stay {{ self.phase = 3 }}\nrandom Server::a(d) ~ {{ {a_rewards} }};\nrandom Server::enter(heads) ~ {{ true: 1, false: 3 }};\nreward duration on Server::a = d;\nreward duration on Server::b = {b_reward};\nreward duration on Server::stay = 1;\nworkload Steady on M {{ weight Server::a = 1; weight Server::b = 1; weight Server::enter = 1; weight Server::stay = 1; }}\n{}{}",
             if terminal { "terminal End using v on M when { self.phase = 3 };\n" } else {""},
-            claim("Fraction","s.phase = 0 or s.phase = 3",if initial == 2 {">= rational(11,12)"} else {">= rational(2,3)"})),
+            [claim("Fraction","s.phase = 0 or s.phase = 3",if initial == 2 {">= rational(11,12)"} else {">= rational(2,3)"}), claim("Upper","s.phase = 0 or s.phase = 3",if initial == 2 {"<= rational(11,12)"} else {"<= rational(2,3)"})].concat()),
         initial:serde_json::json!({"phase":{"integer":initial.to_string()}}),
     };
     if terminal {
@@ -191,6 +191,13 @@ fn weighted_draws_and_transients_use_component_fractions_not_pooled_payoffs() {
                 .unwrap()
                 .value = ratio(8, 9);
             assert!(!accepted(&world, "Fraction", &bad));
+            // Under the upper bound,8/9 would meet the threshold. Its rejection
+            // must therefore come from the independent transient equation.
+            let upper_bytes=produce(&world,"Upper");
+            let mut upper=read_weighted_long_run_probability_certificate(&upper_bytes,limits(),&Cancel::new()).unwrap();
+            upper.certificate.values.iter_mut().find(|row|row.value==ratio(11,12)).unwrap().value=ratio(8,9);
+            let bytes=write_weighted_long_run_probability_certificate(&upper,limits(),&Cancel::new()).unwrap();
+            assert!(matches!(check(&world,"Upper",&bytes,&Cancel::new(),limits()).unwrap(),ExactProbabilityCertificateCheck::Rejected(ref rejection) if rejection.rule==qsl_replay::ProbabilityCertificateRule::InequalityFails));
         }
         let swapped = periodic(initial, "3: 1, 1: 1", "1", false);
         assert!(accepted(&swapped, "Fraction", &doc));
@@ -420,47 +427,49 @@ fn global_negative_admission_precedes_proofs_and_zero_binding_invents_nothing() 
     assert!(records[0].exact_probabilistic.is_none());
 }
 
+fn deferred_reward_model(transient: bool, undefined: bool) -> Model {
+    let mut model = periodic_model(if transient {2} else {0}, "1: 1, 3: 1", "1", false);
+    let operation = if transient {2} else {0};
+    model.operations[operation].parameters.push(("who", format!("ix://{}/Server", model.package)));
+    let expression = if undefined {"if who = who then (1 mod 0) else 1"} else {"if who = who then -1 else 1"};
+    if transient {
+        model.body.push_str(&format!("\nreward duration on Server::enter = {expression};\n"));
+    } else {
+        model.body = model.body.replace("reward duration on Server::a = d;", &format!("reward duration on Server::a = {expression};"));
+    }
+    model
+}
+
 #[trace("TC-1402", "FR-201-AC-34")]
 #[test]
 fn admitted_object_parameter_draws_do_not_coerce_negative_weight_to_zero() {
-    let mut model = periodic_model(0, "1: 1, 3: 1", "1", false);
-    model.operations[0]
-        .parameters
-        .push(("who", format!("ix://{}/Server", model.package)));
-    model.body = model.body.replace(
-        "reward duration on Server::a = d;",
-        "reward duration on Server::a = if who = who then -1 else 1;",
-    );
-    let world = World::new(&model);
-    let system = ModelSystem::new(world.subject().simulation)
-        .expect("object-domain reward is deferred by FR187 admission");
-    let identity = qsl_replay::probabilistic_claim_identity(world.claim("Fraction")).unwrap();
-    assert_eq!(
-        qsl_replay::weighted_long_run_probability_certificate_document(
-            &system,
-            world.package.graph().probabilistic_model().claims(),
-            &identity,
-            vec![],
-            vec![],
-            limits(),
-            &Cancel::new()
-        ),
-        Err(ProbabilityDocumentError::Unsupported)
-    );
-    let records = analyze_items(
-        &Engines::qsl().unwrap(),
-        vec![exact_probabilistic_item(
-            RequestIndex::new(0),
-            world.request("Fraction", ModelCheckLimits::default()),
-        )],
-        &Cancel::new(),
-    );
-    let Settlement::Disposed(disposed) = &records[0].settlement else {
-        panic!("{:?}", records[0]);
-    };
-    assert_eq!(disposed.kind, DispositionKind::Unsupported);
-    assert!(records[0].terminal().is_none());
-    assert!(records[0].exact_probabilistic.is_none());
+    for transient in [false,true] {
+        let world=World::new(&deferred_reward_model(transient,false));
+        let system=ModelSystem::new(world.subject().simulation).expect("object-domain reward is deferred by FR187 admission");
+        let identity=qsl_replay::probabilistic_claim_identity(world.claim("Fraction")).unwrap();
+        assert_eq!(qsl_replay::weighted_long_run_probability_certificate_document(&system,world.package.graph().probabilistic_model().claims(),&identity,vec![],vec![],limits(),&Cancel::new()),Err(ProbabilityDocumentError::Unsupported));
+        let records=analyze_items(&Engines::qsl().unwrap(),vec![exact_probabilistic_item(RequestIndex::new(0),world.request("Fraction",ModelCheckLimits::default()))],&Cancel::new());
+        let Settlement::Disposed(disposed)=&records[0].settlement else {panic!("{:?}",records[0]);};
+        assert_eq!(disposed.kind,DispositionKind::Unsupported);assert!(records[0].terminal().is_none());assert!(records[0].exact_probabilistic.is_none());
+    }
+}
+
+#[trace("TC-1402", "FR-201-AC-34")]
+#[test]
+fn undefined_actual_weights_and_predicates_preserve_typed_nonacceptance() {
+    for transient in [false,true] {
+        let world=World::new(&deferred_reward_model(transient,true));
+        let system=ModelSystem::new(world.subject().simulation).expect("object-domain reward is deferred by FR187 admission");
+        let identity=qsl_replay::probabilistic_claim_identity(world.claim("Fraction")).unwrap();
+        assert!(matches!(qsl_replay::weighted_long_run_probability_certificate_document(&system,world.package.graph().probabilistic_model().claims(),&identity,vec![],vec![],limits(),&Cancel::new()),Err(ProbabilityDocumentError::Build(_))));
+        let records=analyze_items(&Engines::qsl().unwrap(),vec![exact_probabilistic_item(RequestIndex::new(0),world.request("Fraction",ModelCheckLimits::default()))],&Cancel::new());
+        assert!(records[0].exact_probabilistic.is_none());
+        assert!(!matches!(records[0].terminal().map(|record|record.value()),Some(qsl_replay::TerminalValue::Proved{..}|qsl_replay::TerminalValue::Refuted)));
+    }
+    let source="reward duration on Coin::drop = 1;\nprobabilistic Fraction using inf on M over (c: M::Coin) under Even on origin { long_run_fraction holds(c.v = 0) weighted by duration >= rational(1,2) }\n";
+    let world=World::new(&prob_world::coin(source));let system=ModelSystem::new(world.subject().simulation).unwrap();
+    let identity=qsl_replay::probabilistic_claim_identity(world.claim("Fraction")).unwrap();
+    assert!(matches!(qsl_replay::weighted_long_run_probability_certificate_document(&system,world.package.graph().probabilistic_model().claims(),&identity,vec![],vec![],limits(),&Cancel::new()),Err(ProbabilityDocumentError::UndefinedPredicate(qsl_eval::temporal::UndefinedCause::Family(ref cause))) if cause.reason==quire_semantic_value::catalog::UndefinedReason::AbsentKey));
 }
 
 fn quantity_availability(tick: &str, repair: &str) -> World {

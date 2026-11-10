@@ -137,6 +137,13 @@ pub(super) fn has_profile(
     ))
 }
 
+pub(super) fn certificate_identity(
+    bytes: &[u8], limits: ProbabilityDocumentLimits, cancel: &Cancel,
+) -> Result<ObligationIdentity, ProbabilityDocumentError> {
+    let mut cx = Context::new(limits, cancel);
+    Ok(read(bytes, &mut cx)?.document.identity)
+}
+
 /// Read canonical long-run bytes without trusting their component partition.
 pub fn read_long_run_probability_certificate(
     bytes: &[u8],
@@ -788,9 +795,6 @@ fn subject(
                             ) {
                                 continue;
                             }
-                            if step.probability == rational(0) {
-                                continue;
-                            }
                             let magnitude = {
                                 let context = &mut **context;
                                 super::super::reward::magnitude(
@@ -803,6 +807,7 @@ fn subject(
                                     &mut context.meter,
                                 )?
                             };
+                            if step.probability == rational(0) { continue; }
                             let term =
                                 context.arithmetic(quire_exact::RationalArithmetic::Multiply(
                                     &step.probability,

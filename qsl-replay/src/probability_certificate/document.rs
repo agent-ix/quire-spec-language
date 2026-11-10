@@ -1413,7 +1413,7 @@ pub(super) fn certificate_identity(
     cancel: &Cancel,
 ) -> Result<ObligationIdentity, ProbabilityDocumentError> {
     if long_run::has_profile(bytes, limits, cancel)? {
-        return Ok(read_long_run_probability_certificate(bytes, limits, cancel)?.identity);
+        return long_run::certificate_identity(bytes, limits, cancel);
     }
     Ok(read_probability_certificate(bytes, limits, cancel)?.identity)
 }
