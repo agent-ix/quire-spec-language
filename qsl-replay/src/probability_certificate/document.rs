@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize};
 use super::*;
 
 mod fairness;
+#[cfg(feature = "test-support")]
+pub use fairness::BoundedFairProbabilityPhase;
 mod key;
 mod mdp;
 #[cfg(feature = "test-support")]
@@ -607,7 +609,7 @@ fn read_document(
     cancel: &Cancel,
     meter: &mut quire_exact::Meter,
 ) -> Result<ProbabilityCertificateDocument, ProbabilityDocumentError> {
-    read_document_profile(bytes, limits, cancel, meter, false, None)
+    read_document_profile(bytes, limits, cancel, meter, false, None, &mut 0)
 }
 
 fn read_document_profile(
@@ -617,6 +619,7 @@ fn read_document_profile(
     meter: &mut quire_exact::Meter,
     cyclic_mdp: bool,
     fairness: Option<&mut Vec<fairness::Record>>,
+    storage: &mut u64,
 ) -> Result<ProbabilityCertificateDocument, ProbabilityDocumentError> {
     let allow_fair = fairness.is_some();
     poll(cancel)?;
@@ -722,7 +725,7 @@ fn read_document_profile(
     }
     if wire.objective.profile == BOUNDED_FAIR_PROFILE {
         let destination = fairness.ok_or(ProbabilityDocumentError::Unsupported)?;
-        *destination = fairness::read(&wire.objective.fairness, limits, cancel, meter)?;
+        *destination = fairness::read(&wire.objective.fairness, limits, cancel, meter, storage)?;
         if destination.is_empty() || wire.objective.optimization == "workload" {
             return Err(ProbabilityDocumentError::MalformedMember("objective"));
         }
@@ -1406,6 +1409,7 @@ pub fn check_probability_certificate_document(
         limits,
         cancel,
         &super::reward::RewardControl::new(cancel),
+        &fairness::Control::new(cancel),
     )
 }
 
@@ -1422,7 +1426,19 @@ pub fn check_cyclic_reward_probability_certificate_observing(
     observe: &mut dyn FnMut(super::reward::RewardProbabilityPhase),
 ) -> Result<ExactProbabilityCertificateCheck, ProbabilityDocumentError> {
     let control = super::reward::RewardControl::observing(cancel, observe);
-    check_document_with_control(system, claims, item, bytes, limits, cancel, &control)
+    check_document_with_control(system, claims, item, bytes, limits, cancel, &control, &fairness::Control::new(cancel))
+}
+
+/// Observe the actual bounded fairness checker with caller cancellation tokens.
+#[cfg(feature = "test-support")]
+#[allow(clippy::too_many_arguments)]
+pub fn check_bounded_fair_probability_certificate_observing(
+    system: &ModelSystem<'_>, claims: &[CheckedProbabilisticClaim], item: &ObligationIdentity,
+    bytes: &[u8], limits: ProbabilityDocumentLimits, cancel: &Cancel,
+    observe: &mut dyn FnMut(BoundedFairProbabilityPhase),
+) -> Result<ExactProbabilityCertificateCheck, ProbabilityDocumentError> {
+    let control = fairness::Control::observing(cancel, observe);
+    check_document_with_control(system, claims, item, bytes, limits, cancel, &super::reward::RewardControl::new(cancel), &control)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1434,6 +1450,7 @@ fn check_document_with_control(
     limits: ProbabilityDocumentLimits,
     cancel: &Cancel,
     control: &super::reward::RewardControl<'_>,
+    fair_control: &fairness::Control<'_>,
 ) -> Result<ExactProbabilityCertificateCheck, ProbabilityDocumentError> {
     match profile_dispatch(bytes, limits, cancel)? {
         ProfileDispatch::LongRun => {
@@ -1447,7 +1464,9 @@ fn check_document_with_control(
         ProfileDispatch::Exact | ProfileDispatch::BoundedFair => {}
     }
     let mut meter = quire_exact::Meter::new(limits.accounting).with_cancel(cancel.clone());
+    fair_control.phase(fairness::BoundedFairProbabilityPhase::Intake)?;
     let mut fairness_records = Vec::new();
+    let mut storage = 0;
     let document = match read_document_profile(
         bytes,
         limits,
@@ -1455,6 +1474,7 @@ fn check_document_with_control(
         &mut meter,
         false,
         Some(&mut fairness_records),
+        &mut storage,
     ) {
         Ok(document) => document,
         Err(error) => return document_admission_error(error),
@@ -1462,17 +1482,17 @@ fn check_document_with_control(
     if &document.identity != item {
         return Err(ProbabilityDocumentError::IdentityMismatch);
     }
-    let mut storage = 0;
     let claim = bind_claim(claims, item, cancel)?;
     if fairness_records.is_empty() != claim.fairness.is_empty() {
         return Err(ProbabilityDocumentError::ObjectiveMismatch);
     }
     if !fairness_records.is_empty() {
-        let expected = fairness::checked(system, claim, limits, cancel, &mut meter, &mut storage)?;
-        if expected != fairness_records {
+        let expected = fairness::checked_with_control(system, claim, limits, cancel, &mut meter, &mut storage, fair_control)?;
+        if !fairness::same(&expected, &fairness_records, limits, cancel, &mut meter, &mut storage)? {
             return Err(ProbabilityDocumentError::ObjectiveMismatch);
         }
     }
+    fair_control.phase(fairness::BoundedFairProbabilityPhase::Graph)?;
     let (graph, objective, bound, bounded_ranks, event, failures, reward) =
         subject_graph_with_identity(
             system,
@@ -1495,6 +1515,7 @@ fn check_document_with_control(
     {
         return Err(ProbabilityDocumentError::ObjectiveMismatch);
     }
+    fair_control.phase(fairness::BoundedFairProbabilityPhase::Equality)?;
     let ranks: BTreeMap<_, _> = document.ranking.into_iter().collect();
     let certificate = ExactProbabilityCertificate {
         values: document.values,

@@ -8,6 +8,13 @@ use serde_json::{json, Value};
 const SNAPSHOT: &[u8] = include_bytes!("../fixtures/link.snapshot.json");
 const DOMAIN: &[u8] = include_bytes!("../fixtures/link.semantic-ir.json");
 
+fn limits() -> qsl_replay::ProbabilityDocumentLimits {
+    qsl_replay::ProbabilityDocumentLimits {
+        bytes: 1_000_000, storage_bytes: 16_000_000, states: 128, edges: 1024,
+        scalar_bits: 128, accounting: qsl_replay::AccountingLimits::default().0,
+    }
+}
+
 fn source(
     fairness: &str,
     operator: &str,
@@ -204,7 +211,7 @@ fn zero_horizon_and_legacy_bytes_keep_their_actual_context_and_closed_rows() {
     let bytes = ordinary["certificate"].as_str().unwrap().as_bytes();
     let decoded = qsl_replay::read_probability_proof_document(
         bytes,
-        Default::default(),
+        limits(),
         &quire_exact::Cancel::new(),
     )
     .unwrap();
@@ -212,7 +219,7 @@ fn zero_horizon_and_legacy_bytes_keep_their_actual_context_and_closed_rows() {
     assert_eq!(
         qsl_replay::write_probability_proof_document(
             &decoded,
-            Default::default(),
+            limits(),
             &quire_exact::Cancel::new()
         )
         .unwrap(),

@@ -7,6 +7,43 @@ use quire_canonical::{Encode, Error, Sink, Writer};
 use quire_exact::{Identifier, NodeKey, NodePathIter};
 use quire_semantic_value::fairness::{FairnessGranularity, FairnessKind};
 
+/// Actual bounded fair-proof checking stages, for default-off observation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BoundedFairProbabilityPhase {
+    /// Strict objective intake.
+    Intake,
+    /// Looking up an operation's actual declaring model identity.
+    Declaration,
+    /// Canonically encoding a resolved fairness record.
+    Metadata,
+    /// Independently reconstructing the bounded product and its keys.
+    Graph,
+    /// Checking offered values and remaining-horizon ranks.
+    Equality,
+}
+
+pub(super) struct Control<'a> {
+    cancel: &'a Cancel,
+    #[cfg(feature = "test-support")]
+    observe: std::cell::RefCell<Option<&'a mut dyn FnMut(BoundedFairProbabilityPhase)>>,
+}
+impl<'a> Control<'a> {
+    pub(super) fn new(cancel: &'a Cancel) -> Self {
+        Self { cancel, #[cfg(feature = "test-support")] observe: std::cell::RefCell::new(None) }
+    }
+    #[cfg(feature = "test-support")]
+    pub(super) fn observing(cancel: &'a Cancel, observe: &'a mut dyn FnMut(BoundedFairProbabilityPhase)) -> Self {
+        Self { cancel, observe: std::cell::RefCell::new(Some(observe)) }
+    }
+    pub(super) fn phase(&self, phase: BoundedFairProbabilityPhase) -> Result<(), ProbabilityDocumentError> {
+        #[cfg(feature = "test-support")]
+        if let Some(observe) = self.observe.borrow_mut().as_mut() { observe(phase); }
+        #[cfg(not(feature = "test-support"))]
+        let _ = phase;
+        poll(self.cancel)
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct Record {
     kind: FairnessKind,
@@ -190,6 +227,15 @@ pub(super) fn checked(
     meter: &mut quire_exact::Meter,
     storage: &mut u64,
 ) -> Result<Vec<Record>, ProbabilityDocumentError> {
+    checked_with_control(system, claim, limits, cancel, meter, storage, &Control::new(cancel))
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn checked_with_control(
+    system: &ModelSystem<'_>, claim: &CheckedProbabilisticClaim,
+    limits: ProbabilityDocumentLimits, cancel: &Cancel,
+    meter: &mut quire_exact::Meter, storage: &mut u64, control: &Control<'_>,
+) -> Result<Vec<Record>, ProbabilityDocumentError> {
     admit(claim)?;
     let mut cx = Admission {
         limits,
@@ -200,6 +246,7 @@ pub(super) fn checked(
     let mut rows: Vec<(Vec<u8>, Record)> = Vec::new();
     for constraint in &claim.fairness {
         cx.work(1)?;
+        control.phase(BoundedFairProbabilityPhase::Declaration)?;
         let operation = constraint.operation();
         let key = system
             .declaration_key_with_work(&operation.declaring_type(), &mut |work| cx.work(work))?
@@ -228,6 +275,7 @@ pub(super) fn checked(
             name: Identifier::new(operation.name())
                 .map_err(|_| ProbabilityDocumentError::MalformedMember("objective"))?,
         };
+        control.phase(BoundedFairProbabilityPhase::Metadata)?;
         let bytes = cx.bytes(&record)?;
         cx.reserve(std::mem::size_of::<(Vec<u8>, Record)>())?;
         rows.try_reserve_exact(1)
@@ -249,7 +297,27 @@ pub(super) fn checked(
         }
         rows.insert(at, (bytes, record));
     }
-    Ok(rows.into_iter().map(|(_, record)| record).collect())
+    cx.reserve(rows.len().saturating_mul(std::mem::size_of::<Record>()))?;
+    let mut records = Vec::new();
+    records.try_reserve_exact(rows.len()).map_err(|_| ProbabilityDocumentError::KeySizeOverflow)?;
+    records.extend(rows.into_iter().map(|(_, record)| record));
+    Ok(records)
+}
+
+pub(super) fn same(
+    expected: &[Record], offered: &[Record], limits: ProbabilityDocumentLimits,
+    cancel: &Cancel, meter: &mut quire_exact::Meter, storage: &mut u64,
+) -> Result<bool, ProbabilityDocumentError> {
+    let mut cx = Admission { limits, cancel, meter, storage };
+    cx.work(1)?;
+    if expected.len() != offered.len() { return Ok(false); }
+    for (expected, offered) in expected.iter().zip(offered) {
+        let expected = cx.bytes(expected)?;
+        let offered = cx.bytes(offered)?;
+        cx.work(u64::try_from(expected.len().min(offered.len())).unwrap_or(u64::MAX).saturating_add(1))?;
+        if expected != offered { return Ok(false); }
+    }
+    Ok(true)
 }
 
 pub(super) fn read(
@@ -257,13 +325,13 @@ pub(super) fn read(
     limits: ProbabilityDocumentLimits,
     cancel: &Cancel,
     meter: &mut quire_exact::Meter,
+    storage: &mut u64,
 ) -> Result<Vec<Record>, ProbabilityDocumentError> {
-    let mut storage = 0;
     let mut cx = Admission {
         limits,
         cancel,
         meter,
-        storage: &mut storage,
+        storage,
     };
     let mut result = Vec::new();
     let mut previous: Option<Vec<u8>> = None;

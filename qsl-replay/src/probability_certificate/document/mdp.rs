@@ -53,6 +53,7 @@ pub fn read_probability_proof_document(
         &mut meter,
         cyclic_mdp,
         Some(&mut fairness),
+        &mut 0,
     )?;
     Ok(ProbabilityProofDocument {
         document,
@@ -963,7 +964,7 @@ fn check_with_context(
 ) -> Result<ExactProbabilityCertificateCheck, ProbabilityDocumentError> {
     let limits = cx.limits;
     let cancel = cx.cancel;
-    let document = match read_document_profile(bytes, limits, cancel, &mut cx.meter, true, None) {
+    let document = match read_document_profile(bytes, limits, cancel, &mut cx.meter, true, None, &mut cx.storage) {
         Ok(document) => document,
         Err(error) => return document_admission_error(error),
     };
