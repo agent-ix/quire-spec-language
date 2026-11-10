@@ -11,6 +11,31 @@ pub fn admit_acyclic_probabilistic_refutation_subject(
     limits: &crate::ExactProbLimits,
     cancel: &Cancel,
 ) -> Result<bool, ProbabilityDocumentError> {
+    native_with_identity(
+        system,
+        limits,
+        cancel,
+        qsl_foundation::IdentityLimits::default(),
+    )
+}
+
+/// Qualify the real native preflight under an explicit owner identity ceiling.
+#[cfg(feature = "test-support")]
+pub fn admit_acyclic_probabilistic_refutation_subject_with_identity(
+    system: &ModelSystem<'_>,
+    limits: &crate::ExactProbLimits,
+    cancel: &Cancel,
+    identity: qsl_foundation::IdentityLimits,
+) -> Result<bool, ProbabilityDocumentError> {
+    native_with_identity(system, limits, cancel, identity)
+}
+
+fn native_with_identity(
+    system: &ModelSystem<'_>,
+    limits: &crate::ExactProbLimits,
+    cancel: &Cancel,
+    identity: qsl_foundation::IdentityLimits,
+) -> Result<bool, ProbabilityDocumentError> {
     let mut meter = quire_exact::Meter::new(system.meter_limits()).with_cancel(cancel.clone());
     let mut storage = 0;
     let graph_limits = ProbabilityDocumentLimits {
@@ -28,7 +53,7 @@ pub fn admit_acyclic_probabilistic_refutation_subject(
         None,
         graph_limits,
         cancel,
-        qsl_foundation::IdentityLimits::default(),
+        identity,
         &mut meter,
         &mut storage,
         false,

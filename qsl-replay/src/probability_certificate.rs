@@ -24,6 +24,8 @@ mod key_admission;
 pub use key_admission::ProbabilityKeyAdmission;
 mod cyclic;
 pub use cyclic::admit_acyclic_probabilistic_refutation_subject;
+#[cfg(feature = "test-support")]
+pub use cyclic::admit_acyclic_probabilistic_refutation_subject_with_identity;
 mod document;
 mod reward;
 mod state_predicate;

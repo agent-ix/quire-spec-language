@@ -131,4 +131,5 @@ mod zone_search;
 
 mod long_run_certificate;
 
+mod cyclic_key_admission;
 mod long_run_key_admission;

@@ -732,6 +732,7 @@ fn subject_graph(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn subject_graph_with_identity(
     system: &ModelSystem<'_>,
     claims: &[CheckedProbabilisticClaim],
@@ -969,6 +970,23 @@ pub fn admit_expected_reward_certificate_subject_with_identity(
     let mut meter = quire_exact::Meter::new(limits.accounting).with_cancel(cancel.clone());
     subject_graph_with_identity(
         system, claims, item, limits, cancel, identity, false, &mut meter,
+    )?;
+    Ok(())
+}
+
+/// Qualify cyclic eventual admission with the real owner identity ceiling.
+#[cfg(feature = "test-support")]
+pub fn admit_cyclic_eventual_certificate_subject_with_identity(
+    system: &ModelSystem<'_>,
+    claims: &[CheckedProbabilisticClaim],
+    item: &ObligationIdentity,
+    limits: ProbabilityDocumentLimits,
+    cancel: &Cancel,
+    identity: qsl_foundation::IdentityLimits,
+) -> Result<(), ProbabilityDocumentError> {
+    let mut meter = quire_exact::Meter::new(limits.accounting).with_cancel(cancel.clone());
+    subject_graph_with_identity(
+        system, claims, item, limits, cancel, identity, true, &mut meter,
     )?;
     Ok(())
 }

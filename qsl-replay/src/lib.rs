@@ -330,6 +330,11 @@ pub use planner::{
     PlannerResult, PremiseItem, PremiseResult, ResultEntry, SettlementRequest,
 };
 pub use probability_certificate::admit_acyclic_probabilistic_refutation_subject;
+#[cfg(feature = "test-support")]
+pub use probability_certificate::{
+    admit_acyclic_probabilistic_refutation_subject_with_identity,
+    admit_cyclic_eventual_certificate_subject_with_identity,
+};
 pub use probability_certificate::{
     admit_expected_reward_certificate_subject, check_claim_exact_reachability,
     check_probability_certificate_document, check_probability_certificate_source, claim_binding,
