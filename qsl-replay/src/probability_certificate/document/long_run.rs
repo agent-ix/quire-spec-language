@@ -106,37 +106,8 @@ struct Document<O = Objective> {
     components: Vec<Component>,
 }
 
-pub(super) fn has_profile(
-    bytes: &[u8],
-    limits: ProbabilityDocumentLimits,
-    cancel: &Cancel,
-) -> Result<bool, ProbabilityDocumentError> {
-    poll(cancel)?;
-    if bytes.len() as u64 > limits.bytes {
-        return Err(exceeded(
-            ProbabilityDocumentLimit::Bytes,
-            limits.bytes,
-            bytes.len() as u64,
-        ));
-    }
-    let parsed = quire_canonical::read_bounded(bytes, limits.bytes, limits.storage_bytes).map_err(
-        |error| match error {
-            quire_canonical::ReadError::Limit(limit) => exceeded(
-                ProbabilityDocumentLimit::StorageBytes,
-                limit.bound,
-                limit.required,
-            ),
-            _ => ProbabilityDocumentError::Malformed,
-        },
-    )?;
-    Ok(matches!(
-        parsed
-            .root()
-            .get("objective")
-            .and_then(|v| v.get("profile"))
-            .map(|v| v.node()),
-        Some(quire_canonical::Node::String(PROFILE | WEIGHTED_PROFILE))
-    ))
+pub(super) fn is_profile(profile: &str) -> bool {
+    matches!(profile, PROFILE | WEIGHTED_PROFILE)
 }
 
 pub(super) fn certificate_identity(
@@ -181,7 +152,7 @@ pub fn read_weighted_long_run_probability_certificate(
 fn read(bytes: &[u8], cx: &mut Context<'_>) -> Result<Decoded, ProbabilityDocumentError> {
     #[cfg(feature = "test-support")]
     cx.phase(LongRunProbabilityPhase::Admission)?;
-    if !has_profile(bytes, cx.limits, cx.cancel)? {
+    if profile_dispatch(bytes, cx.limits, cx.cancel)? != ProfileDispatch::LongRun {
         return Err(ProbabilityDocumentError::Unsupported);
     }
     // Account wire strings, parsed rows and decoded key storage before serde growth.

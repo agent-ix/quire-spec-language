@@ -62,6 +62,7 @@ impl Reservation for Reserve<'_, '_> {
 
 struct Events<'a> {
     document: &'a ProbabilityCertificateDocument,
+    cyclic_mdp: bool,
     text: Text<'a>,
 }
 
@@ -246,19 +247,19 @@ impl Encode for Events<'_> {
         writer.name("objective")?;
         writer.begin_object()?;
         writer.name("profile")?;
-        writer.string(
-            if self.document.cyclic_dtmc && self.document.reward.is_some() {
-                CYCLIC_REWARD_PROFILE
-            } else if self.document.cyclic_dtmc {
-                CYCLIC_PROFILE
-            } else if self.document.reward.is_some() {
-                REWARD_PROFILE
-            } else if self.document.event.is_some() {
-                STATE_PROFILE
-            } else {
-                PROFILE
-            },
-        )?;
+        writer.string(if self.cyclic_mdp {
+            CYCLIC_MDP_PROFILE
+        } else if self.document.cyclic_dtmc && self.document.reward.is_some() {
+            CYCLIC_REWARD_PROFILE
+        } else if self.document.cyclic_dtmc {
+            CYCLIC_PROFILE
+        } else if self.document.reward.is_some() {
+            REWARD_PROFILE
+        } else if self.document.event.is_some() {
+            STATE_PROFILE
+        } else {
+            PROFILE
+        })?;
         if let Some(reward) = &self.document.reward {
             writer.name("reward")?;
             writer.begin_array()?;
@@ -337,6 +338,15 @@ fn encode(
     limits: ProbabilityDocumentLimits,
     cancel: &Cancel,
 ) -> Result<Vec<u8>, ProbabilityDocumentError> {
+    encode_profile(document, limits, cancel, false)
+}
+
+pub(super) fn encode_profile(
+    document: &ProbabilityCertificateDocument,
+    limits: ProbabilityDocumentLimits,
+    cancel: &Cancel,
+    cyclic_mdp: bool,
+) -> Result<Vec<u8>, ProbabilityDocumentError> {
     poll(cancel)?;
     if document.event.is_none() && !document.failures.is_empty() {
         return Err(ProbabilityDocumentError::Malformed);
@@ -362,6 +372,7 @@ fn encode(
     }
     let events = Events {
         document,
+        cyclic_mdp,
         text: Text {
             limits,
             cancel,
@@ -478,6 +489,7 @@ mod tests {
         for (bytes, storage_bytes) in [(3, 1_000_000), (1_000_000, 0)] {
             let events = Events {
                 document: &document,
+                cyclic_mdp: false,
                 text: Text {
                     limits: ProbabilityDocumentLimits {
                         bytes,
@@ -542,6 +554,7 @@ mod tests {
         let cap = 1 + 2 * (encoded_key + 2);
         let events = Events {
             document: &document,
+            cyclic_mdp: false,
             text: Text {
                 limits: ProbabilityDocumentLimits {
                     bytes: cap,
@@ -580,6 +593,7 @@ mod tests {
         ] {
             let events = Events {
                 document: &document,
+                cyclic_mdp: false,
                 text: Text {
                     limits: ProbabilityDocumentLimits {
                         bytes,
