@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Real cyclic proofs cross a fresh qualified-core process boundary.
 
-use super::bounded::{document, key, mutate, request_with, run};
+use super::bounded::{alter_keys, document, key, mutate, request_with, run, run_with};
 use ix_trace_rs::trace;
 use qsl_analyze::exact_probabilistic::ExactProbLimits;
 use serde_json::{json, Value};
@@ -190,5 +190,115 @@ fn target_free_recurrence_forces_zero_and_early_target_cannot_hide_scheduler_cho
         code, 0,
         "an original choice beyond target must not be accepted: {output}"
     );
-    assert_eq!(output["code"], "unsupported");
+    assert_eq!(output["status"], "unsupported");
+}
+
+#[trace("TC-636", "FR-201-AC-24", "FR-201-AC-25", "FR-282-AC-18")]
+#[test]
+fn authored_workload_checks_its_resolved_rational_distribution() {
+    let base = model(false)
+        .replace("pre B using v on M::Msg::send_b { false }", "pre B using v on M::Msg::send_b { true }")
+        .replace("post A_done using v on M::Msg::send_a { self.attempts = (if lost = 0 then 0 else 2) and self.delivered = (lost = 1) }", "post A_done using v on M::Msg::send_a { self.attempts = pre(self.attempts) and self.delivered = pre(self.delivered) }")
+        .replace("post B_done using v on M::Msg::send_b { self.attempts = 0 and not self.delivered }", "post B_done using v on M::Msg::send_b { self.attempts = 2 and self.delivered = (lost = 0) }");
+    let base = format!("{base}\nworkload Even on M {{ weight Msg::send_a = 1; weight Msg::send_b = 1; weight Msg::send_c = 1; }}\n");
+    for op in [">=", "<="] {
+        let request = proof(&claim(&base, "Even", op, "rational(1,3)", "m.delivered"));
+        accepted(&request, "1", "3");
+        assert_eq!(document(&request)["objective"]["optimization"], "workload");
+        let mut stronger = request.clone();
+        replace_source(
+            &mut stronger,
+            &claim(
+                &base,
+                "Even",
+                op,
+                if op == ">=" {
+                    "rational(2,5)"
+                } else {
+                    "rational(1,4)"
+                },
+                "m.delivered",
+            ),
+        );
+        let (code, output) = run(&stronger);
+        assert_eq!(code, 1, "{output}");
+        assert_eq!(output["rule"], "threshold-missed");
+    }
+}
+
+#[trace(
+    "TC-636",
+    "FR-201-AC-25",
+    "FR-201-AC-26",
+    "FR-282-AC-18",
+    "FR-282-AC-19"
+)]
+#[test]
+fn cyclic_evidence_mutations_and_caller_controls_prevent_acceptance() {
+    let base = model(false);
+    let source = claim(
+        &base,
+        "every scheduler",
+        ">=",
+        "rational(1,2)",
+        "m.delivered",
+    );
+    let request = proof(&source);
+    for changed in [
+        mutate(&request, |doc| {
+            doc["values"].as_array_mut().unwrap().pop();
+        }),
+        mutate(&request, |doc| {
+            doc["ranking"].as_array_mut().unwrap().pop();
+        }),
+        mutate(&request, |doc| {
+            alter_keys(doc, |key| key[1] = Value::Null);
+        }),
+        mutate(&request, |doc| {
+            doc["objective"]["targets"] = json!([]);
+        }),
+        mutate(&request, |doc| {
+            doc["objective"]["optimization"] = json!("maximum");
+        }),
+        mutate(&request, |doc| {
+            for row in doc["values"].as_array_mut().unwrap() {
+                if row["value"]["denominator"] == "2" {
+                    row["value"] = json!({"numerator":"2", "denominator":"3"});
+                }
+            }
+        }),
+    ] {
+        let (code, output) = run(&changed);
+        assert_ne!(code, 0, "mutated cyclic evidence must fail: {output}");
+    }
+    let mut changed_source = request.clone();
+    replace_source(
+        &mut changed_source,
+        &claim(
+            &base.replace("0: 1, 1: 1, 2: 1", "0: 1, 1: 2, 2: 1"),
+            "every scheduler",
+            ">=",
+            "rational(1,2)",
+            "m.delivered",
+        ),
+    );
+    let (code, output) = run(&changed_source);
+    assert_eq!(code, 1, "{output}");
+    assert_eq!(output["rule"], "inequality-fails");
+    let (code, output) = run_with(&request, &["--cancel"]);
+    assert_ne!(code, 0, "{output}");
+    assert_eq!(output["status"], "stopped");
+    for (name, bound) in [
+        ("bytes", 1),
+        ("storage_bytes", 1),
+        ("states", 1),
+        ("edges", 0),
+        ("scalar_bits", 0),
+    ] {
+        let mut bounded = request.clone();
+        bounded["limits"][name] = json!(bound);
+        let (code, output) = run(&bounded);
+        assert_ne!(code, 0, "{name}: {output}");
+        assert_eq!(output["status"], "stopped", "{name}: {output}");
+    }
 }
