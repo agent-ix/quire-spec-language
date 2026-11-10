@@ -1248,6 +1248,7 @@ mod tests {
     use ix_trace_rs::trace;
     use qsl_foundation::bound::DomainKind;
     use qsl_route::descriptor_from_manifest;
+    use quire_exact::CancelCause;
 
     use super::*;
 
