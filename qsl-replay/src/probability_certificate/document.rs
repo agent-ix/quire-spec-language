@@ -936,7 +936,8 @@ fn subject_graph_with_identity(
         // The finite-prefix fairness rule presumes an admitted Markov subject.
         // This traversal checks model actions without evaluating the query.
         super::cyclic::enumerate_graph::<qsl_semantics::check::CheckedPredicate>(
-            system, None, reference, workload, limits, cancel, identity, meter, storage, false, false,
+            system, None, reference, workload, limits, cancel, identity, meter, storage, false,
+            false,
         )?;
     }
     let mut state_event = None;

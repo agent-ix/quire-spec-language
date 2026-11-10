@@ -228,13 +228,31 @@ fn zero_horizon_and_legacy_bytes_keep_their_actual_context_and_closed_rows() {
     let ordinary = proof(&source("", ">=", "0.95", 2, "m.delivered"), SNAPSHOT);
     let zero_source = source("fair weak Msg::send_a", "<=", "0.5", 0, "m.delivered");
     let mut unresolved = proof(&zero_source, SNAPSHOT);
-    let unresolved_source = zero_source.replace("self.attempts - pre(self.attempts) = 1 and self.delivered = (not lost)", "self.attempts < 2");
+    let unresolved_source = zero_source.replace(
+        "self.attempts - pre(self.attempts) = 1 and self.delivered = (not lost)",
+        "self.attempts < 2",
+    );
     replace_source(&mut unresolved, &unresolved_source);
     let (code, out) = run(&unresolved);
-    assert_ne!(code, 0, "horizon zero must not waive the admitted model's unique-post-state restriction: {out}");
-    let query_stops = proof(&source("fair weak Msg::send_a", "<=", "0.5", 0,
-        "if m.attempts > 0 then (1 mod 0 = 0) else m.delivered"), SNAPSHOT);
-    assert_eq!(run(&query_stops).0, 0, "model admission must not evaluate P after its zero horizon");
+    assert_ne!(
+        code, 0,
+        "horizon zero must not waive the admitted model's unique-post-state restriction: {out}"
+    );
+    let query_stops = proof(
+        &source(
+            "fair weak Msg::send_a",
+            "<=",
+            "0.5",
+            0,
+            "if m.attempts > 0 then (1 mod 0 = 0) else m.delivered",
+        ),
+        SNAPSHOT,
+    );
+    assert_eq!(
+        run(&query_stops).0,
+        0,
+        "model admission must not evaluate P after its zero horizon"
+    );
     let bytes = ordinary["certificate"].as_str().unwrap().as_bytes();
     let decoded =
         qsl_replay::read_probability_proof_document(bytes, limits(), &quire_exact::Cancel::new())
