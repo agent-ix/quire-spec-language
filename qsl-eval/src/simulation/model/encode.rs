@@ -751,7 +751,7 @@ pub(crate) struct Typing<'t> {
     clock_bits: &'t [(DeclarationKey, StateField)],
     /// The run's map-key names, when the caller keeps them.
     names: Option<&'t KeyNames>,
-    /// Effective fields retained by the model system, including clock shells.
+    /// Effective fields retained by the model system, including synthetic clock entries.
     state_fields: Option<&'t BTreeMap<DeclarationKey, Vec<StateField>>>,
 }
 

@@ -5150,7 +5150,7 @@ fn quantified_presence_reads_the_element_bits() {
 /// per element.
 /// Not covered: AC-46's `Sequence<Stopwatch>` and `Sequence<Option<Clock>>`
 /// (580q) and AC-47's `Map`, which a domain package cannot declare.
-#[trace("TC-685")]
+#[trace("TC-685", "FR-120-AC-4")]
 #[test]
 fn a_bare_clock_collection_ranges_its_initial_count() {
     let clock = "ix://quire/native/Clock".to_owned();
@@ -5302,7 +5302,7 @@ fn option_clock_document() -> Vec<u8> {
 /// `work`, guarded `present(self.v) and value(self.v) >= 1 ms`, is enabled
 /// only from the present state once `v` reads 1 ms, and its `self.v = 0
 /// ms` resets `v` to 0, still present.
-#[trace("TC-685")]
+#[trace("TC-685", "FR-120-AC-4")]
 #[test]
 fn an_option_clock_has_a_presence_bit() {
     let world = world_over(
