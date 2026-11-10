@@ -240,12 +240,12 @@ impl Encode for Events<'_> {
                         writer.string("compound")?;
                         writer.begin_array()?;
                         for (node, exponent) in unit.compound_terms().unwrap_or_default() {
-                            self.poll()?;
+                            self.text.poll()?;
                             writer.begin_object()?;
                             writer.name("unit")?;
                             qsl_foundation::node_wire::encode_node_key(node, writer)?;
                             writer.name("exponent")?;
-                            self.integer(exponent, writer)?;
+                            self.text.integer(exponent, writer)?;
                             writer.end_object()?;
                         }
                         writer.end_array()?;

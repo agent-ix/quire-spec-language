@@ -73,6 +73,50 @@ fn accepted(request: &Value, n: &str, d: &str) {
     assert_eq!(output["value"], json!({"numerator": n, "denominator": d}));
 }
 
+#[trace("TC-636", "FR-201-AC-22", "FR-282-AC-17")]
+#[test]
+fn reward_core_keys_costs_and_rows_share_the_exact_working_storage_boundary() {
+    let request = proof(&claim(
+        &two_step(),
+        "Even",
+        ">=",
+        "rational(7,2)",
+        "m.delivered",
+    ));
+    accepted(&request, "7", "2");
+    let mut lower = 0;
+    let mut upper = request["limits"]["storage_bytes"].as_u64().unwrap();
+    while upper - lower > 1 {
+        let offered = lower + (upper - lower) / 2;
+        let mut bounded = request.clone();
+        bounded["limits"]["storage_bytes"] = json!(offered);
+        let (code, output) = run(&bounded);
+        if code == 0 {
+            upper = offered;
+        } else {
+            assert_eq!(code, 2, "{output}");
+            assert_eq!(output["status"], "stopped");
+            assert_eq!(
+                output["limit"]["setting"],
+                "certificate_check.max_working_bytes"
+            );
+            assert_eq!(output["limit"]["bound"], json!(offered));
+            assert!(output["limit"]["actual"].as_u64().unwrap() > offered);
+            assert!(output.get("value").is_none());
+            lower = offered;
+        }
+    }
+    let mut exact = request.clone();
+    exact["limits"]["storage_bytes"] = json!(upper);
+    accepted(&exact, "7", "2");
+    exact["limits"]["storage_bytes"] = json!(lower);
+    let (code, output) = run(&exact);
+    assert_eq!(code, 2, "{output}");
+    assert_eq!(output["limit"]["bound"], json!(lower));
+    assert_eq!(output["limit"]["actual"], json!(upper));
+    assert!(output.get("value").is_none());
+}
+
 #[trace("TC-636", "FR-201-AC-19", "FR-282-AC-16")]
 #[test]
 fn two_step_named_reward_checks_minimum_maximum_and_both_workload_bounds() {

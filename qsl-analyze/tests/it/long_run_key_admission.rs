@@ -27,10 +27,21 @@ fn growth_model() -> Model {
 fn growth() -> World {
     World::new(&growth_model())
 }
-fn undecided_candidate() -> World {
+fn undecided_model() -> Model {
     let mut model = growth_model();
     model.body=model.body.replace("post Grown using v on M::Server::grow { self.level = 99 }","post Grown using vc on M::Server::grow { self.level = 99 or (self.level = 10 and 1 mod (self.level - 10) = 0) }");
-    World::with_value_profile(&model)
+    model
+}
+fn undecided_candidate() -> World {
+    World::with_value_profile(&undecided_model())
+}
+fn reward_model(mut model: Model) -> Model {
+    model.body = model.body.replace(
+        "long_run_fraction holds(s.level = 99) >= rational(1,2)",
+        "expected accumulate cost until holds(s.level = 99) >= 3",
+    );
+    model.body.push_str("\nreward cost on Server::grow = 3;\n");
+    model
 }
 
 #[trace("TC-1401", "FR-201-AC-30")]
@@ -75,53 +86,55 @@ fn identity_bytes_keep_their_actual_setting_and_wire_limit() {
     assert!(wire.get("truth").is_none());
 }
 
+#[trace("TC-636", "FR-201-AC-22", "FR-282-AC-17")]
 #[trace("TC-1401", "FR-201-AC-30")]
 #[test]
 fn producer_bounds_larger_candidate_keys_after_a_small_initial_key() {
-    let world = growth();
-    let system = ModelSystem::new(world.subject().simulation).unwrap();
-    let initial = system.initial().pop().unwrap();
-    let initial_bytes = system.state_key(&initial).unwrap().0.len() as u64;
-    let cancel = Cancel::new();
-    let mut meter = Meter::new(limits().accounting).with_cancel(cancel.clone());
-    let mut storage = 0;
-    let mut admission =
-        ProbabilityKeyAdmission::new(&mut meter, &mut storage, limits().storage_bytes, &cancel);
-    let result = build_product_with_key_budget(
-        world.request("Growth", qsl_replay::ModelCheckLimits::default()),
-        IdentityLimits {
-            input_bytes: initial_bytes,
-        },
-        &mut admission,
-        &cancel,
-    );
-    let Err(BudgetedProductError::Key(error)) = result else {
-        panic!("growing candidate must stop at the owner ceiling: {result:?}")
-    };
-    let ProbabilityDocumentError::KeyEncoding(qsl_eval::simulation::EncodingRefusal::Limit(
-        exceeded,
-    )) = admission.refusal(error)
-    else {
-        panic!("expected typed identity byte exhaustion")
-    };
-    assert_eq!(exceeded.setting(), Setting::IdentityInputBytes);
-    assert_eq!(exceeded.configured_bound(), initial_bytes);
-    assert!(exceeded.actual() > u128::from(initial_bytes));
-    let mut meter = Meter::new(limits().accounting);
-    let mut storage = 0;
-    let mut admission =
-        ProbabilityKeyAdmission::new(&mut meter, &mut storage, limits().storage_bytes, &cancel);
-    let control = build_product_with_key_budget(
-        world.request("Growth", qsl_replay::ModelCheckLimits::default()),
-        IdentityLimits::default(),
-        &mut admission,
-        &cancel,
-    )
-    .unwrap();
-    let ProbBuild::Built(product) = control else {
-        panic!("positive control must build")
-    };
-    assert_eq!(product.states.len(), 2);
+    for world in [growth(), World::new(&reward_model(growth_model()))] {
+        let system = ModelSystem::new(world.subject().simulation).unwrap();
+        let initial = system.initial().pop().unwrap();
+        let initial_bytes = system.state_key(&initial).unwrap().0.len() as u64;
+        let cancel = Cancel::new();
+        let mut meter = Meter::new(limits().accounting).with_cancel(cancel.clone());
+        let mut storage = 0;
+        let mut admission =
+            ProbabilityKeyAdmission::new(&mut meter, &mut storage, limits().storage_bytes, &cancel);
+        let result = build_product_with_key_budget(
+            world.request("Growth", qsl_replay::ModelCheckLimits::default()),
+            IdentityLimits {
+                input_bytes: initial_bytes,
+            },
+            &mut admission,
+            &cancel,
+        );
+        let Err(BudgetedProductError::Key(error)) = result else {
+            panic!("growing candidate must stop at the owner ceiling: {result:?}")
+        };
+        let ProbabilityDocumentError::KeyEncoding(qsl_eval::simulation::EncodingRefusal::Limit(
+            exceeded,
+        )) = admission.refusal(error)
+        else {
+            panic!("expected typed identity byte exhaustion")
+        };
+        assert_eq!(exceeded.setting(), Setting::IdentityInputBytes);
+        assert_eq!(exceeded.configured_bound(), initial_bytes);
+        assert!(exceeded.actual() > u128::from(initial_bytes));
+        let mut meter = Meter::new(limits().accounting);
+        let mut storage = 0;
+        let mut admission =
+            ProbabilityKeyAdmission::new(&mut meter, &mut storage, limits().storage_bytes, &cancel);
+        let control = build_product_with_key_budget(
+            world.request("Growth", qsl_replay::ModelCheckLimits::default()),
+            IdentityLimits::default(),
+            &mut admission,
+            &cancel,
+        )
+        .unwrap();
+        let ProbBuild::Built(product) = control else {
+            panic!("positive control must build")
+        };
+        assert_eq!(product.states.len(), 2);
+    }
 }
 
 struct CancelLarge<'a> {
@@ -154,44 +167,49 @@ impl ModelKeyBudget for CancelLarge<'_> {
     }
 }
 
+#[trace("TC-636", "FR-201-AC-22", "FR-282-AC-17")]
 #[trace("TC-1401", "FR-201-AC-30")]
 #[test]
 fn producer_cancellation_observes_real_larger_candidate_representation() {
-    let world = undecided_candidate();
-    for cause in [
-        None,
-        Some(CancelCause::Requested),
-        Some(CancelCause::Deadline),
+    for world in [
+        undecided_candidate(),
+        World::with_value_profile(&reward_model(undecided_model())),
     ] {
-        let cancel = Cancel::new();
-        let mut meter = Meter::new(limits().accounting).with_cancel(cancel.clone());
-        let mut storage = 0;
-        let mut budget = CancelLarge {
-            inner: ProbabilityKeyAdmission::new(
-                &mut meter,
-                &mut storage,
-                limits().storage_bytes,
+        for cause in [
+            None,
+            Some(CancelCause::Requested),
+            Some(CancelCause::Deadline),
+        ] {
+            let cancel = Cancel::new();
+            let mut meter = Meter::new(limits().accounting).with_cancel(cancel.clone());
+            let mut storage = 0;
+            let mut budget = CancelLarge {
+                inner: ProbabilityKeyAdmission::new(
+                    &mut meter,
+                    &mut storage,
+                    limits().storage_bytes,
+                    &cancel,
+                ),
+                cancel: &cancel,
+                reached: false,
+                cause,
+            };
+            let result = build_product_with_key_budget(
+                world.request("Growth", qsl_replay::ModelCheckLimits::default()),
+                IdentityLimits::default(),
+                &mut budget,
                 &cancel,
-            ),
-            cancel: &cancel,
-            reached: false,
-            cause,
-        };
-        let result = build_product_with_key_budget(
-            world.request("Growth", qsl_replay::ModelCheckLimits::default()),
-            IdentityLimits::default(),
-            &mut budget,
-            &cancel,
-        );
-        assert!(
-            budget.reached,
-            "the owner must consult the caller for a larger frame candidate"
-        );
-        match (cause,result) {
+            );
+            assert!(
+                budget.reached,
+                "the owner must consult the caller for a larger frame candidate"
+            );
+            match (cause,result) {
             (None,Err(BudgetedProductError::Product(qsl_analyze::exact_probabilistic::ProductRefusal::UndecidedSuccessor(_))))=>{},
             (Some(cause),Err(BudgetedProductError::Key(error)))=>assert_eq!(budget.inner.refusal(error),ProbabilityDocumentError::Cancelled(cause)),
             (Some(cause),Err(BudgetedProductError::Product(qsl_analyze::exact_probabilistic::ProductRefusal::Stopped(qsl_analyze::exact_probabilistic::ProductStop::Cancelled(actual)))))=>assert_eq!(actual,cause),
             (cause,other)=>panic!("candidate control {cause:?} must retain actual undecided/cancellation semantics, got {other:?}"),
+        }
         }
     }
 }
