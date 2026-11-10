@@ -153,7 +153,10 @@ fn periodic_model(initial: i64, a_rewards: &str, b_reward: &str, terminal: bool)
         initial:serde_json::json!({"phase":{"integer":initial.to_string()}}),
     };
     if terminal {
-        model.body = model.body.replace("pre Stay using v on M::Server::stay { self.phase = 3 }", "pre Stay using v on M::Server::stay { false }");
+        model.body = model.body.replace(
+            "pre Stay using v on M::Server::stay { self.phase = 3 }",
+            "pre Stay using v on M::Server::stay { false }",
+        );
     }
     model
 }
@@ -222,10 +225,25 @@ fn reachable_zero_weight_components_remain_typed_unsupported() {
         write_weighted_long_run_probability_certificate(&document, limits(), &Cancel::new())
             .unwrap();
     let result = qsl_replay::check_probability_certificate_document(
-        &system, world.package.graph().probabilistic_model().claims(), &identity, &bytes, limits(), &Cancel::new(),
+        &system,
+        world.package.graph().probabilistic_model().claims(),
+        &identity,
+        &bytes,
+        limits(),
+        &Cancel::new(),
     );
-    let zero_key = &document.certificate.components.iter().find(|component| component.value == ratio(1,1)).unwrap().bias[0].state;
-    assert!(matches!(result, Err(ProbabilityDocumentError::ZeroWeightComponent { ref state }) if state == zero_key), "expected actual zero-component key");
+    let zero_key = &document
+        .certificate
+        .components
+        .iter()
+        .find(|component| component.value == ratio(1, 1))
+        .unwrap()
+        .bias[0]
+        .state;
+    assert!(
+        matches!(result, Err(ProbabilityDocumentError::ZeroWeightComponent { ref state }) if state == zero_key),
+        "expected actual zero-component key"
+    );
     let records = analyze_items(
         &Engines::qsl().unwrap(),
         vec![exact_probabilistic_item(
@@ -238,7 +256,10 @@ fn reachable_zero_weight_components_remain_typed_unsupported() {
         panic!("{:?}", records[0]);
     };
     assert_eq!(disposed.kind, DispositionKind::Unsupported);
-    assert_eq!(disposed.diagnostic.as_ref().unwrap().code.cause(), "zero-weight-component");
+    assert_eq!(
+        disposed.diagnostic.as_ref().unwrap().code.cause(),
+        "zero-weight-component"
+    );
     assert!(records[0].terminal().is_none());
     assert!(records[0].exact_probabilistic.is_none());
 }
