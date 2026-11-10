@@ -15,7 +15,7 @@ pub(crate) fn model_product_key(
     model_product_key_with_storage(binding, model_bytes, monitor, limits, cancel, &mut 0)
 }
 
-pub(super) fn model_product_key_with_storage(
+pub(crate) fn model_product_key_with_storage(
     binding: Option<&ObjectReference>,
     model_bytes: &[u8],
     monitor: Option<&qsl_eval::automaton::AutomatonStateKey>,
