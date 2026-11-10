@@ -194,6 +194,38 @@ impl<'a> Text<'a> {
         self.text_reserved();
         writer.string(&text)
     }
+    pub(super) fn unit<S: Sink + ?Sized>(
+        &self,
+        unit: Option<&quire_exact::UnitId>,
+        writer: &mut Writer<'_, S>,
+    ) -> Result<(), Error> {
+    match unit {
+            None => writer.null()?,
+            Some(unit) => {
+                writer.begin_array()?;
+                if let Some(node) = unit.declared_key() {
+                    writer.string("declared")?;
+                    qsl_foundation::node_wire::encode_node_key(node, writer)?;
+                } else {
+                    writer.string("compound")?;
+                    writer.begin_array()?;
+                    for (node, exponent) in unit.compound_terms().unwrap_or_default() {
+                        self.poll()?;
+                        writer.begin_object()?;
+                        writer.name("unit")?;
+                        qsl_foundation::node_wire::encode_node_key(node, writer)?;
+                        writer.name("exponent")?;
+                        self.integer(exponent, writer)?;
+                        writer.end_object()?;
+                    }
+                    writer.end_array()?;
+                }
+                writer.end_array()?;
+            }
+        }
+        Ok(())
+    }
+
 }
 
 impl Encode for Events<'_> {
@@ -231,30 +263,7 @@ impl Encode for Events<'_> {
             writer.string(reward.name.as_str())?;
             writer.end_array()?;
             writer.name("unit")?;
-            match &reward.unit {
-                None => writer.null()?,
-                Some(unit) => {
-                    writer.begin_array()?;
-                    if let Some(node) = unit.declared_key() {
-                        writer.string("declared")?;
-                        qsl_foundation::node_wire::encode_node_key(node, writer)?;
-                    } else {
-                        writer.string("compound")?;
-                        writer.begin_array()?;
-                        for (node, exponent) in unit.compound_terms().unwrap_or_default() {
-                            self.text.poll()?;
-                            writer.begin_object()?;
-                            writer.name("unit")?;
-                            qsl_foundation::node_wire::encode_node_key(node, writer)?;
-                            writer.name("exponent")?;
-                            self.text.integer(exponent, writer)?;
-                            writer.end_object()?;
-                        }
-                        writer.end_array()?;
-                    }
-                    writer.end_array()?;
-                }
-            }
+            self.text.unit(reward.unit.as_ref(), writer)?;
         }
         if let Some(event) = self.document.event {
             writer.name("event")?;

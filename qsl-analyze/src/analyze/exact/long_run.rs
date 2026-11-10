@@ -10,6 +10,7 @@ use crate::exact_probabilistic::{
 use qsl_replay::{
     long_run_probability_certificate_document, write_long_run_probability_certificate,
     LongRunProbabilityComponent, ProbabilityDocumentIoLimits,
+    weighted_long_run_probability_certificate_document, write_weighted_long_run_probability_certificate,
 };
 
 pub(super) fn run(
@@ -20,7 +21,7 @@ pub(super) fn run(
     let claim = request.claim;
     let ProbForm::LongRunFraction {
         bound,
-        weight: None,
+        weight,
         ..
     } = &claim.form
     else {
@@ -105,7 +106,7 @@ pub(super) fn run(
     if let Some(cause) = cancel.tripped() {
         return settled(&ExactProbBuildIssue::Cancelled(cause), subject);
     }
-    let solution = match decide_long_run_workload(&product, &predicate, None, &limits) {
+    let solution = match decide_long_run_workload(&product, &predicate, weight.as_ref().map(|name| name.as_str()), &limits) {
         Ok(solution) => solution,
         Err(UnboundedError::MaxRationalBits) => {
             return settled(
@@ -125,6 +126,8 @@ pub(super) fn run(
                 subject,
             )
         }
+        Err(UnboundedError::ZeroWeightComponent) => return EngineReport::Refused(Refusal::Unsupported("ZeroWeightComponent")),
+        Err(UnboundedError::MissingReward) => return not_yet(),
         Err(_) => return broken(),
     };
     if let Some(cause) = cancel.tripped() {
@@ -160,29 +163,18 @@ pub(super) fn run(
             return document_failure(error, subject);
         }
     }
-    let document = match long_run_probability_certificate_document(
-        &system,
-        claims,
-        &item,
-        certificate.values.clone(),
-        components,
-        document_limits,
-        cancel,
-    ) {
-        Ok(document) => document,
-        Err(error) => return document_failure(error, subject),
+    let bytes = if weight.is_some() {
+        weighted_long_run_probability_certificate_document(
+            &system, claims, &item, certificate.values.clone(), components, document_limits, cancel,
+        ).and_then(|document| write_weighted_long_run_probability_certificate(&document, document_limits, cancel))
+    } else {
+        long_run_probability_certificate_document(
+            &system, claims, &item, certificate.values.clone(), components, document_limits, cancel,
+        ).and_then(|document| write_long_run_probability_certificate(&document, document_limits, cancel))
     };
-    let checked = write_long_run_probability_certificate(&document, document_limits, cancel)
-        .and_then(|bytes| {
-            check_probability_certificate_document(
-                &system,
-                claims,
-                &item,
-                &bytes,
-                document_limits,
-                cancel,
-            )
-        });
+    let checked = bytes.and_then(|bytes| check_probability_certificate_document(
+        &system, claims, &item, &bytes, document_limits, cancel,
+    ));
     checked_report(checked, certificate, binding, None, subject)
 }
 

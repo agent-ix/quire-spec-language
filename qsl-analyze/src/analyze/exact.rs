@@ -725,6 +725,9 @@ fn document_failure(error: ProbabilityDocumentError, subject: SubjectLimits<'_>)
         )),
         ProbabilityDocumentError::KeyDenied => broken(),
         ProbabilityDocumentError::Build(issue) => settled(&issue, subject),
+        ProbabilityDocumentError::ZeroWeightComponent { .. } => {
+            EngineReport::Refused(Refusal::Unsupported("ZeroWeightComponent"))
+        }
         ProbabilityDocumentError::Unsupported | ProbabilityDocumentError::UndefinedPredicate(_) => {
             not_yet()
         }

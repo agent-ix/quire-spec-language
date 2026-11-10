@@ -10,6 +10,68 @@ pub(super) struct RewardGraph {
     pub(super) costs: BTreeMap<ProbabilityProductKey, Vec<Vec<Rational>>>,
 }
 
+/// Resolve the actual checked model reward and selected numeric unit.
+pub(super) fn objective(
+    system: &ModelSystem<'_>,
+    claim: &CheckedProbabilisticClaim,
+    name: &Identifier,
+    limits: ProbabilityDocumentLimits,
+    cancel: &Cancel,
+    storage: &mut u64,
+) -> Result<ProbabilityRewardObjective, ProbabilityDocumentError> {
+    let declarations = system.package().graph().probabilistic_model();
+    let declared = declarations
+        .rewards()
+        .iter()
+        .find(|reward| {
+            reward.name() == name.as_str() && reward.operation().model() == claim.subject.alias
+        })
+        .ok_or(ProbabilityDocumentError::Unsupported)?;
+    charge(
+        storage,
+        limits.storage_bytes,
+        name.as_str().len() as u64,
+    )?;
+    let unit = match declared.value_type() {
+        ValueType::Integer | ValueType::Int(_) => None,
+        ValueType::Quantity(unit) => {
+            if let Some(terms) = unit.compound_terms() {
+                for (_, exponent) in terms {
+                    poll_cancel(cancel)?;
+                    let bits = exponent.magnitude_bits();
+                    if bits > limits.scalar_bits {
+                        return Err(ProbabilityDocumentError::Limit {
+                            limit: ProbabilityDocumentLimit::RationalBits,
+                            bound: limits.scalar_bits,
+                            actual: bits,
+                        });
+                    }
+                    charge(
+                        storage,
+                        limits.storage_bytes,
+                        (std::mem::size_of::<(quire_exact::NodeKey, Integer)>() as u64)
+                            .saturating_add(bits.div_ceil(8)),
+                    )?;
+                }
+            }
+            Some(unit.clone())
+        }
+        _ => return Err(ProbabilityDocumentError::Unsupported),
+    };
+    let model = system
+        .package()
+        .graph()
+        .model_roots()
+        .find(|(selection, _)| **selection == claim.subject.package)
+        .map(|(_, node)| node)
+        .ok_or(ProbabilityDocumentError::Unsupported)?;
+    Ok(ProbabilityRewardObjective {
+        model,
+        name: name.clone(),
+        unit,
+    })
+}
+
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub(super) fn enumerate(
     system: &ModelSystem<'_>,
@@ -30,58 +92,8 @@ pub(super) fn enumerate(
     ProbabilityDocumentError,
 > {
     poll_cancel(cancel)?;
-    let declarations = system.package().graph().probabilistic_model();
-    let declared = declarations
-        .rewards()
-        .iter()
-        .find(|reward| {
-            reward.name() == name.as_str() && reward.operation().model() == claim.subject.alias
-        })
-        .ok_or(ProbabilityDocumentError::Unsupported)?;
     let storage = std::cell::RefCell::new(0_u64);
-    charge(
-        &mut storage.borrow_mut(),
-        limits.storage_bytes,
-        name.as_str().len() as u64,
-    )?;
-    let unit = match declared.value_type() {
-        ValueType::Integer | ValueType::Int(_) => None,
-        ValueType::Quantity(unit) => {
-            if let Some(terms) = unit.compound_terms() {
-                for (_, exponent) in terms {
-                    poll_cancel(cancel)?;
-                    let bits = exponent.magnitude_bits();
-                    if bits > limits.scalar_bits {
-                        return Err(ProbabilityDocumentError::Limit {
-                            limit: ProbabilityDocumentLimit::RationalBits,
-                            bound: limits.scalar_bits,
-                            actual: bits,
-                        });
-                    }
-                    charge(
-                        &mut storage.borrow_mut(),
-                        limits.storage_bytes,
-                        (std::mem::size_of::<(quire_exact::NodeKey, Integer)>() as u64)
-                            .saturating_add(bits.div_ceil(8)),
-                    )?;
-                }
-            }
-            Some(unit.clone())
-        }
-        _ => return Err(ProbabilityDocumentError::Unsupported),
-    };
-    let model = system
-        .package()
-        .graph()
-        .model_roots()
-        .find(|(selection, _)| **selection == claim.subject.package)
-        .map(|(_, node)| node)
-        .ok_or(ProbabilityDocumentError::Unsupported)?;
-    let objective = ProbabilityRewardObjective {
-        model,
-        name: name.clone(),
-        unit,
-    };
+    let objective = objective(system, claim, name, limits, cancel, &mut storage.borrow_mut())?;
     let mut costs = BTreeMap::new();
     let failure = std::cell::RefCell::new(None);
     let mut issue = None;
@@ -321,6 +333,68 @@ fn charge(storage: &mut u64, bound: u64, bytes: u64) -> Result<(), ProbabilityDo
     Ok(())
 }
 
+/// Evaluate one actual draw's checked numeric magnitude; missing reward is zero.
+pub(super) fn magnitude(
+    rewards: &[(Identifier, ExactValue)],
+    objective: &ProbabilityRewardObjective,
+    limits: ProbabilityDocumentLimits,
+    cancel: &Cancel,
+    storage: &mut u64,
+    remaining: &mut usize,
+) -> Result<Rational, ProbabilityDocumentError> {
+    poll_cancel(cancel)?;
+    if *remaining == 0 {
+        return Err(ProbabilityDocumentError::Limit {
+            limit: ProbabilityDocumentLimit::Edges,
+            bound: limits.edges as u64,
+            actual: (limits.edges as u64).saturating_add(1),
+        });
+    }
+    *remaining -= 1;
+    charge(
+        storage,
+        limits.storage_bytes,
+        std::mem::size_of::<Rational>() as u64,
+    )?;
+    let Some((_, value)) = rewards.iter().find(|(name, _)| name == &objective.name) else {
+        return Ok(rational(0));
+    };
+    let (numerator, denominator) = match value {
+        ExactValue::Integer(integer) => (integer.magnitude_bits(), 1),
+        ExactValue::Quantity(quantity) => (
+            quantity.magnitude().numerator().magnitude_bits(),
+            quantity.magnitude().denominator().magnitude_bits(),
+        ),
+        _ => return Err(ProbabilityDocumentError::Unsupported),
+    };
+    if numerator.max(denominator) > limits.scalar_bits {
+        return Err(ProbabilityDocumentError::Limit {
+            limit: ProbabilityDocumentLimit::RationalBits,
+            bound: limits.scalar_bits,
+            actual: numerator.max(denominator),
+        });
+    }
+    charge(
+        storage,
+        limits.storage_bytes,
+        numerator
+            .div_ceil(8)
+            .saturating_add(denominator.div_ceil(8)),
+    )?;
+    let value = match (value, &objective.unit) {
+        (ExactValue::Integer(integer), None) => Rational::from_integer(integer.clone()),
+        (ExactValue::Quantity(quantity), Some(unit)) if quantity.unit() == unit => {
+            quantity.magnitude().clone()
+        }
+        _ => return Err(ProbabilityDocumentError::Unsupported),
+    };
+    if value < rational(0) {
+        return Err(ProbabilityDocumentError::Unsupported);
+    }
+    super::document::check_scalar(&value, limits)?;
+    Ok(value)
+}
+
 #[allow(clippy::too_many_arguments)]
 fn step_costs(
     system: &ModelSystem<'_>,
@@ -341,60 +415,9 @@ fn step_costs(
             Unsteppable::UndecidedSuccessor(_) => crate::ExactProbBuildIssue::UndecidedSuccessor,
         }))
     };
-    let magnitude =
-        |rewards: &[(Identifier, ExactValue)], storage: &mut u64, remaining: &mut usize| {
-            poll_cancel(cancel)?;
-            if *remaining == 0 {
-                return Err(ProbabilityDocumentError::Limit {
-                    limit: ProbabilityDocumentLimit::Edges,
-                    bound: limits.edges as u64,
-                    actual: (limits.edges as u64).saturating_add(1),
-                });
-            }
-            *remaining -= 1;
-            charge(
-                storage,
-                limits.storage_bytes,
-                std::mem::size_of::<Rational>() as u64,
-            )?;
-            let Some((_, value)) = rewards.iter().find(|(name, _)| name == &objective.name) else {
-                return Ok(rational(0));
-            };
-            let (numerator, denominator) = match value {
-                ExactValue::Integer(integer) => (integer.magnitude_bits(), 1),
-                ExactValue::Quantity(quantity) => (
-                    quantity.magnitude().numerator().magnitude_bits(),
-                    quantity.magnitude().denominator().magnitude_bits(),
-                ),
-                _ => return Err(ProbabilityDocumentError::Unsupported),
-            };
-            if numerator.max(denominator) > limits.scalar_bits {
-                return Err(ProbabilityDocumentError::Limit {
-                    limit: ProbabilityDocumentLimit::RationalBits,
-                    bound: limits.scalar_bits,
-                    actual: numerator.max(denominator),
-                });
-            }
-            charge(
-                storage,
-                limits.storage_bytes,
-                numerator
-                    .div_ceil(8)
-                    .saturating_add(denominator.div_ceil(8)),
-            )?;
-            let value = match (value, &objective.unit) {
-                (ExactValue::Integer(integer), None) => Rational::from_integer(integer.clone()),
-                (ExactValue::Quantity(quantity), Some(unit)) if quantity.unit() == unit => {
-                    quantity.magnitude().clone()
-                }
-                _ => return Err(ProbabilityDocumentError::Unsupported),
-            };
-            if value < rational(0) {
-                return Err(ProbabilityDocumentError::Unsupported);
-            }
-            super::document::check_scalar(&value, limits)?;
-            Ok(value)
-        };
+    let magnitude = |rewards: &[(Identifier, ExactValue)], storage: &mut u64, remaining: &mut usize| {
+        magnitude(rewards, objective, limits, cancel, storage, remaining)
+    };
     if let Some(workload) = workload {
         let mut admission =
             ProbabilityKeyAdmission::new(meter, storage, limits.storage_bytes, cancel);
