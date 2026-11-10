@@ -219,6 +219,29 @@ fn quantity_reward_uses_checked_exact_conversion_and_retains_unit_identity() {
     assert_eq!(output["status"], "refused");
 }
 
+#[trace("TC-636", "FR-201-AC-22", "FR-282-AC-17")]
+#[test]
+fn source_quantity_normalization_stops_at_its_real_s3_representation_limit() {
+    let model = format!("{}\ndimension Time;\nunit ms : Time = rational(1,1);\nunit s : Time = rational(2,1) * ms;\n", draws("if lost then 1 ms else 3 ms"));
+    let request = proof(&claim(
+        &model,
+        "every scheduler",
+        "<=",
+        "2 s",
+        "m.attempts = 1",
+    ));
+    accepted(&request, "2", "1");
+    let mut limited = request;
+    limited["limits"]["stages"]["s3.rational_bits"] = json!(2);
+    let (code, output) = run(&limited);
+    assert_eq!(code, 2, "{output}");
+    assert_eq!(output["status"], "stopped");
+    assert_eq!(output["limit"]["setting"], "s3.rational_bits");
+    assert_eq!(output["limit"]["bound"], json!(2));
+    assert!(output["limit"]["actual"].as_u64().unwrap() > 2);
+    assert!(output.get("value").is_none());
+}
+
 #[trace("TC-636", "FR-201-AC-21", "FR-201-AC-22", "FR-282-AC-17")]
 #[test]
 fn reward_objective_keys_coverage_heights_and_caller_stops_are_checked() {
@@ -465,7 +488,7 @@ fn cancellation_inside_qualified_reward_evaluation_stops_and_old_actions_still_w
         assert_eq!(
             calls.load(Ordering::Relaxed),
             2,
-            "the callback runs inside a qualified reward meter"
+            "the callback runs inside qualified evaluation"
         );
         assert_eq!(system.actions(&initial).unwrap().unwrap()[0].draws.len(), 2);
     }

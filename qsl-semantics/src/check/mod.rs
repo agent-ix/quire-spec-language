@@ -2938,6 +2938,7 @@ impl PackageDeclarations {
         };
         let contract_meter_limits = quire_exact::ScalarLimits {
             work_units: limits.work_budget(),
+            integer_bits: limits.rational_bits(),
             ..family::SCALAR_LIMITS_UNLIMITED
         };
         let mut contract_meter =
