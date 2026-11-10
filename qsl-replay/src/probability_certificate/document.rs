@@ -1118,9 +1118,10 @@ fn admit_reward_with_identity(
             ) {
                 Ok(_) => Ok(()),
                 Err(error) if legacy_reward_may_retry(&error) => {
-                    let stopped_predicate_failed =
-                        matches!(&error, ProbabilityDocumentError::UndefinedPredicate(_))
-                            || matches!(&error, ProbabilityDocumentError::Build(issue)
+                    let stopped_predicate_failed = matches!(
+                        &error,
+                        ProbabilityDocumentError::UndefinedPredicate(_)
+                    ) || matches!(&error, ProbabilityDocumentError::Build(issue)
                                 if matches!(issue.as_ref(), crate::ExactProbBuildIssue::Predicate(_)));
                     match mdp::admit_reward(
                         system,
