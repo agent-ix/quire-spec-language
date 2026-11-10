@@ -7,8 +7,8 @@ use crate::simulation::EncodingRefusal;
 
 /// Cumulative caller admission shared by raw model-state keys in an operation.
 ///
-/// Storage and work use [`IntegerDecimalBudget`]'s full requested capacity and
-/// primitive work units. Denial causes stay with the caller. No reservation is
+/// Storage uses [`IntegerDecimalBudget`]'s full requested capacities. Work is
+/// admitted at the stages below. Denial causes stay with the caller. No reservation is
 /// refunded. Integer admission is representation policy, not probability range
 /// or the certificate's rational-value bit bound.
 ///

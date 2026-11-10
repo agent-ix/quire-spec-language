@@ -606,7 +606,7 @@ impl ModelSystem<'_> {
         self.actions_impl(state, Some(cancel), None)
     }
 
-    /// Actions with cumulative admission for internal model identity keys.
+    /// Actions with cumulative admission for internal raw model-state keys.
     ///
     /// # Errors
     /// Identity admission and ordinary expansion stops remain distinct.
@@ -822,7 +822,7 @@ impl ModelSystem<'_> {
         self.weighted_steps_impl(state, workload, Some(cancel), None)
     }
 
-    /// Weighted steps with cumulative admission for internal identity keys.
+    /// Weighted steps with cumulative admission for internal raw state keys.
     ///
     /// # Errors
     /// Identity admission and ordinary expansion stops remain distinct.
