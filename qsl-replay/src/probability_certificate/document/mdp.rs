@@ -108,7 +108,13 @@ pub fn cyclic_mdp_probability_certificate_document(
     limits: ProbabilityDocumentLimits,
     cancel: &Cancel,
 ) -> Result<ProbabilityProofDocument, ProbabilityDocumentError> {
-    if !matches!(bind_claim(claims, item, cancel)?.form, ProbForm::Reach { target: ReachTarget::Eventually(_), .. }) {
+    if !matches!(
+        bind_claim(claims, item, cancel)?.form,
+        ProbForm::Reach {
+            target: ReachTarget::Eventually(_),
+            ..
+        }
+    ) {
         return Err(ProbabilityDocumentError::Unsupported);
     }
     construct(

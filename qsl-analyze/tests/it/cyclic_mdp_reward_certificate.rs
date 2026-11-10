@@ -43,7 +43,10 @@ fn native_mixed_infinity_is_unsupported_even_with_finite_initial_minimum() {
         panic!("must not emit evidence: {records:?}");
     };
     assert_eq!(disposal.kind, DispositionKind::Unsupported);
-    assert_eq!(disposal.diagnostic.as_ref().unwrap().code.cause(), "mixed-infinite-coverage");
+    assert_eq!(
+        disposal.diagnostic.as_ref().unwrap().code.cause(),
+        "mixed-infinite-coverage"
+    );
     assert!(records[0].terminal().is_none());
 }
 #[trace("TC-1405", "FR-201-AC-45", "FR-201-AC-46")]
