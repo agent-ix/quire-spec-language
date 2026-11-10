@@ -23,7 +23,9 @@ mod domain;
 pub(crate) mod encode;
 mod footprints;
 mod frames;
+mod key_budget;
 mod letters;
+pub use key_budget::{ModelKeyBudget, ModelKeyError};
 pub(crate) mod probabilistic;
 mod refine;
 mod state_predicate;
@@ -953,6 +955,32 @@ impl<'a> ModelSystem<'a> {
             &self.canonical,
             &encode::model_key(&self.model, &state.state, self.typing()).0,
             identity_limits(),
+        )
+    }
+
+    /// Canonical raw model identity bytes under cumulative caller admission.
+    ///
+    /// `identity` bounds raw identity bytes, independently of any certificate
+    /// transport limit. The budget and original cancellation token are shared
+    /// across calls; this method makes no duplicate state-key buffer.
+    ///
+    /// # Errors
+    /// [`ModelKeyError`] preserves caller denial, cancellation, identity byte
+    /// refusal and actual allocation failure separately.
+    pub fn state_key_bytes_with_budget(
+        &self,
+        state: &ModelSimState,
+        identity: IdentityLimits,
+        budget: &mut dyn ModelKeyBudget,
+        cancel: &quire_exact::Cancel,
+    ) -> Result<Vec<u8>, ModelKeyError> {
+        encode::bounded::model_bytes(
+            &self.model,
+            &state.state,
+            self.typing(),
+            identity,
+            budget,
+            cancel,
         )
     }
 

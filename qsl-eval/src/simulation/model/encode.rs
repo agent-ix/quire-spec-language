@@ -25,6 +25,7 @@ use qsl_semantics::check::VariantTypeDeclaration;
 use qsl_semantics::model::state::{ModelState, StateField, StateModel};
 use quire_checked::key::DeclarationKey;
 
+pub(super) mod bounded;
 mod projection;
 
 /// One JSON value in FR-181's typed canonical form, before it is written.

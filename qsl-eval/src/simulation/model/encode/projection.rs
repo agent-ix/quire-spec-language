@@ -513,7 +513,10 @@ fn entry<S: ValueSink>(
     sink.end_object()
 }
 
-fn project_population<S: ValueSink>(sink: &mut S, source: &DeclarationKey) -> Result<(), S::Error> {
+pub(super) fn project_population<S: ValueSink>(
+    sink: &mut S,
+    source: &DeclarationKey,
+) -> Result<(), S::Error> {
     tagged(sink, "text", |sink| {
         sink.name("value")?;
         sink.scalar(Scalar::DeclarationKey(source))
