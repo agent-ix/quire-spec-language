@@ -144,6 +144,35 @@ label, or `empty-path` without a label.
 This is a CST library projection, not an extension to diagnostic wire
 members or a replacement for native-v1's retained span requirement above.
 
+### Borrowed native-diagnostic projection of the same refusal
+
+When a caller needs both the retained native diagnostic and the complete
+diagnostic above, Foundation shall expose its existing conversion as
+`qsl_foundation::diagnostic::source_refusal(refusal: &SourceReadRefusal, bytes: &[u8], byte_limit: usize) -> Box<Diagnostic>`.
+The projection borrows the existing typed refusal and offered bytes. It
+shall neither admit a source nor repeat label, encoding or byte-budget
+validation. The caller can project the native diagnostic, then pass the
+same owned refusal to CST without constructing a second refusal or a
+dummy source.
+
+The native projection shall retain the source identity, path and message,
+set phase `Source`, and use the existing native code mapping: blank-label
+and empty-path to `InvalidSourceIdentity`, reference-invariant to
+`RuntimeInvariant`, byte-budget to `StageLimitExceeded`, invalid UTF-8 to
+`InvalidUtf8`, and BOM or NUL to `InvalidSyntax`. Its `identity_cause()`
+shall retain the exact blank label or empty-path cause and shall be absent
+for the other causes. Only byte-budget carries
+`SyntaxLimit::SourceBytes { bound: byte_limit }`.
+
+The native span shall render the refusal's original region over the
+offered bytes with the existing offered-byte coordinate renderer. If
+there is no region or it cannot be rendered, the native span retains the
+existing zero-width origin fallback: byte 0, line 1, column 1. This
+fallback belongs only to the retained native diagnostic; the borrowed
+refusal's region is unchanged and CST still preserves `None` as `None`.
+`Source::read` shall use this same borrowed projection for its typed
+refusals, with no second conversion.
+
 ### Line and column are derived when rendered
 
 A `SourceRegion` holds bytes only. A renderer derives the one-based line and
@@ -248,6 +277,7 @@ names it with the same two labels (QSpec FR-004).
 | FR-001-AC-13 | A caller outside CST constructs a typed blank-label refusal using `first_blank_label` and the existing public refusal fields, then calls `source_refusal` without bytes or an admitted source. For empty, space-only and U+3000 labels, including both labels blank, the projected identity cause retains the first blank label in authority-then-identity order; U+200B is not blank. An empty-path refusal retains `empty-path` with no label. | Test |
 | FR-001-AC-14 | For every `SourceReadCause`, public projection gives the code and complete cause in the mapping above, retains source identity, path, message and optional region exactly, sets phase `Source` and has no related regions. Cases with no region retain `None`; located UTF-8, BOM and NUL cases retain their original reference and endpoints. | Test |
 | FR-001-AC-15 | Projecting `ByteBudget` under ceilings below and above 1 MiB retains exactly the supplied bound as `SyntaxLimit::SourceBytes`; projecting every other cause under either ceiling has no syntax limit. Source refusals returned through `read_source` have the same projected fields as direct public projection of the corresponding `Source::read_typed` refusal with the same ceiling. | Test |
+| FR-001-AC-16 | A caller outside Foundation borrows each `SourceReadCause` refusal through the public native projection, then consumes that same refusal through CST's projection. The native code, phase, offered identity, path, message and identity cause match the native mapping above; only byte-budget carries precisely the supplied ceiling, below or above 1 MiB. Located invalid-UTF-8, BOM and NUL cases retain their offered-byte coordinates; an absent or unrenderable region uses the unchanged native origin fallback while the original typed region and CST projection remain unchanged. For every refusal reachable through `Source::read_typed`, direct borrowed native projection and `Source::read` agree on every native diagnostic field. | Test |
 
 The cause and `label` reach the native `Diagnostic`,
 the `parse`/`format` refusal line, the native-run output, the
