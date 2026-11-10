@@ -135,7 +135,7 @@ pub(super) fn enumerate(
             })
     };
     let collect_costs = std::cell::Cell::new(profile == RewardProfile::Acyclic);
-    let explore = |target: Option<&CheckedPredicate>, stop_at_target: bool| {
+    let mut explore = |target: Option<&CheckedPredicate>, stop_at_target: bool| {
         enumerate_model_graph_visiting(
             system,
             target,
@@ -371,7 +371,7 @@ fn progress_ranks(
     meter: &mut quire_exact::Meter,
 ) -> Result<BTreeMap<ProbabilityProductKey, u64>, ProbabilityDocumentError> {
     let mut reverse = BTreeMap::<&ProbabilityProductKey, Vec<&ProbabilityProductKey>>::new();
-    let mut ranks = BTreeMap::new();
+    let mut ranks = BTreeMap::<ProbabilityProductKey, u64>::new();
     let mut pending = VecDeque::new();
     for (key, state) in &graph.states {
         visit(cancel, meter)?;
