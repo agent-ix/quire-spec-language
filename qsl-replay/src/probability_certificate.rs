@@ -578,11 +578,15 @@ fn enumerate_model_graph_with_keys_and_reservation<P: StatePredicate>(
         let choices = if terminal.is_some() && stop_at_target {
             Vec::new()
         } else {
-            #[cfg(feature = "test-support")]
-            observe(ProbabilityWitnessSemanticPhase::ExpansionEntered);
-            let distributions = model_distributions(system, &state, workload, cancel, failure)?;
-            #[cfg(feature = "test-support")]
-            observe(ProbabilityWitnessSemanticPhase::ExpansionReturned);
+            let distributions = model_distributions_observing(
+                system,
+                &state,
+                workload,
+                cancel,
+                #[cfg(feature = "test-support")]
+                observe,
+                failure,
+            )?;
             if distributions.is_empty() {
                 reserve(std::mem::size_of::<(ProbabilityProductKey, CheckerState)>())?;
                 states.insert(
@@ -681,6 +685,25 @@ fn model_distributions(
     cancel: &Cancel,
     failure: &mut impl FnMut(crate::ExactProbBuildIssue),
 ) -> Result<Vec<Vec<(Rational, ModelSimState)>>, ExactProbabilityGraphError> {
+    model_distributions_observing(
+        system,
+        state,
+        workload,
+        cancel,
+        #[cfg(feature = "test-support")]
+        &mut |_| {},
+        failure,
+    )
+}
+
+fn model_distributions_observing(
+    system: &ModelSystem<'_>,
+    state: &ModelSimState,
+    workload: Option<&Workload>,
+    cancel: &Cancel,
+    #[cfg(feature = "test-support")] observe: &mut dyn FnMut(ProbabilityWitnessSemanticPhase),
+    failure: &mut impl FnMut(crate::ExactProbBuildIssue),
+) -> Result<Vec<Vec<(Rational, ModelSimState)>>, ExactProbabilityGraphError> {
     let mut expansion = |stop| {
         if let Err(error) = poll_cancel(cancel) {
             return error;
@@ -689,20 +712,24 @@ fn model_distributions(
         ExactProbabilityGraphError::ExpansionRefused
     };
     if let Some(workload) = workload {
-        let steps = system
-            .weighted_steps_with_cancel(state, workload, cancel)
-            .map_err(&mut expansion)?
-            .map_err(|stop| {
-                failure(match stop {
-                    qsl_eval::simulation::model::Unsteppable::NotMarkov(_) => {
-                        crate::ExactProbBuildIssue::NotMarkov
-                    }
-                    qsl_eval::simulation::model::Unsteppable::UndecidedSuccessor(_) => {
-                        crate::ExactProbBuildIssue::UndecidedSuccessor
-                    }
-                });
-                ExactProbabilityGraphError::ExpansionRefused
-            })?;
+        #[cfg(feature = "test-support")]
+        observe(ProbabilityWitnessSemanticPhase::ExpansionEntered);
+        let result = system.weighted_steps_with_cancel(state, workload, cancel);
+        #[cfg(feature = "test-support")]
+        if cancel.tripped().is_none() {
+            observe(ProbabilityWitnessSemanticPhase::ExpansionReturned);
+        }
+        let steps = result.map_err(&mut expansion)?.map_err(|stop| {
+            failure(match stop {
+                qsl_eval::simulation::model::Unsteppable::NotMarkov(_) => {
+                    crate::ExactProbBuildIssue::NotMarkov
+                }
+                qsl_eval::simulation::model::Unsteppable::UndecidedSuccessor(_) => {
+                    crate::ExactProbBuildIssue::UndecidedSuccessor
+                }
+            });
+            ExactProbabilityGraphError::ExpansionRefused
+        })?;
         if steps.iter().any(|step| {
             matches!(
                 step.transition,
@@ -720,13 +747,17 @@ fn model_distributions(
             .map(|step| (step.probability, step.post))
             .collect()]);
     }
-    let actions = system
-        .actions_with_cancel(state, cancel)
-        .map_err(&mut expansion)?
-        .map_err(|_| {
-            failure(crate::ExactProbBuildIssue::UndecidedSuccessor);
-            ExactProbabilityGraphError::ExpansionRefused
-        })?;
+    #[cfg(feature = "test-support")]
+    observe(ProbabilityWitnessSemanticPhase::ExpansionEntered);
+    let result = system.actions_with_cancel(state, cancel);
+    #[cfg(feature = "test-support")]
+    if cancel.tripped().is_none() {
+        observe(ProbabilityWitnessSemanticPhase::ExpansionReturned);
+    }
+    let actions = result.map_err(&mut expansion)?.map_err(|_| {
+        failure(crate::ExactProbBuildIssue::UndecidedSuccessor);
+        ExactProbabilityGraphError::ExpansionRefused
+    })?;
     let mut distributions = Vec::with_capacity(actions.len());
     for action in actions {
         poll_cancel(cancel)?;
