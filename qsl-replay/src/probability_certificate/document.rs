@@ -982,9 +982,10 @@ pub fn probability_certificate_document(
     let original = subject_graph(system, claims, item, limits, cancel, false, &mut meter);
     let cyclic_dtmc = matches!(
         &original,
-        Err(ProbabilityDocumentError::Graph(
-            ExactProbabilityGraphError::Cycle
-        ))
+        Err(ProbabilityDocumentError::Unsupported)
+            | Err(ProbabilityDocumentError::Graph(
+                ExactProbabilityGraphError::Cycle
+            ))
     );
     let (graph, optimization, _, bounded_ranks, event, failures, reward) = if cyclic_dtmc {
         subject_graph(system, claims, item, limits, cancel, true, &mut meter)?

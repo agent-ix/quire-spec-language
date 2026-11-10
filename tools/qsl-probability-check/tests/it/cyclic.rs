@@ -224,7 +224,12 @@ fn explicit_cyclic_profile_admits_acyclic_dtmc_and_target_precedence() {
         ("true", ">=", "rational(1,2)"),
         ("m.delivered", "<=", "rational(1,2)"),
     ] {
-        let base = model(false).replace("self.attempts = 2 and not self.delivered", "true");
+        let base = model(false)
+            .replace("self.attempts = 2 and not self.delivered", "true")
+            .replace(
+                "pre A using v on M::Msg::send_a { true }",
+                "pre A using v on M::Msg::send_a { false }",
+            );
         let request = proof(&claim(&base, "every scheduler", op, threshold, target));
         assert_eq!(
             document(&request)["objective"]["profile"],
@@ -398,7 +403,12 @@ fn native_acyclicity_probe_uses_native_counts_and_working_storage_without_transp
     let mut exact = ExactProbLimits::default();
     exact.document.bytes = 0;
     assert_eq!(probe(&source, exact, &Cancel::new()), Ok(false));
-    let terminal = source.replace("self.attempts = 2 and not self.delivered", "true");
+    let terminal = source
+        .replace("self.attempts = 2 and not self.delivered", "true")
+        .replace(
+            "pre A using v on M::Msg::send_a { true }",
+            "pre A using v on M::Msg::send_a { false }",
+        );
     assert_eq!(probe(&terminal, exact, &Cancel::new()), Ok(true));
     exact.model.limits.max_states = 0;
     assert!(matches!(
