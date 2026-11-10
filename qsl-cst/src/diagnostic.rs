@@ -3,7 +3,9 @@
 
 use qsl_foundation::diagnostic::LimitKind;
 use qsl_foundation::source::provenance::SourceRegion;
-use qsl_foundation::source::{SourceLabel, SourceReadCause, BLANK_LABEL_TAG, EMPTY_PATH_TAG};
+use qsl_foundation::source::{
+    SourceLabel, SourceReadCause, SourceReadRefusal, BLANK_LABEL_TAG, EMPTY_PATH_TAG,
+};
 use qsl_foundation::{Phase, Source, SourceIdentity, SyntaxLimit};
 
 /// Compatibility name for the crate's pre-existing diagnostic code type. The
@@ -278,47 +280,54 @@ pub fn read_source(
     bytes: &[u8],
     byte_limit: usize,
 ) -> Result<Source, Box<CompleteDiagnostic>> {
-    Source::read_typed(identity, path, bytes, byte_limit).map_err(|refusal| {
-        let limit = (refusal.cause == SourceReadCause::ByteBudget)
-            .then_some(SyntaxLimit::SourceBytes { bound: byte_limit });
-        let (code, cause) = match refusal.cause {
-            SourceReadCause::BlankLabel { label } => (
-                CompleteCode::InvalidSourceIdentity,
-                CompleteCause::Host(HostCause::BlankLabel { label }),
-            ),
-            SourceReadCause::EmptyPath => (
-                CompleteCode::InvalidSourceIdentity,
-                CompleteCause::Host(HostCause::EmptyPath),
-            ),
-            SourceReadCause::ReferenceInvariant => (
-                CompleteCode::RuntimeInvariant,
-                CompleteCause::EstablishedInvariantBroken,
-            ),
-            // The source's own byte ceiling is `SyntaxLimit::SourceBytes`,
-            // one of the four kinds the catalog admits.
-            SourceReadCause::ByteBudget => (
-                CompleteCode::StageLimitExceeded,
-                CompleteCause::StageLimit(LimitKind::InputBytes),
-            ),
-            SourceReadCause::InvalidUtf8 => (
-                CompleteCode::InvalidUtf8,
-                CompleteCause::Host(HostCause::InvalidUtf8),
-            ),
-            SourceReadCause::Bom | SourceReadCause::Nul => {
-                (CompleteCode::InvalidSyntax, CompleteCause::InvalidToken)
-            }
-        };
-        Box::new(CompleteDiagnostic {
-            phase: Phase::Source,
-            code,
-            cause,
-            source: refusal.error.source,
-            path: refusal.error.path,
-            region: refusal.error.region,
-            related: Vec::new(),
-            message: refusal.error.message,
-            limit,
-        })
+    Source::read_typed(identity, path, bytes, byte_limit)
+        .map_err(|refusal| source_refusal(*refusal, byte_limit))
+}
+
+/// Project a typed source refusal without reading bytes or admitting a source.
+///
+/// Retains the offered identity, path, human detail and optional region exactly.
+/// Only a byte-budget refusal carries `byte_limit` as its source-byte ceiling.
+pub fn source_refusal(refusal: SourceReadRefusal, byte_limit: usize) -> Box<CompleteDiagnostic> {
+    let limit = (refusal.cause == SourceReadCause::ByteBudget)
+        .then_some(SyntaxLimit::SourceBytes { bound: byte_limit });
+    let (code, cause) = match refusal.cause {
+        SourceReadCause::BlankLabel { label } => (
+            CompleteCode::InvalidSourceIdentity,
+            CompleteCause::Host(HostCause::BlankLabel { label }),
+        ),
+        SourceReadCause::EmptyPath => (
+            CompleteCode::InvalidSourceIdentity,
+            CompleteCause::Host(HostCause::EmptyPath),
+        ),
+        SourceReadCause::ReferenceInvariant => (
+            CompleteCode::RuntimeInvariant,
+            CompleteCause::EstablishedInvariantBroken,
+        ),
+        // The source's own byte ceiling is `SyntaxLimit::SourceBytes`,
+        // one of the four kinds the catalog admits.
+        SourceReadCause::ByteBudget => (
+            CompleteCode::StageLimitExceeded,
+            CompleteCause::StageLimit(LimitKind::InputBytes),
+        ),
+        SourceReadCause::InvalidUtf8 => (
+            CompleteCode::InvalidUtf8,
+            CompleteCause::Host(HostCause::InvalidUtf8),
+        ),
+        SourceReadCause::Bom | SourceReadCause::Nul => {
+            (CompleteCode::InvalidSyntax, CompleteCause::InvalidToken)
+        }
+    };
+    Box::new(CompleteDiagnostic {
+        phase: Phase::Source,
+        code,
+        cause,
+        source: refusal.error.source,
+        path: refusal.error.path,
+        region: refusal.error.region,
+        related: Vec::new(),
+        message: refusal.error.message,
+        limit,
     })
 }
 
