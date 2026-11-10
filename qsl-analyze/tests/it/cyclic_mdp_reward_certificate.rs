@@ -143,7 +143,7 @@ fn initial_target_stops_query_and_real_reward_phases_preserve_cancellation() {
     assert_eq!(document.document().values.len(), 1);
     assert_eq!(
         document.document().values[0].value,
-        quire_exact::Rational::from_integer(0.into())
+        quire_exact::Rational::from_integer(0_i64.into())
     );
     assert_eq!(document.document().ranking[0].1, 0);
 }

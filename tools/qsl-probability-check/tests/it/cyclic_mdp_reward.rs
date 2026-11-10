@@ -258,13 +258,13 @@ fn checked_comparison_unit_converts_exactly_and_rejects_foreign_unit_identity() 
         false,
         "1 ms * 1 ms",
         "2 ms * 1 ms",
-        "<= 4 ms * 1 ms",
+        "<= 4 square",
         "m.delivered",
     )
     .replace(
         "reward cost on Msg::send_c = 100;",
         "reward cost on Msg::send_c = 100 ms * 1 ms;",
-    ) + "\ndimension Time;\nunit ms : Time = rational(1,1);\n";
+    ) + "\ndimension Time;\nunit ms : Time = rational(1,1);\ndimension Square = Time * Time;\nunit square : Square = rational(1,1);\n";
     let request = proof(&compound);
     assert_eq!(run(&request).0, 0);
     assert_eq!(document(&request)["objective"]["unit"][0], "compound");
