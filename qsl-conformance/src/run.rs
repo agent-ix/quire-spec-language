@@ -419,7 +419,7 @@ fn run_execute(
         backend: choice,
     };
     let result = run_with_backends(
-        SourceIdentity::new("quire", input.unit.file_name),
+        SourceIdentity::new(parameters.source_authority, parameters.source_identity),
         parameters.package_name.to_owned(),
         input.unit.file_name,
         input.unit.bytes,

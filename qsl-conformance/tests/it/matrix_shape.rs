@@ -123,10 +123,16 @@ fn source_labels_are_explicit_and_independent_of_file_names() {
     };
     input.unit.file_name = "renamed-input.native";
     let second = run_case(&case).expect("the renamed refusal case runs");
-    assert_eq!(first, second, "physical path does not replace the source label");
+    assert_eq!(
+        first, second,
+        "physical path does not replace the source label"
+    );
     let mut labels = Vec::new();
     collect_source_identities(&crate::support::written(&second), &mut labels);
-    assert!(!labels.is_empty(), "the refusal carries a source diagnostic");
+    assert!(
+        !labels.is_empty(),
+        "the refusal carries a source diagnostic"
+    );
     for (authority, identity) in labels {
         assert_eq!(authority, "conformance-author");
         assert_eq!(identity, "rules/check-refusal");
