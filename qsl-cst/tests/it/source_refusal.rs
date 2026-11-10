@@ -126,8 +126,7 @@ fn projection_preserves_each_cause_and_its_original_context() {
         for (cause, code, complete_cause, bytes) in cases {
             let region = bytes.map(|bytes| {
                 Source::read_typed(source.clone(), "original.native", bytes, usize::MAX)
-                    .err()
-                    .expect("invalid bytes")
+                    .expect_err("invalid bytes")
                     .error
                     .region
                     .expect("located refusal")
@@ -185,8 +184,7 @@ fn read_source_uses_the_public_projection_for_actual_refusals() {
         ] {
             let source = SourceIdentity::new(authority, identity);
             let typed = Source::read_typed(source.clone(), path, bytes, ceiling)
-                .err()
-                .expect("source refusal");
+                .expect_err("source refusal");
             let direct = diagnostic::source_refusal(*typed, ceiling);
             let through_reader =
                 diagnostic::read_source(source, path, bytes, ceiling).expect_err("source refusal");
