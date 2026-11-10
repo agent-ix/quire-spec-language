@@ -247,6 +247,17 @@ fn source_failure(error: ProbabilitySourceError) -> Value {
         )) => Some(
             json!({"setting":limit.setting().name(),"bound":limit.configured_bound(),"actual":limit.actual().to_string()}),
         ),
+        ProbabilitySourceError::Compile(
+            qsl_foundation::diagnostic::StageFailure::Limit(limit)
+            | qsl_foundation::diagnostic::StageFailure::LimitWithPayload(limit, _),
+        ) => {
+            let actual = serde_json::Number::from_u128(limit.actual())
+                .map(Value::Number)
+                .unwrap_or_else(|| Value::String(limit.actual().to_string()));
+            Some(
+                json!({"setting":limit.setting().name(), "bound":limit.configured_bound(), "actual":actual}),
+            )
+        }
         ProbabilitySourceError::Document(Document::Limit {
             limit,
             bound,

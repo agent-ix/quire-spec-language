@@ -41,10 +41,20 @@ pub(super) fn compile_source(
     spine::CheckedUnit,
     qsl_semantics::model::intake::PackageInput,
 ) {
+    compile_source_with(source, DOMAIN)
+}
+
+pub(super) fn compile_source_with(
+    source: &str,
+    domain: &[u8],
+) -> (
+    spine::CheckedUnit,
+    qsl_semantics::model::intake::PackageInput,
+) {
     let identity = SourceIdentity::new("test", "bounded-certificate-source");
     let limits = SpineLimits::default();
     let cancel = Cancel::new();
-    let packages = package_input([DOMAIN]).unwrap();
+    let packages = package_input([domain]).unwrap();
     let parsed = spine::parse(
         &ParseRequest {
             source: &identity,
@@ -77,10 +87,19 @@ pub(super) fn request(
     snapshot: &[u8],
     exact: ExactProbLimits,
 ) -> (Option<Value>, Settlement) {
+    request_with(source, snapshot, exact, DOMAIN)
+}
+
+pub(super) fn request_with(
+    source: &str,
+    snapshot: &[u8],
+    exact: ExactProbLimits,
+    domain: &[u8],
+) -> (Option<Value>, Settlement) {
     let identity = SourceIdentity::new("test", "bounded-certificate-source");
     let limits = SpineLimits::default();
     let cancel = Cancel::new();
-    let (checked, packages) = compile_source(source);
+    let (checked, packages) = compile_source_with(source, domain);
     let package = checked.package();
     let claim = package
         .graph()
@@ -185,7 +204,7 @@ pub(super) fn request(
         "package_name":"bounded-fixture",
         "item":{"node_id":qsl_foundation::node_wire::node_key_to_json(item.node()).unwrap(), "model":item.model().map(|model|model.as_str()), "ordinal":item.ordinal()},
         "byte_provision":[["test","bounded-certificate-source",source.as_bytes()]],
-        "documents":[DOMAIN,snapshot],
+        "documents":[domain,snapshot],
         "initial":[{"authority":"test","identity":"s0"}],
         "universes":[{"population":{"package":"test/link","node":"ix://test/link/msgs"},"keys":["m"]}],
         "certificate":String::from_utf8(bytes.to_vec()).unwrap(),

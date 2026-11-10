@@ -12,14 +12,42 @@ pub(crate) fn model_product_key(
     limits: ProbabilityDocumentIoLimits,
     cancel: &Cancel,
 ) -> Result<ProbabilityProductKey, ProbabilityDocumentError> {
+    model_product_key_with_storage(binding, model_bytes, monitor, limits, cancel, &mut 0)
+}
+
+pub(crate) fn model_product_key_with_storage(
+    binding: Option<&ObjectReference>,
+    model_bytes: &[u8],
+    monitor: Option<&qsl_eval::automaton::AutomatonStateKey>,
+    limits: ProbabilityDocumentIoLimits,
+    cancel: &Cancel,
+    storage: &mut u64,
+) -> Result<ProbabilityProductKey, ProbabilityDocumentError> {
     poll(cancel)?;
-    let admission = RefCell::new(writer::Admission::new(limits.storage_bytes, cancel));
-    let model = read(model_bytes, limits.bytes, &admission)?;
+    let admission = RefCell::new(writer::Admission::with_used(
+        limits.storage_bytes,
+        cancel,
+        *storage,
+    ));
+    let result = encode_product(binding, model_bytes, monitor, limits, cancel, &admission);
+    *storage = admission.borrow().used();
+    result
+}
+
+fn encode_product(
+    binding: Option<&ObjectReference>,
+    model_bytes: &[u8],
+    monitor: Option<&qsl_eval::automaton::AutomatonStateKey>,
+    limits: ProbabilityDocumentIoLimits,
+    cancel: &Cancel,
+    admission: &RefCell<writer::Admission<'_>>,
+) -> Result<ProbabilityProductKey, ProbabilityDocumentError> {
+    let model = read(model_bytes, limits.bytes, admission)?;
     if !model_form(model.root()) {
         return Err(ProbabilityDocumentError::Malformed);
     }
     let monitor = monitor
-        .map(|key| read(key.as_bytes(), limits.bytes, &admission))
+        .map(|key| read(key.as_bytes(), limits.bytes, admission))
         .transpose()?;
     if monitor
         .as_ref()
@@ -32,7 +60,7 @@ pub(crate) fn model_product_key(
         model: model.root(),
         monitor: monitor.as_ref().map(|key| key.root()),
     };
-    let bytes = writer::encode_reserved(&product, limits.bytes, &admission)?;
+    let bytes = writer::encode_reserved(&product, limits.bytes, admission)?;
     poll(cancel)?;
     Ok(ProbabilityProductKey::from_canonical_bytes(bytes))
 }
@@ -245,6 +273,74 @@ pub(super) fn admit_parts(parts: &[NodeRef<'_>]) -> Result<(), ProbabilityDocume
 mod tests {
     use super::*;
     use ix_trace_rs::trace;
+
+    #[trace("TC-636", "FR-201-AC-22", "FR-282-AC-17")]
+    #[test]
+    fn model_keys_share_the_exact_cumulative_graph_storage_ceiling() {
+        let models = [
+            super::super::tests::model_bytes(0),
+            super::super::tests::model_bytes(1),
+        ];
+        let cancel = Cancel::new();
+        let defaults = ProbabilityDocumentIoLimits::default();
+        let mut used = 0;
+        let mut expected = Vec::new();
+        let mut individual = 0;
+        for model in models {
+            let mut own = 0;
+            let key =
+                model_product_key_with_storage(None, model, None, defaults, &cancel, &mut own)
+                    .unwrap();
+            individual = individual.max(own);
+            expected.push(key);
+            model_product_key_with_storage(None, model, None, defaults, &cancel, &mut used)
+                .unwrap();
+        }
+        let required = used;
+        assert!(
+            required > individual,
+            "shared graph storage must accumulate across distinct model keys"
+        );
+        for bound in [required, required - 1, individual] {
+            let limits = ProbabilityDocumentIoLimits {
+                storage_bytes: bound,
+                ..defaults
+            };
+            let mut used = 0;
+            for (index, model) in models.into_iter().enumerate() {
+                let result =
+                    model_product_key_with_storage(None, model, None, limits, &cancel, &mut used);
+                if index == 0 || bound == required {
+                    assert_eq!(result.unwrap(), expected[index]);
+                } else {
+                    assert!(matches!(
+                        result,
+                        Err(ProbabilityDocumentError::Limit {
+                            limit: ProbabilityDocumentLimit::StorageBytes,
+                            bound: actual_bound,
+                            actual,
+                        }) if actual_bound == bound && actual > bound
+                    ));
+                }
+            }
+            if bound == required {
+                assert_eq!(used, required);
+            }
+        }
+        for model in models {
+            assert!(model_product_key(
+                None,
+                model,
+                None,
+                ProbabilityDocumentIoLimits {
+                    storage_bytes: individual,
+                    ..defaults
+                },
+                &cancel,
+            )
+            .is_ok());
+        }
+    }
 
     #[trace("FR-196-AC-6", "FR-201-AC-9", "FR-255-AC-1")]
     #[test]

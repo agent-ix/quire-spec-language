@@ -46,7 +46,9 @@ use quire_semantic_value::fairness::{
     FairnessConstraint, FairnessGranularity, FairnessKind, FairnessOperation,
 };
 use quire_semantic_value::location::ExpressionLocation as Location;
-use quire_semantic_value::quantity::{convert_quantity, ConvertedValue, QuantityTarget};
+use quire_semantic_value::quantity::{
+    convert_quantity, ConvertedValue, QuantityTarget, QuantityUnit, UnitQuantity,
+};
 
 use super::super::capability::Capability;
 use super::super::check::{bind_parameters, Scope, StateContext, Typer};
@@ -1756,9 +1758,9 @@ impl Pass<'_, '_> {
                 Measured::Reward(RewardValue::Quantity(unit))
                 | Measured::Expectation(RewardValue::Quantity(unit)),
                 Value::Quantity(quantity),
-            ) => self.convert(claim, &quantity, unit, span),
+            ) => self.convert(claim, &quantity, unit, span, cx, &location),
             (Measured::Elapsed(unit), Value::Quantity(quantity)) => {
-                self.convert(claim, &quantity, unit, span)
+                self.convert(claim, &quantity, unit, span, cx, &location)
             }
             (Measured::Reward(RewardValue::Integer), Value::Quantity(quantity)) => {
                 Err(self.unit_mismatch(claim, quantity.unit().clone(), None, span))
@@ -1774,6 +1776,8 @@ impl Pass<'_, '_> {
         quantity: &Quantity,
         unit: UnitId,
         span: Span,
+        cx: &mut CheckContext<'_, Scope>,
+        location: &Location,
     ) -> Result<Rational, CheckRefusal> {
         let units = self.input.scope.types().units();
         let (Some(from), Some(target)) = (units.resolve(quantity), units.get(unit.clone())) else {
@@ -1782,16 +1786,7 @@ impl Pass<'_, '_> {
         if !from.unit().converts_to(target) {
             return Err(self.unit_mismatch(claim, quantity.unit().clone(), Some(unit), span));
         }
-        let mut meter = Meter::new(super::super::family::SCALAR_LIMITS_UNLIMITED);
-        let outcome = convert_quantity(from, target, &QuantityTarget::Exact, &mut meter)
-            .map_err(|_| broken("threshold-converts-within-its-dimension"))?;
-        match outcome {
-            quire_exact::Outcome::Completed(conversion) => match conversion.value() {
-                ConvertedValue::Exact(value) => Ok(value.clone()),
-                _ => Err(broken("exact-conversion-is-exact")),
-            },
-            _ => Err(broken("exact-conversion-completes")),
-        }
+        normalized_quantity_threshold(from, target, cx.meter, location)
     }
 
     /// A threshold whose dimension is not the reward's, naming both.
@@ -2122,6 +2117,200 @@ impl Pass<'_, '_> {
                     until.normal_form.clone(),
                 ],
             ),
+        }
+    }
+}
+
+fn normalized_quantity_threshold(
+    from: UnitQuantity<'_>,
+    target: &QuantityUnit,
+    meter: &mut Meter,
+    location: &Location,
+) -> Result<Rational, CheckRefusal> {
+    let outcome = convert_quantity(from, target, &QuantityTarget::Exact, meter)
+        .map_err(|_| broken("threshold-converts-within-its-dimension"))?;
+    match outcome {
+        quire_exact::Outcome::Completed(conversion) => match conversion.value() {
+            ConvertedValue::Exact(value) => Ok(value.clone()),
+            _ => Err(broken("exact-conversion-is-exact")),
+        },
+        quire_exact::Outcome::Incomplete(incomplete) => {
+            if meter
+                .cancel()
+                .is_some_and(|cancel| cancel.tripped().is_some())
+            {
+                return Err(super::super::check::cancelled_refusal(location));
+            }
+            Err(conversion_limit(location, &incomplete))
+        }
+        _ => Err(broken("exact-conversion-completes")),
+    }
+}
+
+fn conversion_limit(location: &Location, incomplete: &quire_exact::Incomplete) -> CheckRefusal {
+    use super::super::refusal::{CheckingLimitKind, CheckingStage, StageLimitCause};
+    let kind = match incomplete.limit_kind {
+        quire_exact::LimitKind::IntegerBits => CheckingLimitKind::RationalBits,
+        quire_exact::LimitKind::WorkUnits => CheckingLimitKind::WorkBudget,
+        _ => return broken("threshold-conversion-denies-a-configured-counter"),
+    };
+    let next = incomplete.next_charge.to_u64().map(u128::from).or_else(|| {
+        incomplete
+            .next_charge
+            .try_to_decimal_string(u128::MAX.to_string().len())
+            .ok()?
+            .parse::<u128>()
+            .ok()
+    });
+    let Some(next) = next else {
+        return broken("threshold-conversion-denial-is-representable");
+    };
+    let actual = match incomplete.limit_kind {
+        quire_exact::LimitKind::IntegerBits => Some(next),
+        quire_exact::LimitKind::WorkUnits => u128::from(incomplete.consumed).checked_add(next),
+        _ => None,
+    };
+    let Some(actual) = actual else {
+        return broken("threshold-conversion-denial-is-representable");
+    };
+    CheckRefusal {
+        location: location.clone(),
+        cause: CheckCause::ResourceExhausted(Box::new(StageLimitCause {
+            stage: CheckingStage::Typing,
+            kind,
+            limit: incomplete.limit,
+            actual,
+            region: None,
+        })),
+    }
+}
+
+#[cfg(test)]
+mod conversion_budget_tests {
+    use super::*;
+    use ix_trace_rs::trace;
+    use quire_exact::{Cancel, CancelCause, ScalarLimits};
+    use quire_semantic_value::checking::CheckingLimits;
+    use quire_semantic_value::location::ExpressionOwner;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::{Arc, OnceLock};
+
+    fn units() -> super::super::super::CheckedGraph {
+        let text = "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\";\ndimension Time;\nunit ms : Time = rational(1,1);\nunit s : Time = rational(2,1) * ms;\n";
+        declarations(text).check(CheckingLimits::default()).unwrap()
+    }
+
+    fn declarations(text: &str) -> super::super::super::PackageDeclarations {
+        let parsed = qsl_cst::parse(
+            qsl_foundation::SourceIdentity::new("test", "conversion-budget"),
+            "conversion.native",
+            text.as_bytes(),
+            qsl_cst::Limits::default(),
+        )
+        .unwrap();
+        let built = qsl_forms::build_unit(&parsed).unwrap();
+        let packages = crate::model::intake::package_input(std::iter::empty::<&[u8]>()).unwrap();
+        let models = crate::model::intake::admit_unit(
+            &built.selections().models,
+            &packages,
+            crate::model::accounting::ModelNormalizationLimits::default(),
+        )
+        .unwrap();
+        super::super::super::PackageDeclarations::assemble(
+            parsed.source().reference().clone(),
+            "conversion-budget".to_owned(),
+            built,
+            models,
+            Vec::new(),
+        )
+        .unwrap()
+    }
+
+    #[trace("TC-636", "FR-201-AC-22")]
+    #[test]
+    fn the_conversion_cap_preserves_nonreward_integer_checking() {
+        for function in [
+            "function keep using v(): Integer pure { 65536 }",
+            "function keep using v(x: Int[0,65536]): Integer pure { x }",
+            "function keep using v(x: Int[0,65536]): Integer pure { x + 1 }",
+        ] {
+            let text = format!("language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\";\n{function}\n");
+            declarations(&text)
+                .check(CheckingLimits::default().with_rational_bits(2))
+                .expect("the rational conversion ceiling must preserve nonreward Integer checking");
+        }
+    }
+
+    #[trace("TC-636", "FR-201-AC-22", "FR-282-AC-17")]
+    #[test]
+    fn actual_quantity_conversion_obeys_representation_work_and_mid_conversion_cancel() {
+        let graph = units();
+        let source = graph.scope().unit_named(None, "s").unwrap();
+        let target = graph.scope().unit_named(None, "ms").unwrap();
+        let quantity = Quantity::new(Rational::from_integer(Integer::from(2_i64)), source);
+        let units = graph.scope().types().units();
+        let from = units.resolve(&quantity).unwrap();
+        let to = units.get(target).unwrap();
+        let location = Location::root(ExpressionOwner::Expression);
+        let limits = ScalarLimits {
+            integer_bits: 128,
+            work_units: 100_000,
+            ..super::super::super::family::SCALAR_LIMITS_UNLIMITED
+        };
+        assert_eq!(
+            normalized_quantity_threshold(from, to, &mut Meter::new(limits), &location).unwrap(),
+            Rational::from_integer(Integer::from(4_i64))
+        );
+        for (limits, kind, bound) in [
+            (
+                ScalarLimits {
+                    integer_bits: 2,
+                    ..limits
+                },
+                super::super::super::refusal::CheckingLimitKind::RationalBits,
+                2,
+            ),
+            (
+                ScalarLimits {
+                    work_units: 0,
+                    ..limits
+                },
+                super::super::super::refusal::CheckingLimitKind::WorkBudget,
+                0,
+            ),
+        ] {
+            let error = normalized_quantity_threshold(from, to, &mut Meter::new(limits), &location)
+                .expect_err(
+                    "actual quantity conversion must enforce its representation and work ceilings",
+                );
+            let CheckCause::ResourceExhausted(cause) = error.cause else {
+                panic!("actual conversion must retain its meter denial");
+            };
+            assert_eq!(cause.kind, kind);
+            assert_eq!(cause.limit, bound);
+            assert!(cause.actual > u128::from(bound));
+            assert_eq!(error.location, location);
+        }
+        for cause in [CancelCause::Requested, CancelCause::Deadline] {
+            let slot = Arc::new(OnceLock::<Cancel>::new());
+            let weak = Arc::downgrade(&slot);
+            let observed = Arc::new(AtomicBool::new(false));
+            let seen = Arc::clone(&observed);
+            let cancel = Cancel::observing(move || {
+                seen.store(true, Ordering::Relaxed);
+                weak.upgrade().unwrap().get().unwrap().cancel(cause);
+            });
+            slot.set(cancel.clone()).unwrap();
+            let mut meter = Meter::new(limits).with_cancel(cancel.clone());
+            assert!(
+                normalized_quantity_threshold(from, to, &mut meter, &location).is_err(),
+                "actual quantity conversion must stop during its own cancelled meter charge"
+            );
+            assert_eq!(cancel.tripped(), Some(cause));
+            assert!(
+                observed.load(Ordering::Relaxed),
+                "conversion entered its own qualified meter"
+            );
         }
     }
 }

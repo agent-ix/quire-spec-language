@@ -213,8 +213,9 @@ pub fn check_probability_certificate_source(
         meter: limits.scalar,
         emit: limits.spine.package.emit(),
     };
-    let system = ModelSystem::new_with_cancel(simulation, cancel)
-        .map_err(ProbabilitySourceError::Subject)?;
+    let admitted = ModelSystem::new_with_cancel(simulation, cancel);
+    super::poll_cancel(cancel).map_err(ProbabilityDocumentError::from)?;
+    let system = admitted.map_err(ProbabilitySourceError::Subject)?;
     check_probability_certificate_document(
         &system,
         claims,

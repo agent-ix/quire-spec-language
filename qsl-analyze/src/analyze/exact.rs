@@ -8,6 +8,7 @@
 //! settle `refuted` only when the profile has native witness production and
 //! independent FR-202 replay; long-run document evidence authorizes proofs.
 
+mod candidate;
 mod long_run;
 
 use qsl_eval::simulation::model::ModelSystem;
@@ -37,9 +38,10 @@ use quire_exact::{Cancel, ObjectReference, Rational};
 use super::items::{admission, BROKEN, NOT_YET};
 use super::{AnalyzeItem, EngineReport, Refusal};
 use crate::exact_probabilistic::{
-    build_retaining_monitor, decide_always, decide_bounded_event, decide_reachability,
-    decide_until, manifest as en5, settle_product_refusal, ExtRational, FhResult, ProbBuild,
-    ProbProduct, ProductRefusal, ProductRequest, UnboundedError, UnboundedObjective,
+    build_retaining_monitor, decide_always, decide_bounded_event, decide_expected_reward,
+    decide_reachability, decide_until, manifest as en5, settle_product_refusal, ExtRational,
+    FhResult, ProbBuild, ProbProduct, ProductRefusal, ProductRequest, UnboundedError,
+    UnboundedObjective,
 };
 
 /// The certificate EN-5 produced and the core's checker accepted for a
@@ -245,6 +247,7 @@ fn run(
             bound,
             target: ReachTarget::Eventually(_) | ReachTarget::Until(..) | ReachTarget::Always(_),
         } => (bound, None),
+        ProbForm::ExpectedReward { bound, .. } => (bound, None),
         ProbForm::Probability {
             bound,
             event:
@@ -263,7 +266,8 @@ fn run(
             ..
         }
     );
-    if state_predicate
+    let expected_reward = matches!(&claim.form, ProbForm::ExpectedReward { .. });
+    if (state_predicate || expected_reward)
         && qsl_semantics::check::TemporalProfile::from_identity(claim.profile.identity())
             != Some(qsl_semantics::check::TemporalProfile::InfiniteTrace)
     {
@@ -272,6 +276,39 @@ fn run(
     if !claim.fairness.is_empty() {
         return not_yet();
     }
+    let document_limits = ProbabilityDocumentLimits {
+        bytes: limits.document.bytes,
+        storage_bytes: limits.document.storage_bytes,
+        states: limits.model.limits.max_states,
+        edges: limits.model.limits.max_transitions,
+        scalar_bits: limits.max_rational_bits,
+        accounting: meter,
+    };
+    let reward_system = if expected_reward {
+        let Ok(item) = qsl_replay::probabilistic_claim_identity(claim) else {
+            return not_yet();
+        };
+        let admitted = ModelSystem::new_with_cancel(simulation.clone(), cancel);
+        if let Some(cause) = cancel.tripped() {
+            return settled(&ExactProbBuildIssue::Cancelled(cause), subject);
+        }
+        let system = match admitted {
+            Ok(system) => system,
+            Err(error) => return build_refusal(ProductRefusal::Admission(error), subject),
+        };
+        if let Err(error) = qsl_replay::admit_expected_reward_certificate_subject(
+            &system,
+            package.graph().probabilistic_model().claims(),
+            &item,
+            document_limits,
+            cancel,
+        ) {
+            return document_failure(error, subject);
+        }
+        Some(system)
+    } else {
+        None
+    };
     if let Some(formula) = bounded_formula {
         let Some(profile) =
             qsl_semantics::check::TemporalProfile::from_identity(claim.profile.identity())
@@ -288,11 +325,36 @@ fn run(
         (ProbScheduler::Workload(_), _) => (UnboundedObjective::Min, None),
     };
 
-    let (product, monitor) = match build_retaining_monitor(request, cancel) {
-        Ok((ProbBuild::Built(product), monitor)) => (product, monitor),
-        // An undefined state refutes only after FR-202's replay.
-        Ok((ProbBuild::Undefined(_), _)) => return not_yet(),
-        Err(refusal) => return build_refusal(refusal, subject),
+    let mut candidate_budget =
+        expected_reward.then(|| candidate::CandidateBudget::new(document_limits, cancel));
+    let built = if let Some(budget) = candidate_budget.as_mut() {
+        use crate::exact_probabilistic::{
+            build_retaining_monitor_with_budget, BudgetedProductError,
+        };
+        let identity = budget.identity;
+        let mut admission = budget.admission();
+        match build_retaining_monitor_with_budget(request, identity, &mut admission, cancel) {
+            Ok(built) => built,
+            Err(BudgetedProductError::Product(error)) => return build_refusal(error, subject),
+            Err(BudgetedProductError::Key(error)) => {
+                return document_failure(admission.refusal(error), subject)
+            }
+            Err(BudgetedProductError::Undefined(cause)) => {
+                return document_failure(
+                    ProbabilityDocumentError::UndefinedPredicate(cause),
+                    subject,
+                )
+            }
+        }
+    } else {
+        match build_retaining_monitor(request, cancel) {
+            Ok(built) => built,
+            Err(error) => return build_refusal(error, subject),
+        }
+    };
+    let (product, monitor) = match built {
+        (ProbBuild::Built(product), monitor) => (product, monitor),
+        (ProbBuild::Undefined(_), _) => return not_yet(),
     };
     let [(_, _, start)] = product.initial.as_slice() else {
         return not_yet();
@@ -345,6 +407,9 @@ fn run(
                 target: ReachTarget::Always(_),
                 ..
             } => decide_always(&product, &target, objective, &limits),
+            ProbForm::ExpectedReward { reward, .. } => {
+                decide_expected_reward(&product, &target, reward.as_str(), objective, &limits)
+            }
             _ => decide_reachability(&product, &target, objective, &limits),
         };
         let solved = match result {
@@ -372,7 +437,7 @@ fn run(
         (solved.values, solved.policy)
     };
     let Some(ExtRational::Finite(value)) = values.get(start.index()) else {
-        return broken();
+        return if expected_reward { not_yet() } else { broken() };
     };
     let holds = match bound {
         Bound::AtLeast(threshold) => value >= threshold,
@@ -381,7 +446,10 @@ fn run(
     let Ok(item) = qsl_replay::probabilistic_claim_identity(claim) else {
         return not_yet();
     };
-    let admitted = ModelSystem::new_with_cancel(simulation, cancel);
+    let admitted = match reward_system {
+        Some(system) => Ok(system),
+        None => ModelSystem::new_with_cancel(simulation, cancel),
+    };
     if let Some(cause) = cancel.tripped() {
         return settled(&ExactProbBuildIssue::Cancelled(cause), subject);
     }
@@ -395,6 +463,9 @@ fn run(
     };
     let reference = binding.as_ref().map(|bound| &bound.reference);
     if !holds {
+        if expected_reward {
+            return not_yet();
+        }
         let bounded_monitor = match (bounded_formula, monitor) {
             (Some(formula), Some(monitor)) => {
                 let context =
@@ -430,14 +501,6 @@ fn run(
             tamper_witness,
         );
     }
-    let document_limits = ProbabilityDocumentLimits {
-        bytes: limits.document.bytes,
-        storage_bytes: limits.document.storage_bytes,
-        states: limits.model.limits.max_states,
-        edges: limits.model.limits.max_transitions,
-        scalar_bits: limits.max_rational_bits,
-        accounting: meter,
-    };
     let certificate = match (bounded_formula, monitor) {
         (Some(formula), Some(monitor)) => {
             let context = match qsl_replay::probabilistic_formula_monitor_context(claim, reference)
@@ -469,11 +532,17 @@ fn run(
                 cancel,
             )
         }
+        (None, _) if candidate_budget.is_some() => candidate::values(
+            &product,
+            reference,
+            &values,
+            candidate_budget.as_mut().expect("reward candidate budget"),
+        ),
         (None, _) => certificate_of(
             &product,
             reference,
             &values,
-            if state_predicate {
+            if state_predicate || expected_reward {
                 qsl_replay::ProbabilityDocumentIoLimits {
                     bytes: document_limits.bytes,
                     storage_bytes: document_limits.storage_bytes,
@@ -719,22 +788,51 @@ fn certificate_of(
     io: qsl_replay::ProbabilityDocumentIoLimits,
     cancel: &Cancel,
 ) -> Result<ExactProbabilityCertificate, ProbabilityDocumentError> {
+    if values.len() != product.states.len() {
+        return Err(ExactProbabilityGraphError::MissingSuccessor.into());
+    }
+    let mut storage = 0_u64;
+    let rows = u64::try_from(product.states.len()).unwrap_or(u64::MAX);
+    reserve_certificate_storage(
+        &mut storage,
+        io.storage_bytes,
+        rows.saturating_mul(std::mem::size_of::<ExactProbabilityValue>() as u64),
+    )?;
+    for value in values {
+        let ExtRational::Finite(value) = value else {
+            return Err(ExactProbabilityGraphError::ExpansionRefused.into());
+        };
+        reserve_certificate_storage(
+            &mut storage,
+            io.storage_bytes,
+            value
+                .numerator()
+                .magnitude_bits()
+                .div_ceil(8)
+                .saturating_add(value.denominator().magnitude_bits().div_ceil(8)),
+        )?;
+    }
     let mut entries = Vec::with_capacity(product.states.len());
     for (state, value) in product.states.iter().zip(values) {
         let ExtRational::Finite(value) = value else {
             return Err(ExactProbabilityGraphError::ExpansionRefused.into());
         };
+        let key = ProbabilityProductKey::for_model_state_with_limits(
+            binding,
+            &state.model,
+            qsl_replay::ProbabilityDocumentIoLimits {
+                storage_bytes: io.storage_bytes.saturating_sub(storage),
+                ..io
+            },
+            cancel,
+        )?;
+        reserve_certificate_storage(&mut storage, io.storage_bytes, key.as_bytes().len() as u64)?;
         entries.push(ExactProbabilityValue {
-            state: ProbabilityProductKey::for_model_state_with_limits(
-                binding,
-                &state.model,
-                io,
-                cancel,
-            )?,
+            state: key,
             value: value.clone(),
         });
     }
-    entries.sort_by(|a, b| a.state.cmp(&b.state));
+    entries.sort_unstable_by(|a, b| a.state.cmp(&b.state));
     if entries
         .windows(2)
         .any(|pair| pair[0].state == pair[1].state)
@@ -742,6 +840,23 @@ fn certificate_of(
         return Err(ExactProbabilityGraphError::ExpansionRefused.into());
     }
     Ok(ExactProbabilityCertificate { values: entries })
+}
+
+fn reserve_certificate_storage(
+    used: &mut u64,
+    bound: u64,
+    bytes: u64,
+) -> Result<(), ProbabilityDocumentError> {
+    let actual = used.saturating_add(bytes);
+    if actual > bound {
+        return Err(ProbabilityDocumentError::Limit {
+            limit: qsl_replay::ProbabilityDocumentLimit::StorageBytes,
+            bound,
+            actual,
+        });
+    }
+    *used = actual;
+    Ok(())
 }
 
 fn witness_payload_bytes(

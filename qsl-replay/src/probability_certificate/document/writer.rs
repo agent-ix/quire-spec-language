@@ -22,10 +22,19 @@ impl<'a> Admission<'a> {
             stopped: None,
         }
     }
+    pub(super) fn with_used(bound: u64, cancel: &'a Cancel, used: u64) -> Self {
+        Self {
+            used,
+            ..Self::new(bound, cancel)
+        }
+    }
+    pub(super) fn used(&self) -> u64 {
+        self.used
+    }
     pub(super) fn take_stop(&mut self) -> Option<ProbabilityDocumentError> {
         self.stopped.take()
     }
-    fn reserve(&mut self, bytes: usize) -> Result<(), ReservationDenied> {
+    pub(super) fn reserve(&mut self, bytes: usize) -> Result<(), ReservationDenied> {
         if let Err(error) = poll(self.cancel) {
             self.stopped = Some(error);
             return Err(ReservationDenied);
@@ -206,11 +215,45 @@ impl Encode for Events<'_> {
         writer.name("objective")?;
         writer.begin_object()?;
         writer.name("profile")?;
-        writer.string(if self.document.event.is_some() {
+        writer.string(if self.document.reward.is_some() {
+            REWARD_PROFILE
+        } else if self.document.event.is_some() {
             STATE_PROFILE
         } else {
             PROFILE
         })?;
+        if let Some(reward) = &self.document.reward {
+            writer.name("reward")?;
+            writer.begin_array()?;
+            qsl_foundation::node_wire::encode_node_key(&reward.model, writer)?;
+            writer.string(reward.name.as_str())?;
+            writer.end_array()?;
+            writer.name("unit")?;
+            match &reward.unit {
+                None => writer.null()?,
+                Some(unit) => {
+                    writer.begin_array()?;
+                    if let Some(node) = unit.declared_key() {
+                        writer.string("declared")?;
+                        qsl_foundation::node_wire::encode_node_key(node, writer)?;
+                    } else {
+                        writer.string("compound")?;
+                        writer.begin_array()?;
+                        for (node, exponent) in unit.compound_terms().unwrap_or_default() {
+                            self.text.poll()?;
+                            writer.begin_object()?;
+                            writer.name("unit")?;
+                            qsl_foundation::node_wire::encode_node_key(node, writer)?;
+                            writer.name("exponent")?;
+                            self.text.integer(exponent, writer)?;
+                            writer.end_object()?;
+                        }
+                        writer.end_array()?;
+                    }
+                    writer.end_array()?;
+                }
+            }
+        }
         if let Some(event) = self.document.event {
             writer.name("event")?;
             writer.string(match event {
@@ -282,6 +325,9 @@ fn encode(
 ) -> Result<Vec<u8>, ProbabilityDocumentError> {
     poll(cancel)?;
     if document.event.is_none() && !document.failures.is_empty() {
+        return Err(ProbabilityDocumentError::Malformed);
+    }
+    if document.reward.is_some() && document.event.is_some() {
         return Err(ProbabilityDocumentError::Malformed);
     }
     let rows = document

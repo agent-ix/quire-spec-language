@@ -2,7 +2,7 @@
 
 `qsl-probability-check` reads a JSON request from standard input or its one
 file argument, recompiles the supplied native source through S1–S3 and checks
-its exact reachability certificate in the qualified core. Its normal dependency
+its exact quantitative certificate in the qualified core. Its normal dependency
 closure contains no analyzer. Tests use EN-5 as a development dependency to
 produce evidence, then launch the built checker executable in a fresh process.
 
@@ -47,12 +47,29 @@ infinite-trace `holds(A) until holds(B)` and `always holds(P)` over checked
 state predicates. The latter uses the separate state-predicate/v1 objective:
 its event, success keys and absorbing failure keys are independently derived.
 The checker establishes original model acyclicity before stopping at boundaries;
-terminal stutter preserves the last state predicates. These additions admit
-proof documents only; native until/always refutations remain unsupported. The
+terminal stutter preserves the last state predicates. These documents carry
+proofs; admitted native until/always refutations use the separate typed replay
+path, while witness JSON transport remains unsupported. The
 checker independently derives the target keys and the checked claim's
 minimum, maximum or resolved-workload operator, verifies complete key/value/rank
 coverage, positive-value rank progress, Bellman equality and the threshold.
 Unsupported configurations produce no acceptance token.
+
+The separate expected-reward/v1 objective admits finite acyclic named integer
+or quantity rewards under the infinite-trace profile. Its reward identity is
+the checked model root and reward identifier; its unit is the checked
+comparison UnitId. The checker re-evaluates semantic draw costs and checks
+`V(s) = opt sum p * (cost + V(next))`, with zero at targets and exact stopped
+graph heights. Original reachable terminals must all satisfy the target, and
+original cycles remain unsupported even beyond a target. Exact values may
+exceed one. Checked quantity bounds use the existing exact conversion graph;
+no reward-cost table or action encoding is transported in the document.
+
+Reward production and independent checking share each caller scope's meter,
+working-storage usage and cancellation through raw state keys, internal
+candidate/post keys and the full FR-196 product key. The owner operation's
+`identity.input_bytes` ceiling retains its separate 16 MiB default; certificate
+transport bytes and graph working storage retain their own limits and causes.
 
 The analyzer's additive `ExactProbLimits.document` API carries independent
 `bytes` and `storage_bytes` ceilings, each defaulting to 1073741824 bytes.
