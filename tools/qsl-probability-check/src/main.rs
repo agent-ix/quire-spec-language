@@ -290,8 +290,10 @@ fn source_failure(error: ProbabilitySourceError) -> Result<Value, String> {
     };
     let mut result = json!({"status": status, "reason": error.to_string(), "limit":limit});
     if let ProbabilitySourceError::Document(Document::ZeroWeightComponent { state }) = &error {
-        result["at"] = serde_json::to_value(qsl_replay::CertificateLocus::ProbabilityProductState(state.clone()))
-            .map_err(|error| error.to_string())?;
+        result["at"] = serde_json::to_value(qsl_replay::CertificateLocus::ProbabilityProductState(
+            state.clone(),
+        ))
+        .map_err(|error| error.to_string())?;
     }
     Ok(result)
 }
