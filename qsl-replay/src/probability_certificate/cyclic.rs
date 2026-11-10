@@ -10,148 +10,168 @@ pub fn admit_acyclic_probabilistic_refutation_subject(
     system: &ModelSystem<'_>,
     limits: &crate::ExactProbLimits,
     cancel: &Cancel,
-) -> Result<bool, Box<crate::ExactProbBuildIssue>> {
-    let used = std::cell::RefCell::new(0_u64);
-    let failure = std::cell::RefCell::new(None);
+) -> Result<bool, ProbabilityDocumentError> {
     let mut meter = quire_exact::Meter::new(system.meter_limits()).with_cancel(cancel.clone());
-    let mut issue = None;
-    let result = enumerate_model_graph_with_keys_and_reservation(
+    let mut storage = 0;
+    let graph_limits = ProbabilityDocumentLimits {
+        bytes: 0,
+        storage_bytes: limits.document.storage_bytes,
+        states: limits.model.limits.max_states,
+        edges: limits.model.limits.max_transitions,
+        scalar_bits: limits.max_rational_bits,
+        accounting: system.meter_limits(),
+    };
+    let graph = match enumerate_graph(
         system,
         None::<&qsl_semantics::check::CheckedPredicate>,
         None,
         None,
-        limits.model.limits.max_states,
-        limits.model.limits.max_transitions,
+        graph_limits,
         cancel,
+        qsl_foundation::IdentityLimits::default(),
+        &mut meter,
+        &mut storage,
         false,
-        &|state| {
-            // These private scratch labels compare raw owner keys only. They
-            // never become transported FR-196 identities or rejection loci.
-            let (bytes, _) = system
-                .state_key(state)
-                .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?;
-            Ok(ProbabilityProductKey::from_canonical_bytes(bytes))
-        },
+        false,
+    ) {
+        Ok(graph) => graph,
+        Err(ProbabilityDocumentError::Unsupported) => return Ok(false),
+        Err(error) => return Err(error),
+    };
+    for (key, state) in &graph.states {
+        visit(cancel, &mut meter)?;
+        charge(
+            &mut storage,
+            graph_limits.storage_bytes,
+            key.as_bytes()
+                .len()
+                .saturating_mul(3)
+                .saturating_add(std::mem::size_of::<ProbabilityProductKey>().saturating_mul(3)),
+        )?;
+        for edge in state.choices.iter().flatten() {
+            visit(cancel, &mut meter)?;
+            document::check_scalar(&edge.probability, graph_limits)?;
+        }
+    }
+    match topological_order(&graph, cancel) {
+        Ok(_) => Ok(true),
+        Err(ExactProbabilityGraphError::Cycle) => Ok(false),
+        Err(error) => Err(error.into()),
+    }
+}
+
+/// Rebuild a graph using one caller scope for raw identities, complete keys,
+/// semantic candidate/post keys and retained graph storage.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn enumerate_graph<P: StatePredicate>(
+    system: &ModelSystem<'_>,
+    target: Option<&P>,
+    binding: Option<&ObjectReference>,
+    workload: Option<&Workload>,
+    limits: ProbabilityDocumentLimits,
+    cancel: &Cancel,
+    identity: qsl_foundation::IdentityLimits,
+    meter: &mut quire_exact::Meter,
+    storage: &mut u64,
+    stop_at_target: bool,
+    full_key: bool,
+) -> Result<CheckerGraph, ProbabilityDocumentError> {
+    let scope = std::cell::RefCell::new((meter, storage));
+    let stopped = std::cell::RefCell::new(None);
+    let mut issue = None;
+    let key_of = |state: &ModelSimState| {
+        let mut borrowed = scope.borrow_mut();
+        let (meter, storage) = &mut *borrowed;
+        let mut admission =
+            ProbabilityKeyAdmission::new(meter, storage, limits.storage_bytes, cancel);
+        let encoded = (|| {
+            let bytes =
+                system.state_key_bytes_with_budget(state, identity, &mut admission, cancel)?;
+            if full_key {
+                ProbabilityProductKey::for_model_state_with_budget(
+                    binding,
+                    &bytes,
+                    identity,
+                    &mut admission,
+                    cancel,
+                )
+            } else {
+                // Private scratch equality labels never escape as FR-196 evidence.
+                Ok(ProbabilityProductKey::from_canonical_bytes(bytes))
+            }
+        })();
+        encoded.map_err(|error| {
+            *stopped.borrow_mut() = Some(admission.refusal(error));
+            ExactProbabilityGraphError::ExpansionRefused
+        })
+    };
+    let result = enumerate_model_graph_with_distributions(
+        system,
+        target,
+        binding,
+        limits.states,
+        limits.edges,
+        cancel,
+        stop_at_target,
+        &key_of,
         &mut |bytes| {
-            let actual = used
-                .borrow()
-                .saturating_add(u64::try_from(bytes).unwrap_or(u64::MAX));
-            if actual > limits.document.storage_bytes {
-                *failure.borrow_mut() = Some(crate::ExactProbBuildIssue::Limit {
-                    limit: crate::ModelCheckLimit::CertificateMaxWorkingBytes,
-                    value: limits.document.storage_bytes,
-                });
-                return Err(ExactProbabilityGraphError::ExpansionRefused);
-            }
-            *used.borrow_mut() = actual;
-            Ok(())
+            let mut borrowed = scope.borrow_mut();
+            let (meter, storage) = &mut *borrowed;
+            let mut admission =
+                ProbabilityKeyAdmission::new(meter, storage, limits.storage_bytes, cancel);
+            quire_exact::Reservation::reserve(&mut admission, bytes).map_err(|_| {
+                *stopped.borrow_mut() =
+                    Some(admission.refusal(qsl_eval::simulation::model::ModelKeyError::Denied));
+                ExactProbabilityGraphError::ExpansionRefused
+            })
         },
-        #[cfg(feature = "test-support")]
-        &mut |_| {},
+        &mut |state, _| {
+            let mut borrowed = scope.borrow_mut();
+            let (meter, storage) = &mut *borrowed;
+            let mut admission =
+                ProbabilityKeyAdmission::new(meter, storage, limits.storage_bytes, cancel);
+            model_distributions_with_budget(
+                system,
+                state,
+                workload,
+                identity,
+                &mut admission,
+                cancel,
+            )
+            .map_err(|error| {
+                *stopped.borrow_mut() = Some(error);
+                ExactProbabilityGraphError::ExpansionRefused
+            })
+        },
         &mut |_, _| {
-            if let Err(incomplete) = meter.charge(quire_exact::Charge::new(
-                quire_exact::ChargePoint::CollectionVisit,
-            )) {
-                *failure.borrow_mut() = Some(match cancel.tripped() {
-                    Some(cause) => crate::ExactProbBuildIssue::Cancelled(cause),
-                    None => crate::ExactProbBuildIssue::Predicate(
-                        qsl_eval::simulation::model::ClauseOutcome::Incomplete(incomplete),
-                    ),
-                });
-                return Err(ExactProbabilityGraphError::ExpansionRefused);
-            }
-            Ok(())
+            visit(cancel, scope.borrow_mut().0).map_err(|error| {
+                *stopped.borrow_mut() = Some(error);
+                ExactProbabilityGraphError::ExpansionRefused
+            })
         },
         &mut |failure| issue = Some(failure),
     );
-    if let Some(error) = failure.into_inner().or(issue) {
-        return Err(Box::new(error));
+    if let Some(error) = stopped.into_inner() {
+        return Err(error);
     }
-    let mut admission_issue = None;
-    let result = result.and_then(|graph| {
-        for (key, state) in &graph.states {
-            poll_cancel(cancel)?;
-            if let Err(incomplete) = meter.charge(quire_exact::Charge::new(
-                quire_exact::ChargePoint::CollectionVisit,
-            )) {
-                admission_issue = Some(match cancel.tripped() {
-                    Some(cause) => crate::ExactProbBuildIssue::Cancelled(cause),
-                    None => crate::ExactProbBuildIssue::Predicate(
-                        qsl_eval::simulation::model::ClauseOutcome::Incomplete(incomplete),
-                    ),
-                });
-                return Err(ExactProbabilityGraphError::ExpansionRefused);
-            }
-            let bytes = key
-                .as_bytes()
-                .len()
-                .saturating_mul(3)
-                .saturating_add(std::mem::size_of::<ProbabilityProductKey>().saturating_mul(3));
-            let actual = used
-                .borrow()
-                .saturating_add(u64::try_from(bytes).unwrap_or(u64::MAX));
-            if actual > limits.document.storage_bytes {
-                admission_issue = Some(crate::ExactProbBuildIssue::Limit {
-                    limit: crate::ModelCheckLimit::CertificateMaxWorkingBytes,
-                    value: limits.document.storage_bytes,
-                });
-                return Err(ExactProbabilityGraphError::ExpansionRefused);
-            }
-            *used.borrow_mut() = actual;
-            for edge in state.choices.iter().flatten() {
-                poll_cancel(cancel)?;
-                if let Err(incomplete) = meter.charge(quire_exact::Charge::new(
-                    quire_exact::ChargePoint::CollectionMemberTest,
-                )) {
-                    admission_issue = Some(match cancel.tripped() {
-                        Some(cause) => crate::ExactProbBuildIssue::Cancelled(cause),
-                        None => crate::ExactProbBuildIssue::Predicate(
-                            qsl_eval::simulation::model::ClauseOutcome::Incomplete(incomplete),
-                        ),
-                    });
-                    return Err(ExactProbabilityGraphError::ExpansionRefused);
-                }
-                if edge.probability.numerator().magnitude_bits() > limits.max_rational_bits
-                    || edge.probability.denominator().magnitude_bits() > limits.max_rational_bits
-                {
-                    admission_issue = Some(crate::ExactProbBuildIssue::Limit {
-                        limit: crate::ModelCheckLimit::ExactProbMaxRationalBits,
-                        value: limits.max_rational_bits,
-                    });
-                    return Err(ExactProbabilityGraphError::UnsupportedDraw);
-                }
+    if let Some(issue) = issue {
+        return Err(ProbabilityDocumentError::Build(Box::new(issue)));
+    }
+    result.map_err(|error| match error {
+        ExactProbabilityGraphError::LimitReached => ProbabilityDocumentError::Limit {
+            limit: ProbabilityDocumentLimit::States,
+            bound: limits.states as u64,
+            actual: (limits.states as u64).saturating_add(1),
+        },
+        ExactProbabilityGraphError::EdgeLimitReached | ExactProbabilityGraphError::TooManyEdges => {
+            ProbabilityDocumentError::Limit {
+                limit: ProbabilityDocumentLimit::Edges,
+                bound: limits.edges as u64,
+                actual: (limits.edges as u64).saturating_add(1),
             }
         }
-        topological_order(&graph, cancel).map(|_| ())
-    });
-    if let Some(issue) = admission_issue {
-        return Err(Box::new(issue));
-    }
-    match result {
-        Ok(()) => Ok(true),
-        Err(
-            ExactProbabilityGraphError::Cycle
-            | ExactProbabilityGraphError::UnsupportedDraw
-            | ExactProbabilityGraphError::UnsupportedInitial
-            | ExactProbabilityGraphError::UnsupportedBinding
-            | ExactProbabilityGraphError::UnsupportedClaimForm,
-        ) => Ok(false),
-        Err(ExactProbabilityGraphError::Cancelled(cause)) => {
-            Err(crate::ExactProbBuildIssue::Cancelled(cause))
-        }
-        Err(ExactProbabilityGraphError::LimitReached) => Err(crate::ExactProbBuildIssue::Limit {
-            limit: crate::ModelCheckLimit::ExactProbMaxStates,
-            value: u64::try_from(limits.model.limits.max_states).unwrap_or(u64::MAX),
-        }),
-        Err(
-            ExactProbabilityGraphError::EdgeLimitReached | ExactProbabilityGraphError::TooManyEdges,
-        ) => Err(crate::ExactProbBuildIssue::Limit {
-            limit: crate::ModelCheckLimit::ExactProbMaxTransitions,
-            value: u64::try_from(limits.model.limits.max_transitions).unwrap_or(u64::MAX),
-        }),
-        Err(_) => Err(crate::ExactProbBuildIssue::BrokenInvariant),
-    }
-    .map_err(Box::new)
+        other => other.into(),
+    })
 }
 
 fn charge(used: &mut u64, bound: u64, bytes: usize) -> Result<(), ProbabilityDocumentError> {
