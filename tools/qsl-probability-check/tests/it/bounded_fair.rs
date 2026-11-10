@@ -253,6 +253,11 @@ fn zero_horizon_and_legacy_bytes_keep_their_actual_context_and_closed_rows() {
         0,
         "model admission must not evaluate P after its zero horizon"
     );
+    let mut in_horizon_undefined = proof(&zero_source, SNAPSHOT);
+    replace_source(&mut in_horizon_undefined, &zero_source.replace("holds(m.delivered)", "holds(1 mod m.attempts = 0)"));
+    let (code, out) = run(&in_horizon_undefined);
+    assert_ne!(code, 0);
+    assert!(out["reason"].as_str().unwrap().starts_with("probability certificate predicate undefined:"), "the original typed predicate cause must reach the process facade: {out}");
     let bytes = ordinary["certificate"].as_str().unwrap().as_bytes();
     let decoded =
         qsl_replay::read_probability_proof_document(bytes, limits(), &quire_exact::Cancel::new())

@@ -17,6 +17,30 @@ use quire_exact::{Cancel, CancelCause};
 
 const CLAIM: &str = "probabilistic Likely using ev on M over (m: M::Msg) under every scheduler fair weak Msg::send_a fair strong each Msg::send_b on origin { probability >= 0.95 [ eventually[0,2] holds(m.delivered) ] }\n";
 
+#[trace("TC-1406", "FR-201-AC-50")]
+#[test]
+fn in_horizon_undefined_preserves_the_actual_owner_predicate_cause() {
+    use qsl_eval::simulation::model::PredicateReading;
+    use qsl_eval::simulation::TransitionSystem;
+    use qsl_semantics::check::{Event, ProbForm};
+    let source = CLAIM.replace(">= 0.95", "<= 0.5").replace("eventually[0,2]", "eventually[0,0]");
+    let valid = World::new(&prob_world::link(&source));
+    let bytes = produce(&valid, "Likely");
+    let undefined = World::new(&prob_world::link(&source.replace("holds(m.delivered)", "holds(1 mod m.attempts = 0)")));
+    let system = ModelSystem::new(undefined.subject().simulation).unwrap();
+    let claim = undefined.claim("Likely");
+    let item = probabilistic_claim_identity(claim).unwrap();
+    assert_eq!(item, probabilistic_claim_identity(valid.claim("Likely")).unwrap());
+    let binding = qsl_replay::claim_binding(&system, claim).unwrap().unwrap();
+    let ProbForm::Probability { event: Event::Formula { formula, .. }, .. } = &claim.form else { panic!("the bounded event must remain a checked formula"); };
+    let context = qsl_replay::probabilistic_formula_monitor_context(claim, Some(&binding.reference)).unwrap();
+    let monitor = qsl_eval::automaton::QualifiedBoundedMonitor::new(formula.formula(), &context, u64::MAX).unwrap();
+    let predicate = formula.condition(monitor.atom().index()).unwrap();
+    let reading = system.state_predicates(&system.initial()[0], &[(predicate, Some(&binding.reference))]).unwrap().remove(0);
+    let PredicateReading::Undefined { cause, .. } = reading else { panic!("the actual input must evaluate as undefined, not refuse or return false"); };
+    assert_eq!(check_probability_certificate_document(&system, undefined.package.graph().probabilistic_model().claims(), &item, &bytes, limits(), &Cancel::new()), Err(ProbabilityDocumentError::UndefinedPredicate(cause)));
+}
+
 #[trace("TC-1406", "FR-201-AC-47", "FR-201-AC-48", "FR-201-AC-50")]
 #[test]
 fn actual_fairness_stages_preserve_requested_deadline_and_caller_ceilings() {
