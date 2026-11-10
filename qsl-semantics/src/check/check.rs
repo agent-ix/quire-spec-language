@@ -294,6 +294,11 @@ impl VariantTypeDeclaration {
         self.node.clone()
     }
 
+    /// Borrow the same validated checked node key as [`Self::node`].
+    pub fn node_ref(&self) -> &NodeKey {
+        &self.node
+    }
+
     /// The cases, ascending by the UTF-8 bytes of their names.
     pub fn cases(&self) -> &[VariantCaseDeclaration] {
         &self.cases
@@ -339,6 +344,11 @@ impl VariantCaseDeclaration {
     /// type's checked node and the case name.
     pub fn variant(&self) -> VariantId {
         self.variant.clone()
+    }
+
+    /// Borrow the same validated checked member key as [`Self::variant`].
+    pub fn variant_ref(&self) -> &VariantId {
+        &self.variant
     }
 }
 

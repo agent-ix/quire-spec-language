@@ -645,19 +645,33 @@ impl ObjectUniverse {
     /// [`UniverseIdentityError::Key`] when the root type has no valid node
     /// identity.
     pub fn identity(&self) -> Result<quire_exact::UniverseId, UniverseIdentityError> {
+        self.identity_view()?
+            .to_node_key()
+            .map(quire_exact::UniverseId::new)
+            .map_err(UniverseIdentityError::Key)
+    }
+
+    /// Borrow this universe's structural node identity without constructing an
+    /// owned key. The shared model-node projection is also used by [`Self::identity`].
+    ///
+    /// # Errors
+    ///
+    /// The same shape refusal as [`Self::identity`], without storage allocation.
+    pub fn identity_view(
+        &self,
+    ) -> Result<crate::model::key::ModelNodeIdentity<'_>, UniverseIdentityError> {
         let root = self
             .root_types
             .first()
             .ok_or(UniverseIdentityError::NoRootType)?;
         let original = root.original();
-        let key = crate::model::key::model_node_key(
+        crate::model::key::ModelNodeIdentity::new(
             original.package(),
             "model",
             "object_type",
             original.node(),
         )
-        .map_err(UniverseIdentityError::Key)?;
-        Ok(quire_exact::UniverseId::new(key))
+        .map_err(UniverseIdentityError::Key)
     }
 }
 

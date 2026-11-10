@@ -1473,7 +1473,14 @@ impl ModelView {
     }
 
     pub(crate) fn declaration_key(&self, effective: EffectiveId) -> Option<&DeclarationKey> {
-        self.by_effective_id.get(&effective)
+        self.declaration_key_borrowed(&effective)
+    }
+
+    pub(crate) fn declaration_key_borrowed(
+        &self,
+        effective: &EffectiveId,
+    ) -> Option<&DeclarationKey> {
+        self.by_effective_id.get(effective)
     }
 }
 

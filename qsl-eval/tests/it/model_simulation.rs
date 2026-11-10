@@ -1931,6 +1931,92 @@ fn link_repeated(source: &str, target: &str, times: usize) -> Json {
     }])
 }
 
+#[trace("TC-471", "FR-120-AC-4", "FR-120-AC-27")]
+#[test]
+fn raw_model_key_preserves_legacy_reference_enum_and_extent_vectors() {
+    let mut enums = build_world_with_enum_mode(Vec::new(), "").expect("enum fixture checks");
+    let first = enums.start(
+        "enum-forward",
+        &[Obj("c1", 2, 1, Some("c2")), Obj("c2", 1, 0, None)],
+    );
+    let second = enums.start(
+        "enum-reverse",
+        &[Obj("c2", 1, 0, None), Obj("c1", 2, 1, Some("c2"))],
+    );
+    let enum_system = self::system(&enums, vec![first, second], &["c1", "c2"], UNLIMITED);
+    let states = enum_system.initial();
+    let first = enum_system.state_key(&states[0]).expect("enum key");
+    let second = enum_system
+        .state_key(&states[1])
+        .expect("permuted enum key");
+    assert_eq!(
+        first, second,
+        "object document order must not change the key"
+    );
+    assert_eq!(
+        first.0,
+        include_str!("../fixtures/raw-model-key/legacy-enum.json")
+            .trim_end_matches('\n')
+            .as_bytes(),
+        "literal bytes captured from the unchanged legacy encoder"
+    );
+    let model = enums.model();
+    let (effective, universe) = model
+        .reference_components(&counter())
+        .expect("reference parts");
+    let reference = enums.reference("c1");
+    assert_eq!(effective, reference.object_type());
+    let universe_bytes = quire_canonical::to_vec(
+        &universe
+            .identity_view()
+            .expect("borrowed universe identity"),
+        quire_canonical::Limits::new(1 << 20),
+    )
+    .expect("borrowed identity encodes");
+    assert_eq!(
+        universe_bytes,
+        br#"{"ordinal":0,"package":"test/counters","path":["model","object_type","ix://test/counters/Counter"]}"#,
+        "the borrowed view preserves the old captured reference's universe bytes"
+    );
+    assert!(model.reference_components(&key("Missing")).is_none());
+
+    let mut extents = build_world_with(Vec::new(), "", false, vec![link_relationship()])
+        .expect("relationship fixture checks");
+    let linked = extents.snapshot_with(
+        "linked-key-vector",
+        "current",
+        json!({"kind": "initialization", "name": "start"}),
+        &[Obj("c1", 2, 1, Some("c2")), Obj("c2", 1, 0, None)],
+        link_repeated("c1", "c2", 2),
+    );
+    let unlinked = extents.start(
+        "unlinked-key-vector",
+        &[Obj("c2", 1, 0, None), Obj("c1", 2, 1, Some("c2"))],
+    );
+    let extent_system = self::system(&extents, vec![linked, unlinked], &["c1", "c2"], UNLIMITED);
+    let states = extent_system.initial();
+    let linked = extent_system.state_key(&states[0]).expect("extent key");
+    let unlinked = extent_system.state_key(&states[1]).expect("unlinked key");
+    assert_ne!(
+        linked, unlinked,
+        "repeated relationship pairs belong to the key"
+    );
+    assert_eq!(
+        linked.0,
+        include_str!("../fixtures/raw-model-key/legacy-extents.json")
+            .trim_end_matches('\n')
+            .as_bytes(),
+        "literal bytes captured from the unchanged legacy encoder"
+    );
+    assert_eq!(
+        unlinked.0,
+        include_str!("../fixtures/raw-model-key/legacy-unlinked.json")
+            .trim_end_matches('\n')
+            .as_bytes(),
+        "literal bytes captured from the unchanged legacy encoder"
+    );
+}
+
 /// Deleting `c1` drops its listed link and a later `spawn` recreates `c1`
 /// with the same fields, so the recreated state has the initial state's
 /// objects and none of its extent. The two are different states, so they

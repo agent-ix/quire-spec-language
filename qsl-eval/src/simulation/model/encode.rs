@@ -12,11 +12,11 @@
 use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, Mutex, RwLock};
 
-use qsl_foundation::node_wire::{node_key_from_json, node_key_to_json};
+use qsl_foundation::node_wire::node_key_from_json;
 use quire_canonical::{Encode, Error, Limits, Sink, Writer};
 use quire_exact::{
-    CollectionKind, EffectiveId, FieldValue, IeeeWidth, NodeKey, ObjectReference,
-    OriginalDeclarationKey, UniverseId, Value,
+    EffectiveId, FieldValue, NodeKey, ObjectReference, OriginalDeclarationKey, PathSegmentView,
+    UniverseId, Value,
 };
 use quire_semantic_value::declaration::{CompositeDeclaration, CompositeShape, TypeEnvironment};
 use serde_json::Value as Json;
@@ -24,6 +24,8 @@ use serde_json::Value as Json;
 use qsl_semantics::check::VariantTypeDeclaration;
 use qsl_semantics::model::state::{ModelState, StateField, StateModel};
 use quire_checked::key::DeclarationKey;
+
+mod projection;
 
 /// One JSON value in FR-181's typed canonical form, before it is written.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -68,17 +70,10 @@ impl Encode for Enc {
                 }
                 writer.end_array()
             }
-            Self::Node(key) => {
-                let json = node_key_to_json(key)
-                    .map_err(|_| Error::Serialize("a node identity nested too deeply".into()))?;
-                write_json(writer, &json)
-            }
-            Self::Effective(id) => write_effective(writer, id),
+            Self::Node(key) => BorrowedIdentity::Node(key).encode_into(writer),
+            Self::Effective(id) => BorrowedIdentity::Effective(id).encode_into(writer),
             Self::Shared(shared) => shared.value.encode_into(writer),
-            Self::Declaration(key) => match declaration_text(key, Limits::new(u64::MAX)) {
-                Ok(text) => writer.string(&text),
-                Err(_) => Err(unencodable(UNENCODABLE_DECLARATION)),
-            },
+            Self::Declaration(key) => BorrowedIdentity::Declaration(key).encode_into(writer),
             Self::Object(members) => {
                 writer.begin_object()?;
                 for (name, value) in members {
@@ -277,14 +272,14 @@ impl Canonicalizer {
                 }
                 out.push(b"]")
             }
-            Enc::Node(key) => Self::identity(&self.nodes, key, || Enc::Node(key.clone()), out),
+            Enc::Node(key) => Self::identity(&self.nodes, key, &BorrowedIdentity::Node(key), out),
             Enc::Effective(id) => {
-                Self::identity(&self.effective, id, || Enc::Effective(id.clone()), out)
+                Self::identity(&self.effective, id, &BorrowedIdentity::Effective(id), out)
             }
             Enc::Declaration(key) => Self::identity(
                 &self.declarations,
                 key,
-                || Enc::Declaration(key.clone()),
+                &BorrowedIdentity::Declaration(key),
                 out,
             ),
             Enc::Shared(shared) => match &shared.bytes {
@@ -316,10 +311,10 @@ impl Canonicalizer {
     }
 
     /// An identity's bytes, encoded on first use and reused after.
-    fn identity<K: Clone + Eq + std::hash::Hash>(
+    fn identity<K: Clone + Eq + std::hash::Hash, E: Encode>(
         memo: &RwLock<HashMap<K, Arc<[u8]>>>,
         key: &K,
-        leaf: impl FnOnce() -> Enc,
+        leaf: &E,
         out: &mut Out,
     ) -> Option<()> {
         let known = memo
@@ -330,7 +325,7 @@ impl Canonicalizer {
         let bytes = match known {
             Some(bytes) => bytes,
             None => {
-                let bytes: Arc<[u8]> = quire_canonical::to_vec(&leaf(), Limits::new(u64::MAX))
+                let bytes: Arc<[u8]> = quire_canonical::to_vec(leaf, Limits::new(u64::MAX))
                     .ok()?
                     .into();
                 memo.write()
@@ -462,34 +457,71 @@ impl Encode for ModelKey {
     }
 }
 
-/// Write the node identity object `json` (a [`node_key_to_json`] value,
-/// nested no deeper than the codec's bound).
-fn write_json<S: Sink + ?Sized>(writer: &mut Writer<'_, S>, json: &Json) -> Result<(), Error> {
-    match json {
-        Json::Null => writer.null(),
-        Json::Bool(value) => writer.bool(*value),
-        Json::Number(number) => {
-            let value = number
-                .as_u64()
-                .ok_or_else(|| Error::Serialize("a node ordinal is an unsigned integer".into()))?;
-            writer.integer(i128::from(value))
+/// The identity leaves shared by the retained tree and its canonical cache.
+enum BorrowedIdentity<'a> {
+    Node(&'a NodeKey),
+    Effective(&'a EffectiveId),
+    Declaration(&'a DeclarationKey),
+}
+
+impl Encode for BorrowedIdentity<'_> {
+    fn encode_into<S: Sink + ?Sized>(&self, writer: &mut Writer<'_, S>) -> Result<(), Error> {
+        match self {
+            Self::Node(key) => qsl_foundation::node_wire::encode_node_key(key, writer),
+            Self::Effective(id) => write_effective(writer, id),
+            Self::Declaration(key) => match declaration_text(key, Limits::new(u64::MAX)) {
+                Ok(text) => writer.string(&text),
+                Err(_) => Err(unencodable(UNENCODABLE_DECLARATION)),
+            },
         }
-        Json::String(text) => writer.string(text),
-        Json::Array(items) => {
-            writer.begin_array()?;
-            for item in items {
-                write_json(writer, item)?;
-            }
-            writer.end_array()
+    }
+}
+
+/// The one declaration-record projection, used as an owned tree or borrowed
+/// canonical events before its text is embedded as a string value.
+fn declaration_members<'a>(key: DeclarationRecord<'a>) -> [(&'static str, &'a str); 2] {
+    [("node", key.node), ("package", key.package)]
+}
+
+#[derive(Clone, Copy)]
+struct DeclarationRecord<'a> {
+    package: &'a str,
+    node: &'a str,
+}
+
+impl<'a> DeclarationRecord<'a> {
+    fn of_key(key: &'a DeclarationKey) -> Self {
+        Self {
+            package: &key.package,
+            node: &key.node,
         }
-        Json::Object(members) => {
-            writer.begin_object()?;
-            for (name, value) in members {
-                writer.name(name)?;
-                write_json(writer, value)?;
-            }
-            writer.end_object()
+    }
+
+    fn of_node(key: &'a NodeKey) -> Option<Self> {
+        let view = key.view();
+        match view.path().last()? {
+            PathSegmentView::Text(node) => Some(Self {
+                package: view.package(),
+                node,
+            }),
+            PathSegmentView::Node(_) => None,
         }
+    }
+
+    fn text(self, limits: Limits) -> Result<String, Error> {
+        let bytes = quire_canonical::to_vec(&self, limits)?;
+        String::from_utf8(bytes).map_err(|_| Error::Serialize("canonical text is UTF-8".into()))
+    }
+}
+
+impl Encode for DeclarationRecord<'_> {
+    fn encode_into<S: Sink + ?Sized>(&self, writer: &mut Writer<'_, S>) -> Result<(), Error> {
+        writer.begin_object()?;
+        for (name, value) in declaration_members(*self) {
+            writer.name(name)?;
+            writer.string(value)?;
+        }
+        writer.end_object()
     }
 }
 
@@ -523,33 +555,22 @@ fn write_effective<S: Sink + ?Sized>(
 /// the same text `qsl_semantics::model::key::declaration_identity_text`
 /// gives, which checked clauses lower operation labels to.
 pub(crate) fn declaration_enc(key: &DeclarationKey) -> Enc {
-    Enc::Object(vec![
-        ("node", Enc::text(key.node.clone())),
-        ("package", Enc::text(key.package.clone())),
-    ])
+    Enc::Object(
+        declaration_members(DeclarationRecord::of_key(key))
+            .into_iter()
+            .map(|(name, value)| (name, Enc::text(value)))
+            .collect(),
+    )
 }
 
 /// The declaration identity text of `key`.
 pub(super) fn declaration_text(key: &DeclarationKey, limits: Limits) -> Result<String, Error> {
-    declaration_enc(key).canonical_text(limits)
+    DeclarationRecord::of_key(key).text(limits)
 }
 
 /// FR-181's reference triple.
 pub(crate) fn reference_enc(reference: &ObjectReference) -> Enc {
-    Enc::tagged(
-        "reference",
-        vec![
-            (
-                "universe",
-                Enc::Node(reference.universe().root_type().clone()),
-            ),
-            (
-                "object_type",
-                Enc::Effective(reference.object_type().clone()),
-            ),
-            ("identity", Enc::text(reference.object().as_str())),
-        ],
-    )
+    projection::reference(reference)
 }
 
 /// FR-181's reference triple as RFC 8785 text: the encoding FR-196 names for
@@ -572,16 +593,7 @@ pub fn encode_reference<S: Sink + ?Sized>(
     reference: &ObjectReference,
     writer: &mut Writer<'_, S>,
 ) -> Result<(), Error> {
-    writer.begin_object()?;
-    writer.name("type")?;
-    writer.string("reference")?;
-    writer.name("universe")?;
-    qsl_foundation::node_wire::encode_node_key(reference.universe().root_type(), writer)?;
-    writer.name("object_type")?;
-    write_effective(writer, reference.object_type())?;
-    writer.name("identity")?;
-    writer.string(reference.object().as_str())?;
-    writer.end_object()
+    projection::write_reference(reference, writer)
 }
 
 /// The UnitId text: the RFC 8785 text of its structural identity record.
@@ -598,45 +610,21 @@ fn identity_text(value: Enc, what: &'static str) -> Enc {
 /// FR-088's UnitId identity record: `{declared: <NodeId>}` or the ordered
 /// compound terms.
 fn unit_identity_enc(unit: &quire_exact::UnitId) -> Enc {
-    if let Some(node) = unit.declared_key() {
-        return Enc::Object(vec![("declared", Enc::Node(node.clone()))]);
-    }
-    let terms = unit.compound_terms().unwrap_or_default();
-    Enc::Object(vec![(
-        "terms",
-        Enc::Array(
-            terms
-                .iter()
-                .map(|(node, exponent)| {
-                    Enc::Object(vec![
-                        ("unit", Enc::Node(node.clone())),
-                        ("exponent", Enc::text(exponent.to_string())),
-                    ])
-                })
-                .collect(),
-        ),
-    )])
+    projection::unit_identity(unit)
 }
 
 /// A checked type node's producer declaration identity, `{package, node}`.
 /// Type-environment keys are minted with the declaration's opaque producer
 /// node as the final segment of their structural path.
-fn declaration_key_for_node(key: &NodeKey) -> Option<DeclarationKey> {
-    let Json::Object(fields) = node_key_to_json(key).ok()? else {
-        return None;
-    };
-    let package = fields.get("package")?.as_str()?.to_owned();
-    let Json::Array(path) = fields.get("path")? else {
-        return None;
-    };
-    let node = path.last()?.as_str()?.to_owned();
-    Some(DeclarationKey { package, node })
-}
-
+#[cfg(test)]
 fn declaration_name(key: &NodeKey) -> Enc {
-    declaration_key_for_node(key).map_or(Enc::Unencodable("a declaration identity"), |key| {
-        identity_text(declaration_enc(&key), "a declaration identity")
-    })
+    DeclarationRecord::of_node(key)
+        .and_then(|record| {
+            record
+                .text(Limits::new(super::identity_limits().input_bytes))
+                .ok()
+        })
+        .map_or(Enc::Unencodable("a declaration identity"), Enc::Str)
 }
 
 /// The first JSON value of `text` and the text after it.
@@ -763,6 +751,8 @@ pub(crate) struct Typing<'t> {
     clock_bits: &'t [(DeclarationKey, StateField)],
     /// The run's map-key names, when the caller keeps them.
     names: Option<&'t KeyNames>,
+    /// Effective fields retained by the model system, including synthetic clock entries.
+    state_fields: Option<&'t BTreeMap<DeclarationKey, Vec<StateField>>>,
 }
 
 /// The names a run's state keys write as map keys, each with the RFC 8785
@@ -830,7 +820,7 @@ impl KeyNames {
 
 /// The map key a population's objects are written under.
 fn population_name(population: &DeclarationKey) -> Enc {
-    Enc::tagged("text", vec![("value", declaration_enc_text(population))])
+    projection::population_name(population)
 }
 
 impl<'t> Typing<'t> {
@@ -842,6 +832,7 @@ impl<'t> Typing<'t> {
             clock_counts: &[],
             clock_bits: &[],
             names: None,
+            state_fields: None,
         }
     }
 
@@ -857,6 +848,7 @@ impl<'t> Typing<'t> {
             clock_counts: &[],
             clock_bits: &[],
             names: None,
+            state_fields: None,
         }
     }
 
@@ -878,6 +870,18 @@ impl<'t> Typing<'t> {
     pub(crate) fn with_names(self, names: &'t KeyNames) -> Self {
         Self {
             names: Some(names),
+            ..self
+        }
+    }
+
+    /// Borrow the model system's effective fields rather than constructing
+    /// them again for each object's key.
+    pub(crate) fn with_state_fields(
+        self,
+        fields: &'t BTreeMap<DeclarationKey, Vec<StateField>>,
+    ) -> Self {
+        Self {
+            state_fields: Some(fields),
             ..self
         }
     }
@@ -926,55 +930,6 @@ pub(crate) fn typed_value_enc(
     value_enc(value, Typing::with_variants(types, variants))
 }
 
-/// FR-181's `record` or `tuple` form of `composite`, its declaration read
-/// from `types`: `{"type":"record","name":…,"fields":[{name, value}…]}`
-/// with `name` the declaration identity text, one entry per declared
-/// field in declaration order and an absent field `null`, or
-/// `{"type":"tuple","name":…,"components":[…]}` in declaration order; each
-/// slot written by `slot_enc`.
-fn composite_enc(
-    composite: &quire_exact::CompositeValue,
-    types: &TypeEnvironment,
-    slot_enc: &dyn Fn(&FieldValue) -> Enc,
-) -> Enc {
-    let name = declaration_name(composite.declaration());
-    match types
-        .composite(composite.declaration().clone())
-        .map(CompositeDeclaration::shape)
-    {
-        Some(CompositeShape::Record(fields)) if fields.len() == composite.slots().len() => {
-            let entries = fields
-                .iter()
-                .zip(composite.slots())
-                .map(|(field, slot)| {
-                    Enc::Object(vec![
-                        ("name", Enc::text(field.name())),
-                        ("value", slot_enc(slot)),
-                    ])
-                })
-                .collect();
-            Enc::tagged(
-                "record",
-                vec![("name", name), ("fields", Enc::Array(entries))],
-            )
-        }
-        Some(CompositeShape::Tuple(_)) => Enc::tagged(
-            "tuple",
-            vec![
-                ("name", name),
-                (
-                    "components",
-                    Enc::Array(composite.slots().iter().map(slot_enc).collect()),
-                ),
-            ],
-        ),
-        Some(CompositeShape::Record(_)) => {
-            Enc::Unencodable("a record whose slots are not its declared fields")
-        }
-        Some(CompositeShape::Union(_)) | None => Enc::Unencodable("an undeclared record"),
-    }
-}
-
 /// A reference's replacement in a key-free encoding (FR-152): `Some` for a
 /// reference the encoding names by a placeholder, `None` to encode it.
 pub(super) type Placeholder<'p> = dyn Fn(&ObjectReference) -> Option<Enc> + 'p;
@@ -993,169 +948,10 @@ pub(super) fn value_enc_with(
 fn value_enc_with_decimal_mode(
     value: &Value,
     typing: Typing<'_>,
-    placeholder: &dyn Fn(&ObjectReference) -> Option<Enc>,
+    placeholder: &Placeholder<'_>,
     normalize_decimal: bool,
 ) -> Enc {
-    match value {
-        Value::Boolean(flag) => Enc::tagged("boolean", vec![("value", Enc::Bool(*flag))]),
-        Value::Integer(integer) => {
-            Enc::tagged("integer", vec![("value", Enc::text(integer.to_string()))])
-        }
-        Value::Rational(rational) => Enc::tagged(
-            "rational",
-            vec![
-                ("numerator", Enc::text(rational.numerator().to_string())),
-                ("denominator", Enc::text(rational.denominator().to_string())),
-            ],
-        ),
-        Value::Quantity(quantity) => {
-            let magnitude = quantity.magnitude();
-            Enc::tagged(
-                "rational",
-                vec![
-                    ("numerator", Enc::text(magnitude.numerator().to_string())),
-                    (
-                        "denominator",
-                        Enc::text(magnitude.denominator().to_string()),
-                    ),
-                    ("unit", unit_enc(quantity.unit())),
-                ],
-            )
-        }
-        Value::Float(float) => {
-            let (tag, digits) = match float.width() {
-                IeeeWidth::Binary32 => ("float32", 8),
-                IeeeWidth::Binary64 => ("float64", 16),
-            };
-            Enc::tagged(
-                tag,
-                vec![("bits", Enc::text(format!("{:0digits$x}", float.bits())))],
-            )
-        }
-        Value::Text(text) => Enc::tagged("text", vec![("value", Enc::text(text.retained()))]),
-        Value::String(text) => Enc::tagged("text", vec![("value", Enc::text(text.as_str()))]),
-        Value::Option(option) => Enc::tagged(
-            "option",
-            vec![(
-                "value",
-                option.payload().map_or(Enc::Null, |payload| {
-                    value_enc_with_decimal_mode(payload, typing, placeholder, normalize_decimal)
-                }),
-            )],
-        ),
-        Value::Collection(collection) => {
-            let tag = match collection.collection_type().kind() {
-                CollectionKind::Sequence => "sequence",
-                CollectionKind::Set => "set",
-                CollectionKind::Bag => "bag",
-                CollectionKind::OrderedSet => "ordered-set",
-            };
-            let normalize_elements = normalize_decimal
-                || matches!(
-                    collection.collection_type().kind(),
-                    CollectionKind::Set | CollectionKind::Bag
-                );
-            let mut elements: Vec<Enc> = collection
-                .elements()
-                .iter()
-                .map(|element| {
-                    value_enc_with_decimal_mode(element, typing, placeholder, normalize_elements)
-                })
-                .collect();
-            if matches!(
-                collection.collection_type().kind(),
-                CollectionKind::Set | CollectionKind::Bag
-            ) {
-                // Sorted by each element's JCS bytes, ascending (FR-181).
-                let limits = Limits::new(u64::MAX);
-                elements.sort_by_cached_key(|element| {
-                    quire_canonical::to_vec(element, limits).unwrap_or_default()
-                });
-            }
-            Enc::tagged(tag, vec![("elements", Enc::Array(elements))])
-        }
-        Value::Reference(reference) => {
-            placeholder(reference).unwrap_or_else(|| reference_enc(reference))
-        }
-        Value::Decimal(decimal) => {
-            let representation = if normalize_decimal {
-                decimal.normalized()
-            } else {
-                decimal.representation()
-            };
-            Enc::tagged(
-                "decimal",
-                vec![
-                    (
-                        "coefficient",
-                        Enc::text(representation.coefficient().to_string()),
-                    ),
-                    ("scale", Enc::text(representation.scale().to_string())),
-                ],
-            )
-        }
-        Value::Uuid(value) => Enc::tagged("uuid", vec![("value", Enc::text(value.to_string()))]),
-        Value::Timestamp(value) => Enc::tagged(
-            "timestamp",
-            vec![("nanoseconds", Enc::text(value.to_string()))],
-        ),
-        Value::Enum(member) => typing
-            .variants
-            .iter()
-            .find_map(|declared| {
-                declared
-                    .cases()
-                    .iter()
-                    .find(|case| case.variant() == *member.variant())
-                    .map(|case| (declared, case))
-            })
-            .map_or(
-                Enc::Unencodable("an undeclared enum value"),
-                |(declared, case)| {
-                    Enc::tagged(
-                        "enum",
-                        vec![
-                            ("name", declaration_name(&declared.node())),
-                            ("member", Enc::text(case.name())),
-                        ],
-                    )
-                },
-            ),
-        Value::Population(_) => Enc::Unencodable("a population value"),
-        Value::Composite(composite) => match typing.types {
-            Some(types) => composite_enc(composite, types, &|slot| match slot {
-                FieldValue::Present(inner) => {
-                    value_enc_with_decimal_mode(inner, typing, placeholder, normalize_decimal)
-                }
-                FieldValue::Absent | FieldValue::Null => Enc::Null,
-            }),
-            None => Enc::Unencodable("a record or tuple value"),
-        },
-        Value::Union(union) => Enc::tagged(
-            "union",
-            vec![
-                ("name", declaration_name(union.declaration())),
-                ("member", Enc::text(union.member().identifier())),
-                (
-                    "components",
-                    Enc::Array(
-                        union
-                            .payload()
-                            .iter()
-                            .map(|inner| {
-                                value_enc_with_decimal_mode(
-                                    inner,
-                                    typing,
-                                    placeholder,
-                                    normalize_decimal,
-                                )
-                            })
-                            .collect(),
-                    ),
-                ),
-            ],
-        ),
-    }
+    projection::value(value, typing, placeholder, normalize_decimal)
 }
 
 /// Whether two values have the same typed canonical form. A value with no
@@ -1247,28 +1043,11 @@ pub(crate) fn map_enc(entries: Vec<(Enc, Enc)>) -> Enc {
     Enc::Map(entries)
 }
 
-/// A map entry with the bytes [`map_enc`] orders it by.
-fn keyed_entry(key: Enc, value: Enc) -> (Vec<u8>, Enc, Enc) {
-    let (bytes, key) = keyed_name(key);
-    (bytes, key, value)
-}
-
 /// [`map_enc`] of entries that carry their key's RFC 8785 bytes, so a caller
 /// that writes one key in many maps encodes it once.
 pub(crate) fn sorted_map_enc(mut keyed: Vec<(Vec<u8>, Enc, Enc)>) -> Enc {
     keyed.sort_by(|left, right| left.0.cmp(&right.0));
-    Enc::tagged(
-        "map",
-        vec![(
-            "entries",
-            Enc::Array(
-                keyed
-                    .into_iter()
-                    .map(|(_, key, value)| Enc::Object(vec![("key", key), ("value", value)]))
-                    .collect(),
-            ),
-        )],
-    )
+    projection::sorted_map(keyed)
 }
 
 /// The `semantic` member of a model state's key (FR-120 "State, state key
@@ -1280,72 +1059,7 @@ pub(crate) fn sorted_map_enc(mut keyed: Vec<(Vec<u8>, Enc, Enc)>) -> Enc {
 /// its completeness and its instance pairs in ascending canonical order, so
 /// two states differing only in their extents have different keys.
 pub(crate) fn semantic_enc(model: &StateModel, state: &ModelState, typing: Typing<'_>) -> Enc {
-    let fresh = KeyNames::default();
-    let names = typing.names.unwrap_or(&fresh);
-    let mut populations = Vec::new();
-    for (population, objects) in &state.populations {
-        let mut entries = Vec::new();
-        for (key, object) in objects {
-            let Some((bytes, reference)) = names.reference(model, &object.type_identity, key)
-            else {
-                return Enc::Unencodable("an object whose reference does not resolve");
-            };
-            let record = object_enc(model, object, typing, &|_| None);
-            entries.push((bytes, reference, record));
-        }
-        let (bytes, name) = names.population(population);
-        populations.push((bytes, name, sorted_map_enc(entries)));
-    }
-    if !state.extents.is_empty() {
-        populations.push(keyed_entry(
-            Enc::tagged("text", vec![("value", Enc::text("relationships"))]),
-            extents_enc(state),
-        ));
-    }
-    sorted_map_enc(populations)
-}
-
-/// The listed relationship extents of `state`: relationship identity text to
-/// `{complete, instances}`, the instances as `{source, target}` pairs
-/// ascending by canonical bytes, repeats kept (admission keeps a repeated
-/// pair when neither end is unique).
-fn extents_enc(state: &ModelState) -> Enc {
-    let limits = Limits::new(u64::MAX);
-    let entries = state
-        .extents
-        .iter()
-        .map(|extent| {
-            let mut pairs: Vec<(Vec<u8>, Enc)> = extent
-                .instances
-                .iter()
-                .map(|(source, target)| {
-                    let pair = Enc::Object(vec![
-                        ("source", reference_enc(source)),
-                        ("target", reference_enc(target)),
-                    ]);
-                    (
-                        quire_canonical::to_vec(&pair, limits).unwrap_or_default(),
-                        pair,
-                    )
-                })
-                .collect();
-            pairs.sort_by(|left, right| left.0.cmp(&right.0));
-            (
-                Enc::tagged(
-                    "text",
-                    vec![("value", declaration_enc_text(&extent.relationship))],
-                ),
-                Enc::Object(vec![
-                    ("complete", Enc::Bool(extent.complete)),
-                    (
-                        "instances",
-                        Enc::Array(pairs.into_iter().map(|(_, pair)| pair).collect()),
-                    ),
-                ]),
-            )
-        })
-        .collect();
-    map_enc(entries)
+    projection::semantic(model, state, typing)
 }
 
 /// One object's `record` in a state key (FR-120): its type name and its
@@ -1357,124 +1071,13 @@ pub(super) fn object_enc(
     typing: Typing<'_>,
     placeholder: &Placeholder<'_>,
 ) -> Enc {
-    let Ok(Some(fields)) = model.fields(&object.type_identity) else {
-        return Enc::Unencodable("an object of an undeclared type");
-    };
-    let mut fields: Vec<Enc> = fields
-        .iter()
-        .map(|field| {
-            // QSpec FR-181: a field declared `Option<T>` holds an option
-            // value; an absent presence-optional field is a plain `null`
-            // entry; a record, tuple, union or enum value takes its declared
-            // form from `typing`.
-            let value = object.fields.get(&field.key).map_or(Enc::Null, |value| {
-                value_enc_with(value, typing, placeholder)
-            });
-            Enc::Object(vec![
-                ("name", Enc::text(field.name.clone())),
-                ("value", value),
-            ])
-        })
-        .collect();
-    // A collection of bare clocks holds one `Clock` tuple per element, the
-    // shell FR-230 gives a present clock place, so two states that differ
-    // in its element count have different keys.
-    for (type_key, field, _, _) in typing.clock_counts {
-        if *type_key != object.type_identity {
-            continue;
-        }
-        let elements = match object.fields.get(&field.key) {
-            Some(Value::Integer(count)) => (0..count.to_u64().unwrap_or(0))
-                .map(|_| clock_shell_enc())
-                .collect(),
-            // FR-230-AC-42: a `Sequence<Option<Clock>>` writes each element's
-            // option shell, `null` when absent and a `Clock` shell when
-            // present.
-            Some(Value::Collection(bits)) => bits
-                .elements()
-                .iter()
-                .map(|bit| {
-                    let shell = if matches!(bit, Value::Boolean(true)) {
-                        clock_shell_enc()
-                    } else {
-                        Enc::Null
-                    };
-                    Enc::tagged("option", vec![("value", shell)])
-                })
-                .collect(),
-            _ => continue,
-        };
-        fields.push(Enc::Object(vec![
-            ("name", Enc::text(field.name.clone())),
-            (
-                "value",
-                Enc::tagged("sequence", vec![("elements", Enc::Array(elements))]),
-            ),
-        ]));
-    }
-    // FR-230 "Presence bit": an `Option<Clock>` field writes its option
-    // shell, `null` when absent and a `Clock` shell when present.
-    for (type_key, field) in typing.clock_bits {
-        if *type_key != object.type_identity {
-            continue;
-        }
-        let present = matches!(object.fields.get(&field.key), Some(Value::Boolean(true)));
-        let shell = if present {
-            clock_shell_enc()
-        } else {
-            Enc::Null
-        };
-        fields.push(Enc::Object(vec![
-            ("name", Enc::text(field.name.clone())),
-            ("value", Enc::tagged("option", vec![("value", shell)])),
-        ]));
-    }
-    Enc::tagged(
-        "record",
-        vec![
-            ("name", declaration_enc_text(&object.type_identity)),
-            ("fields", Enc::Array(fields)),
-        ],
-    )
-}
-
-/// A present clock place's shell, FR-230's
-/// `{"type":"tuple","name":"Clock","components":[]}`.
-pub(crate) fn clock_shell_enc() -> Enc {
-    Enc::tagged(
-        "tuple",
-        vec![
-            ("name", Enc::text("Clock")),
-            ("components", Enc::Array(Vec::new())),
-        ],
-    )
-}
-
-/// A declaration's identity text as a string value.
-fn declaration_enc_text(key: &DeclarationKey) -> Enc {
-    Enc::Declaration(key.clone())
-}
-
-/// The empty `map`.
-fn empty_map() -> Enc {
-    map_enc(Vec::new())
+    projection::object(model, object, typing, placeholder)
 }
 
 /// FR-181's state key for a model state (FR-120 "State, state key and
-/// anchor"): the five members a model state does not use are empty maps.
+/// anchor"): the unused members are empty maps.
 pub(super) fn model_key(model: &StateModel, state: &ModelState, typing: Typing<'_>) -> ModelKey {
-    ModelKey(Enc::tagged(
-        "simulation-state",
-        vec![
-            ("semantic", semantic_enc(model, state, typing)),
-            ("control", empty_map()),
-            ("queues", empty_map()),
-            ("roles", empty_map()),
-            ("observations", empty_map()),
-            ("bounds", empty_map()),
-            ("memory", empty_map()),
-        ],
-    ))
+    ModelKey(projection::model_state(model, state, typing))
 }
 
 #[cfg(test)]

@@ -31,6 +31,34 @@ use serde_json::{json, Value as Json};
 
 const PACKAGE: &str = "test/rpc";
 
+fn assert_model_key_fields_are_unique(text: &str) {
+    let key: Json = serde_json::from_str(text).expect("the model key is JSON");
+    let mut records = 0;
+    for population in key["semantic"]["entries"]
+        .as_array()
+        .expect("semantic entries")
+    {
+        for object in population["value"]["entries"]
+            .as_array()
+            .expect("population entries")
+        {
+            let Some(fields) = object["value"]["fields"].as_array() else {
+                continue;
+            };
+            records += 1;
+            let mut names = std::collections::BTreeSet::new();
+            for field in fields {
+                let name = field["name"].as_str().expect("a field name");
+                assert!(
+                    names.insert(name),
+                    "field {name} is emitted more than once: {text}"
+                );
+            }
+        }
+    }
+    assert!(records > 0, "the control must inspect real model records");
+}
+
 fn ident(suffix: &str) -> String {
     format!("ix://{PACKAGE}/{suffix}")
 }
@@ -5122,7 +5150,7 @@ fn quantified_presence_reads_the_element_bits() {
 /// per element.
 /// Not covered: AC-46's `Sequence<Stopwatch>` and `Sequence<Option<Clock>>`
 /// (580q) and AC-47's `Map`, which a domain package cannot declare.
-#[trace("TC-685")]
+#[trace("TC-685", "FR-120-AC-4")]
 #[test]
 fn a_bare_clock_collection_ranges_its_initial_count() {
     let clock = "ix://quire/native/Clock".to_owned();
@@ -5197,6 +5225,7 @@ fn a_bare_clock_collection_ranges_its_initial_count() {
     let text = String::from_utf8(two).expect("UTF-8");
     let shell = r#"{"components":[],"name":"Clock","type":"tuple"}"#;
     assert_eq!(text.matches(shell).count(), 2, "{text}");
+    assert_model_key_fields_are_unique(&text);
 }
 
 /// QSpec FR-430 "Reductions over a dense-time subject" over clock
@@ -5273,7 +5302,7 @@ fn option_clock_document() -> Vec<u8> {
 /// `work`, guarded `present(self.v) and value(self.v) >= 1 ms`, is enabled
 /// only from the present state once `v` reads 1 ms, and its `self.v = 0
 /// ms` resets `v` to 0, still present.
-#[trace("TC-685")]
+#[trace("TC-685", "FR-120-AC-4")]
 #[test]
 fn an_option_clock_has_a_presence_bit() {
     let world = world_over(
@@ -5298,6 +5327,8 @@ fn an_option_clock_has_a_presence_bit() {
     let shell = r#"{"type":"option","value":{"components":[],"name":"Clock","type":"tuple"}}"#;
     assert!(key(absent).contains(r#"{"name":"v","value":{"type":"option","value":null}}"#));
     assert!(key(present).contains(&format!(r#"{{"name":"v","value":{shell}}}"#)));
+    assert_model_key_fields_are_unique(&key(absent));
+    assert_model_key_fields_are_unique(&key(present));
     assert_eq!(timed.live_clocks(absent.discrete()), 1);
     assert_eq!(timed.live_clocks(present.discrete()), 2);
     assert!(timed
