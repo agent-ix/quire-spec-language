@@ -279,7 +279,8 @@ fn run(
     {
         return not_yet();
     }
-    let bounded_fair = !claim.fairness.is_empty() && bounded_formula.is_some()
+    let bounded_fair = !claim.fairness.is_empty()
+        && bounded_formula.is_some()
         && matches!(claim.scheduler, ProbScheduler::Every);
     if !claim.fairness.is_empty() && !bounded_fair {
         return not_yet();
@@ -782,7 +783,12 @@ fn bounded_certificate_of(
         return Err(ExactProbabilityGraphError::MissingSuccessor.into());
     }
     if let Some(budget) = budget.as_mut() {
-        budget.reserve(product.states.len().saturating_mul(std::mem::size_of::<ExactProbabilityValue>()))?;
+        budget.reserve(
+            product
+                .states
+                .len()
+                .saturating_mul(std::mem::size_of::<ExactProbabilityValue>()),
+        )?;
     }
     let mut entries = Vec::with_capacity(product.states.len());
     for (state, value) in product.states.iter().zip(values) {
@@ -797,8 +803,15 @@ fn bounded_certificate_of(
                 let key = bounded_monitor_key(state, monitor)?;
                 let identity = budget.identity;
                 let mut admission = budget.admission();
-                ProbabilityProductKey::for_formula_state_with_budget(binding, &state.model, &key, identity, &mut admission, cancel)
-                    .map_err(|error| admission.refusal(error))?
+                ProbabilityProductKey::for_formula_state_with_budget(
+                    binding,
+                    &state.model,
+                    &key,
+                    identity,
+                    &mut admission,
+                    cancel,
+                )
+                .map_err(|error| admission.refusal(error))?
             }
             None => bounded_product_key(state, binding, monitor, io, cancel)?,
         };

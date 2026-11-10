@@ -7,8 +7,8 @@ use serde::{Deserialize, Serialize};
 
 use super::*;
 
-mod key;
 mod fairness;
+mod key;
 mod mdp;
 #[cfg(feature = "test-support")]
 pub use mdp::{
@@ -35,7 +35,9 @@ pub use long_run::{
 };
 mod unit;
 mod writer;
-pub(super) use key::{model_product_key, model_product_key_with_budget, formula_product_key_with_budget};
+pub(super) use key::{
+    formula_product_key_with_budget, model_product_key, model_product_key_with_budget,
+};
 
 const PROFILE: &str = "quire.probability-objective/reachability/v1";
 const STATE_PROFILE: &str = "quire.probability-objective/state-predicate/v1";
@@ -369,7 +371,9 @@ fn profile_dispatch(
             Some(quire_canonical::Node::String(CYCLIC_MDP_REWARD_PROFILE)) => {
                 ProfileDispatch::CyclicMdpReward
             }
-            Some(quire_canonical::Node::String(BOUNDED_FAIR_PROFILE)) => ProfileDispatch::BoundedFair,
+            Some(quire_canonical::Node::String(BOUNDED_FAIR_PROFILE)) => {
+                ProfileDispatch::BoundedFair
+            }
             _ => ProfileDispatch::Exact,
         },
     )
@@ -643,7 +647,16 @@ fn read_document_profile(
             .and_then(|node| node.get("fairness"))
             .map(|node| node.node())
         {
-            Some(quire_canonical::Node::Array(mut items)) => items.next().is_some() && !(allow_fair && matches!(objective.and_then(|node| node.get("profile")).map(|node| node.node()), Some(quire_canonical::Node::String(BOUNDED_FAIR_PROFILE)))),
+            Some(quire_canonical::Node::Array(mut items)) => {
+                items.next().is_some()
+                    && !(allow_fair
+                        && matches!(
+                            objective
+                                .and_then(|node| node.get("profile"))
+                                .map(|node| node.node()),
+                            Some(quire_canonical::Node::String(BOUNDED_FAIR_PROFILE))
+                        ))
+            }
             _ => false,
         };
     if outside_profile {
@@ -997,21 +1010,35 @@ fn subject_graph_with_identity(
             let context = probabilistic_formula_monitor_context(claim, reference)?;
             (
                 bound,
-                if allow_fair { super::bounded::enumerate_with_budget(
-                    system, formula, &context, reference, workload, limits, cancel,
-                    &mut |failure| { issue = Some(failure); }, meter, storage,
-                ) } else { super::bounded::enumerate(
-                    system,
-                    formula,
-                    &context,
-                    reference,
-                    workload,
-                    limits,
-                    cancel,
-                    &mut |failure| {
-                        issue = Some(failure);
-                    },
-                ) }
+                if allow_fair {
+                    super::bounded::enumerate_with_budget(
+                        system,
+                        formula,
+                        &context,
+                        reference,
+                        workload,
+                        limits,
+                        cancel,
+                        &mut |failure| {
+                            issue = Some(failure);
+                        },
+                        meter,
+                        storage,
+                    )
+                } else {
+                    super::bounded::enumerate(
+                        system,
+                        formula,
+                        &context,
+                        reference,
+                        workload,
+                        limits,
+                        cancel,
+                        &mut |failure| {
+                            issue = Some(failure);
+                        },
+                    )
+                }
                 .map(|(graph, ranks)| (graph, Some(ranks))),
             )
         }
@@ -1421,7 +1448,14 @@ fn check_document_with_control(
     }
     let mut meter = quire_exact::Meter::new(limits.accounting).with_cancel(cancel.clone());
     let mut fairness_records = Vec::new();
-    let document = match read_document_profile(bytes, limits, cancel, &mut meter, false, Some(&mut fairness_records)) {
+    let document = match read_document_profile(
+        bytes,
+        limits,
+        cancel,
+        &mut meter,
+        false,
+        Some(&mut fairness_records),
+    ) {
         Ok(document) => document,
         Err(error) => return document_admission_error(error),
     };

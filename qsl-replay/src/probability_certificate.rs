@@ -134,7 +134,14 @@ impl ProbabilityProductKey {
         budget: &mut dyn qsl_eval::simulation::model::ModelKeyBudget,
         cancel: &Cancel,
     ) -> Result<Self, qsl_eval::simulation::model::ModelKeyError> {
-        document::formula_product_key_with_budget(binding, model_bytes, Some(monitor), identity, budget, cancel)
+        document::formula_product_key_with_budget(
+            binding,
+            model_bytes,
+            Some(monitor),
+            identity,
+            budget,
+            cancel,
+        )
     }
 }
 

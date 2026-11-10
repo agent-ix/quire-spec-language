@@ -92,7 +92,9 @@ pub(super) fn enumerate(
     cancel: &Cancel,
     failure: &mut impl FnMut(crate::ExactProbBuildIssue),
 ) -> Result<(CheckerGraph, BTreeMap<ProbabilityProductKey, u64>), ProbabilityDocumentError> {
-    enumerate_controlled(system, formula, context, binding, workload, limits, cancel, failure, None)
+    enumerate_controlled(
+        system, formula, context, binding, workload, limits, cancel, failure, None,
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -108,7 +110,17 @@ pub(super) fn enumerate_with_budget(
     meter: &mut quire_exact::Meter,
     storage: &mut u64,
 ) -> Result<(CheckerGraph, BTreeMap<ProbabilityProductKey, u64>), ProbabilityDocumentError> {
-    enumerate_controlled(system, formula, context, binding, workload, limits, cancel, failure, Some((meter, storage)))
+    enumerate_controlled(
+        system,
+        formula,
+        context,
+        binding,
+        workload,
+        limits,
+        cancel,
+        failure,
+        Some((meter, storage)),
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -170,12 +182,25 @@ fn enumerate_controlled(
     let first_control = Control::read(&monitor, first_control)?;
     let key_of = |model: &ModelSimState, control: Control, monitor: &QualifiedBoundedMonitor| {
         if let Some((meter, storage)) = scope.borrow_mut().as_mut() {
-            let mut admission = ProbabilityKeyAdmission::new(meter, storage, limits.storage_bytes, cancel);
+            let mut admission =
+                ProbabilityKeyAdmission::new(meter, storage, limits.storage_bytes, cancel);
             let identity = qsl_foundation::IdentityLimits::default();
             let encoded = (|| {
-                let bytes = system.state_key_bytes_with_budget(model, identity, &mut admission, cancel)?;
-                let monitor = control.key(monitor).map_err(|_| qsl_eval::simulation::model::ModelKeyError::Unsupported("formula control identity"))?;
-                ProbabilityProductKey::for_formula_state_with_budget(binding, &bytes, &monitor, identity, &mut admission, cancel)
+                let bytes =
+                    system.state_key_bytes_with_budget(model, identity, &mut admission, cancel)?;
+                let monitor = control.key(monitor).map_err(|_| {
+                    qsl_eval::simulation::model::ModelKeyError::Unsupported(
+                        "formula control identity",
+                    )
+                })?;
+                ProbabilityProductKey::for_formula_state_with_budget(
+                    binding,
+                    &bytes,
+                    &monitor,
+                    identity,
+                    &mut admission,
+                    cancel,
+                )
             })();
             return encoded.map_err(|error| admission.refusal(error));
         }
@@ -216,8 +241,16 @@ fn enumerate_controlled(
             return Err(ExactProbabilityGraphError::ExpansionRefused.into());
         };
         let distributions = if let Some((meter, storage)) = scope.borrow_mut().as_mut() {
-            let mut admission = ProbabilityKeyAdmission::new(meter, storage, limits.storage_bytes, cancel);
-            model_distributions_with_budget(system, &model, workload, qsl_foundation::IdentityLimits::default(), &mut admission, cancel)?
+            let mut admission =
+                ProbabilityKeyAdmission::new(meter, storage, limits.storage_bytes, cancel);
+            model_distributions_with_budget(
+                system,
+                &model,
+                workload,
+                qsl_foundation::IdentityLimits::default(),
+                &mut admission,
+                cancel,
+            )?
         } else {
             model_distributions(system, &model, workload, cancel, failure)?
         };

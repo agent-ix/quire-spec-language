@@ -46,7 +46,14 @@ pub fn read_probability_proof_document(
     );
     let mut meter = quire_exact::Meter::new(limits.accounting).with_cancel(cancel.clone());
     let mut fairness = Vec::new();
-    let document = read_document_profile(bytes, limits, cancel, &mut meter, cyclic_mdp, Some(&mut fairness))?;
+    let document = read_document_profile(
+        bytes,
+        limits,
+        cancel,
+        &mut meter,
+        cyclic_mdp,
+        Some(&mut fairness),
+    )?;
     Ok(ProbabilityProofDocument {
         document,
         cyclic_mdp,
@@ -61,7 +68,13 @@ pub fn write_probability_proof_document(
     limits: ProbabilityDocumentLimits,
     cancel: &Cancel,
 ) -> Result<Vec<u8>, ProbabilityDocumentError> {
-    let bytes = writer::encode_fair_profile(&document.document, limits, cancel, document.cyclic_mdp, &document.fairness)?;
+    let bytes = writer::encode_fair_profile(
+        &document.document,
+        limits,
+        cancel,
+        document.cyclic_mdp,
+        &document.fairness,
+    )?;
     read_probability_proof_document(&bytes, limits, cancel)?;
     Ok(bytes)
 }
@@ -80,9 +93,30 @@ pub fn probability_proof_document(
     let claim = bind_claim(claims, item, cancel)?;
     if !claim.fairness.is_empty() {
         super::fairness::admit(claim)?;
-        let fairness = super::fairness::checked(system, claim, limits, cancel, &mut cx.meter, &mut cx.storage)?;
-        let document = construct_document(system, claims, item, certificate, limits, cancel, &mut cx.meter, &mut cx.storage, true)?;
-        return Ok(ProbabilityProofDocument { document, cyclic_mdp: false, fairness });
+        let fairness = super::fairness::checked(
+            system,
+            claim,
+            limits,
+            cancel,
+            &mut cx.meter,
+            &mut cx.storage,
+        )?;
+        let document = construct_document(
+            system,
+            claims,
+            item,
+            certificate,
+            limits,
+            cancel,
+            &mut cx.meter,
+            &mut cx.storage,
+            true,
+        )?;
+        return Ok(ProbabilityProofDocument {
+            document,
+            cyclic_mdp: false,
+            fairness,
+        });
     }
     match construct_document(
         system,
