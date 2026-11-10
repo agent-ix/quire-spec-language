@@ -16,7 +16,7 @@ use qsl_replay::{
 use qsl_semantics::model::observation::DocumentRef;
 use quire_checked::key::DeclarationKey;
 use quire_exact::{Cancel, CancelCause};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 #[derive(Deserialize)]
@@ -193,6 +193,15 @@ fn check(request: Request, cancel: &Cancel) -> Result<Value, String> {
     })
 }
 
+#[derive(Serialize)]
+struct SourceFailure {
+    status: &'static str,
+    reason: String,
+    limit: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    at: Option<qsl_replay::CertificateLocus>,
+}
+
 fn source_failure(error: ProbabilitySourceError) -> Result<Value, String> {
     use ProbabilityDocumentError as Document;
     let status = match &error {
@@ -288,14 +297,19 @@ fn source_failure(error: ProbabilitySourceError) -> Result<Value, String> {
         ),
         _ => None,
     };
-    let mut result = json!({"status": status, "reason": error.to_string(), "limit":limit});
-    if let ProbabilitySourceError::Document(Document::ZeroWeightComponent { state }) = &error {
-        result["at"] = serde_json::to_value(qsl_replay::CertificateLocus::ProbabilityProductState(
-            state.clone(),
-        ))
-        .map_err(|error| error.to_string())?;
-    }
-    Ok(result)
+    let at = match &error {
+        ProbabilitySourceError::Document(Document::ZeroWeightComponent { state }) => Some(
+            qsl_replay::CertificateLocus::ProbabilityProductState(state.clone()),
+        ),
+        _ => None,
+    };
+    serde_json::to_value(SourceFailure {
+        status,
+        reason: error.to_string(),
+        limit,
+        at,
+    })
+    .map_err(|error| error.to_string())
 }
 
 fn run() -> Result<Value, String> {
