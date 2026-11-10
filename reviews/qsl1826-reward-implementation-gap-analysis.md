@@ -176,3 +176,37 @@ bindings:
   ac_id: FR-282-AC-17
   trace: correct
 ```
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Actual owner raw/full key and transitive candidate/post-key APIs are adopted with cumulative caller meter/storage and original Cancel in checker graph, independent cost pass and producer. Verified at 1989db7177dbe56eb75cfe6a91372533ce73dae1; accepted raw STATE scope applies. |
+
+## Disposition round 1 evidence and current verdict
+
+Disposition round 1 independently inspects frozen 1989db7177dbe56eb75cfe6a91372533ce73dae1 against actual base 802cee088d4310ca5a0e41cfc7ecbe9e0fa84c25. The original findings and historical verdict above remain unchanged; this section supplies their current outcome. Required IR142/143 and owner2654 APIs are now actually merged, and the implementation uses their real signatures. No new review artifact IDs are needed.
+
+FND-001 is fixed within the accepted raw STATE-key scope. Reward enumeration creates one real Meter and cumulative storage counter, then repeatedly borrows ProbabilityKeyAdmission views without resetting either. External raw state_key_bytes_with_budget and full for_model_state_with_budget use the same view and original Cancel. The graph expansion callback uses actions_with_budget or weighted_steps_with_budget; independent step_costs expansion uses those same owner entrypoints with the same meter/storage. Owner KeyScope carries the callback into enabled expansion, undecided frame candidates, successor/post sorting and workload current keys. Legacy canonical_state_key branches are selected only when no policy is supplied. ProbabilityKeyAdmission polls the original Cancel, maps retained Denied to actual Accounting/Storage errors and preserves Encoding identity-input and Requested/Deadline causes. Raw integer representation uses the actual accounting integer facet; reward scalar_bits and transport I/O ceilings remain separate. Default raw identity.input_bytes remains 16 MiB, not the document I/O bound.
+
+Producer expected-reward admission invokes the budgeted retaining-monitor builder and retains CandidateBudget through full product/value rows and metered sorting. Inspected builder key_bytes, weighted and choices paths: all select the owner budgeted APIs under that policy. CandidateBudget/value/sort logic moved from long_run.rs to exact/candidate.rs with only visibility/import/formatter changes; no second algorithm was copied. Legacy/budgeted distribution paths share the extracted workload_distribution and action_distributions normalizers. Source fault/undefined/zero-binding and S3 behavior remain inherited and typed; the producer handles BudgetedProductError::Undefined as UndefinedPredicate. No additional concrete defect found in the adoption diff or preserved reward math/S3/codec.
+
+Accepted owner scope excludes pre-existing external ModelTransition construction, private-reader and interpreter allocation boundaries. This review grants no full FR-201-AC-30 or whole-interpreter memory qualification, and creates no new IR work. Original reward AC19-22/FR282 AC16-17 repaired tables are now present on the actual base. The new cyclic/long-run profiles are peer implementations, not extensions claimed by this reward lane.
+
+Evidence inspected, no broad reruns: /tmp/qsl1826-reward-owner-all-fresh.log 37 passed, owner-fresh.log reward8, owner-identity.log 1, owner-longrun.log 23, owner-codec.log 13, owner-s3.log 2, owner-adapter.log 13, owner-native.log 41; affected-four-package all-target Clippy with analyze/test-support and -D warnings passed in owner-clippy.log; owner-fmt.log passed. New actual core exact/one-short storage test checks original global bound and exact actual denied requirement, with no value on stop. Reward identity override tests the actual admission route with identity.input_bytes=0 independently of document limits. Existing producer larger-candidate representation/cancellation controls now also exercise checked reward subjects and Requested/Deadline. Original counterfactual evidence remains historical, not rerun or overstated. git diff --check passed. No cargo, full matrix, aggregate, Kani or qualification reruns were necessary; no source changes or merge performed.
+
+Current scoped verdict: PASS; mergeable from this review once the lead records this updated artifact custody and runs any separately required final merge gate. This is an engineering review of the specified reward lane, not whole-repository qualification. Plan completion: not assessed.
+
+Fixed source excerpt (qsl-replay/src/probability_certificate/reward.rs):
+
+```rust
+            let bytes =
+                system.state_key_bytes_with_budget(state, identity, &mut admission, cancel)?;
+            ProbabilityProductKey::for_model_state_with_budget(
+                binding,
+                &bytes,
+                identity,
+                &mut admission,
+                cancel,
+            )
+```
