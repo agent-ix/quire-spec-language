@@ -12,11 +12,12 @@ use quire_exact::Cancel;
 use serde_json::{json, Value};
 
 const PROGRAM: &[u8] = include_bytes!("../../../tests/fixtures/spine-run.native");
+const DOMAIN: &[u8] = include_bytes!("../../../examples/config-version/model.semantic-ir.json");
 const HEADER: &str =
     "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\";\n";
 
 fn source() -> Value {
-    json!({"file":"program.native", "authority":"offered issuer", "identity":"offered unit",
+    json!({"file":"program.native", "authority":"offered issuer", "identity":"offered:unit",
         "document":"PreparedCommand", "formal_revision":1})
 }
 
@@ -38,11 +39,19 @@ fn compile_request(directory: &Path, bytes: &[u8]) -> std::path::PathBuf {
 
 fn run_request(directory: &Path, work_units: u64) -> std::path::PathBuf {
     std::fs::write(directory.join("program.native"), PROGRAM).unwrap();
+    std::fs::write(directory.join("library.native"), PROGRAM).unwrap();
+    std::fs::write(directory.join("model.json"), DOMAIN).unwrap();
     write_request(
         directory,
         "run.json",
         json!({"format":"native-run/1", "request":{
-        "models":[], "program":{"source":source()}, "call":{
+        "models":[{"format":"semantic-ir/2.0.0","source":{
+            "file":"model.json","authority":"model issuer","identity":"model:source",
+            "document":"DomainModel","formal_revision":1}}],
+        "libraries":[{"identity":"fixture:library","source":{
+            "file":"library.native","authority":"library issuer","identity":"library:source",
+            "document":"LibrarySource","formal_revision":1}}],
+        "program":{"source":source()}, "call":{
             "function":"lt", "arguments":[{"parameter":"a","value":2},{"parameter":"b","value":5}],
             "accounting":{"work_units":work_units}}}}),
     )
@@ -60,7 +69,7 @@ fn compilation_retains_the_actual_core_document_and_the_existing_artifact() {
     let actual = command::compile_outcome(&path).unwrap();
     assert_eq!(actual.package_bytes(), command::compile(&path).unwrap());
 
-    let identity = SourceIdentity::new("offered issuer", "offered unit");
+    let identity = SourceIdentity::new("offered issuer", "offered:unit");
     let limits = SpineLimits::default();
     let cancel = Cancel::new();
     let parsed = spine::parse(
@@ -79,7 +88,7 @@ fn compilation_retains_the_actual_core_document_and_the_existing_artifact() {
         .into_value();
     let checked = spine::check(
         &parsed,
-        "offered unit".into(),
+        "offered:unit".into(),
         &selected,
         &DependencyInput::default(),
         limits,
@@ -118,20 +127,33 @@ fn preparation_retains_owned_inputs_and_the_existing_run_outcomes() {
         let input = prepared.into_input();
         assert_eq!(
             input.source.identity(),
-            &SourceIdentity::new("offered issuer", "offered unit")
+            &SourceIdentity::new("offered issuer", "offered:unit")
         );
         assert_eq!(input.source.path(), "program.native");
         assert_eq!(input.source.text().as_bytes(), PROGRAM);
-        assert_eq!(input.package_name, "offered unit");
-        assert!(input.packages.is_empty());
+        assert_eq!(input.package_name, "offered:unit");
+        assert_eq!(
+            input.packages,
+            qsl_semantics::model::intake::package_input([DOMAIN]).unwrap()
+        );
+        assert_eq!(
+            input.dependencies,
+            DependencyInput::new([spine::SuppliedLibrary {
+                identity: "fixture:library".into(),
+                source: SourceIdentity::new("library issuer", "library:source"),
+                path: "library.native".into(),
+                bytes: PROGRAM.to_vec(),
+            }])
+            .unwrap()
+        );
         assert_eq!(input.call.function, "lt");
         assert_eq!(input.call.accounting.work_units, work_units);
         assert_eq!(input.call.arguments.len(), 2);
         assert_eq!(input.call.arguments[0].parameter, "a");
-        assert_eq!(
-            input.call.arguments[0].value,
-            quire_exact::Value::Integer(2.into())
-        );
+        let quire_exact::Value::Integer(value) = &input.call.arguments[0].value else {
+            panic!("the request's integer argument retains its typed value");
+        };
+        assert_eq!(value, &quire_exact::Integer::from(2));
         let result = spine::run(
             input.source.identity().clone(),
             input.package_name,
