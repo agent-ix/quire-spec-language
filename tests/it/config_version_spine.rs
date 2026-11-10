@@ -7,12 +7,12 @@
 use crate::command_harness::{compile_file, run_file, run_file_with_limits, Output};
 use crate::support::config_version_spine::{cases::CASES, spine, Case};
 use ix_trace_rs::trace;
+use qsl_command::command::RunLimits;
 use qsl_foundation::diagnostic::Code;
 use qsl_replay::spine::{
     run_clause, CallOutcome, ClauseDisposition, ClauseRunRequest, ClauseRunStage,
 };
 use quire_semantic_value::catalog::Category;
-use quire_spec_language::command::RunLimits;
 use serde_json::{json, Value};
 use std::{collections::BTreeSet, path::Path, process::Command};
 
@@ -296,8 +296,7 @@ fn clause_run_command_uses_explicit_current_self_and_anchor() {
         assert_eq!(value["disposition"]["truth"], truth);
         assert_eq!(value["basis"], "closed-scope");
         let decoded =
-            quire_spec_language::command::read_clause_run_request(&path.join("request.json"))
-                .unwrap();
+            qsl_command::command::read_clause_run_request(&path.join("request.json")).unwrap();
         let qsl_replay::spine::ClauseRunSelection::Clause(decoded) = decoded.selection else {
             panic!("the wire selection must remain a state clause");
         };
@@ -311,7 +310,7 @@ fn clause_run_command_uses_explicit_current_self_and_anchor() {
         };
         assert_eq!(self_object.expect("a named self").key, "child");
         assert_eq!(anchor.name, "validate");
-        let driver = quire_spec_language::command::run(&path.join("request.json")).unwrap();
+        let driver = qsl_command::command::run(&path.join("request.json")).unwrap();
         assert_eq!(output.stdout, format!("{}\n", driver.value).into_bytes());
         assert_eq!(driver.exit_code, exit as u8);
     }
@@ -493,7 +492,7 @@ fn clause_run_reader_accepts_observation_deeper_than_128() {
         serde_json::to_vec(&request).unwrap(),
     )
     .unwrap();
-    let decoded = quire_spec_language::command::read_clause_run_request(&path.join("request.json"));
+    let decoded = qsl_command::command::read_clause_run_request(&path.join("request.json"));
     assert!(decoded.is_ok(), "{:?}", decoded.err());
 }
 
@@ -520,7 +519,7 @@ fn clause_run_reader_honors_raised_observation_byte_limit() {
         serde_json::to_vec(&request).unwrap(),
     )
     .unwrap();
-    let decoded = quire_spec_language::command::read_clause_run_request(&path.join("request.json"));
+    let decoded = qsl_command::command::read_clause_run_request(&path.join("request.json"));
     assert!(decoded.is_ok(), "{:?}", decoded.err());
 }
 
@@ -587,7 +586,7 @@ fn clause_run_reader_keeps_parameter_beyond_128_levels() {
         .unwrap()
         .replace("\"__DEEP_PARAMETER__\"", &nested);
     std::fs::write(path.join("request.json"), text).unwrap();
-    let decoded = quire_spec_language::command::read_clause_run_request(&path.join("request.json"))
+    let decoded = qsl_command::command::read_clause_run_request(&path.join("request.json"))
         .expect("deep typed parameter must read without a parser depth cap");
     let qsl_replay::spine::ClauseRunSelection::Clause(clause) = decoded.selection else {
         panic!("expected clause selection");
@@ -616,7 +615,7 @@ fn clause_run_accounting_object_sets_all_counters_and_rejects_legacy_member() {
     )
     .unwrap();
     let decoded_defaults =
-        quire_spec_language::command::read_clause_run_request(&path.join("request.json"))
+        qsl_command::command::read_clause_run_request(&path.join("request.json"))
             .expect("omitted accounting uses the published defaults");
     assert_eq!(
         decoded_defaults.accounting,
@@ -641,7 +640,7 @@ fn clause_run_accounting_object_sets_all_counters_and_rejects_legacy_member() {
         serde_json::to_vec(&request).unwrap(),
     )
     .unwrap();
-    let decoded = quire_spec_language::command::read_clause_run_request(&path.join("request.json"))
+    let decoded = qsl_command::command::read_clause_run_request(&path.join("request.json"))
         .expect("the closed accounting counter object is accepted");
     assert_eq!(
         decoded.accounting,
@@ -695,7 +694,7 @@ fn clause_run_reader_diagnoses_deep_function_argument() {
         .unwrap()
         .replace("\"__DEEP_ARGUMENT__\"", &nested);
     std::fs::write(path.join("request.json"), text).unwrap();
-    let error = quire_spec_language::command::read_clause_run_request(&path.join("request.json"))
+    let error = qsl_command::command::read_clause_run_request(&path.join("request.json"))
         .err()
         .expect("nested argument is outside the function argument forms");
     assert!(
@@ -798,7 +797,7 @@ fn clause_run_reader_distinguishes_pre_and_invocation_roles() {
         "{output:?}"
     );
     let decoded =
-        quire_spec_language::command::read_clause_run_request(&path.join("request.json")).unwrap();
+        qsl_command::command::read_clause_run_request(&path.join("request.json")).unwrap();
     let qsl_replay::spine::ClauseRunSelection::Clause(clause) = decoded.selection else {
         panic!("expected a clause selection");
     };
@@ -814,7 +813,7 @@ fn clause_run_reader_distinguishes_pre_and_invocation_roles() {
     }});
     run_clause_file(&path, &request);
     let decoded =
-        quire_spec_language::command::read_clause_run_request(&path.join("request.json")).unwrap();
+        qsl_command::command::read_clause_run_request(&path.join("request.json")).unwrap();
     let qsl_replay::spine::ClauseRunSelection::Clause(clause) = decoded.selection else {
         panic!("expected a clause selection");
     };

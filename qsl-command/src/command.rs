@@ -143,6 +143,68 @@ pub struct RunResult {
     pub value: NativeResult,
 }
 
+/// Successful compilation with the core's document and exact emitted bytes.
+pub struct CompileOutcome {
+    package_bytes: Vec<u8>,
+    document: qsl_replay::OutcomeDocument,
+}
+
+impl CompileOutcome {
+    /// The completed package artifact, with no command wrapper.
+    pub fn package_bytes(&self) -> &[u8] {
+        &self.package_bytes
+    }
+
+    /// The outcome projected from the actual staged package result.
+    pub fn document(&self) -> &qsl_replay::OutcomeDocument {
+        &self.document
+    }
+}
+
+/// Prepared function input retained with its native source correspondence.
+pub struct PreparedFunctionRun {
+    source: FormalSource,
+    libraries: Vec<FormalSource>,
+    packages: qsl_semantics::model::intake::PackageInput,
+    dependencies: qsl_replay::spine::DependencyInput,
+    call: qsl_replay::spine::Call,
+}
+
+/// Owned inputs passed to the driver's existing execution pipeline.
+pub struct FunctionRunInput {
+    /// Admitted source with its authored labels and path.
+    pub source: Source,
+    /// Package name selected from the authored identity.
+    pub package_name: String,
+    /// Admitted domain packages.
+    pub packages: qsl_semantics::model::intake::PackageInput,
+    /// Explicit library dependencies.
+    pub dependencies: qsl_replay::spine::DependencyInput,
+    /// Function, arguments, accounting and supplied-phase limits.
+    pub call: qsl_replay::spine::Call,
+}
+
+impl PreparedFunctionRun {
+    /// Transfer the prepared typed values without executing a stage.
+    pub fn into_input(self) -> FunctionRunInput {
+        FunctionRunInput {
+            package_name: package_name(self.source.source().identity()),
+            source: self.source.source().clone(),
+            packages: self.packages,
+            dependencies: self.dependencies,
+            call: self.call,
+        }
+    }
+}
+
+/// A decoded function or clause request; preparation performs no execution.
+pub enum PreparedRun {
+    /// A function selection for the existing execution pipeline.
+    Function(PreparedFunctionRun),
+    /// A clause selection for the existing clause runner.
+    Clause(qsl_replay::spine::ClauseRunRequest),
+}
+
 /// Original intake failure, without recovering typed data from display messages.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
@@ -308,6 +370,83 @@ impl RunError {
         self.cause.category()
     }
 
+    /// Project the typed command failure through the core's outcome producers.
+    /// Intake failures have no reached compiler stage. This operation reads no
+    /// file and never reads back the native result's JSON.
+    pub fn outcome_document(
+        &self,
+        operation: qsl_replay::Operation,
+    ) -> qsl_replay::OutcomeDocument {
+        use qsl_replay::{OutcomeDiagnostic, OutcomeDocument, OutcomeLocus};
+
+        match &self.cause {
+            RunCause::Spine(failure) => OutcomeDocument::new(
+                operation,
+                Some(failure.refusal.stage().into()),
+                self.category(),
+            )
+            .with_diagnostics(vec![OutcomeDiagnostic::from_compile_refusal(
+                &failure.refusal,
+            )]),
+            RunCause::SpineRun(refusal) => OutcomeDocument::from_run_refusal(operation, refusal),
+            RunCause::Native(diagnostic) => {
+                let projected = if let Some(cause) = diagnostic.identity_cause() {
+                    let source = qsl_cst::diagnostic::source_refusal(
+                        qsl_foundation::source::SourceReadRefusal {
+                            cause,
+                            error: qsl_foundation::source::SourceReadError {
+                                source: diagnostic.source.clone(),
+                                path: diagnostic.path.clone(),
+                                region: None,
+                                message: diagnostic.message.clone(),
+                            },
+                        },
+                        0,
+                    );
+                    OutcomeDiagnostic::from_source_diagnostic(&source)
+                } else {
+                    OutcomeDiagnostic::new(
+                        None,
+                        diagnostic.code.as_str(),
+                        Some(OutcomeLocus::Located {
+                            file: diagnostic.path.clone(),
+                            span: diagnostic.span,
+                        }),
+                        diagnostic.message.clone(),
+                    )
+                };
+                OutcomeDocument::new(operation, None, self.category())
+                    .with_diagnostics(vec![projected])
+            }
+            _ => OutcomeDocument::new(operation, None, self.category()).with_diagnostics(vec![
+                OutcomeDiagnostic::new(
+                    None,
+                    self.cause.code().as_str(),
+                    None,
+                    self.outcome_message(),
+                ),
+            ]),
+        }
+    }
+
+    fn outcome_message(&self) -> String {
+        match &self.cause {
+            RunCause::Limit(LimitKind::RequestBytes { maximum }) => {
+                format!("request_bytes limit {maximum} exceeded; raise --request-bytes")
+            }
+            RunCause::Limit(LimitKind::DependentBytes { maximum }) => {
+                format!("dependent_bytes limit {maximum} exceeded; raise --dependent-bytes")
+            }
+            RunCause::Limit(LimitKind::FixedRequestBytes { maximum }) => {
+                format!("request_bytes limit {maximum} exceeded")
+            }
+            RunCause::Limit(LimitKind::FixedDependentBytes { maximum }) => {
+                format!("dependent_bytes limit {maximum} exceeded")
+            }
+            _ => self.to_string(),
+        }
+    }
+
     /// JSON error with original stage/code and available source/reference details.
     pub fn value(&self) -> std::result::Result<serde_json::Value, serde_json::Error> {
         output::error(self, false)
@@ -408,8 +547,17 @@ pub fn run_with_limits(
     path: &Path,
     limits: RunLimits,
 ) -> std::result::Result<RunResult, Box<RunError>> {
+    let prepared = prepare_run(path, limits)?;
+    execute_prepared(prepared).map_err(|cause| Box::new(RunError { cause }))
+}
+
+/// Read and validate a request and its selected files without executing it.
+pub fn prepare_run(
+    path: &Path,
+    limits: RunLimits,
+) -> std::result::Result<PreparedRun, Box<RunError>> {
     with_request_limits(path, limits.request_bytes, |directory, bytes| {
-        run_bytes(directory, bytes, limits.dependent_bytes)
+        prepare_run_bytes(directory, bytes, limits.dependent_bytes)
     })
 }
 
@@ -457,6 +605,11 @@ pub fn read_clause_run_request(
 /// Compile a `1-draft` source-only job through the spine (FR-027).
 /// Failures expose no partial artifact.
 pub fn compile(path: &Path) -> std::result::Result<Vec<u8>, Box<RunError>> {
+    compile_outcome(path).map(|outcome| outcome.package_bytes)
+}
+
+/// Compile once, retaining the actual core outcome document and package bytes.
+pub fn compile_outcome(path: &Path) -> std::result::Result<CompileOutcome, Box<RunError>> {
     with_request(path, |directory, bytes| {
         let request: wire::CompileRequest = request(bytes)?;
         if request.program.extraction {
@@ -537,7 +690,7 @@ fn complete(
     request: &wire::CompileRequest,
     intake: &mut Intake<'_>,
     sources: &[FormalSource],
-) -> Result<Vec<u8>> {
+) -> Result<CompileOutcome> {
     if sources.len() == 1 {
         return complete_single(request, intake, &sources[0]);
     }
@@ -548,7 +701,7 @@ fn complete_single(
     request: &wire::CompileRequest,
     intake: &mut Intake<'_>,
     source: &FormalSource,
-) -> Result<Vec<u8>> {
+) -> Result<CompileOutcome> {
     complete_sources(request, intake, std::slice::from_ref(source), false)
 }
 
@@ -557,7 +710,7 @@ fn complete_units(
     request: &wire::CompileRequest,
     intake: &mut Intake<'_>,
     sources: &[FormalSource],
-) -> Result<Vec<u8>> {
+) -> Result<CompileOutcome> {
     complete_sources(request, intake, sources, true)
 }
 
@@ -569,7 +722,7 @@ fn complete_sources(
     intake: &mut Intake<'_>,
     sources: &[FormalSource],
     unit_list: bool,
-) -> Result<Vec<u8>> {
+) -> Result<CompileOutcome> {
     if request.models.iter().any(|model| !is_domain_package(model)) {
         return Err(RunCause::CompleteSelection(CompleteSelection::NativeModels));
     }
@@ -701,10 +854,13 @@ fn complete_sources(
         .map_err(failure)?
         .into_value()
     };
-    let emitted = qsl_replay::spine::package(&checked, limits.package, &cancel)
-        .map_err(failure)?
-        .into_value();
-    Ok(emitted.package().bytes().to_vec())
+    let result = qsl_replay::spine::package(&checked, limits.package, &cancel);
+    let document = qsl_replay::OutcomeDocument::from_package(&result);
+    let emitted = result.map_err(failure)?.into_value();
+    Ok(CompileOutcome {
+        package_bytes: emitted.package().bytes().to_vec(),
+        document,
+    })
 }
 
 /// The request's `libraries`, each with its source read under its caller-named
@@ -848,7 +1004,11 @@ fn intake_with_fixed_bytes(
     })
 }
 
-fn run_bytes(directory: &Path, bytes: &[u8], dependent_bytes: usize) -> Result<RunResult> {
+fn prepare_run_bytes(
+    directory: &Path,
+    bytes: &[u8],
+    dependent_bytes: usize,
+) -> Result<PreparedRun> {
     let request: wire::Request = request(bytes)?;
     let mut intake = intake_with_bytes(
         directory,
@@ -872,16 +1032,16 @@ fn run_bytes(directory: &Path, bytes: &[u8], dependent_bytes: usize) -> Result<R
     // the runner before any model or library source is read (FR-100).
     let source = intake.source(&request.program.source)?;
     require_complete_edition(source.source())?;
-    run_complete(&mut intake, &request, source)
+    prepare_complete_run(&mut intake, &request, source)
 }
 
-/// FR-100: run a `1-draft` program's named function through the spine.
-/// `source` is the program source, already read by `run_bytes`.
-fn run_complete(
+/// Prepare FR-100's function or clause selection without executing a stage.
+/// `source` is the program source, already read by bounded intake.
+fn prepare_complete_run(
     intake: &mut Intake<'_>,
     request: &wire::Request,
     source: FormalSource,
-) -> Result<RunResult> {
+) -> Result<PreparedRun> {
     if let Some(clause) = &request.clause {
         if request.call.is_some() {
             return Err(RunCause::ClauseRequest {
@@ -889,7 +1049,7 @@ fn run_complete(
                 reason: "call and clause are mutually exclusive".to_owned(),
             });
         }
-        return clause::run(intake, request, clause, source);
+        return clause::read(intake, request, clause, source).map(PreparedRun::Clause);
     }
     if request.models.iter().any(|model| !is_domain_package(model)) {
         return Err(RunCause::CompleteRunSelection(
@@ -930,7 +1090,7 @@ fn run_complete(
         .map_err(|refusal| {
             spine_run_failure(
                 &source,
-                &libraries,
+                libraries.iter().map(|(_, source)| source),
                 qsl_replay::spine::CompileRefusal::DependencyInput(refusal),
             )
         })?;
@@ -948,25 +1108,48 @@ fn run_complete(
         call_accounting(&call.accounting),
         request.limits.supplied.unwrap_or_default(),
     );
+    Ok(PreparedRun::Function(PreparedFunctionRun {
+        source,
+        libraries: libraries.into_iter().map(|(_, source)| source).collect(),
+        packages,
+        dependencies,
+        call: spine_call,
+    }))
+}
+
+fn execute_prepared(prepared: PreparedRun) -> Result<RunResult> {
+    let prepared = match prepared {
+        PreparedRun::Function(prepared) => prepared,
+        PreparedRun::Clause(request) => {
+            let report = qsl_replay::spine::run_clause(request).map_err(|error| {
+                RunCause::ClauseRequest {
+                    member: "clause".to_owned(),
+                    reason: error.to_string(),
+                }
+            })?;
+            return output::clause_report(&report);
+        }
+    };
+    let source = &prepared.source;
     let outcome = qsl_replay::spine::run(
         source.source().identity().clone(),
         package_name(source.source().identity()),
         source.source().path(),
         source.source().text().as_bytes(),
-        &packages,
-        &dependencies,
+        &prepared.packages,
+        &prepared.dependencies,
         qsl_replay::spine::SpineLimits::default(),
-        &spine_call,
+        &prepared.call,
         &qsl_semantics::model::object_environment::ObjectEnvironment::default(),
         &quire_exact::Cancel::new(),
     )
     .map_err(|refusal| match *refusal {
         qsl_replay::spine::RunRefusal::Compile(compile_refusal) => {
-            spine_run_failure(&source, &libraries, *compile_refusal)
+            spine_run_failure(source, prepared.libraries.iter(), *compile_refusal)
         }
         other => RunCause::SpineRun(Box::new(other)),
     })?;
-    output::spine_run_result(&source, &call.function, outcome)
+    output::spine_run_result(source, &prepared.call.function, outcome)
 }
 
 /// The package name a program compiles under: its source identity's
@@ -1023,16 +1206,16 @@ fn call_accounting(accounting: &wire::Accounting) -> quire_exact::ScalarLimits {
 /// A spine compile refusal from a `1-draft` `run`, located over the source
 /// its region is in (the program's or one library's), the same rendering
 /// `complete` uses for `compile` (FR-100 mirrors FR-027).
-fn spine_run_failure(
-    source: &FormalSource,
-    libraries: &[(&wire::Library, FormalSource)],
+fn spine_run_failure<'a>(
+    source: &'a FormalSource,
+    libraries: impl Iterator<Item = &'a FormalSource>,
     refusal: qsl_replay::spine::CompileRefusal,
 ) -> RunCause {
     let located = refusal
         .region()
         .and_then(|region| {
             std::iter::once(source)
-                .chain(libraries.iter().map(|(_, read)| read))
+                .chain(libraries)
                 .find(|candidate| candidate.source().reference() == region.source())
         })
         .unwrap_or(source);

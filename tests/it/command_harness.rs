@@ -3,13 +3,13 @@
 //! stdout and stderr FR-285 and FR-287 assign them.
 //!
 //! The root package builds no executable (FR-287-AC-1), so these tests call
-//! `quire_spec_language::command` directly. The rendering is the driver's
+//! `qsl_command::command` directly. The rendering is the driver's
 //! contract for a library outcome: a success writes its bytes to stdout, a
 //! refusal writes its envelope to stderr, and the exit code is FR-285's.
 //! The process boundary (arguments, streams, `/dev/full`) is the driver's
 //! and is tested there (FR-287-AC-3 to AC-9, TC-1262).
 
-use quire_spec_language::command::{self, RunLimits};
+use qsl_command::command::{self, RunLimits};
 use std::path::Path;
 
 /// The exit status of one in-process call.

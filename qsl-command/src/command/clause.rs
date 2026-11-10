@@ -8,7 +8,7 @@ use qsl_replay::spine::{
     SuppliedLibrary, SuppliedObservation,
 };
 
-use super::{output, wire, FormalSource, Intake, Result, RunCause, RunResult};
+use super::{wire, FormalSource, Intake, Result, RunCause};
 
 fn invalid(member: impl Into<String>, reason: impl Into<String>) -> RunCause {
     RunCause::ClauseRequest {
@@ -102,16 +102,4 @@ pub(super) fn read(
         accounting: super::call_accounting(&clause.accounting),
     })
     .map_err(|error| invalid(error.member, error.reason))
-}
-
-pub(super) fn run(
-    intake: &mut Intake<'_>,
-    request: &wire::Request,
-    clause: &wire::ClauseRun,
-    source: FormalSource,
-) -> Result<RunResult> {
-    let request = read(intake, request, clause, source)?;
-    let report = qsl_replay::spine::run_clause(request)
-        .map_err(|error| invalid("clause", error.to_string()))?;
-    output::clause_report(&report)
 }
