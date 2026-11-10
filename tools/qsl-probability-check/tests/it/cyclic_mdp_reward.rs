@@ -158,3 +158,60 @@ fn proper_zero_reward_keeps_positive_rank_and_strict_rows_are_closed() {
     }
     assert_eq!(run(&request).0, 0);
 }
+
+#[trace("TC-1405", "FR-201-AC-44", "FR-201-AC-45")]
+#[test]
+fn mixed_infinite_minimum_and_false_terminal_forgery_never_become_finite_proofs() {
+    let base = source(true, "1", "2", ">= 1", "m.attempts = 1")
+        .replace("post AD using v on M::Msg::send_a { self.attempts = 0 and not self.delivered }", "post AD using v on M::Msg::send_a { self.attempts = 1 and self.delivered }")
+        .replace("post BD using v on M::Msg::send_b { self.attempts = 1 and self.delivered }", "post BD using v on M::Msg::send_b { self.attempts = 2 and not self.delivered }")
+        .replace("self.attempts - (if pre(self.attempts) = 1 then 2 else 1) = 0 and self.delivered", "self.attempts = 1 and self.delivered");
+    let request = proof(&base);
+    assert_eq!(document(&request)["values"].as_array().unwrap().len(), 3);
+    let trap = document(&request)["values"].as_array().unwrap().iter().find(|r| r["value"]["numerator"] == "100").unwrap()["state"].clone();
+    for terminal in [false, true] {
+        let mut src = base.replace("post CD using v on M::Msg::send_c { self.attempts = 1 and self.delivered }", "post CD using v on M::Msg::send_c { self.attempts - pre(self.attempts) = 0 and self.delivered = pre(self.delivered) }")
+            .replace("reward cost on Msg::send_c = 100", "reward cost on Msg::send_c = 0");
+        if terminal {
+            src = src.replace("pre C using v on M::Msg::send_c { self.attempts > 0 }", "pre C using v on M::Msg::send_c { self.attempts = 1 }");
+            src.push_str("terminal Stop using v on M when { self.attempts = 2 };\n");
+        }
+        let (native, settlement) = request_with(&src, SNAPSHOT, ExactProbLimits::default(), DOMAIN);
+        assert!(native.is_none(), "{settlement:?}");
+        let qsl_analyze::analyze::Settlement::Disposed(disposal) = settlement else {panic!("{settlement:?}");};
+        assert_eq!(disposal.kind, qsl_analyze::analyze::DispositionKind::Unsupported);
+        assert_eq!(disposal.diagnostic.unwrap().code.cause(), "mixed-infinite-coverage");
+        let mut forged = mutate(&request, |d| {
+            for row in d["values"].as_array_mut().unwrap() {
+                if row["state"] == trap {row["value"] = json!({"numerator":"0","denominator":"1"});}
+            }
+        });
+        replace_source(&mut forged, &src);
+        let (code, out) = run(&forged);
+        assert_eq!(code, 1, "{out}");
+        assert_eq!(out["rule"], "rank-broken");
+        assert_eq!(out["at"]["product_key"], trap);
+        let missing = mutate(&forged, |d| {d["values"].as_array_mut().unwrap().retain(|r| r["state"] != trap);});
+        assert_eq!(run(&missing).1["rule"], "malformed");
+    }
+}
+#[trace("TC-1405", "FR-201-AC-43", "FR-201-AC-45")]
+#[test]
+fn checked_comparison_unit_converts_exactly_and_rejects_foreign_unit_identity() {
+    let src = source(false, "1 ms", "2 ms", "<= 0.004 s", "m.delivered")
+         .replace("reward cost on Msg::send_c = 100;", "reward cost on Msg::send_c = 100 ms;")
+        + "\ndimension Time;\nunit ms : Time = rational(1,1);\nunit s : Time = rational(1000,1) * ms;\nunit other : Time = rational(1,1);\n";
+    let request = proof(&src);
+    assert_eq!(run(&request).0, 0);
+    let d = document(&request);
+    assert_eq!(d["objective"]["unit"][0], "declared");
+    let bad = mutate(&request, |d| d["objective"]["unit"] = Value::Null);
+    let (_, out) = run(&bad);
+    assert_eq!(out["status"], "refused");
+    let compound = source(false, "1 ms * 1 ms", "2 ms * 1 ms", "<= 4 ms * 1 ms", "m.delivered")
+         .replace("reward cost on Msg::send_c = 100;", "reward cost on Msg::send_c = 100 ms * 1 ms;")
+        + "\ndimension Time;\nunit ms : Time = rational(1,1);\n";
+    let request = proof(&compound);
+    assert_eq!(run(&request).0, 0);
+    assert_eq!(document(&request)["objective"]["unit"][0], "compound");
+}
