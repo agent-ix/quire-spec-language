@@ -466,7 +466,7 @@ fn subject(
             #[cfg(feature = "test-support")]
             cx.borrow_mut().phase(LongRunProbabilityPhase::Key)?;
             cx.borrow_mut().work(1)?;
-            // Raw state-key scratch remains the tracked owner-adoption gate.
+            // Raw ModelSystem state-key construction owns its scratch allocation.
             let (bytes, _) = system.state_key(state).map_err(|_| {
                 ProbabilityDocumentError::Graph(ExactProbabilityGraphError::ExpansionRefused)
             })?;
@@ -491,10 +491,11 @@ fn subject(
             ExactProbabilityGraphError::ExpansionRefused
         })
     };
+    let mut predicate_keys = BTreeSet::new();
     let mut issue = None;
     let graph = enumerate_model_graph_with_keys_and_reservation(
         system,
-        Some(predicate),
+        None::<&qsl_semantics::check::CheckedPredicate>,
         reference,
         Some(workload),
         limits.states,
@@ -520,15 +521,48 @@ fn subject(
                 }
             }
         },
-        &mut |_, _| {
-            #[cfg(feature = "test-support")]
-            cx.borrow_mut()
-                .phase(LongRunProbabilityPhase::Predicate)
-                .map_err(|error| {
-                    *stopped.borrow_mut() = Some(error);
-                    ExactProbabilityGraphError::ExpansionRefused
-                })?;
-            Ok(())
+        &mut |key, state| {
+            let evaluated = (|| {
+                #[cfg(feature = "test-support")]
+                cx.borrow_mut().phase(LongRunProbabilityPhase::Predicate)?;
+                cx.borrow_mut().work(1)?;
+                let readings = system
+                    .state_predicates_with_cancel(state, &[(predicate, reference)], cancel)
+                    .map_err(|stop| {
+                        ProbabilityDocumentError::Build(Box::new(
+                            crate::ExactProbBuildIssue::Expansion(stop),
+                        ))
+                    })?;
+                poll(cancel)?;
+                match readings
+                    .into_iter()
+                    .next()
+                    .ok_or(ProbabilityDocumentError::Malformed)?
+                {
+                    qsl_eval::simulation::model::PredicateReading::True => {
+                        cx.borrow_mut().reserve(
+                            key.as_bytes()
+                                .len()
+                                .saturating_add(std::mem::size_of::<ProbabilityProductKey>()),
+                        )?;
+                        predicate_keys.insert(key.clone());
+                    }
+                    qsl_eval::simulation::model::PredicateReading::False => {}
+                    qsl_eval::simulation::model::PredicateReading::Undefined { cause, .. } => {
+                        return Err(ProbabilityDocumentError::UndefinedPredicate(cause))
+                    }
+                    qsl_eval::simulation::model::PredicateReading::Refused(outcome) => {
+                        return Err(ProbabilityDocumentError::Build(Box::new(
+                            crate::ExactProbBuildIssue::Predicate(outcome),
+                        )))
+                    }
+                }
+                Ok(())
+            })();
+            evaluated.map_err(|error| {
+                *stopped.borrow_mut() = Some(error);
+                ExactProbabilityGraphError::ExpansionRefused
+            })
         },
         &mut |error| issue = Some(error),
     );
@@ -538,7 +572,7 @@ fn subject(
     if let Some(issue) = issue {
         return Err(ProbabilityDocumentError::Build(Box::new(issue)));
     }
-    let graph = graph.map_err(|error| match error {
+    let mut graph = graph.map_err(|error| match error {
         ExactProbabilityGraphError::LimitReached => exceeded(
             ProbabilityDocumentLimit::States,
             limits.states as u64,
@@ -551,6 +585,12 @@ fn subject(
         ),
         other => other.into(),
     })?;
+    for (key, state) in &mut graph.states {
+        cx.borrow_mut().work(1)?;
+        if predicate_keys.contains(key) {
+            state.terminal = Some(true);
+        }
+    }
     Ok((graph, bound.clone()))
 }
 

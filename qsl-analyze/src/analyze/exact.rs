@@ -602,7 +602,9 @@ fn document_failure(error: ProbabilityDocumentError, subject: SubjectLimits<'_>)
             subject,
         ),
         ProbabilityDocumentError::Build(issue) => settled(&issue, subject),
-        ProbabilityDocumentError::Unsupported => not_yet(),
+        ProbabilityDocumentError::Unsupported | ProbabilityDocumentError::UndefinedPredicate(_) => {
+            not_yet()
+        }
         ProbabilityDocumentError::MalformedMember(_)
         | ProbabilityDocumentError::Malformed
         | ProbabilityDocumentError::MissingMember(_)

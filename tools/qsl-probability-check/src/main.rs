@@ -211,7 +211,8 @@ fn source_failure(error: ProbabilitySourceError) -> Value {
         ) => "refused",
         ProbabilitySourceError::Document(Document::Unsupported) => "unsupported",
         ProbabilitySourceError::Document(
-            Document::MalformedMember(_)
+            Document::UndefinedPredicate(_)
+            | Document::MalformedMember(_)
             | Document::Malformed
             | Document::MissingMember(_)
             | Document::Noncanonical

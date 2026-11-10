@@ -175,6 +175,9 @@ pub enum ProbabilityDocumentError {
     /// Independent subject admission or graph traversal stopped.
     #[error("probability certificate graph stopped: {0:?}")]
     Graph(ExactProbabilityGraphError),
+    /// The checked state predicate is undefined, with its original cause.
+    #[error("probability certificate predicate undefined: {0:?}")]
+    UndefinedPredicate(qsl_eval::temporal::UndefinedCause),
     /// Subject expansion or predicate admission retained its actual stop cause.
     #[error("probability certificate subject stopped: {0:?}")]
     Build(Box<crate::ExactProbBuildIssue>),

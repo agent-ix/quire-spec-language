@@ -31,17 +31,22 @@ fn claim(name: &str, predicate: &str, bound: &str) -> String {
     format!("probabilistic {name} using inf on M over (s: M::Server) under Steady on origin {{ long_run_fraction holds({predicate}) {bound} }}\n")
 }
 fn availability() -> World {
-    let mut model = prob_world::avail2(&format!(
-        "{}{}",
-        claim("Lower", "s.up", ">= rational(1800,1801)"),
-        claim("Upper", "s.up", "<= rational(1800,1801)")
-    ));
-    model.body = model.body.replace(
-        "pre Down_slow using v on M::Server::repair_slow { not self.up }",
-        "pre Down_slow using v on M::Server::repair_slow { false }",
-    );
-    World::new(&model)
+    let package = "test/longrun-availability";
+    let claims = [
+        claim("Lower", "s.phase = 0", ">= rational(1800,1801)"),
+        claim("Upper", "s.phase = 0", "<= rational(1800,1801)"),
+        claim("TooHigh", "s.phase = 0", ">= 1"),
+        claim("TooLow", "s.phase = 0", "<= rational(999,1000)"),
+    ]
+    .concat();
+    World::new(&Model {
+        package, object: "Server", population: "servers", key: "s", integers: vec![("Phase", 0, 1)], fields: vec![("phase", format!("ix://{package}/Phase"))],
+        operations: vec![Operation { name: "tick", parameters: vec![("to_down", prob_world::BOOLEAN.to_owned())], modifies: vec!["phase"], deletes: false }, Operation { name: "repair", parameters: vec![("ok", prob_world::BOOLEAN.to_owned())], modifies: vec!["phase"], deletes: false }],
+        body: "pre Up using v on M::Server::tick { self.phase = 0 }\npost Ticked using v on M::Server::tick { (to_down and self.phase = 1) or (not to_down and self.phase = 0) }\npre Down using v on M::Server::repair { self.phase = 1 }\npost Repaired using v on M::Server::repair { (ok and self.phase = 0) or (not ok and self.phase = 1) }\nrandom Server::tick(to_down) ~ { true: 1, false: 1999 };\nrandom Server::repair(ok) ~ { true: 9, false: 1 };\nworkload Steady on M { weight Server::tick = 1; weight Server::repair = 1; }\n".to_owned() + &claims,
+        initial: serde_json::json!({"phase": {"integer": "0"}}),
+    })
 }
+
 fn produce(world: &World, name: &str) -> Vec<u8> {
     let records = analyze_items(
         &Engines::qsl().unwrap(),
@@ -93,10 +98,7 @@ fn availability_proofs_preserve_original_transitions_and_gain_bias() {
         assert_eq!(doc.components[0].value, ratio(1800, 1801));
         assert_eq!(doc.components[0].gain, ratio(1800, 1801));
         assert_eq!(doc.components[0].bias[0].value, ratio(0, 1));
-        assert!(
-            doc.components[0].bias[1].value == ratio(2000, 1801)
-                || doc.components[0].bias[1].value == ratio(-2000, 1801)
-        );
+        assert_eq!(doc.components[0].bias[1].value, ratio(-2000, 1801));
         assert!(doc.values.iter().all(|row| row.value == ratio(1800, 1801)));
         assert_eq!(
             write_long_run_probability_certificate(&doc, limits(), &Cancel::new()).unwrap(),
@@ -291,5 +293,27 @@ fn phase_observed_cancellation_uses_the_actual_checker_control() {
             assert!(reached, "phase {phase:?}");
             assert_eq!(stopped, Err(ProbabilityDocumentError::Cancelled(cause)));
         }
+    }
+}
+
+#[trace("TC-1401", "FR-201-AC-27")]
+#[test]
+fn valid_long_run_equations_still_require_the_checked_initial_threshold() {
+    let world = availability();
+    let bytes = produce(&world, "Lower");
+    let original = read_long_run_probability_certificate(&bytes, limits(), &Cancel::new()).unwrap();
+    for name in ["TooHigh", "TooLow"] {
+        let mut document = original.clone();
+        document.identity = qsl_replay::probabilistic_claim_identity(world.claim(name)).unwrap();
+        let bytes =
+            write_long_run_probability_certificate(&document, limits(), &Cancel::new()).unwrap();
+        let result = check(&world, name, &bytes, &Cancel::new(), limits()).unwrap();
+        let ExactProbabilityCertificateCheck::Rejected(rejection) = result else {
+            panic!("threshold must reject")
+        };
+        assert_eq!(
+            rejection.rule,
+            qsl_replay::ProbabilityCertificateRule::ThresholdMissed
+        );
     }
 }
