@@ -1,18 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! The EN-5 item adapter (FR-281, FR-203): builds FR-196's product for an
-//! unbounded `eventually` reachability claim, solves it exactly (FR-198),
-//! turns the solution into FR-201's certificate, has the qualified core's
-//! checker re-enumerate the subject and check it, and only then settles
-//! `proved`. No verdict is built by hand: `proved` is built from the
-//! checker's acceptance.
+//! EN-5's item adapter (FR-281, FR-203) builds and solves the supported
+//! probabilistic products, writes the corresponding FR-201 document, and
+//! settles `proved` only after independent source-subject checking accepts it.
 //!
-//! This is the first cut. It decides the shape the checker core covers
-//! (`check_claim_exact_reachability`: one initial state, at most one `over`
-//! instance, an acyclic model whose draws each have one post-state); every other shape
-//! settles `unsupported` with `unsupported_construct`/`not-yet-implemented`
-//! and is never relabelled as a verdict. Missed bounds use the existing
-//! witness producer and the independent typed replay core; only the core's
-//! reproduced token can settle `refuted` with its counterexample evidence.
+//! Each closed document profile owns its graph, binding and workload admission.
+//! Unsupported forms remain explicit unsupported dispositions. Missed bounds
+//! settle `refuted` only when the profile has native witness production and
+//! independent FR-202 replay; long-run document evidence authorizes proofs.
 
 mod long_run;
 

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-201's closed exact reachability document profile and strict JCS codec.
+//! FR-201's closed probability document profiles and strict JCS codec.
 
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
