@@ -23,3 +23,7 @@ Reviewed PR #2672's latest-dependency lock refresh and exhaustive handling of `P
 | ID      | Severity | Summary                  | Refs |
 | ------- | -------- | ------------------------ | ---- |
 | FND-001 | low      | No findings (placeholder) | - |
+
+## Disposition pass 1
+
+Re-reviewed fix commit `fa8d2d239` in `qsl-eval/src/value/expression/evaluate.rs` and the focused `clock_place_references_encode_the_place_and_ordered_slots` test. The owner and canonical node-key identity components are encoded byte-for-byte as lowercase hex, matching FR-230's place-id format; the test asserts the encoded ASCII bytes for both components and checks slot order. The original review had no actionable findings, and this pass found no new defect. No disposition rows or ticket comment were needed.

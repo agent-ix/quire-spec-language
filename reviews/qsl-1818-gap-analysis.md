@@ -33,3 +33,7 @@ A manual gap check was limited to PR #2672's changed behavior and its TC-685 con
 | ID      | Severity | Summary                   | Refs |
 | ------- | -------- | ------------------------- | ---- |
 | FND-001 | low      | No gaps found (placeholder) | - |
+
+## Disposition pass 1
+
+Re-checked the fix commit `fa8d2d239` and focused test against FR-230's place-identity encoding requirement. The test asserts lowercase hexadecimal output for the owner and canonical node-key text and verifies ordered slot encoding. There were no actionable findings from the original pass and no new test-to-code gap in this fix. No disposition rows or ticket comment were needed.
