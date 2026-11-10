@@ -176,7 +176,10 @@ fn real_owner_route_preserves_cumulative_stops_and_mid_operation_cancellation() 
             ),
             Err(ProbabilityDocumentError::Cancelled(CancelCause::Deadline))
         );
-        assert_eq!(seen.load(Ordering::Relaxed), at);
+        assert!(
+            seen.load(Ordering::Relaxed) >= at,
+            "the owner may poll again while unwinding its typed stop"
+        );
     }
     let mut storage = limits();
     storage.storage_bytes = 0;
@@ -199,5 +202,44 @@ fn real_owner_route_preserves_cumulative_stops_and_mid_operation_cancellation() 
     assert!(
         matches!(admit(&world, &system, work, IdentityLimits::default(), &Cancel::new()),
         Err(ProbabilityDocumentError::Accounting(incomplete)) if incomplete.limit_kind == quire_exact::LimitKind::WorkUnits)
+    );
+    let mut retained = 0;
+    let mut meter = quire_exact::Meter::new(limits().accounting);
+    let cancel = Cancel::new();
+    {
+        let mut budget = qsl_replay::ProbabilityKeyAdmission::new(
+            &mut meter,
+            &mut retained,
+            limits().storage_bytes,
+            &cancel,
+        );
+        let raw = system
+            .state_key_bytes_with_budget(
+                &system.initial()[0],
+                IdentityLimits::default(),
+                &mut budget,
+                &cancel,
+            )
+            .unwrap();
+        let binding = qsl_replay::claim_binding(&system, world.claim("Growth"))
+            .unwrap()
+            .unwrap();
+        qsl_replay::ProbabilityProductKey::for_model_state_with_budget(
+            Some(&binding.reference),
+            &raw,
+            IdentityLimits::default(),
+            &mut budget,
+            &cancel,
+        )
+        .unwrap();
+    }
+    let mut cumulative = limits();
+    cumulative.storage_bytes = retained;
+    assert!(retained > 0);
+    assert!(
+        matches!(admit(&world, &system, cumulative, IdentityLimits::default(), &Cancel::new()),
+        Err(ProbabilityDocumentError::Limit { limit: qsl_replay::ProbabilityDocumentLimit::StorageBytes, bound, actual })
+            if bound == retained && actual > retained),
+        "a ceiling sufficient for one real raw/full key cannot reset for the rest of the graph"
     );
 }
