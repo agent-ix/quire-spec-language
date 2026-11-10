@@ -72,7 +72,11 @@ the same document (QSpec FR-300-AC-3). The document's members are:
   on a `monitor` item for FR-283's `InsufficientData` (category undefined,
   reason `insufficient-data`), and on no item of any other category (FR-285).
 - `diagnostics`: each with its typed cause, catalog code, `Locus` (ADR-013
-  T-5, FR-095) and message.
+  T-5, FR-095) and message. A source `blank-label` cause also carries
+  `label`, exactly `authority` or `identity` from the source owner's typed
+  `SourceLabel`. Every other source cause omits `label`, including
+  `empty-path`. A source refusal with no region has `locus` `null`, never a
+  fabricated position at byte zero.
 - `artifacts`: always an empty array `[]`. No operation writes an artifact
   identity into the outcome document: `check` produces a `CheckedPackage` and
   no `package_id` (ADR-029 OP-1).
@@ -199,6 +203,19 @@ the same item through either gives the same bytes.
 
 A lifecycle operation's outcome value.
 
+For a refusal before source admission, the driver uses
+`OutcomeDiagnostic::from_source_diagnostic(&qsl_cst::diagnostic::CompleteDiagnostic)`.
+This public producer-owned projection SHALL preserve the diagnostic's
+catalog code, typed cause tag, optional source region and human message.
+The projection SHALL obtain the `blank-label` payload from the source
+owner's typed identity-cause fields; its optional label is a `SourceLabel`,
+not a caller-supplied string.
+It requires neither bytes nor an admitted source. The source arm of
+`OutcomeDiagnostic::from_compile_refusal` uses this same projection, so
+parse, format and compile-refusal documents retain the same identity
+cause and label. Consumers do not inject a JSON member or reconstruct a
+label from the message.
+
 ## Outputs
 
 The outcome document's bytes.
@@ -278,6 +295,7 @@ The outcome document's bytes.
 | FR-286-AC-12 | Over FR-283-AC-11's clause run, `from_clause_run` gives an item with `result` `undefined`, category undefined, cause `insufficient-data`, `position` 0, `count` 1 and `min_count` 2, and neither `counterexample` nor `witness`; its document exits 10. | Test (TC-770) |
 | FR-286-AC-13 | Each `MonitorRecord` the FR-283 `monitor` operation returns for the clause runs of AC-8 to AC-12 (the pending run, FR-501-AC-4's indeterminate run, and the violated, undefined-evaluation and insufficient-data runs of FR-283-AC-1, AC-5 and AC-11) renders through `OutcomeItem::from_clause_run`, and the document built from the records equals `from_clause_runs`'s document for the same runs, byte for byte. | Test (TC-770) |
 | FR-286-AC-14 | Over FR-281-AC-2's record and `ItemCounterexample`, `from_analyze` gives an item with `result` `refuted`, category violation, naming `en-1`, a `counterexample` of kind `formula` with a non-empty `prefix`, a `loop`, an `initial_state` and a `trace_position`, and no `position`, `decisive` or `witness`; the same record with no counterexample returns `Err(OutcomeItemError::MissingCounterexample)`, and FR-281-AC-1's `proved` record gives an item with no `counterexample`. For each other `Counterexample` variant, a `refuted` record with that variant gives an item whose `counterexample` has the variant's spelling in the table, and a `time-lock` `Temporal` one carries its `final_delay`. The item `provider::run` gives for the same two records serializes to equal bytes. | Test (TC-770) |
+| FR-286-AC-15 | An external caller projects a pre-admission blank-label source diagnostic through `from_source_diagnostic` and serializes a document: its code is `invalid_source_identity`, cause `blank-label`, `label` the exact typed `authority` or `identity`, `locus` null and message unchanged. Empty-path, byte-budget and located invalid-UTF-8 source diagnostics retain their exact cause, code, optional region and message while omitting `label`; the located case retains its original source reference and endpoints. Projecting the same source diagnostic through a compile refusal, a parse refusal or a format refusal gives the same diagnostic members, without a consumer-written JSON field. | Test |
 
 ## Status
 
