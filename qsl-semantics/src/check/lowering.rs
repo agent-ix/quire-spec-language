@@ -907,6 +907,21 @@ struct Draft {
     content: NodeContent,
 }
 
+/// One exact checked body's expression-to-node correspondence. The live body
+/// token keeps its allocation distinct until all pending graph keys settle.
+struct CheckedBodyKeys {
+    owner: std::sync::Arc<()>,
+    length: usize,
+    location: Location,
+    nodes: Vec<(NodeId, Option<NodeRef>)>,
+}
+
+/// A body's immutable expression identities in one admitted graph context.
+pub(crate) struct CheckedNodeKeys {
+    pub(crate) owner: std::sync::Arc<()>,
+    pub(crate) keys: Vec<Option<NodeKey>>,
+}
+
 /// A package's functions that call each other, lowered together: callees
 /// outside the group come earlier in [`lowering_order`].
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -920,6 +935,7 @@ pub(crate) struct FunctionGroup {
 /// What lowering yields: the graph, its model correspondence and each
 /// function's node key by index.
 pub(crate) struct Lowered {
+    pub(crate) checked_node_keys: BTreeMap<usize, CheckedNodeKeys>,
     pub(crate) graph: SemanticGraph,
     pub(crate) correspondence: ModelCorrespondence,
     pub(crate) functions: Vec<Option<NodeKey>>,
@@ -1101,6 +1117,12 @@ pub(crate) struct Lowering<'a> {
     related_renames: Vec<(Location, String)>,
     /// The protocol whose S4 bodies are being lowered, when any.
     active_protocol: Option<String>,
+    /// Indexed only by the live body token's address, not by a semantic
+    /// identity, source location or body-local node index.
+    checked_body_keys: BTreeMap<usize, CheckedBodyKeys>,
+    /// Only references introduced since the preceding settlement that still
+    /// name a draft. Admitted expression keys need no further resolution.
+    pending_checked_node_keys: Vec<(usize, usize)>,
 }
 
 /// The admitted key of `node`: a node that names no pending handle is
@@ -1290,6 +1312,8 @@ enum LowerStep<'n> {
 
 /// A checked node waiting for the terms of its operands.
 enum LowerFrame<'n> {
+    /// Retain the exact term returned for this checked occurrence.
+    Retain(CheckedNode<'n>),
     /// An application or value node over its operands, in order.
     Operands(Box<OperandsFrame<'n>>),
     /// `let`: its value, then its body under the new binder.
@@ -2111,6 +2135,8 @@ impl<'a> Lowering<'a> {
             protocol_expression_binders: BTreeMap::new(),
             related_renames: Vec::new(),
             active_protocol: None,
+            checked_body_keys: BTreeMap::new(),
+            pending_checked_node_keys: Vec::new(),
             unsettled_protocols: Vec::new(),
         }
     }
@@ -2133,6 +2159,7 @@ impl<'a> Lowering<'a> {
     /// function's key. Every node that no region denotes gets its one
     /// `generated` occurrence (FR-093), at `root`.
     pub(crate) fn finish(mut self, root: &Location) -> Result<Lowered, CheckRefusal> {
+        let checked_node_keys = self.finish_checked_node_keys()?;
         self.graph.rank();
         let enclosing = enclosing_declarations(&self.graph, self.occurrences);
         for key in self.graph.nodes.keys() {
@@ -2201,6 +2228,7 @@ impl<'a> Lowering<'a> {
             })
             .collect();
         Ok(Lowered {
+            checked_node_keys,
             graph: self.graph,
             correspondence: self.correspondence,
             functions: self
@@ -2219,6 +2247,80 @@ impl<'a> Lowering<'a> {
             equality_producer_identities: self.equality_producer_identities,
             dispatch_producer_decisions: self.dispatch_producer_decisions,
         })
+    }
+
+    /// Preserve lowering's actual result; the arena index identifies a slot
+    /// only inside this live body and never participates in its graph key.
+    fn retain_checked_node(&mut self, node: CheckedNode<'_>, term: &LeafTerm) {
+        let identity = node.body().identity();
+        let owner = std::sync::Arc::as_ptr(identity) as usize;
+        let body = self
+            .checked_body_keys
+            .entry(owner)
+            .or_insert_with(|| CheckedBodyKeys {
+                owner: std::sync::Arc::clone(identity),
+                length: node.body().len(),
+                location: node.location().clone(),
+                nodes: Vec::new(),
+            });
+        let reference = term.reference_target().cloned();
+        if reference.as_ref().is_some_and(Self::pending) {
+            self.pending_checked_node_keys
+                .push((owner, body.nodes.len()));
+        }
+        body.nodes.push((node.id(), reference));
+    }
+
+    /// Resolve each new pending reference once, without revisiting keys
+    /// retained by independent functions or earlier recursion groups.
+    fn resolve_checked_node_keys(
+        &mut self,
+        mut resolve: impl FnMut(&NodeRef) -> Result<NodeRef, ()>,
+    ) -> Result<(), CheckRefusal> {
+        for (owner, index) in std::mem::take(&mut self.pending_checked_node_keys) {
+            let Some(body) = self.checked_body_keys.get_mut(&owner) else {
+                return Err(fault(&generated_location(), KeyFault::UnresolvedDraft));
+            };
+            let Some((_, Some(node))) = body.nodes.get_mut(index) else {
+                return Err(fault(&body.location, KeyFault::UnresolvedDraft));
+            };
+            *node = resolve(node).map_err(|()| fault(&body.location, KeyFault::UnresolvedDraft))?;
+        }
+        Ok(())
+    }
+
+    fn finish_checked_node_keys(
+        &mut self,
+    ) -> Result<BTreeMap<usize, CheckedNodeKeys>, CheckRefusal> {
+        let mut retained = BTreeMap::new();
+        for (identity, body) in std::mem::take(&mut self.checked_body_keys) {
+            let mut keys = vec![None; body.length];
+            let mut seen = vec![false; body.length];
+            for (id, reference) in body.nodes {
+                let key = reference
+                    .as_ref()
+                    .map(|reference| {
+                        reference
+                            .admitted()
+                            .cloned()
+                            .ok_or_else(|| fault(&body.location, KeyFault::UnresolvedDraft))
+                    })
+                    .transpose()?;
+                if seen[id.index()] && keys[id.index()] != key {
+                    return Err(fault(&body.location, KeyFault::ExpressionIdentityConflict));
+                }
+                seen[id.index()] = true;
+                keys[id.index()] = key;
+            }
+            retained.insert(
+                identity,
+                CheckedNodeKeys {
+                    owner: body.owner,
+                    keys,
+                },
+            );
+        }
+        Ok(retained)
     }
 
     /// Record an occurrence of `key`: a draft's waits until it is keyed.
@@ -3847,7 +3949,7 @@ impl<'a> Lowering<'a> {
             let node = resolve(&node).map_err(|()| unresolved(&site.binder))?;
             self.record_binder(site, node);
         }
-        Ok(())
+        self.resolve_checked_node_keys(resolve)
     }
 
     /// Key the recursion group `component` of `drafts`, whose members are
@@ -4271,7 +4373,10 @@ impl<'a> Lowering<'a> {
         let mut step = LowerStep::Descend(root);
         loop {
             step = match step {
-                LowerStep::Descend(node) => self.lower_node(node, binders, &mut frames)?,
+                LowerStep::Descend(node) => {
+                    frames.push(LowerFrame::Retain(node));
+                    self.lower_node(node, binders, &mut frames)?
+                }
                 LowerStep::Lowered(term) => match frames.pop() {
                     None => return Ok(term),
                     Some(frame) => self.accept_term(frame, term, binders, &mut frames)?,
@@ -5983,6 +6088,10 @@ impl<'a> Lowering<'a> {
     ) -> Result<LowerStep<'n>, CheckRefusal> {
         let plain = Operation::plain;
         match frame {
+            LowerFrame::Retain(node) => {
+                self.retain_checked_node(node, &term);
+                Ok(LowerStep::Lowered(term))
+            }
             LowerFrame::Operands(mut frame) => {
                 frame.terms.push(term);
                 self.next_operand(frame, frames)

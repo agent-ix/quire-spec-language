@@ -3073,6 +3073,8 @@ pub enum KeyFault {
     InvalidGroup,
     /// A node names a draft that dependency order never keyed.
     UnresolvedDraft,
+    /// One checked body occurrence was lowered to conflicting graph nodes.
+    ExpressionIdentityConflict,
     /// A checked dispatch call names no dispatch operation.
     DispatchOperationOutOfRange {
         /// The operation index carried by the checked call.
@@ -3153,6 +3155,7 @@ impl KeyFault {
             Self::UnknownComposite(_) => "composite-declared",
             Self::InvalidGroup => "recursion-group-well-formed",
             Self::UnresolvedDraft => "draft-keyed-in-dependency-order",
+            Self::ExpressionIdentityConflict => "checked-expression-has-one-lowered-node",
             Self::DispatchOperationOutOfRange { .. } => "dispatch-operation-index-in-range",
             Self::DispatchTableOutOfRange { .. } => "dispatch-table-index-in-range",
             Self::RecordSlotCount => "record-slots-match-fields",

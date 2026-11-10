@@ -15,6 +15,7 @@ use std::collections::BTreeSet;
 use std::convert::Infallible;
 use std::fmt;
 use std::ops::ControlFlow;
+use std::sync::Arc;
 
 /// A local slot of one function frame or checked expression.
 pub type Slot = usize;
@@ -385,10 +386,26 @@ impl Node {
 /// `Drop` run over one flat vector and never recurse, however deep the
 /// expression. Only `check` builds one. A node no path from the root
 /// reaches is never read.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone)]
 pub struct CheckedBody {
     /// Never empty: the root is the last node.
     nodes: Vec<Node>,
+    identity: Arc<()>,
+}
+
+impl fmt::Debug for CheckedBody {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("CheckedBody")
+            .field("nodes", &self.nodes)
+            .finish()
+    }
+}
+
+impl PartialEq for CheckedBody {
+    fn eq(&self, other: &Self) -> bool {
+        self.nodes == other.nodes
+    }
 }
 
 impl CheckedBody {
@@ -419,7 +436,10 @@ impl CheckedBody {
             equality_producer: None,
             ordering_part: false,
         });
-        Self { nodes }
+        Self {
+            nodes,
+            identity: Arc::default(),
+        }
     }
 
     /// Link the relationship-end reachability `id` to the authored bound of
@@ -443,6 +463,7 @@ impl CheckedBody {
     pub fn from_nodes(nodes: Vec<(NodeKind<NodeId>, ValueType)>) -> Self {
         assert!(!nodes.is_empty(), "a body holds its root");
         Self {
+            identity: Arc::default(),
             nodes: nodes
                 .into_iter()
                 .map(|(kind, value_type)| Node {
@@ -456,6 +477,12 @@ impl CheckedBody {
                 })
                 .collect(),
         }
+    }
+
+    /// Process-local ownership, preserved by exact body clones. This token
+    /// never participates in a structural graph identity.
+    pub(in crate::check) fn identity(&self) -> &Arc<()> {
+        &self.identity
     }
 
     /// The id of the node at `index` of [`Self::from_nodes`]'s input.
@@ -563,7 +590,10 @@ impl BodyBuilder {
     /// The body whose root is `root`, stored after every pushed node.
     pub(in crate::check) fn finish(mut self, root: Node) -> CheckedBody {
         self.nodes.push(root);
-        CheckedBody { nodes: self.nodes }
+        CheckedBody {
+            nodes: self.nodes,
+            identity: Arc::default(),
+        }
     }
 }
 

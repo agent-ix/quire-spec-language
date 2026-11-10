@@ -786,6 +786,9 @@ pub struct CheckedGraph {
     /// FR-092/FR-093: every lowered, keyed node of this
     /// package's functions.
     semantic_graph: lowering::SemanticGraph,
+    /// Producer-retained expression identities, owned by this graph rather
+    /// than written into its borrowed checked bodies.
+    checked_node_keys: BTreeMap<usize, lowering::CheckedNodeKeys>,
     /// Cross-declaration reference occurrences, captured at their S3
     /// resolution sites and sorted by source position.
     dependency_references: Vec<CheckedDependencyReference>,
@@ -1036,6 +1039,7 @@ impl DebugWith for CheckedGraph {
             model_correspondence,
             type_nodes,
             semantic_graph,
+            checked_node_keys: _,
             dependency_references,
             equality_producer_data,
             equality_producer_identities,
@@ -6118,6 +6122,7 @@ impl PackageDeclarations {
             |location| regions.region(location).map(|region| region.start()),
         );
         let parameter_spans = lowered.parameter_spans;
+        let checked_node_keys = lowered.checked_node_keys;
         // Every clause and attempt lowered above (a failed one refused, and
         // `refusals` is empty here); a slot left empty is an internal fault,
         // never a silent omission.
@@ -7318,6 +7323,7 @@ impl PackageDeclarations {
                 .into_iter()
                 .collect(),
             semantic_graph,
+            checked_node_keys,
             dependency_references,
             equality_producer_data,
             equality_producer_identities,
@@ -8277,6 +8283,24 @@ impl CheckedGraph {
     /// FR-092/FR-093: every lowered, keyed node of this package's functions.
     pub fn semantic_graph(&self) -> &SemanticGraph {
         &self.semantic_graph
+    }
+
+    /// The producer-assigned graph identity of this checked expression.
+    /// Equal operations can share a key at distinct source locations.
+    /// Exact body clones retain their relationship to this graph.
+    ///
+    /// Local reads name their parameter node. Inline literals, dependency
+    /// references, unlowered bodies and bodies belonging only to another
+    /// graph return `None`. No identity is derived from a location or arena
+    /// index, and querying never mutates the checked body or this graph.
+    pub fn node_key(&self, node: CheckedNode<'_>) -> Option<&quire_exact::NodeKey> {
+        let identity = node.body().identity();
+        let owner = std::sync::Arc::as_ptr(identity) as usize;
+        let retained = self.checked_node_keys.get(&owner)?;
+        if !std::sync::Arc::ptr_eq(identity, &retained.owner) {
+            return None;
+        }
+        retained.keys.get(node.id().index())?.as_ref()
     }
 
     /// NFR-011: the ceilings this package was checked under.
