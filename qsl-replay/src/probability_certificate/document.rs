@@ -713,6 +713,24 @@ fn subject_graph(
     limits: ProbabilityDocumentLimits,
     cancel: &Cancel,
 ) -> Result<SubjectGraph, ProbabilityDocumentError> {
+    subject_graph_with_identity(
+        system,
+        claims,
+        item,
+        limits,
+        cancel,
+        qsl_foundation::IdentityLimits::default(),
+    )
+}
+
+fn subject_graph_with_identity(
+    system: &ModelSystem<'_>,
+    claims: &[CheckedProbabilisticClaim],
+    item: &ObligationIdentity,
+    limits: ProbabilityDocumentLimits,
+    cancel: &Cancel,
+    identity: qsl_foundation::IdentityLimits,
+) -> Result<SubjectGraph, ProbabilityDocumentError> {
     use qsl_eval::simulation::model::{TimedSubjectRefusal, TimedSystem};
     if !std::ptr::eq(
         system.package().graph().probabilistic_model().claims(),
@@ -748,7 +766,7 @@ fn subject_graph(
                 return Err(ProbabilityDocumentError::Unsupported);
             }
             let result = super::reward::enumerate(
-                system, claim, name, until, reference, workload, limits, cancel,
+                system, claim, name, until, reference, workload, limits, cancel, identity,
             )
             .map(|(graph, ranks, costs)| {
                 reward = Some(costs);
@@ -897,6 +915,26 @@ pub fn admit_expected_reward_certificate_subject(
         return Err(ProbabilityDocumentError::Unsupported);
     }
     subject_graph(system, claims, item, limits, cancel)?;
+    Ok(())
+}
+
+/// Qualify the actual reward subject route with an explicit owner identity ceiling.
+#[cfg(feature = "test-support")]
+pub fn admit_expected_reward_certificate_subject_with_identity(
+    system: &ModelSystem<'_>,
+    claims: &[CheckedProbabilisticClaim],
+    item: &ObligationIdentity,
+    limits: ProbabilityDocumentLimits,
+    cancel: &Cancel,
+    identity: qsl_foundation::IdentityLimits,
+) -> Result<(), ProbabilityDocumentError> {
+    if !matches!(
+        &bind_claim(claims, item, cancel)?.form,
+        ProbForm::ExpectedReward { .. }
+    ) {
+        return Err(ProbabilityDocumentError::Unsupported);
+    }
+    subject_graph_with_identity(system, claims, item, limits, cancel, identity)?;
     Ok(())
 }
 

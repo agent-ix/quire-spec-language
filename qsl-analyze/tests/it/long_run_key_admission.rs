@@ -44,6 +44,41 @@ fn reward_model(mut model: Model) -> Model {
     model
 }
 
+#[trace("TC-636", "FR-201-AC-22", "FR-282-AC-17")]
+#[test]
+fn reward_admission_preserves_the_identity_limit_separate_from_document_limits() {
+    let world = World::new(&reward_model(growth_model()));
+    let system = ModelSystem::new(world.subject().simulation).unwrap();
+    let item = qsl_replay::probabilistic_claim_identity(world.claim("Growth")).unwrap();
+    let claims = world.package.graph().probabilistic_model().claims();
+    qsl_replay::admit_expected_reward_certificate_subject(
+        &system,
+        claims,
+        &item,
+        limits(),
+        &Cancel::new(),
+    )
+    .unwrap();
+    let error = qsl_replay::admit_expected_reward_certificate_subject_with_identity(
+        &system,
+        claims,
+        &item,
+        limits(),
+        &Cancel::new(),
+        IdentityLimits { input_bytes: 0 },
+    )
+    .unwrap_err();
+    let ProbabilityDocumentError::KeyEncoding(qsl_eval::simulation::EncodingRefusal::Limit(
+        exceeded,
+    )) = error
+    else {
+        panic!("reward admission must retain the owner identity cause: {error:?}")
+    };
+    assert_eq!(exceeded.setting(), Setting::IdentityInputBytes);
+    assert_eq!(exceeded.configured_bound(), 0);
+    assert!(exceeded.actual() > 0);
+}
+
 #[trace("TC-1401", "FR-201-AC-30")]
 #[test]
 fn identity_bytes_keep_their_actual_setting_and_wire_limit() {

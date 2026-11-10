@@ -351,6 +351,7 @@ pub use probability_certificate::{
 };
 #[cfg(feature = "test-support")]
 pub use probability_certificate::{
+    admit_expected_reward_certificate_subject_with_identity,
     check_long_run_probability_certificate_observing,
     check_long_run_probability_certificate_with_identity, replay_probabilistic_witness_observing,
     LongRunProbabilityPhase, ProbabilityWitnessSemanticPhase,

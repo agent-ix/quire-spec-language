@@ -20,6 +20,7 @@ pub(super) fn enumerate(
     workload: Option<&Workload>,
     limits: ProbabilityDocumentLimits,
     cancel: &Cancel,
+    identity: qsl_foundation::IdentityLimits,
 ) -> Result<
     (
         CheckerGraph,
@@ -88,7 +89,6 @@ pub(super) fn enumerate(
     let meter = std::cell::RefCell::new(
         quire_exact::Meter::new(limits.accounting).with_cancel(cancel.clone()),
     );
-    let identity = qsl_foundation::IdentityLimits::default();
     let key_of = |state: &ModelSimState| {
         let mut meter = meter.borrow_mut();
         let mut storage = storage.borrow_mut();
@@ -170,6 +170,7 @@ pub(super) fn enumerate(
                     workload,
                     limits,
                     cancel,
+                    identity,
                     &mut storage,
                     &mut meter.borrow_mut(),
                     &mut remaining_edges,
@@ -328,6 +329,7 @@ fn step_costs(
     workload: Option<&Workload>,
     limits: ProbabilityDocumentLimits,
     cancel: &Cancel,
+    identity: qsl_foundation::IdentityLimits,
     storage: &mut u64,
     meter: &mut quire_exact::Meter,
     remaining_edges: &mut usize,
@@ -397,13 +399,7 @@ fn step_costs(
         let mut admission =
             ProbabilityKeyAdmission::new(meter, storage, limits.storage_bytes, cancel);
         let steps = system
-            .weighted_steps_with_budget(
-                state,
-                workload,
-                qsl_foundation::IdentityLimits::default(),
-                &mut admission,
-                cancel,
-            )
+            .weighted_steps_with_budget(state, workload, identity, &mut admission, cancel)
             .map_err(|error| admission.expansion_refusal(error))?
             .map_err(unsteppable)?;
         if steps
@@ -436,12 +432,7 @@ fn step_costs(
     }
     let mut admission = ProbabilityKeyAdmission::new(meter, storage, limits.storage_bytes, cancel);
     let actions = system
-        .actions_with_budget(
-            state,
-            qsl_foundation::IdentityLimits::default(),
-            &mut admission,
-            cancel,
-        )
+        .actions_with_budget(state, identity, &mut admission, cancel)
         .map_err(|error| admission.expansion_refusal(error))?
         .map_err(|_| {
             ProbabilityDocumentError::Build(Box::new(
