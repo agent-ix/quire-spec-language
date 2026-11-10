@@ -43,7 +43,7 @@ fn package<'a>(metadata: &'a Value, name: &str) -> &'a Value {
 
 /// FR-490-AC-1: downstream imports of the deleted public modules and their
 /// output adapter fail during Rust name resolution.
-#[trace("TC-484", "FR-490-AC-1")]
+#[trace("TC-484", "FR-490-AC-1", "TC-771", "FR-287-AC-10")]
 #[test]
 fn retired_mapped_and_extraction_imports_fail_in_a_downstream_crate() {
     let metadata = metadata();
