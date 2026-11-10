@@ -287,14 +287,20 @@ fn reachability(
     };
     let product = product_with_terminals.as_ref().unwrap_or(product);
     let graph = Graph::new(product)?;
+    // Nominal MDP products with exactly one semantic action are chains. Use
+    // the exact chain qualitative boundary without changing their identity,
+    // action labels or the general MDP operator.
+    let chain = product.kind == ProductKind::Dtmc
+        || (product.states.iter().all(|state| state.pending.is_none())
+            && graph.choices.iter().all(|choices| choices.len() <= 1));
     let zero = zero();
     let one = one();
-    let fixed_zero = match (product.kind, objective) {
-        (ProductKind::Dtmc, _) => graph.dtmc_prob0(target)?,
-        (ProductKind::Mdp, UnboundedObjective::Max) => graph.max_prob0(target)?,
-        (ProductKind::Mdp, UnboundedObjective::Min) => graph.min_prob0(target)?,
+    let fixed_zero = match (chain, objective) {
+        (true, _) => graph.dtmc_prob0(target)?,
+        (false, UnboundedObjective::Max) => graph.max_prob0(target)?,
+        (false, UnboundedObjective::Min) => graph.min_prob0(target)?,
     };
-    let min_prob_one = if product.kind == ProductKind::Mdp && objective == UnboundedObjective::Min {
+    let min_prob_one = if !chain && objective == UnboundedObjective::Min {
         Some(
             graph
                 .can_avoid_target(target)?
@@ -2446,6 +2452,39 @@ mod tests {
         assert_eq!(result.values[0], ExtRational::Finite(ratio(1, 2)));
         assert_eq!(result.values[1], ExtRational::Finite(one()));
         assert_eq!(result.values[2], ExtRational::Finite(zero()));
+    }
+
+    #[trace("TC-636", "FR-201-AC-23", "FR-198-AC-3")]
+    #[test]
+    fn nominal_mdp_with_one_action_uses_exact_chain_boundaries_for_both_extrema() {
+        let product = graph(
+            ProductKind::Mdp,
+            vec![
+                edge(0, 0, ratio(1, 3)),
+                edge(0, 1, ratio(1, 3)),
+                edge(0, 2, ratio(1, 3)),
+                edge(1, 1, one()),
+                edge(2, 2, one()),
+            ],
+        );
+        for objective in [UnboundedObjective::Min, UnboundedObjective::Max] {
+            let result = decide_reachability(
+                &product,
+                &[false, true, false],
+                objective,
+                &ExactProbLimits::default(),
+            )
+            .unwrap();
+            assert_eq!(
+                result.values,
+                vec![
+                    ExtRational::Finite(ratio(1, 2)),
+                    ExtRational::Finite(one()),
+                    ExtRational::Finite(zero())
+                ]
+            );
+        }
+        assert_eq!(product.kind, ProductKind::Mdp);
     }
 
     /// Trace: FR-198's unbounded temporal forms.
