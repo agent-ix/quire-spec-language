@@ -266,7 +266,10 @@ fn cancelling_at_every_observed_document_graph_and_arithmetic_poll_returns_no_ac
                     Err(ProbabilityDocumentError::Cancelled(cause)),
                     "poll {at}/{total}"
                 );
-                assert_eq!(seen.load(Ordering::Relaxed), at);
+                assert!(
+                    seen.load(Ordering::Relaxed) >= at,
+                    "the bounded key owner may poll again while unwinding cancellation"
+                );
             }
         }
     });

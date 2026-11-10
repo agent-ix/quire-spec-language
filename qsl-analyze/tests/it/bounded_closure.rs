@@ -393,6 +393,7 @@ fn a_formula_product_embeds_the_real_complete_monitor_without_inner_transport() 
         ])
     );
     let document = qsl_replay::ProbabilityCertificateDocument {
+        cyclic_dtmc: false,
         reward: None,
         event: None,
         failures: Vec::new(),

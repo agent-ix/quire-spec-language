@@ -26,6 +26,7 @@ pub(super) use key::{model_product_key, model_product_key_with_budget};
 const PROFILE: &str = "quire.probability-objective/reachability/v1";
 const STATE_PROFILE: &str = "quire.probability-objective/state-predicate/v1";
 const REWARD_PROFILE: &str = "quire.probability-objective/expected-reward/v1";
+const CYCLIC_PROFILE: &str = "quire.probability-objective/cyclic-dtmc-eventual/v1";
 const MAX_COUNT: u64 = 9_007_199_254_740_991;
 
 /// Caller-owned byte and working-storage ceilings for certificate transport.
@@ -96,6 +97,9 @@ pub enum ProbabilityStateEvent {
 /// Exact probability or expected-reward evidence, before semantic checking.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProbabilityCertificateDocument {
+    /// Select the closed cyclic DTMC eventual profile, including for an
+    /// eligible acyclic DTMC. False preserves the existing profile selection.
+    pub cyclic_dtmc: bool,
     /// Structural claim identity.
     pub identity: ObligationIdentity,
     /// Complete, strictly ordered reachable target keys.
@@ -540,7 +544,7 @@ fn read_document(
     let root = parsed.root();
     let objective = root.get("objective");
     let outside_profile = matches!(root.get("kind").map(|node| node.node()), Some(quire_canonical::Node::String(kind)) if kind != "exact")
-        || matches!(objective.and_then(|node| node.get("profile")).map(|node| node.node()), Some(quire_canonical::Node::String(profile)) if profile != PROFILE && profile != STATE_PROFILE && profile != REWARD_PROFILE)
+        || matches!(objective.and_then(|node| node.get("profile")).map(|node| node.node()), Some(quire_canonical::Node::String(profile)) if profile != PROFILE && profile != STATE_PROFILE && profile != REWARD_PROFILE && profile != CYCLIC_PROFILE)
         || matches!(objective.and_then(|node| node.get("event")).map(|node| node.node()), Some(quire_canonical::Node::String(event)) if !matches!(event, "until" | "always"))
         || matches!(objective.and_then(|node| node.get("optimization")).map(|node| node.node()), Some(quire_canonical::Node::String(operator)) if !matches!(operator, "minimum" | "maximum" | "workload"))
         || match objective
@@ -595,7 +599,7 @@ fn read_document(
     if wire.kind != "exact"
         || !matches!(
             wire.objective.profile.as_str(),
-            PROFILE | STATE_PROFILE | REWARD_PROFILE
+            PROFILE | STATE_PROFILE | REWARD_PROFILE | CYCLIC_PROFILE
         )
         || !wire.objective.fairness.is_empty()
     {
@@ -676,6 +680,7 @@ fn read_document(
     ordered(ranking.iter().map(|(state, _)| state.clone()))?;
     poll(cancel)?;
     Ok(ProbabilityCertificateDocument {
+        cyclic_dtmc: wire.objective.profile == CYCLIC_PROFILE,
         identity,
         targets,
         event: wire.objective.event,
@@ -712,6 +717,8 @@ fn subject_graph(
     item: &ObligationIdentity,
     limits: ProbabilityDocumentLimits,
     cancel: &Cancel,
+    cyclic_dtmc: bool,
+    meter: &mut quire_exact::Meter,
 ) -> Result<SubjectGraph, ProbabilityDocumentError> {
     subject_graph_with_identity(
         system,
@@ -720,9 +727,12 @@ fn subject_graph(
         limits,
         cancel,
         qsl_foundation::IdentityLimits::default(),
+        cyclic_dtmc,
+        meter,
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn subject_graph_with_identity(
     system: &ModelSystem<'_>,
     claims: &[CheckedProbabilisticClaim],
@@ -730,6 +740,8 @@ fn subject_graph_with_identity(
     limits: ProbabilityDocumentLimits,
     cancel: &Cancel,
     identity: qsl_foundation::IdentityLimits,
+    cyclic_dtmc: bool,
+    meter: &mut quire_exact::Meter,
 ) -> Result<SubjectGraph, ProbabilityDocumentError> {
     use qsl_eval::simulation::model::{TimedSubjectRefusal, TimedSystem};
     if !std::ptr::eq(
@@ -739,6 +751,18 @@ fn subject_graph_with_identity(
         return Err(ProbabilityDocumentError::IdentityMismatch);
     }
     let claim = bind_claim(claims, item, cancel)?;
+    if cyclic_dtmc
+        && (!matches!(
+            claim.form,
+            ProbForm::Reach {
+                target: ReachTarget::Eventually(_),
+                ..
+            }
+        ) || qsl_semantics::check::TemporalProfile::from_identity(claim.profile.identity())
+            != Some(qsl_semantics::check::TemporalProfile::InfiniteTrace))
+    {
+        return Err(ProbabilityDocumentError::Unsupported);
+    }
     if !claim.fairness.is_empty()
         || !matches!(
             TimedSystem::new(system, &claim.subject.alias),
@@ -804,25 +828,33 @@ fn subject_graph_with_identity(
         ProbForm::Reach {
             bound,
             target: ReachTarget::Eventually(predicate),
-        } => (
+        } if cyclic_dtmc => (
             bound,
-            enumerate_model_graph(
+            super::cyclic::enumerate(
+                system, predicate, reference, workload, limits, cancel, identity, meter,
+            )
+            .map(|(graph, ranks)| (graph, Some(ranks))),
+        ),
+        ProbForm::Reach {
+            bound,
+            target: ReachTarget::Eventually(predicate),
+        } => (bound, {
+            let mut storage = 0;
+            super::cyclic::enumerate_graph(
                 system,
-                predicate,
+                Some(predicate),
                 reference,
                 workload,
-                limits.states,
-                limits.edges,
+                limits,
                 cancel,
+                identity,
+                meter,
+                &mut storage,
                 true,
-                &mut |_, _| {},
-                &mut |failure| {
-                    issue = Some(failure);
-                },
+                true,
             )
             .map(|graph| (graph, None))
-            .map_err(ProbabilityDocumentError::from),
-        ),
+        }),
         ProbForm::Probability {
             bound,
             event:
@@ -874,7 +906,7 @@ fn subject_graph_with_identity(
             other => other,
         },
     })?;
-    if reward.is_none() {
+    if reward.is_none() && !cyclic_dtmc {
         topological_order(&graph, cancel)?;
     }
     Ok((
@@ -914,7 +946,8 @@ pub fn admit_expected_reward_certificate_subject(
     ) {
         return Err(ProbabilityDocumentError::Unsupported);
     }
-    subject_graph(system, claims, item, limits, cancel)?;
+    let mut meter = quire_exact::Meter::new(limits.accounting).with_cancel(cancel.clone());
+    subject_graph(system, claims, item, limits, cancel, false, &mut meter)?;
     Ok(())
 }
 
@@ -934,7 +967,27 @@ pub fn admit_expected_reward_certificate_subject_with_identity(
     ) {
         return Err(ProbabilityDocumentError::Unsupported);
     }
-    subject_graph_with_identity(system, claims, item, limits, cancel, identity)?;
+    let mut meter = quire_exact::Meter::new(limits.accounting).with_cancel(cancel.clone());
+    subject_graph_with_identity(
+        system, claims, item, limits, cancel, identity, false, &mut meter,
+    )?;
+    Ok(())
+}
+
+/// Qualify cyclic eventual admission with the real owner identity ceiling.
+#[cfg(feature = "test-support")]
+pub fn admit_cyclic_eventual_certificate_subject_with_identity(
+    system: &ModelSystem<'_>,
+    claims: &[CheckedProbabilisticClaim],
+    item: &ObligationIdentity,
+    limits: ProbabilityDocumentLimits,
+    cancel: &Cancel,
+    identity: qsl_foundation::IdentityLimits,
+) -> Result<(), ProbabilityDocumentError> {
+    let mut meter = quire_exact::Meter::new(limits.accounting).with_cancel(cancel.clone());
+    subject_graph_with_identity(
+        system, claims, item, limits, cancel, identity, true, &mut meter,
+    )?;
     Ok(())
 }
 
@@ -948,9 +1001,21 @@ pub fn probability_certificate_document(
     limits: ProbabilityDocumentLimits,
     cancel: &Cancel,
 ) -> Result<ProbabilityCertificateDocument, ProbabilityDocumentError> {
-    let (graph, optimization, _, bounded_ranks, event, failures, reward) =
-        subject_graph(system, claims, item, limits, cancel)?;
-    let stopped = event.is_some() || reward.is_some();
+    let mut meter = quire_exact::Meter::new(limits.accounting).with_cancel(cancel.clone());
+    let original = subject_graph(system, claims, item, limits, cancel, false, &mut meter);
+    let cyclic_dtmc = matches!(
+        &original,
+        Err(ProbabilityDocumentError::Unsupported)
+            | Err(ProbabilityDocumentError::Graph(
+                ExactProbabilityGraphError::Cycle
+            ))
+    );
+    let (graph, optimization, _, bounded_ranks, event, failures, reward) = if cyclic_dtmc {
+        subject_graph(system, claims, item, limits, cancel, true, &mut meter)?
+    } else {
+        original?
+    };
+    let stopped = event.is_some() || reward.is_some() || cyclic_dtmc;
     let bounded = bounded_ranks.is_some();
     let mut ranks = bounded_ranks.unwrap_or_default();
     if bounded {
@@ -995,6 +1060,7 @@ pub fn probability_certificate_document(
         }
     }
     Ok(ProbabilityCertificateDocument {
+        cyclic_dtmc,
         identity: item.clone(),
         targets: target_keys(&graph),
         event,
@@ -1034,8 +1100,15 @@ pub fn check_probability_certificate_document(
     if &document.identity != item {
         return Err(ProbabilityDocumentError::IdentityMismatch);
     }
-    let (graph, objective, bound, bounded_ranks, event, failures, reward) =
-        subject_graph(system, claims, item, limits, cancel)?;
+    let (graph, objective, bound, bounded_ranks, event, failures, reward) = subject_graph(
+        system,
+        claims,
+        item,
+        limits,
+        cancel,
+        document.cyclic_dtmc,
+        &mut meter,
+    )?;
     if objective != document.optimization
         || target_keys(&graph) != document.targets
         || event != document.event
@@ -1057,7 +1130,8 @@ pub fn check_probability_certificate_document(
     for (key, state) in &graph.states {
         if !ranks.contains_key(key) {
             return Ok(
-                if state.terminal.is_none()
+                if !document.cyclic_dtmc
+                    && state.terminal.is_none()
                     && values.get(key).is_some_and(|value| *value > rational(0))
                 {
                     rejected(ProbabilityCertificateRule::RankMissing, key.clone())
@@ -1306,7 +1380,7 @@ fn check_document_equalities(
     ))
 }
 
-fn arithmetic(
+pub(super) fn arithmetic(
     operation: quire_exact::RationalArithmetic<'_>,
     meter: &mut quire_exact::Meter,
     cancel: &Cancel,
@@ -1340,6 +1414,29 @@ pub(super) fn certificate_identity(
 mod tests {
     use super::*;
     use ix_trace_rs::trace;
+
+    #[trace("TC-636", "FR-201-AC-25", "FR-282-AC-19")]
+    #[test]
+    fn cyclic_profile_roundtrip_retains_its_explicit_selection() {
+        let cancel = Cancel::new();
+        let mut cyclic = document();
+        cyclic.cyclic_dtmc = true;
+        let bytes = write_probability_certificate(&cyclic, limits(), &cancel).unwrap();
+        let decoded = read_probability_certificate(&bytes, limits(), &cancel).unwrap();
+        assert_eq!(decoded, cyclic);
+        assert_eq!(
+            write_probability_certificate(&decoded, limits(), &cancel).unwrap(),
+            bytes
+        );
+        let old = document();
+        let old_bytes = write_probability_certificate(&old, limits(), &cancel).unwrap();
+        assert_ne!(old_bytes, bytes);
+        assert!(
+            !read_probability_certificate(&old_bytes, limits(), &cancel)
+                .unwrap()
+                .cyclic_dtmc
+        );
+    }
 
     #[trace("TC-636", "FR-201-AC-21", "FR-201-AC-22")]
     #[test]
@@ -1429,6 +1526,7 @@ mod tests {
     pub(super) fn document() -> ProbabilityCertificateDocument {
         let key = fixture_key(0);
         ProbabilityCertificateDocument {
+            cyclic_dtmc: false,
             reward: None,
             identity: ObligationIdentity::new(crate::fixture_node(1), None, 0),
             targets: vec![key.clone()],
