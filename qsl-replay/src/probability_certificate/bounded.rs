@@ -137,11 +137,19 @@ fn enumerate_controlled(
 ) -> Result<(CheckerGraph, BTreeMap<ProbabilityProductKey, u64>), ProbabilityDocumentError> {
     let budgeted = scope.is_some();
     let scope = std::cell::RefCell::new(scope);
-    fn grow<T>(rows: &mut Vec<T>, reserve: &impl Fn(usize) -> Result<(), ProbabilityDocumentError>) -> Result<(), ProbabilityDocumentError> {
+    fn grow<T>(
+        rows: &mut Vec<T>,
+        reserve: &impl Fn(usize) -> Result<(), ProbabilityDocumentError>,
+    ) -> Result<(), ProbabilityDocumentError> {
         if rows.len() == rows.capacity() {
-            let capacity = rows.capacity().checked_mul(2).unwrap_or(usize::MAX).max(4);
-            reserve(capacity.checked_mul(std::mem::size_of::<T>()).ok_or(ProbabilityDocumentError::KeySizeOverflow)?)?;
-            rows.try_reserve_exact(capacity - rows.len()).map_err(|_| ProbabilityDocumentError::KeySizeOverflow)?;
+            let capacity = rows.capacity().saturating_mul(2).max(4);
+            reserve(
+                capacity
+                    .checked_mul(std::mem::size_of::<T>())
+                    .ok_or(ProbabilityDocumentError::KeySizeOverflow)?,
+            )?;
+            rows.try_reserve_exact(capacity - rows.len())
+                .map_err(|_| ProbabilityDocumentError::KeySizeOverflow)?;
         }
         Ok(())
     }
@@ -344,13 +352,17 @@ fn enumerate_controlled(
                     seen.insert(target.clone());
                     queue.push_back((target.clone(), post, control));
                 }
-                if budgeted { grow(&mut choice, &reserve)?; }
+                if budgeted {
+                    grow(&mut choice, &reserve)?;
+                }
                 choice.push(ProbabilityEdge {
                     target,
                     probability,
                 });
             }
-            if budgeted { grow(&mut choices, &reserve)?; }
+            if budgeted {
+                grow(&mut choices, &reserve)?;
+            }
             choices.push(choice);
         }
         states.insert(

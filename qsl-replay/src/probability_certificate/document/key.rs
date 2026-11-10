@@ -182,15 +182,24 @@ pub(crate) fn formula_product_key_with_budget(
             )
             .map_err(|error| match error {
                 quire_canonical::ReadError::ReservationDenied { .. } => ModelKeyError::Denied,
-                quire_canonical::ReadError::Allocation { requested } => ModelKeyError::Encoding(EncodingRefusal::Allocation { requested }),
-                quire_canonical::ReadError::Limit(limit) => ModelKeyError::Encoding(EncodingRefusal::Limit(qsl_foundation::diagnostic::LimitExceeded::new(qsl_foundation::Setting::IdentityInputBytes, identity.input_bytes, u128::from(limit.required)))),
+                quire_canonical::ReadError::Allocation { requested } => {
+                    ModelKeyError::Encoding(EncodingRefusal::Allocation { requested })
+                }
+                quire_canonical::ReadError::Limit(limit) => ModelKeyError::Encoding(
+                    EncodingRefusal::Limit(qsl_foundation::diagnostic::LimitExceeded::new(
+                        qsl_foundation::Setting::IdentityInputBytes,
+                        identity.input_bytes,
+                        u128::from(limit.required),
+                    )),
+                ),
                 other => ModelKeyError::Encoding(EncodingRefusal::NoEncoding(other.to_string())),
             })?;
-            let canonical = writer::encode_admitted(&parsed, identity.input_bytes, &mut Reserve(budget))
-                .map_err(|error| match error {
-                    quire_canonical::Error::ReservationDenied { .. } => ModelKeyError::Denied,
-                    other => ModelKeyError::Encoding(EncodingRefusal::of(&other, identity)),
-                })?;
+            let canonical =
+                writer::encode_admitted(&parsed, identity.input_bytes, &mut Reserve(budget))
+                    .map_err(|error| match error {
+                        quire_canonical::Error::ReservationDenied { .. } => ModelKeyError::Denied,
+                        other => ModelKeyError::Encoding(EncodingRefusal::of(&other, identity)),
+                    })?;
             if canonical != monitor.as_bytes() || !automaton_key(parsed.root()) {
                 return Err(ModelKeyError::Unsupported(
                     "canonical formula monitor identity",

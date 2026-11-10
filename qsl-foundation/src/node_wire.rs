@@ -447,10 +447,14 @@ pub fn project_node_key<S: NodeIdentitySink>(key: &NodeKey, sink: &mut S) -> Res
 pub fn node_key_from_text(text: &str) -> Result<NodeKey, NodeWireError> {
     struct Unbounded;
     impl quire_exact::Reservation for Unbounded {
-        fn reserve(&mut self, _: usize) -> Result<(), quire_exact::ReservationDenied> { Ok(()) }
+        fn reserve(&mut self, _: usize) -> Result<(), quire_exact::ReservationDenied> {
+            Ok(())
+        }
     }
     impl quire_exact::IntegerDecimalBudget for Unbounded {
-        fn work(&mut self, _: u64) -> Result<(), quire_exact::ReservationDenied> { Ok(()) }
+        fn work(&mut self, _: u64) -> Result<(), quire_exact::ReservationDenied> {
+            Ok(())
+        }
     }
     node_key_from_text_with_budget(text, &mut Unbounded)
 }
@@ -467,12 +471,19 @@ pub fn node_key_from_text_with_budget(
     text: &str,
     budget: &mut dyn quire_exact::IntegerDecimalBudget,
 ) -> Result<NodeKey, NodeWireError> {
-    fn push<T>(vec: &mut Vec<T>, item: T, budget: &mut dyn quire_exact::IntegerDecimalBudget) -> Result<(), NodeWireError> {
+    fn push<T>(
+        vec: &mut Vec<T>,
+        item: T,
+        budget: &mut dyn quire_exact::IntegerDecimalBudget,
+    ) -> Result<(), NodeWireError> {
         if vec.len() == vec.capacity() {
-            let capacity = vec.capacity().checked_mul(2).unwrap_or(usize::MAX).max(4);
-            let bytes = capacity.checked_mul(core::mem::size_of::<T>()).ok_or(NodeWireError::Allocation)?;
+            let capacity = vec.capacity().saturating_mul(2).max(4);
+            let bytes = capacity
+                .checked_mul(core::mem::size_of::<T>())
+                .ok_or(NodeWireError::Allocation)?;
             budget.reserve(bytes).map_err(|_| NodeWireError::Denied)?;
-            vec.try_reserve_exact(capacity - vec.len()).map_err(|_| NodeWireError::Allocation)?;
+            vec.try_reserve_exact(capacity - vec.len())
+                .map_err(|_| NodeWireError::Allocation)?;
         }
         vec.push(item);
         Ok(())
@@ -517,7 +528,11 @@ pub fn node_key_from_text_with_budget(
         }
     }
     // A JSON string starting at `at`; the cursor moves past it.
-    fn string(text: &str, at: &mut usize, budget: &mut dyn quire_exact::IntegerDecimalBudget) -> Result<String, NodeWireError> {
+    fn string(
+        text: &str,
+        at: &mut usize,
+        budget: &mut dyn quire_exact::IntegerDecimalBudget,
+    ) -> Result<String, NodeWireError> {
         let bytes = text.as_bytes();
         let start = *at;
         if bytes.get(start) != Some(&b'"') {
@@ -534,37 +549,61 @@ pub fn node_key_from_text_with_budget(
         }
         *at = end + 1;
         let raw = text.get(start + 1..end).ok_or(NodeWireError::Shape)?;
-        budget.work(u64::try_from(raw.len()).map_err(|_| NodeWireError::Allocation)?).map_err(|_| NodeWireError::Denied)?;
-        budget.reserve(raw.len()).map_err(|_| NodeWireError::Denied)?;
+        budget
+            .work(u64::try_from(raw.len()).map_err(|_| NodeWireError::Allocation)?)
+            .map_err(|_| NodeWireError::Denied)?;
+        budget
+            .reserve(raw.len())
+            .map_err(|_| NodeWireError::Denied)?;
         let mut decoded = String::new();
-        decoded.try_reserve_exact(raw.len()).map_err(|_| NodeWireError::Allocation)?;
+        decoded
+            .try_reserve_exact(raw.len())
+            .map_err(|_| NodeWireError::Allocation)?;
         let mut chars = raw.chars();
         fn hex(chars: &mut core::str::Chars<'_>) -> Result<u32, NodeWireError> {
             let mut value = 0;
             for _ in 0..4 {
-                value = value * 16 + chars.next().and_then(|c| c.to_digit(16)).ok_or(NodeWireError::Shape)?;
+                value = value * 16
+                    + chars
+                        .next()
+                        .and_then(|c| c.to_digit(16))
+                        .ok_or(NodeWireError::Shape)?;
             }
             Ok(value)
         }
         while let Some(next) = chars.next() {
             let next = if next == '\\' {
                 match chars.next().ok_or(NodeWireError::Shape)? {
-                    '"' => '"', '\\' => '\\', '/' => '/',
-                    'b' => '\u{8}', 'f' => '\u{c}', 'n' => '\n', 'r' => '\r', 't' => '\t',
+                    '"' => '"',
+                    '\\' => '\\',
+                    '/' => '/',
+                    'b' => '\u{8}',
+                    'f' => '\u{c}',
+                    'n' => '\n',
+                    'r' => '\r',
+                    't' => '\t',
                     'u' => {
                         let high = hex(&mut chars)?;
                         let scalar = if (0xd800..=0xdbff).contains(&high) {
-                            if chars.next() != Some('\\') || chars.next() != Some('u') { return Err(NodeWireError::Shape); }
+                            if chars.next() != Some('\\') || chars.next() != Some('u') {
+                                return Err(NodeWireError::Shape);
+                            }
                             let low = hex(&mut chars)?;
-                            if !(0xdc00..=0xdfff).contains(&low) { return Err(NodeWireError::Shape); }
+                            if !(0xdc00..=0xdfff).contains(&low) {
+                                return Err(NodeWireError::Shape);
+                            }
                             0x10000 + ((high - 0xd800) << 10) + low - 0xdc00
-                        } else { high };
+                        } else {
+                            high
+                        };
                         char::from_u32(scalar).ok_or(NodeWireError::Shape)?
                     }
                     _ => return Err(NodeWireError::Shape),
                 }
             } else {
-                if next <= '\u{1f}' || next == '"' { return Err(NodeWireError::Shape); }
+                if next <= '\u{1f}' || next == '"' {
+                    return Err(NodeWireError::Shape);
+                }
                 next
             };
             decoded.push(next);
@@ -572,7 +611,9 @@ pub fn node_key_from_text_with_budget(
         Ok(decoded)
     }
     let bytes = text.as_bytes();
-    budget.work(u64::try_from(bytes.len()).map_err(|_| NodeWireError::Allocation)?).map_err(|_| NodeWireError::Denied)?;
+    budget
+        .work(u64::try_from(bytes.len()).map_err(|_| NodeWireError::Allocation)?)
+        .map_err(|_| NodeWireError::Denied)?;
     let mut at = 0;
     expect(bytes, &mut at, b'{')?;
     let mut stack = Vec::new();
@@ -599,13 +640,24 @@ pub fn node_key_from_text_with_budget(
                 }
                 let package = done.package.ok_or(NodeWireError::Shape)?;
                 let ordinal = done.ordinal.ok_or(NodeWireError::Shape)?;
-                let work = done.segments.iter().fold(package.len(), |work, segment| work.saturating_add(match segment { PathSegment::Text(text) => text.len(), PathSegment::Node(_) => 1 }));
-                budget.work(u64::try_from(work).map_err(|_| NodeWireError::Allocation)?).map_err(|_| NodeWireError::Denied)?;
-                let key = NodeKey::try_new_with(package, done.segments, ordinal, &mut |bytes| budget.reserve(bytes))
-                    .map_err(|error| match error {
-                        quire_exact::NodeKeyConstructionError::Policy(_) => NodeWireError::Denied,
-                        quire_exact::NodeKeyConstructionError::Construction(error) => NodeWireError::Key(error),
-                    })?;
+                let work = done.segments.iter().fold(package.len(), |work, segment| {
+                    work.saturating_add(match segment {
+                        PathSegment::Text(text) => text.len(),
+                        PathSegment::Node(_) => 1,
+                    })
+                });
+                budget
+                    .work(u64::try_from(work).map_err(|_| NodeWireError::Allocation)?)
+                    .map_err(|_| NodeWireError::Denied)?;
+                let key = NodeKey::try_new_with(package, done.segments, ordinal, &mut |bytes| {
+                    budget.reserve(bytes)
+                })
+                .map_err(|error| match error {
+                    quire_exact::NodeKeyConstructionError::Policy(_) => NodeWireError::Denied,
+                    quire_exact::NodeKeyConstructionError::Construction(error) => {
+                        NodeWireError::Key(error)
+                    }
+                })?;
                 match stack.last_mut() {
                     Some(parent) => push(&mut parent.segments, PathSegment::Node(key), budget)?,
                     None => {
@@ -624,8 +676,13 @@ pub fn node_key_from_text_with_budget(
                 skip(bytes, &mut at);
                 match name.as_str() {
                     "package" if top.package.is_none() => {
-                        top.package =
-                            Some(string(text, &mut at, budget).map_err(|error| if error == NodeWireError::Denied { error } else { NodeWireError::Package })?);
+                        top.package = Some(string(text, &mut at, budget).map_err(|error| {
+                            if error == NodeWireError::Denied {
+                                error
+                            } else {
+                                NodeWireError::Package
+                            }
+                        })?);
                     }
                     "ordinal" if top.ordinal.is_none() => {
                         let start = at;
@@ -659,7 +716,13 @@ pub fn node_key_from_text_with_budget(
             }
             State::PathStart | State::PathNext => match next {
                 Some(b'"') => {
-                    let name = string(text, &mut at, budget).map_err(|error| if error == NodeWireError::Denied { error } else { NodeWireError::Path })?;
+                    let name = string(text, &mut at, budget).map_err(|error| {
+                        if error == NodeWireError::Denied {
+                            error
+                        } else {
+                            NodeWireError::Path
+                        }
+                    })?;
                     push(&mut top.segments, PathSegment::Text(name), budget)?;
                     top.state = State::PathAfter;
                 }
@@ -693,35 +756,68 @@ mod tests {
             fn reserve(&mut self, bytes: usize) -> Result<(), quire_exact::ReservationDenied> {
                 self.requests.push(bytes);
                 let bytes = u64::try_from(bytes).map_err(|_| quire_exact::ReservationDenied)?;
-                self.remaining = self.remaining.checked_sub(bytes).ok_or(quire_exact::ReservationDenied)?;
+                self.remaining = self
+                    .remaining
+                    .checked_sub(bytes)
+                    .ok_or(quire_exact::ReservationDenied)?;
                 Ok(())
             }
         }
         impl quire_exact::IntegerDecimalBudget for Budget {
             fn work(&mut self, _: u64) -> Result<(), quire_exact::ReservationDenied> {
-                if let Some(cause) = self.cause { self.cancel.cancel(cause); }
+                if let Some(cause) = self.cause {
+                    self.cancel.cancel(cause);
+                }
                 self.cancel.poll();
-                if self.cancel.tripped().is_some() { Err(quire_exact::ReservationDenied) } else { Ok(()) }
+                if self.cancel.tripped().is_some() {
+                    Err(quire_exact::ReservationDenied)
+                } else {
+                    Ok(())
+                }
             }
         }
-        let budget = |remaining, cause| Budget { remaining, requests: Vec::new(), cancel: quire_exact::Cancel::new(), cause };
+        let budget = |remaining, cause| Budget {
+            remaining,
+            requests: Vec::new(),
+            cancel: quire_exact::Cancel::new(),
+            cause,
+        };
         let key = nested(1024);
         let text = node_key_to_text(&key).unwrap();
         let mut complete = budget(u64::MAX, None);
-        assert_eq!(node_key_from_text_with_budget(&text, &mut complete).unwrap(), key);
+        assert_eq!(
+            node_key_from_text_with_budget(&text, &mut complete).unwrap(),
+            key
+        );
         let required = u64::MAX - complete.remaining;
         let mut short = budget(required - 1, None);
-        assert_eq!(node_key_from_text_with_budget(&text, &mut short), Err(NodeWireError::Denied));
+        assert_eq!(
+            node_key_from_text_with_budget(&text, &mut short),
+            Err(NodeWireError::Denied)
+        );
         assert_eq!(short.requests.last(), complete.requests.last());
-        for cause in [quire_exact::CancelCause::Requested, quire_exact::CancelCause::Deadline] {
+        for cause in [
+            quire_exact::CancelCause::Requested,
+            quire_exact::CancelCause::Deadline,
+        ] {
             let mut cancelled = budget(u64::MAX, Some(cause));
-            assert_eq!(node_key_from_text_with_budget(&text, &mut cancelled), Err(NodeWireError::Denied));
+            assert_eq!(
+                node_key_from_text_with_budget(&text, &mut cancelled),
+                Err(NodeWireError::Denied)
+            );
             assert_eq!(cancelled.cancel.tripped(), Some(cause));
-            assert!(cancelled.requests.is_empty(), "the actual text-work admission precedes every parser allocation");
+            assert!(
+                cancelled.requests.is_empty(),
+                "the actual text-work admission precedes every parser allocation"
+            );
         }
-        let escaped = r#"{"package":"p\u006bg","path":["\ud83d\ude00","\"\\\b\f\n\r\t\/"],"ordinal":0}"#;
+        let escaped =
+            r#"{"package":"p\u006bg","path":["\ud83d\ude00","\"\\\b\f\n\r\t\/"],"ordinal":0}"#;
         let value: Value = serde_json::from_str(escaped).unwrap();
-        assert_eq!(node_key_from_text(escaped).unwrap(), node_key_from_json(&value).unwrap());
+        assert_eq!(
+            node_key_from_text(escaped).unwrap(),
+            node_key_from_json(&value).unwrap()
+        );
     }
 
     #[ix_trace_rs::trace("TC-728", "FR-259-AC-1")]

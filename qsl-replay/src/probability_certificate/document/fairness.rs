@@ -168,17 +168,31 @@ impl Admission<'_> {
         self.encoded(record)
     }
     fn declaration(&mut self, text: &str) -> Result<NodeKey, ProbabilityDocumentError> {
-        let mut admission = ProbabilityKeyAdmission::new(self.meter, self.storage, self.limits.storage_bytes, self.cancel);
-        qsl_foundation::node_wire::node_key_from_text_with_budget(text, &mut admission).map_err(|error| match error {
-            qsl_foundation::node_wire::NodeWireError::Denied => admission.refusal(qsl_eval::simulation::model::ModelKeyError::Denied),
-            _ => ProbabilityDocumentError::MalformedMember("objective"),
-        })
+        let mut admission = ProbabilityKeyAdmission::new(
+            self.meter,
+            self.storage,
+            self.limits.storage_bytes,
+            self.cancel,
+        );
+        qsl_foundation::node_wire::node_key_from_text_with_budget(text, &mut admission).map_err(
+            |error| match error {
+                qsl_foundation::node_wire::NodeWireError::Denied => {
+                    admission.refusal(qsl_eval::simulation::model::ModelKeyError::Denied)
+                }
+                _ => ProbabilityDocumentError::MalformedMember("objective"),
+            },
+        )
     }
     fn grow<T>(&mut self, rows: &mut Vec<T>) -> Result<(), ProbabilityDocumentError> {
         if rows.len() == rows.capacity() {
-            let capacity = rows.capacity().checked_mul(2).unwrap_or(usize::MAX).max(4);
-            self.reserve(capacity.checked_mul(std::mem::size_of::<T>()).ok_or(ProbabilityDocumentError::KeySizeOverflow)?)?;
-            rows.try_reserve_exact(capacity - rows.len()).map_err(|_| ProbabilityDocumentError::KeySizeOverflow)?;
+            let capacity = rows.capacity().saturating_mul(2).max(4);
+            self.reserve(
+                capacity
+                    .checked_mul(std::mem::size_of::<T>())
+                    .ok_or(ProbabilityDocumentError::KeySizeOverflow)?,
+            )?;
+            rows.try_reserve_exact(capacity - rows.len())
+                .map_err(|_| ProbabilityDocumentError::KeySizeOverflow)?;
         }
         Ok(())
     }
@@ -304,11 +318,19 @@ pub(super) fn checked_with_control(
             )
             .unwrap_or(u64::MAX),
         )?;
-        let identity = qsl_semantics::model::key::ModelNodeIdentity::new(&key.package, "model", "object_type", &key.node)
-            .map_err(|_| ProbabilityDocumentError::MalformedMember("objective"))?;
+        let identity = qsl_semantics::model::key::ModelNodeIdentity::new(
+            &key.package,
+            "model",
+            "object_type",
+            &key.node,
+        )
+        .map_err(|_| ProbabilityDocumentError::MalformedMember("objective"))?;
         identity.project(&mut cx)?;
         let identity = cx.encoded(&identity)?;
-        let declaration = cx.declaration(std::str::from_utf8(&identity).map_err(|_| ProbabilityDocumentError::MalformedMember("objective"))?)?;
+        let declaration = cx.declaration(
+            std::str::from_utf8(&identity)
+                .map_err(|_| ProbabilityDocumentError::MalformedMember("objective"))?,
+        )?;
         cx.reserve(operation.name().len())?;
         let record = Record {
             kind: constraint.kind(),
@@ -532,17 +554,39 @@ mod tests {
                             | ProbabilityDocumentError::Accounting(_))
                     ));
                 }
-            let text = qsl_foundation::node_wire::node_key_to_text(&record.declaration).unwrap();
-            let mut bound = limits();
-            bound.storage_bytes = 0;
-            let mut meter = quire_exact::Meter::new(bound.accounting);
-            assert!(matches!(Admission { limits: bound, cancel: &cancel, meter: &mut meter, storage: &mut 0 }.declaration(&text), Err(ProbabilityDocumentError::Limit { limit: ProbabilityDocumentLimit::StorageBytes, .. })));
-            for cause in [CancelCause::Requested, CancelCause::Deadline] {
-                let cancel = Cancel::new();
-                cancel.cancel(cause);
-                let mut meter = quire_exact::Meter::new(limits().accounting);
-                assert_eq!(Admission { limits: limits(), cancel: &cancel, meter: &mut meter, storage: &mut 0 }.declaration(&text), Err(ProbabilityDocumentError::Cancelled(cause)));
-            }
+                let text =
+                    qsl_foundation::node_wire::node_key_to_text(&record.declaration).unwrap();
+                let mut bound = limits();
+                bound.storage_bytes = 0;
+                let mut meter = quire_exact::Meter::new(bound.accounting);
+                assert!(matches!(
+                    Admission {
+                        limits: bound,
+                        cancel: &cancel,
+                        meter: &mut meter,
+                        storage: &mut 0
+                    }
+                    .declaration(&text),
+                    Err(ProbabilityDocumentError::Limit {
+                        limit: ProbabilityDocumentLimit::StorageBytes,
+                        ..
+                    })
+                ));
+                for cause in [CancelCause::Requested, CancelCause::Deadline] {
+                    let cancel = Cancel::new();
+                    cancel.cancel(cause);
+                    let mut meter = quire_exact::Meter::new(limits().accounting);
+                    assert_eq!(
+                        Admission {
+                            limits: limits(),
+                            cancel: &cancel,
+                            meter: &mut meter,
+                            storage: &mut 0
+                        }
+                        .declaration(&text),
+                        Err(ProbabilityDocumentError::Cancelled(cause))
+                    );
+                }
             })
             .unwrap()
             .join()

@@ -135,10 +135,22 @@ fn empty_multiple_bindings_and_refuted_fair_bound_never_emit_new_profile_proofs(
     for threshold in ["0", "1"] {
         assert!(World::try_new(&prob_world::link(&CLAIM.replace("0.95", threshold))).is_err());
     }
-    let global = CLAIM.replace("over (m: M::Msg) ", "").replace("holds(m.delivered)", "holds(true)");
+    let global = CLAIM
+        .replace("over (m: M::Msg) ", "")
+        .replace("holds(m.delivered)", "holds(true)");
     let world = World::with_objects(&prob_world::link(&global), &["a", "b"]);
     let bytes = produce(&world, "Likely");
     let system = ModelSystem::new(world.subject().simulation).unwrap();
     let item = probabilistic_claim_identity(world.claim("Likely")).unwrap();
-    assert!(matches!(check_probability_certificate_document(&system, world.package.graph().probabilistic_model().claims(), &item, &bytes, limits(), &Cancel::new()), Ok(ExactProbabilityCertificateCheck::Accepted(_))));
+    assert!(matches!(
+        check_probability_certificate_document(
+            &system,
+            world.package.graph().probabilistic_model().claims(),
+            &item,
+            &bytes,
+            limits(),
+            &Cancel::new()
+        ),
+        Ok(ExactProbabilityCertificateCheck::Accepted(_))
+    ));
 }
