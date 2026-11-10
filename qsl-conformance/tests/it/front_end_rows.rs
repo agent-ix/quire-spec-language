@@ -100,16 +100,18 @@ fn package_returns_each_applicable_kind() {
 #[trace("TC-1389", "FR-564-AC-2")]
 #[test]
 fn the_incomplete_cells_are_one_below_the_counter_their_input_reaches() {
-    let at_counter = |verb, limit_at_counter: fn(u64) -> FrontEndLimit, below: u64| {
+    let at_counter = |verb, limit_at_counter: fn(u64) -> FrontEndLimit| {
         let case = case_of(verb, OutcomeKind::Incomplete);
         let (CaseInput::Check(input) | CaseInput::Package(input)) = case.input else {
             panic!("a front-end case");
         };
-        let (FrontEndLimit::S3Nodes(stated) | FrontEndLimit::OutputBytes(stated)) = input.limit
+        let (FrontEndLimit::S3Nodes(below) | FrontEndLimit::OutputBytes(below)) = input.limit
         else {
             panic!("a limited case");
         };
-        assert_eq!(stated, below);
+        let limited = run_case(&case).expect("the limited case runs");
+        assert_eq!(limited.exit_code(), 22, "{verb:?} must reach its stated limit");
+        assert_eq!(diagnostic(&limited).0, "stage_limit_exceeded");
         let wrap = |input| match case.input {
             CaseInput::Check(_) => CaseInput::Check(input),
             _ => CaseInput::Package(input),
@@ -124,6 +126,6 @@ fn the_incomplete_cells_are_one_below_the_counter_their_input_reaches() {
         let outcome = run_case(&counter).expect("the case runs");
         assert_eq!(outcome.exit_code(), 0, "{verb:?}");
     };
-    at_counter(Verb::Check, FrontEndLimit::S3Nodes, 10);
-    at_counter(Verb::Package, FrontEndLimit::OutputBytes, 20_301);
+    at_counter(Verb::Check, FrontEndLimit::S3Nodes);
+    at_counter(Verb::Package, FrontEndLimit::OutputBytes);
 }

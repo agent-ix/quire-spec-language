@@ -405,6 +405,7 @@ layers below it; `make arch-lint` enforces this.
 | `qsl-eval` | The reference evaluator, including temporal automata and finite simulation. |
 | `qsl-route` | Matches a package's requirements to the backends that can check it. |
 | `qsl-analyze` | In-process model checking, timed zones and schedulability. |
+| `qsl-conformance` | Shared library lifecycle cases and expected outcomes for driver conformance tests; see [outcome parity](docs/outcome-parity.md). |
 | `qsl-inspect` | Typed package and result views, rendered as bounded JSON, text or DOT. |
 | `qsl-replay` | Recompiles and re-runs counterexamples; codegen calls it. |
 | `qsl-source` | Reads rules from Quire Markdown; its `quire-extraction` feature is enabled by `qsl-replay/quire-extraction`. |

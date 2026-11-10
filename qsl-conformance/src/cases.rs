@@ -305,7 +305,7 @@ const fn monitor_input(trace: Input, clauses: &'static [&'static str]) -> Monito
 /// The `s3.nodes` counter of [`COMPILE`] less one.
 const COMPILE_S3_NODES_BELOW: u64 = 10;
 /// The `emit.output_bytes` counter of [`COMPILE`]'s package less one.
-const COMPILE_OUTPUT_BYTES_BELOW: u64 = 20_301;
+const COMPILE_OUTPUT_BYTES_BELOW: u64 = 20_275;
 
 const fn front_end(unit: Input, limit: FrontEndLimit) -> FrontEndInput {
     FrontEndInput {
