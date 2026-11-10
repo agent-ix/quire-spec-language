@@ -144,10 +144,18 @@ fn read(
     }
     if wire.kind != "long-run"
         || wire.objective.profile != PROFILE
-        || wire.objective.optimization != "workload"
         || !wire.objective.fairness.is_empty()
     {
         return Err(ProbabilityDocumentError::Unsupported);
+    }
+    if wire.objective.optimization != "workload" {
+        return Err(
+            if matches!(wire.objective.optimization.as_str(), "minimum" | "maximum") {
+                ProbabilityDocumentError::ObjectiveMismatch
+            } else {
+                ProbabilityDocumentError::Unsupported
+            },
+        );
     }
     cx.rows(wire.values.len())?;
     cx.rows(wire.objective.predicate_states.len())?;

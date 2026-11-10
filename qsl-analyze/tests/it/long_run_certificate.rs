@@ -380,3 +380,17 @@ fn no_bound_instance_produces_no_document_or_fabricated_probability() {
     assert!(records[0].exact_probabilistic.is_none());
     assert!(records[0].counterexample().is_none());
 }
+
+#[trace("TC-1401", "FR-201-AC-29")]
+#[test]
+fn changed_optimization_refuses_the_checked_objective() {
+    let world = availability();
+    let bytes = produce(&world, "Lower");
+    let mut document: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    document["objective"]["optimization"] = serde_json::json!("minimum");
+    let bytes = serde_json::to_vec(&document).unwrap();
+    assert_eq!(
+        check(&world, "Lower", &bytes, &Cancel::new(), limits()),
+        Err(ProbabilityDocumentError::ObjectiveMismatch)
+    );
+}
