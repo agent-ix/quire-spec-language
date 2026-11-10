@@ -4901,7 +4901,7 @@ fn a_sequence_of_option_clocks_holds_one_bit_per_element() {
     }
     let keys: std::collections::BTreeSet<Vec<u8>> = initial
         .iter()
-        .map(|state| held.state_key(state.discrete()).expect("a key").0)
+        .map(|state| super::model_simulation::admitted_raw_key(&held, state.discrete()))
         .collect();
     assert_eq!(keys.len(), 7);
     let (mixed, _) = held.state_key(initial[5].discrete()).expect("a key");
@@ -5322,7 +5322,11 @@ fn an_option_clock_has_a_presence_bit() {
         panic!("two initial states: {initial:?}");
     };
     let key = |state: &TimedState| {
-        String::from_utf8(held.state_key(state.discrete()).expect("a key").0).expect("UTF-8")
+        String::from_utf8(super::model_simulation::admitted_raw_key(
+            &held,
+            state.discrete(),
+        ))
+        .expect("UTF-8")
     };
     let shell = r#"{"type":"option","value":{"components":[],"name":"Clock","type":"tuple"}}"#;
     assert!(key(absent).contains(r#"{"name":"v","value":{"type":"option","value":null}}"#));

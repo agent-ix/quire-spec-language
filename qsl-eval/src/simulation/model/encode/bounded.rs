@@ -828,6 +828,12 @@ impl ValueSink for Bounded<'_, '_> {
     }
     fn clock_count(&mut self, value: &Integer) -> Result<Option<u64>, Self::Error> {
         self.scope.work(1)?;
+        self.scope
+            .budget
+            .borrow_mut()
+            .integer(value)
+            .map_err(|_| ModelKeyError::Denied)?;
+        self.scope.poll()?;
         if value.magnitude_bits() > 64 {
             return Ok(None);
         }

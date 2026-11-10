@@ -376,9 +376,9 @@ fn build_world_document(
 }
 
 /// One object of a snapshot: key, `value`, `label` and `next`.
-struct Obj(&'static str, i64, i64, Option<&'static str>);
+struct Obj<'a>(&'a str, i64, i64, Option<&'a str>);
 
-fn object_json(object: &Obj, extras: bool, enum_mode: bool) -> Json {
+fn object_json(object: &Obj<'_>, extras: bool, enum_mode: bool) -> Json {
     let next = match object.3 {
         None => json!({"absent": {}}),
         Some(target) => {
@@ -405,7 +405,7 @@ impl World {
         name: &str,
         observation: &str,
         anchor: Json,
-        objects: &[Obj],
+        objects: &[Obj<'_>],
     ) -> DocumentRef {
         self.snapshot_with(name, observation, anchor, objects, Json::Null)
     }
@@ -416,7 +416,7 @@ impl World {
         name: &str,
         observation: &str,
         anchor: Json,
-        objects: &[Obj],
+        objects: &[Obj<'_>],
         relationships: Json,
     ) -> DocumentRef {
         let mut document = json!({
@@ -446,7 +446,7 @@ impl World {
 
     /// The initial snapshot `s0`: `c1` with `value` `value`, anchored
     /// `{initialization, start}`.
-    fn start(&mut self, name: &str, objects: &[Obj]) -> DocumentRef {
+    fn start(&mut self, name: &str, objects: &[Obj<'_>]) -> DocumentRef {
         self.snapshot(
             name,
             "current",
@@ -2030,6 +2030,25 @@ impl qsl_eval::simulation::model::ModelKeyBudget for RawKeyBudget {
         }
         Ok(())
     }
+}
+
+pub(super) fn admitted_raw_key(
+    system: &ModelSystem<'_>,
+    state: &qsl_eval::simulation::model::ModelSimState,
+) -> Vec<u8> {
+    let bytes = system
+        .state_key_bytes_with_budget(
+            state,
+            qsl_foundation::IdentityLimits::default(),
+            &mut RawKeyBudget::unlimited(),
+            &Cancel::new(),
+        )
+        .expect("admitted raw identity");
+    assert_eq!(
+        bytes,
+        system.state_key(state).expect("legacy raw identity").0
+    );
+    bytes
 }
 
 #[trace("TC-471", "FR-120-AC-4", "FR-120-AC-27")]
