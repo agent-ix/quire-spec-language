@@ -794,8 +794,13 @@ fn subject(
                             let magnitude = {
                                 let context = &mut **context;
                                 super::super::reward::magnitude(
-                                    &step.rewards, objective, limits, cancel,
-                                    &mut context.storage, &mut remaining_weight_edges, &mut context.meter,
+                                    &step.rewards,
+                                    objective,
+                                    limits,
+                                    cancel,
+                                    &mut context.storage,
+                                    &mut remaining_weight_edges,
+                                    &mut context.meter,
                                 )?
                             };
                             let term =

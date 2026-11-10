@@ -220,26 +220,38 @@ fn admit_weights(
     for edge in &product.edges {
         let mut admission = budget.admission();
         for (reward, value) in &edge.rewards {
-            IntegerDecimalBudget::work(&mut admission, reward.as_str().len() as u64 + 1)
-                .map_err(|_| admission.refusal(qsl_eval::simulation::model::ModelKeyError::Denied))?;
-            if reward != name { continue; }
+            IntegerDecimalBudget::work(&mut admission, reward.as_str().len() as u64 + 1).map_err(
+                |_| admission.refusal(qsl_eval::simulation::model::ModelKeyError::Denied),
+            )?;
+            if reward != name {
+                continue;
+            }
             let (bits, negative) = match value {
                 Value::Integer(integer) => {
                     qsl_eval::simulation::model::ModelKeyBudget::integer(&mut admission, integer)
-                        .map_err(|_| admission.refusal(qsl_eval::simulation::model::ModelKeyError::Denied))?;
+                        .map_err(|_| {
+                        admission.refusal(qsl_eval::simulation::model::ModelKeyError::Denied)
+                    })?;
                     (integer.magnitude_bits(), integer.is_negative())
                 }
                 Value::Quantity(quantity) => (
-                    quantity.magnitude().numerator().magnitude_bits().max(quantity.magnitude().denominator().magnitude_bits()),
+                    quantity
+                        .magnitude()
+                        .numerator()
+                        .magnitude_bits()
+                        .max(quantity.magnitude().denominator().magnitude_bits()),
                     quantity.magnitude().numerator().is_negative(),
                 ),
                 _ => return Err(ProbabilityDocumentError::Unsupported),
             };
-            if negative { return Err(ProbabilityDocumentError::Unsupported); }
+            if negative {
+                return Err(ProbabilityDocumentError::Unsupported);
+            }
             if bits > limits.scalar_bits {
                 return Err(ProbabilityDocumentError::Limit {
                     limit: qsl_replay::ProbabilityDocumentLimit::RationalBits,
-                    bound: limits.scalar_bits, actual: bits,
+                    bound: limits.scalar_bits,
+                    actual: bits,
                 });
             }
         }

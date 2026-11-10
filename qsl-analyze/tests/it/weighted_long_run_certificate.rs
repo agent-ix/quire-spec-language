@@ -115,6 +115,9 @@ fn weighted_availability_checks_ratio_gain_bias_and_strict_objective() {
     }
 }
 fn periodic(initial: i64, a_rewards: &str, b_reward: &str, terminal: bool) -> World {
+    World::new(&periodic_model(initial, a_rewards, b_reward, terminal))
+}
+fn periodic_model(initial: i64, a_rewards: &str, b_reward: &str, terminal: bool) -> Model {
     let package = "test/weighted-longrun-periodic";
     let operations = vec![
         Operation {
@@ -148,8 +151,9 @@ fn periodic(initial: i64, a_rewards: &str, b_reward: &str, terminal: bool) -> Wo
             if terminal { "terminal End using v on M when { self.phase = 3 };\n" } else {""},
             claim("Fraction","s.phase = 0 or s.phase = 3",if initial == 2 {">= rational(11,12)"} else {">= rational(2,3)"})),
         initial:serde_json::json!({"phase":{"integer":initial.to_string()}}),
-    })
+    }
 }
+
 #[trace("TC-1402", "FR-201-AC-32", "FR-201-AC-33")]
 #[test]
 fn weighted_draws_and_transients_use_component_fractions_not_pooled_payoffs() {
@@ -181,6 +185,14 @@ fn weighted_draws_and_transients_use_component_fractions_not_pooled_payoffs() {
                 .value = ratio(8, 9);
             assert!(!accepted(&world, "Fraction", &bad));
         }
+        let swapped = periodic(initial, "3: 1, 1: 1", "1", false);
+        assert!(accepted(&swapped, "Fraction", &doc));
+        let scaled = periodic(initial, "2: 1, 6: 1", "2", false);
+        let scaled_bytes = produce(&scaled, "Fraction");
+        let scaled_doc = read_weighted_long_run_probability_certificate(&scaled_bytes, limits(), &Cancel::new()).unwrap();
+        assert_eq!(scaled_doc.certificate.components[0].value, ratio(2,3));
+        assert_eq!(scaled_doc.certificate.components[0].bias[1].value, ratio(-4,3));
+        assert!(!accepted(&scaled, "Fraction", &doc));
         let changed = periodic(initial, "1: 1, 5: 1", "1", false);
         assert!(!accepted(&changed, "Fraction", &doc));
     }
@@ -194,6 +206,9 @@ fn reachable_zero_weight_components_remain_typed_unsupported() {
     // A fabricated otherwise plausible document cannot turn zero stationary weight into a ratio.
     let positive = periodic(2, "1: 1, 3: 1", "1", false);
     let bytes = produce(&positive, "Fraction");
+    let mut document = read_weighted_long_run_probability_certificate(&bytes, limits(), &Cancel::new()).unwrap();
+    document.certificate.identity = identity.clone();
+    let bytes = write_weighted_long_run_probability_certificate(&document, limits(), &Cancel::new()).unwrap();
     assert!(matches!(
         qsl_replay::check_probability_certificate_document(
             &system,
@@ -290,4 +305,54 @@ fn weighted_phase_controls_preserve_actual_cancellation_and_limits() {
             "control {control}"
         );
     }
+}
+
+#[trace("TC-1402", "FR-201-AC-34")]
+#[test]
+fn actual_weight_representation_and_numeric_arithmetic_limits_are_separate() {
+    let mut model=periodic_model(0,"65536: 1","65536",false);
+    model.integers.iter_mut().find(|(name,_,_)|*name=="Weight").unwrap().2=65536;
+    model.body=model.body.replace(">= rational(2,3)",">= rational(1,2)");
+    let world=World::new(&model);
+    let bytes=produce(&world,"Fraction");
+    let document=read_weighted_long_run_probability_certificate(&bytes,limits(),&Cancel::new()).unwrap();
+    assert_eq!(document.certificate.components[0].bias[1].value,ratio(-32768,1));
+    let mut control=limits(); control.scalar_bits=16;
+    assert!(matches!(check(&world,"Fraction",&bytes,&Cancel::new(),control),Err(ProbabilityDocumentError::Limit{limit:qsl_replay::ProbabilityDocumentLimit::RationalBits,actual:17,..})));
+    let mut control=limits();control.accounting.integer_bits=16;
+    assert!(matches!(check(&world,"Fraction",&bytes,&Cancel::new(),control),Err(ProbabilityDocumentError::Accounting(ref stop)) if stop.limit_kind==quire_exact::LimitKind::IntegerBits));
+}
+
+#[trace("TC-1402", "FR-201-AC-34")]
+#[test]
+fn global_negative_admission_precedes_proofs_and_zero_binding_invents_nothing() {
+    for initial in [0,2] {
+        let world=periodic(initial,"1: 1, 3: 1","-1",false);
+        let error=ModelSystem::new(world.subject().simulation).err().expect("FR187 rejects an enumerable negative reward");
+        let qsl_semantics::model::observation::AdmissionFailure::Refused(ref record)=error else {panic!("{error:?}");};
+        assert_eq!(record.catalog.code(),"invalid_probabilistic_model");assert_eq!(record.catalog.cause(),"negative-reward");
+        let records=analyze_items(&Engines::qsl().unwrap(),vec![exact_probabilistic_item(RequestIndex::new(0),world.request("Fraction",ModelCheckLimits::default()))],&Cancel::new());
+        assert!(matches!(records[0].terminal().unwrap().value(),qsl_replay::TerminalValue::Declined{cause:qsl_replay::ProofRefusalCause::InvalidInput,..}));
+        assert!(records[0].exact_probabilistic.is_none());assert!(records[0].counterexample().is_none());
+    }
+    let model=periodic_model(0,"1: 1, 3: 1","1",false);
+    let world=World::with_objects(&model,&[]);
+    let records=analyze_items(&Engines::qsl().unwrap(),vec![exact_probabilistic_item(RequestIndex::new(0),world.request("Fraction",ModelCheckLimits::default()))],&Cancel::new());
+    let Settlement::Disposed(disposed)=&records[0].settlement else {panic!("{:?}",records[0]);};
+    assert_eq!(disposed.kind,DispositionKind::Unsupported);assert!(records[0].terminal().is_none());assert!(records[0].exact_probabilistic.is_none());
+}
+
+#[trace("TC-1402", "FR-201-AC-34")]
+#[test]
+fn admitted_object_parameter_draws_do_not_coerce_negative_weight_to_zero() {
+    let mut model=periodic_model(0,"1: 1, 3: 1","1",false);
+    model.operations[0].parameters.push(("who",format!("ix://{}/Server",model.package)));
+    model.body=model.body.replace("reward duration on Server::a = d;","reward duration on Server::a = if who = who then -1 else 1;");
+    let world=World::new(&model);
+    let system=ModelSystem::new(world.subject().simulation).expect("object-domain reward is deferred by FR187 admission");
+    let identity=qsl_replay::probabilistic_claim_identity(world.claim("Fraction")).unwrap();
+    assert_eq!(qsl_replay::weighted_long_run_probability_certificate_document(&system,world.package.graph().probabilistic_model().claims(),&identity,vec![],vec![],limits(),&Cancel::new()),Err(ProbabilityDocumentError::Unsupported));
+    let records=analyze_items(&Engines::qsl().unwrap(),vec![exact_probabilistic_item(RequestIndex::new(0),world.request("Fraction",ModelCheckLimits::default()))],&Cancel::new());
+    let Settlement::Disposed(disposed)=&records[0].settlement else {panic!("{:?}",records[0]);};
+    assert_eq!(disposed.kind,DispositionKind::Unsupported);assert!(records[0].terminal().is_none());assert!(records[0].exact_probabilistic.is_none());
 }

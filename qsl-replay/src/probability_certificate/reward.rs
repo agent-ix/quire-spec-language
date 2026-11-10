@@ -364,8 +364,13 @@ pub(super) fn magnitude(
         return Ok(rational(0));
     };
     if let ExactValue::Integer(integer) = value {
-        meter.charge(quire_exact::Charge::new(quire_exact::ChargePoint::GraphResultRetain)
-            .size(quire_exact::LimitKind::IntegerBits, integer.magnitude_bits()))
+        meter
+            .charge(
+                quire_exact::Charge::new(quire_exact::ChargePoint::GraphResultRetain).size(
+                    quire_exact::LimitKind::IntegerBits,
+                    integer.magnitude_bits(),
+                ),
+            )
             .map_err(|error| match cancel.tripped() {
                 Some(cause) => ProbabilityDocumentError::Cancelled(cause),
                 None => ProbabilityDocumentError::Accounting(Box::new(error)),
@@ -453,7 +458,15 @@ fn step_costs(
         for step in steps {
             poll_cancel(cancel)?;
             if step.probability != rational(0) {
-                let value = magnitude(&step.rewards, objective, limits, cancel, storage, remaining_edges, meter)?;
+                let value = magnitude(
+                    &step.rewards,
+                    objective,
+                    limits,
+                    cancel,
+                    storage,
+                    remaining_edges,
+                    meter,
+                )?;
                 costs
                     .try_reserve_exact(1)
                     .map_err(|_| ProbabilityDocumentError::Malformed)?;
@@ -488,7 +501,15 @@ fn step_costs(
             if draw.successors.len() != 1 {
                 return Err(ProbabilityDocumentError::Unsupported);
             }
-            let value = magnitude(&draw.rewards, objective, limits, cancel, storage, remaining_edges, meter)?;
+            let value = magnitude(
+                &draw.rewards,
+                objective,
+                limits,
+                cancel,
+                storage,
+                remaining_edges,
+                meter,
+            )?;
             costs
                 .try_reserve_exact(1)
                 .map_err(|_| ProbabilityDocumentError::Malformed)?;
