@@ -34,7 +34,10 @@ pub fn read_probability_proof_document(
     limits: ProbabilityDocumentLimits,
     cancel: &Cancel,
 ) -> Result<ProbabilityProofDocument, ProbabilityDocumentError> {
-    let cyclic_mdp = matches!(profile_dispatch(bytes, limits, cancel)?, ProfileDispatch::CyclicMdp | ProfileDispatch::CyclicMdpReward);
+    let cyclic_mdp = matches!(
+        profile_dispatch(bytes, limits, cancel)?,
+        ProfileDispatch::CyclicMdp | ProfileDispatch::CyclicMdpReward
+    );
     let mut meter = quire_exact::Meter::new(limits.accounting).with_cancel(cancel.clone());
     let document = read_document_profile(bytes, limits, cancel, &mut meter, cyclic_mdp)?;
     Ok(ProbabilityProofDocument {
@@ -117,13 +120,26 @@ pub fn cyclic_mdp_probability_certificate_document(
 /// Construct finite cyclic MDP expected-reward evidence explicitly.
 /// Every stopped state must have a finite selected value; supplied values remain unchecked evidence.
 pub fn cyclic_mdp_reward_probability_certificate_document(
-    system: &ModelSystem<'_>, claims: &[CheckedProbabilisticClaim], item: &ObligationIdentity,
-    certificate: &ExactProbabilityCertificate, limits: ProbabilityDocumentLimits, cancel: &Cancel,
+    system: &ModelSystem<'_>,
+    claims: &[CheckedProbabilisticClaim],
+    item: &ObligationIdentity,
+    certificate: &ExactProbabilityCertificate,
+    limits: ProbabilityDocumentLimits,
+    cancel: &Cancel,
 ) -> Result<ProbabilityProofDocument, ProbabilityDocumentError> {
-    if !matches!(bind_claim(claims, item, cancel)?.form, ProbForm::ExpectedReward { .. }) {
+    if !matches!(
+        bind_claim(claims, item, cancel)?.form,
+        ProbForm::ExpectedReward { .. }
+    ) {
         return Err(ProbabilityDocumentError::Unsupported);
     }
-    construct(system, claims, item, certificate, &mut Context::new(limits, cancel, None))
+    construct(
+        system,
+        claims,
+        item,
+        certificate,
+        &mut Context::new(limits, cancel, None),
+    )
 }
 
 /// Actual stages of the cyclic MDP checker, for default-off test observation.
@@ -151,6 +167,7 @@ struct Context<'a> {
     meter: quire_exact::Meter,
     storage: u64,
     reward: bool,
+    reward_control: Option<&'a super::super::reward::RewardControl<'a>>,
     identity: qsl_foundation::IdentityLimits,
     observe: Option<&'a mut dyn FnMut(CyclicMdpProbabilityPhase)>,
 }
@@ -166,6 +183,7 @@ impl<'a> Context<'a> {
             meter: quire_exact::Meter::new(limits.accounting).with_cancel(cancel.clone()),
             storage: 0,
             reward: false,
+            reward_control: None,
             identity: qsl_foundation::IdentityLimits::default(),
             observe,
         }
@@ -173,6 +191,18 @@ impl<'a> Context<'a> {
     fn tick(&mut self, phase: CyclicMdpProbabilityPhase) -> Result<(), ProbabilityDocumentError> {
         if let Some(observe) = self.observe.as_mut() {
             observe(phase);
+        }
+        if self.reward {
+            if let Some(control) = self.reward_control {
+                use super::super::reward::RewardProbabilityPhase as R;
+                control.phase(match phase {
+                    CyclicMdpProbabilityPhase::OriginalAdmission => R::Original,
+                    CyclicMdpProbabilityPhase::StoppedGraph => R::Stopped,
+                    CyclicMdpProbabilityPhase::Progress => R::Progress,
+                    CyclicMdpProbabilityPhase::Ranks => R::Ranks,
+                    _ => R::Arithmetic,
+                })?;
+            }
         }
         super::super::reward::visit(self.cancel, &mut self.meter)
     }
@@ -221,40 +251,99 @@ pub(super) fn member_shapes(
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn admit_reward(
-    system: &ModelSystem<'_>, claims: &[CheckedProbabilisticClaim], item: &ObligationIdentity,
-    limits: ProbabilityDocumentLimits, cancel: &Cancel, identity: qsl_foundation::IdentityLimits,
-    meter: &mut quire_exact::Meter, storage: &mut u64,
+    system: &ModelSystem<'_>,
+    claims: &[CheckedProbabilisticClaim],
+    item: &ObligationIdentity,
+    limits: ProbabilityDocumentLimits,
+    cancel: &Cancel,
+    identity: qsl_foundation::IdentityLimits,
+    meter: &mut quire_exact::Meter,
+    storage: &mut u64,
 ) -> Result<(), ProbabilityDocumentError> {
-    reward_subject(system, claims, item, limits, cancel, identity, meter, storage).map(|_| ())
+    reward_subject(
+        system,
+        claims,
+        item,
+        limits,
+        cancel,
+        identity,
+        meter,
+        storage,
+        &super::super::reward::RewardControl::new(cancel),
+    )
+    .map(|_| ())
 }
 
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 fn reward_subject(
-    system: &ModelSystem<'_>, claims: &[CheckedProbabilisticClaim], item: &ObligationIdentity,
-    limits: ProbabilityDocumentLimits, cancel: &Cancel, identity: qsl_foundation::IdentityLimits,
-    meter: &mut quire_exact::Meter, storage: &mut u64,
-) -> Result<(CheckerGraph, ProbabilityObjective, Bound, Option<super::super::reward::RewardGraph>), ProbabilityDocumentError> {
+    system: &ModelSystem<'_>,
+    claims: &[CheckedProbabilisticClaim],
+    item: &ObligationIdentity,
+    limits: ProbabilityDocumentLimits,
+    cancel: &Cancel,
+    identity: qsl_foundation::IdentityLimits,
+    meter: &mut quire_exact::Meter,
+    storage: &mut u64,
+    control: &super::super::reward::RewardControl<'_>,
+) -> Result<
+    (
+        CheckerGraph,
+        ProbabilityObjective,
+        Bound,
+        Option<super::super::reward::RewardGraph>,
+    ),
+    ProbabilityDocumentError,
+> {
     use qsl_eval::simulation::model::{TimedSubjectRefusal, TimedSystem};
-    if !std::ptr::eq(system.package().graph().probabilistic_model().claims(), claims) {
+    if !std::ptr::eq(
+        system.package().graph().probabilistic_model().claims(),
+        claims,
+    ) {
         return Err(ProbabilityDocumentError::IdentityMismatch);
     }
     let claim = bind_claim(claims, item, cancel)?;
-    let ProbForm::ExpectedReward { bound, reward, until } = &claim.form else {
+    let ProbForm::ExpectedReward {
+        bound,
+        reward,
+        until,
+    } = &claim.form
+    else {
         return Err(ProbabilityDocumentError::Unsupported);
     };
-    if !matches!(claim.scheduler, ProbScheduler::Every) || !claim.fairness.is_empty()
-        || qsl_semantics::check::TemporalProfile::from_identity(claim.profile.identity()) != Some(qsl_semantics::check::TemporalProfile::InfiniteTrace)
-        || !matches!(TimedSystem::new(system, &claim.subject.alias), Err(TimedSubjectRefusal::NoTimedModel { .. })) {
+    if !matches!(claim.scheduler, ProbScheduler::Every)
+        || !claim.fairness.is_empty()
+        || qsl_semantics::check::TemporalProfile::from_identity(claim.profile.identity())
+            != Some(qsl_semantics::check::TemporalProfile::InfiniteTrace)
+        || !matches!(
+            TimedSystem::new(system, &claim.subject.alias),
+            Err(TimedSubjectRefusal::NoTimedModel { .. })
+        )
+    {
         return Err(ProbabilityDocumentError::Unsupported);
     }
     let binding = claim_binding(system, claim)?;
     let reference = binding.as_ref().map(|bound| &bound.reference);
     let (graph, _, reward) = super::super::reward::enumerate(
-        system, claim, reward, until, reference, None, limits, cancel, identity,
-        super::super::reward::RewardProfile::CyclicMdp, meter, storage,
-        &super::super::reward::RewardControl::new(cancel),
+        system,
+        claim,
+        reward,
+        until,
+        reference,
+        None,
+        limits,
+        cancel,
+        identity,
+        super::super::reward::RewardProfile::CyclicMdp,
+        meter,
+        storage,
+        control,
     )?;
-    Ok((graph, claim_objective(&claim.scheduler, bound), bound.clone(), Some(reward)))
+    Ok((
+        graph,
+        claim_objective(&claim.scheduler, bound),
+        bound.clone(),
+        Some(reward),
+    ))
 }
 
 #[allow(clippy::type_complexity)]
@@ -263,7 +352,15 @@ fn subject(
     claims: &[CheckedProbabilisticClaim],
     item: &ObligationIdentity,
     cx: &mut Context<'_>,
-) -> Result<(CheckerGraph, ProbabilityObjective, Bound, Option<super::super::reward::RewardGraph>), ProbabilityDocumentError> {
+) -> Result<
+    (
+        CheckerGraph,
+        ProbabilityObjective,
+        Bound,
+        Option<super::super::reward::RewardGraph>,
+    ),
+    ProbabilityDocumentError,
+> {
     use qsl_eval::simulation::model::{TimedSubjectRefusal, TimedSystem};
     if !std::ptr::eq(
         system.package().graph().probabilistic_model().claims(),
@@ -274,7 +371,18 @@ fn subject(
     let claim = bind_claim(claims, item, cx.cancel)?;
     if cx.reward {
         cx.tick(CyclicMdpProbabilityPhase::OriginalAdmission)?;
-        return reward_subject(system, claims, item, cx.limits, cx.cancel, cx.identity, &mut cx.meter, &mut cx.storage);
+        return reward_subject(
+            system,
+            claims,
+            item,
+            cx.limits,
+            cx.cancel,
+            cx.identity,
+            &mut cx.meter,
+            &mut cx.storage,
+            cx.reward_control
+                .unwrap_or(&super::super::reward::RewardControl::new(cx.cancel)),
+        );
     }
     let ProbForm::Reach {
         bound,
@@ -615,14 +723,19 @@ fn derive_ranks(
                 }
                 match objective {
                     _ if (objective == ProbabilityObjective::Minimum && !cx.reward)
-                        || (objective == ProbabilityObjective::Maximum && cx.reward) => match lower {
-                        Some(rank) => {
-                            candidate =
-                                Some(candidate.map_or(rank, |previous: u64| previous.max(rank)))
+                        || (objective == ProbabilityObjective::Maximum && cx.reward) =>
+                    {
+                        match lower {
+                            Some(rank) => {
+                                candidate =
+                                    Some(candidate.map_or(rank, |previous: u64| previous.max(rank)))
+                            }
+                            None => all = false,
                         }
-                        None => all = false,
-                    },
-                    ProbabilityObjective::Minimum | ProbabilityObjective::Maximum if action_sums.get(index) == Some(value) => {
+                    }
+                    ProbabilityObjective::Minimum | ProbabilityObjective::Maximum
+                        if action_sums.get(index) == Some(value) =>
+                    {
                         if let Some(rank) = lower {
                             candidate =
                                 Some(candidate.map_or(rank, |previous: u64| previous.min(rank)));
@@ -684,7 +797,10 @@ fn construct(
     certificate: &ExactProbabilityCertificate,
     cx: &mut Context<'_>,
 ) -> Result<ProbabilityProofDocument, ProbabilityDocumentError> {
-    cx.reward = matches!(bind_claim(claims, item, cx.cancel)?.form, ProbForm::ExpectedReward { .. });
+    cx.reward = matches!(
+        bind_claim(claims, item, cx.cancel)?.form,
+        ProbForm::ExpectedReward { .. }
+    );
     let (graph, objective, _, reward) = subject(system, claims, item, cx)?;
     let values = match rows(&graph, certificate, cx)? {
         CertificateValues::Complete(values) => values,
@@ -749,6 +865,21 @@ pub(super) fn check<'a>(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
+pub(super) fn check_with_reward_control<'a>(
+    system: &ModelSystem<'_>,
+    claims: &[CheckedProbabilisticClaim],
+    item: &ObligationIdentity,
+    bytes: &[u8],
+    limits: ProbabilityDocumentLimits,
+    cancel: &'a Cancel,
+    control: &'a super::super::reward::RewardControl<'a>,
+) -> Result<ExactProbabilityCertificateCheck, ProbabilityDocumentError> {
+    let mut cx = Context::new(limits, cancel, None);
+    cx.reward_control = Some(control);
+    check_with_context(system, claims, item, bytes, cx)
+}
+
 fn check_with_context(
     system: &ModelSystem<'_>,
     claims: &[CheckedProbabilisticClaim],
@@ -766,7 +897,12 @@ fn check_with_context(
         return Err(ProbabilityDocumentError::IdentityMismatch);
     }
     cx.reward = document.reward.is_some();
-    if cx.reward != matches!(bind_claim(claims, item, cx.cancel)?.form, ProbForm::ExpectedReward { .. }) {
+    if cx.reward
+        != matches!(
+            bind_claim(claims, item, cx.cancel)?.form,
+            ProbForm::ExpectedReward { .. }
+        )
+    {
         return Err(ProbabilityDocumentError::ObjectiveMismatch);
     }
     let (graph, objective, bound, reward) = subject(system, claims, item, &mut cx)?;
@@ -781,8 +917,10 @@ fn check_with_context(
     if targets.next().is_some() {
         target_match = false;
     }
-    if document.optimization != objective || !target_match
-        || document.reward.as_ref() != reward.as_ref().map(|reward| &reward.objective) {
+    if document.optimization != objective
+        || !target_match
+        || document.reward.as_ref() != reward.as_ref().map(|reward| &reward.objective)
+    {
         return Err(ProbabilityDocumentError::ObjectiveMismatch);
     }
     let values = match rows(

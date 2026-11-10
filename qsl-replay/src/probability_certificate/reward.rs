@@ -318,7 +318,10 @@ pub(super) fn enumerate(
         let original = finish_graph(explore(None, false), &failure, &issue)?;
         for state in original.states.values() {
             poll_cancel(cancel)?;
-            if profile == RewardProfile::CyclicDtmc && !state.choices.is_empty() && state.choices.len() != 1 {
+            if profile == RewardProfile::CyclicDtmc
+                && !state.choices.is_empty()
+                && state.choices.len() != 1
+            {
                 return Err(ProbabilityDocumentError::Unsupported);
             }
         }

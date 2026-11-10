@@ -139,3 +139,5 @@ mod weighted_long_run_certificate;
 mod cyclic_reward_certificate;
 
 mod cyclic_mdp_certificate;
+
+mod cyclic_mdp_reward_certificate;

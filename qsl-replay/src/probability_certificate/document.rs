@@ -15,7 +15,8 @@ pub use mdp::{
     check_cyclic_mdp_probability_certificate_with_identity, CyclicMdpProbabilityPhase,
 };
 pub use mdp::{
-    cyclic_mdp_probability_certificate_document, cyclic_mdp_reward_probability_certificate_document, probability_proof_document,
+    cyclic_mdp_probability_certificate_document,
+    cyclic_mdp_reward_probability_certificate_document, probability_proof_document,
     read_probability_proof_document, write_probability_proof_document, ProbabilityProofDocument,
 };
 mod long_run;
@@ -362,7 +363,9 @@ fn profile_dispatch(
                 ProfileDispatch::LongRun
             }
             Some(quire_canonical::Node::String(CYCLIC_MDP_PROFILE)) => ProfileDispatch::CyclicMdp,
-            Some(quire_canonical::Node::String(CYCLIC_MDP_REWARD_PROFILE)) => ProfileDispatch::CyclicMdpReward,
+            Some(quire_canonical::Node::String(CYCLIC_MDP_REWARD_PROFILE)) => {
+                ProfileDispatch::CyclicMdpReward
+            }
             _ => ProfileDispatch::Exact,
         },
     )
@@ -684,7 +687,10 @@ fn read_document_profile(
     }
     if wire.kind != "exact"
         || if cyclic_mdp {
-            !matches!(wire.objective.profile.as_str(), CYCLIC_MDP_PROFILE | CYCLIC_MDP_REWARD_PROFILE)
+            !matches!(
+                wire.objective.profile.as_str(),
+                CYCLIC_MDP_PROFILE | CYCLIC_MDP_REWARD_PROFILE
+            )
         } else {
             !matches!(
                 wire.objective.profile.as_str(),
@@ -1099,12 +1105,28 @@ fn admit_reward_with_identity(
         Ok(_) => Ok(()),
         Err(error) if legacy_reward_may_retry(&error) => {
             match subject_graph_with_identity(
-                system, claims, item, limits, cancel, identity, true,
-                &mut meter, &mut storage, &super::reward::RewardControl::new(cancel),
+                system,
+                claims,
+                item,
+                limits,
+                cancel,
+                identity,
+                true,
+                &mut meter,
+                &mut storage,
+                &super::reward::RewardControl::new(cancel),
             ) {
                 Ok(_) => Ok(()),
-                Err(error) if legacy_reward_may_retry(&error) =>
-                    mdp::admit_reward(system, claims, item, limits, cancel, identity, &mut meter, &mut storage),
+                Err(error) if legacy_reward_may_retry(&error) => mdp::admit_reward(
+                    system,
+                    claims,
+                    item,
+                    limits,
+                    cancel,
+                    identity,
+                    &mut meter,
+                    &mut storage,
+                ),
                 Err(error) => Err(error),
             }
         }
@@ -1350,7 +1372,9 @@ fn check_document_with_control(
             return long_run::check(system, claims, item, bytes, limits, cancel)
         }
         ProfileDispatch::CyclicMdp | ProfileDispatch::CyclicMdpReward => {
-            return mdp::check(system, claims, item, bytes, limits, cancel, None)
+            return mdp::check_with_reward_control(
+                system, claims, item, bytes, limits, cancel, control,
+            )
         }
         ProfileDispatch::Exact => {}
     }

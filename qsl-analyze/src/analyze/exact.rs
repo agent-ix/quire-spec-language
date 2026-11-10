@@ -449,7 +449,11 @@ fn run(
         };
         (solved.values, solved.policy)
     };
-    if expected_reward && values.iter().any(|value| matches!(value, ExtRational::PlusInfinity)) {
+    if expected_reward
+        && values
+            .iter()
+            .any(|value| matches!(value, ExtRational::PlusInfinity))
+    {
         return document_failure(ProbabilityDocumentError::MixedInfiniteCoverage, subject);
     }
     let Some(ExtRational::Finite(value)) = values.get(start.index()) else {
@@ -737,9 +741,12 @@ fn document_failure(error: ProbabilityDocumentError, subject: SubjectLimits<'_>)
         ProbabilityDocumentError::ZeroWeightComponent { .. } => {
             EngineReport::Refused(Refusal::Unsupported(ZERO_WEIGHT_COMPONENT))
         }
-        ProbabilityDocumentError::MixedInfiniteCoverage => {
-            EngineReport::Refused(Refusal::Unsupported(quire_semantic_value::catalog::CatalogCode::new("unsupported_construct", "mixed-infinite-coverage")))
-        }
+        ProbabilityDocumentError::MixedInfiniteCoverage => EngineReport::Refused(
+            Refusal::Unsupported(quire_semantic_value::catalog::CatalogCode::new(
+                "unsupported_construct",
+                "mixed-infinite-coverage",
+            )),
+        ),
         ProbabilityDocumentError::Unsupported | ProbabilityDocumentError::UndefinedPredicate(_) => {
             not_yet()
         }

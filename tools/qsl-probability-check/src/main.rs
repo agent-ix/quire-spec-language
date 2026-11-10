@@ -219,7 +219,9 @@ fn source_failure(error: ProbabilitySourceError) -> Result<Value, String> {
             | qsl_foundation::diagnostic::StageFailure::RefusedWithPayload(_, _),
         ) => "refused",
         ProbabilitySourceError::Document(
-            Document::Unsupported | Document::ZeroWeightComponent { .. },
+            Document::Unsupported
+            | Document::MixedInfiniteCoverage
+            | Document::ZeroWeightComponent { .. },
         ) => "unsupported",
         ProbabilitySourceError::Document(
             Document::KeyEncoding(qsl_eval::simulation::EncodingRefusal::NoEncoding(_))
