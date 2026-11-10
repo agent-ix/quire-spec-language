@@ -381,11 +381,29 @@ fn subject(
     if cx.reward {
         cx.tick(CyclicMdpProbabilityPhase::OriginalAdmission)?;
         if let Some(control) = cx.reward_control {
-            return reward_subject(system, claims, item, cx.limits, cx.cancel, cx.identity,
-                &mut cx.meter, &mut cx.storage, control);
+            return reward_subject(
+                system,
+                claims,
+                item,
+                cx.limits,
+                cx.cancel,
+                cx.identity,
+                &mut cx.meter,
+                &mut cx.storage,
+                control,
+            );
         }
-        return reward_subject(system, claims, item, cx.limits, cx.cancel, cx.identity,
-            &mut cx.meter, &mut cx.storage, &super::super::reward::RewardControl::new(cx.cancel));
+        return reward_subject(
+            system,
+            claims,
+            item,
+            cx.limits,
+            cx.cancel,
+            cx.identity,
+            &mut cx.meter,
+            &mut cx.storage,
+            &super::super::reward::RewardControl::new(cx.cancel),
+        );
     }
     let ProbForm::Reach {
         bound,
@@ -1003,6 +1021,40 @@ pub fn check_cyclic_mdp_probability_certificate_with_identity(
 mod tests {
     use super::*;
     use ix_trace_rs::trace;
+    #[trace("TC-1405", "FR-201-AC-45")]
+    #[test]
+    fn cyclic_mdp_reward_codec_retains_compound_unit_and_large_finite_values() {
+        let limits = super::super::tests::limits();
+        let mut document = super::super::tests::document();
+        document.optimization = ProbabilityObjective::Minimum;
+        document.values[0].value = rational(3);
+        document.reward = Some(ProbabilityRewardObjective {
+            model: document.identity.node().clone(),
+            name: quire_exact::Identifier::new("cost").unwrap(),
+            unit: Some(quire_exact::UnitId::compound(vec![(
+                document.identity.node().clone(),
+                2_i64.into(),
+            )])),
+        });
+        let proof = ProbabilityProofDocument {
+            document,
+            cyclic_mdp: true,
+        };
+        let cancel = Cancel::new();
+        let bytes = write_probability_proof_document(&proof, limits, &cancel).unwrap();
+        let read = read_probability_proof_document(&bytes, limits, &cancel).unwrap();
+        assert_eq!(read, proof);
+        assert!(read.is_cyclic_mdp_reward());
+        assert_eq!(
+            write_probability_proof_document(&read, limits, &cancel).unwrap(),
+            bytes
+        );
+        assert_eq!(
+            read_probability_certificate(&bytes, limits, &cancel),
+            Err(ProbabilityDocumentError::Unsupported)
+        );
+    }
+
     fn key(n: u8) -> ProbabilityProductKey {
         ProbabilityProductKey(vec![n])
     }
