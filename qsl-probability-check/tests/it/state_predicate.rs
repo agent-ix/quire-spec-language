@@ -203,9 +203,16 @@ fn altered_objective_binding_keys_values_ranks_and_threshold_do_not_prove() {
     assert_ne!(run(&other).0, 0);
 }
 
-#[trace("TC-636", "FR-201-AC-17", "FR-282-AC-14")]
+#[trace(
+    "TC-636",
+    "TC-637",
+    "FR-201-AC-17",
+    "FR-282-AC-14",
+    "FR-202-AC-17",
+    "FR-202-AC-18"
+)]
 #[test]
-fn failed_state_predicate_bounds_have_no_old_eventual_refutation() {
+fn missed_state_predicate_bounds_retain_independently_replayed_native_refutations() {
     for event in [
         "holds(m.attempts = 0) until holds(m.delivered)",
         "always holds(m.attempts = 0 or m.delivered or m.attempts = 2)",
@@ -216,10 +223,13 @@ fn failed_state_predicate_bounds_have_no_old_eventual_refutation() {
             ExactProbLimits::default(),
         );
         assert!(document.is_none());
-        assert!(
-            format!("{settlement:?}").contains("Unsupported"),
-            "{settlement:?}"
-        );
+        // `request` requires the retained native token and independently
+        // replays its complete claim, binding and semantic paths.
+        let qsl_analyze::analyze::Settlement::Terminal(terminal) = settlement else {
+            panic!("native state-event refutation must settle a terminal record");
+        };
+        assert_eq!(terminal.value(), &qsl_replay::TerminalValue::Refuted);
+        assert!(terminal.exact_certificate_document().is_none());
     }
 }
 
