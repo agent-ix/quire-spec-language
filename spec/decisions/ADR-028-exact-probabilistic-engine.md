@@ -275,6 +275,23 @@ remain separate dependencies; specification does not qualify their
 implementation. FR-201 defines exact decoding, objective/identity checks,
 component coverage, failure loci, threshold, limits and cancellation.
 
+#### Closed weighted DTMC long-run proof profile
+
+FR-201's separate `quire.probability-objective/dtmc-weighted-long-run/v1`
+retains the finite untimed workload boundary and existing component wire
+shape, adding only the checked weight/unit objective identity. LR-2 and
+FR-199-AC-3 weight CURRENT positions by outgoing draws. Thus each BSCC
+checks `h=w*([P]-rho)+Ph` and transported `gain=rho`, with the same canonical
+zero-bias normalization. The selected weight unit applies to w and h;
+rho and its threshold are dimensionless. Complete positive-support BSCC
+coverage and at least one positive w in each component establish a
+positive stationary denominator without solving for a stationary vector.
+An all-zero component, including terminal stutter, retains LR-4's
+unsupported result. Transient values remain the expected reached
+component fraction, not a pooled ratio. The profile adds no MDP, fairness,
+timed or refutation contract and makes no implementation qualification
+claim. Existing profiles keep their bytes and meanings.
+
 #### Closed cyclic DTMC eventual proof profile
 
 FR-201's `quire.probability-objective/cyclic-dtmc-eventual/v1` is a separate
