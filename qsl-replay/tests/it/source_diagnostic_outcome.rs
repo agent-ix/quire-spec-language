@@ -107,7 +107,7 @@ fn other_source_causes_omit_label_and_preserve_the_original_region_and_detail() 
         (
             SourceReadCause::InvalidUtf8,
             "invalid_utf8",
-            "invalid-utf8",
+            "invalid_utf8",
             Some(b"ab\xffc".as_slice()),
         ),
         (
