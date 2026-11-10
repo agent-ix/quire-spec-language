@@ -58,7 +58,10 @@ bottom components; it does not import a solver's stationary vector.
    than a fixed poll offset and preserve Requested/Deadline causes.
    Include undefined/negative weights at both recurrent and transient
    states, absent rewards, unsupported kinds/shapes, and direct zero over
-   instances. Exercise integer representation and exact weight arithmetic
+   instances. Distinguish FR-187's earlier finite-domain negative-reward
+   admission refusal from defensive post-admission weight checks; do not
+   relabel the earlier refusal as profile unsupported. Exercise integer
+   representation and exact weight arithmetic
    limits separately; weights may exceed one but their arithmetic is not
    exempt from scalar/rational ceilings.
 

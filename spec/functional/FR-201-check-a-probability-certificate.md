@@ -677,7 +677,10 @@ another same-dimension UnitId SHALL NOT substitute for that identity.
   graph. The threshold and fraction remain dimensionless, not quantities
   in that unit. Integer representation SHALL use the existing representation
   limit; numeric weight and weighted-row arithmetic SHALL still obey the
-  existing scalar/rational arithmetic limits. Negative or unsupported reward types SHALL preserve
+  existing scalar/rational arithmetic limits. Existing model-admission
+  refusals, including FR-187's `invalid_probabilistic_model`/`negative-reward`,
+  SHALL be preserved before profile evaluation; negative weights or
+  unsupported reward types encountered after admission SHALL preserve
   explicit unsupported outcomes; undefined predicate, reward or workload
   evaluation SHALL preserve its typed nonacceptance, even in transient
   states. No invalid weight SHALL be coerced to zero. Complete actual

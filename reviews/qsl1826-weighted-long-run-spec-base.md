@@ -246,3 +246,35 @@ scope:
 ## Evidence and limits
 
 All four normative artifacts passed scoped Quire validation and requirement grammar summary (4/4 clean, zero findings). Manual exact rational analysis independently checked both component equations and the transient mixture. Existing source semantics were inspected at qsl-analyze/src/exact_probabilistic/unbounded.rs:645-751 and qsl-semantics/src/check/probabilistic.rs:900-918. New source/typed adversarial acceptance and cancellation procedures are authored in TC1402 but have not been executed. Runtime/Rust/gap-analysis, complete test matrix, evidence advisor and criterion-strength/Jev methods were not selected for this spec-only diff. No full FR201AC30/all-expansion or whole-repository assurance is granted.
+
+## New findings (postmerge review 1)
+
+The historical PASS above and its original private clean comment are preserved. Implementation admission work after PR2655 merged exposed a wording ambiguity that the premerge review missed; this is a new finding, not a rewrite of that review.
+
+| ID | Severity | Summary | Refs | Escape Cause |
+| --- | --- | --- | --- | --- |
+| FND-002 | medium | The weighted profile requires an unsupported outcome for negative weights without explicitly preserving FR-187 model-admission refusal. A finite-domain negative reward is refused as invalid_probabilistic_model/negative-reward before profile evaluation; preserve that earlier typed record and distinguish defensive checks on admitted subjects. | spec/functional/FR-201-check-a-probability-certificate.md:680-682 | wrong-requirement |
+
+## Postmerge source evidence
+
+FR-187:105-110 requires the earlier finite-domain admission refusal. ModelSystem::new at qsl-eval/src/simulation/model.rs:939 calls check_rewards_with_cancel before returning an admitted system; probabilistic/tests.rs:366-392 asserts the exact InvalidProbabilisticModel/negative-reward record, operation, reward and n=0. The checker must not bypass or relabel that refusal. This does not mean every negative value is globally impossible: probabilistic.rs:479-510 explicitly leaves non-enumerable/object parameter domains unchecked at admission, so defensive per-draw checks still have a role after admission. FR201AC34 and TC1402 already describe typed nonacceptance rather than forcing all cases into profile unsupported.
+
+## Dispositions (postmerge round 1)
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-002 | still-open | A targeted clarification is being authored; independently verified admission precedence and matching TC wording are required before closure. |
+
+## Current postmerge verdict
+
+**FAIL pending clarification only** — preserve original semantics, the actual admission refusal and post-admission defense; no global admission change or fabricated admitted subject is required.
+
+## Dispositions (correction PR2656)
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-002 | fixed | Frozen 8a73900e30e3b36896283597b803622be8d26232 explicitly preserves earlier model-admission refusals including FR187 InvalidProbabilisticModel/negative-reward before profile evaluation, then applies negative-weight/type unsupported defense only after admission. TC1402 distinguishes those stages and prohibits relabelling the earlier refusal. The original finding and still-open round remain intact. |
+
+## Current correction verdict
+
+**PASS for corrected specification only** — actual ModelSystem::new/check_rewards_with_cancel ordering and the existing FR187 finite-domain negative-reward test substantiate the precedence. No new admission behavior, bypass, claim that every negative is globally impossible, or runtime qualification is introduced.
