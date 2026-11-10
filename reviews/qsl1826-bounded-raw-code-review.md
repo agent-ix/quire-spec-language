@@ -94,3 +94,40 @@ scope:
     \ and exact arithmetic SHALL obey actual caller byte,\n  state/edge, work/storage\
     \ and scalar/rational limits and cancellation."
 ```
+
+## Dispositions
+
+### Round 1
+
+Independently inspected frozen fix a5cac8d742d777afb10f8dcbbff5c5c85b47c09a relative to original b70f8fcc869e06fe5631d438839325499881a632. Original findings above remain unchanged.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | The flat admitted arena retains only structural nodes/indices. encode_node and finish_bytes replay the complete root or semantic-order subtree through write_arena and Scope::canonical, which creates Writer::with_reservation. Every JSON container/name/scalar now uses shared writer events; only FR181 semantic array ordering remains local. Arena/event vectors and writer reservations share the caller scope. |
+| FND-003 | fixed | The public trait documentation now describes borrowed events, sink-owned retained storage, no intrinsic writer/byte/allocation policy, and unchanged propagation through its associated error. |
+
+Latest verdict: **PASS for the scoped raw state-key implementation**; no remaining PR findings or newly observed regression. Full repository matrix qualification remains unavailable, and this does not grant all-expansion/FR201AC30 assurance.
+
+Actual supplied final-head checks inspected: encode23 including the real100000-value constrained-stack test; raw-model2; undecided1; clocks2; borrowed foundation identity1; native cancellation1; all-target/all-feature touched-three-package Clippy, formatting and diff checks all exit0. No additional reviewer Cargo run. Closed-schema object-name sorting admission is grounded in the actual pinned canonical writer and installed Rust1.98.1 small-slice insertion-sort path, not measured poll counts or allocator offsets.
+
+```yaml
+dispositions:
+- fnd: FND-001
+  outcome: fixed
+  after_excerpt: "fn encode_node(&self, node: usize) -> Result<Vec<u8>, ModelKeyError>\
+    \ {\n        self.scope\n            .canonical(|writer| write_arena(self.scope,\
+    \ &self.nodes, node, writer))\n    }\n    fn finish_bytes(&self) -> Result<Vec<u8>,\
+    \ ModelKeyError> {\n        self.encode_node(\n            self.root\n       \
+    \         .ok_or(ModelKeyError::Unsupported(\"identity root\"))?,\n        )\n\
+    \    }"
+- fnd: FND-003
+  outcome: fixed
+  after_excerpt: '/// Borrowed events and admitted traversal storage for the single
+    structural
+
+    /// node-identity projection. The sink chooses how to retain or emit events;
+
+    /// this trait itself supplies no canonical writer, byte limit or allocation.
+
+    /// Every sink refusal propagates through its associated error unchanged.'
+```

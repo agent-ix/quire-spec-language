@@ -93,3 +93,31 @@ scope:
     \ and exact arithmetic SHALL obey actual caller byte,\n  state/edge, work/storage\
     \ and scalar/rational limits and cancellation."
 ```
+
+## Dispositions
+
+### Round 1
+
+Independently inspected frozen fix a5cac8d742d777afb10f8dcbbff5c5c85b47c09a relative to original b70f8fcc869e06fe5631d438839325499881a632. Original findings above remain unchanged.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-002 | fixed | The new real_deep_value_projection test constructs 100000 actual kernel OptionValues and invokes the changed bounded project_value/finish_bytes path on 512KiB and 8MiB stacks. It compares complete bytes to an independently constructed literal oracle. Separate inner-integer Denied and Deadline controls assert the actual 100001 open-container depth and retain source handles outside the constrained workers. |
+
+Latest verdict: **PASS for the scoped raw state-key implementation**; no remaining PR findings or newly observed regression. Full repository matrix qualification remains unavailable, and this does not grant all-expansion/FR201AC30 assurance.
+
+Actual supplied final-head checks inspected: encode23 including the real100000-value constrained-stack test; raw-model2; undecided1; clocks2; borrowed foundation identity1; native cancellation1; all-target/all-feature touched-three-package Clippy, formatting and diff checks all exit0. No additional reviewer Cargo run. Closed-schema object-name sorting admission is grounded in the actual pinned canonical writer and installed Rust1.98.1 small-slice insertion-sort path, not measured poll counts or allocator offsets.
+
+```yaml
+dispositions:
+- fnd: FND-002
+  outcome: fixed
+  after_excerpt: "let constrained = encode(512 * 1024);\n        let control = encode(8\
+    \ * 1024 * 1024);\n        let mut expected = r#\"{\"type\":\"option\",\"value\"\
+    :\"#.repeat(DEPTH);\n        expected.push_str(r#\"{\"type\":\"integer\",\"value\"\
+    :\"42\"}\"#);\n        expected.push_str(&\"}\".repeat(DEPTH));\n        assert_eq!(\n\
+    \            constrained,\n            expected.as_bytes(),\n            \"independent\
+    \ literal canonical value oracle\"\n        );\n        assert_eq!(\n        \
+    \    constrained, control,\n            \"thread stack size must not change the\
+    \ actual Value projection\"\n        );"
+```
