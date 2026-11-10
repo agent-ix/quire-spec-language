@@ -687,10 +687,14 @@ impl ValueSink for Bounded<'_, '_> {
                         write!(f, "{:0width$x}", self.0, width = self.1)
                     }
                 }
+                self.scope.work(digits as u64)?;
                 self.formatted(Hex(bits, digits))
             }
             Scalar::Scale(value) => self.integer(&Integer::from(u64::from(value))),
-            Scalar::Uuid(value) => self.formatted(value),
+            Scalar::Uuid(value) => {
+                self.scope.work(value.octets().len() as u64)?;
+                self.formatted(value)
+            }
             Scalar::Timestamp(value) => self.integer(&Integer::from(value.nanoseconds())),
             Scalar::Node(value) => self.node(value),
             Scalar::Effective(value) => self.effective(value),
