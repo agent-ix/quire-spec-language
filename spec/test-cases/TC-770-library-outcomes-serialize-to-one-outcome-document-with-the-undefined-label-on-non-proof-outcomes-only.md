@@ -14,7 +14,7 @@ relationships:
 
 Verify the outcome document's members, its determinism, the `execute` result member, and where the label `undefined` may appear. The CLI half (`quire --format json` writes this document unchanged) is the driver repository's test (FR-286 Overlap).
 
-Scope: FR-286-AC-1 to FR-286-AC-6, FR-286-AC-8 to FR-286-AC-14, and the monitor half of FR-285-AC-9.
+Scope: FR-286-AC-1 to FR-286-AC-6, FR-286-AC-8 to FR-286-AC-15, and the monitor half of FR-285-AC-9.
 
 ## Test Procedure
 
@@ -29,6 +29,7 @@ Scope: FR-286-AC-1 to FR-286-AC-6, FR-286-AC-8 to FR-286-AC-14, and the monitor 
 9. Call `from_clause_run` over the clause runs of FR-283-AC-1 (violated), FR-283-AC-5 (undefined evaluation) and FR-283-AC-11 (insufficient data) and read each item's members.
 10. Once the `monitor` operation exists, run the clauses of steps 7 to 9 and step 8's indeterminate run through `monitor`, render each `MonitorRecord` through `from_clause_run`, and compare the document with `from_clause_runs` over the same runs. TC-765 step 12 is this same check, traced also to FR-283-AC-14; a test traced to both runs once.
 11. Call `OutcomeItem::from_analyze` over TC-762 step 2's `refuted` record with its `ItemCounterexample`, over the same record with no counterexample, over TC-762 step 1's `proved` record, and over a `refuted` record for each other `Counterexample` variant, a `time-lock` one included; serialize the first item through `analyze`'s document and through `provider::run`'s item and compare the bytes.
+12. From outside the `qsl-replay` crate, construct FR-001's typed pre-admission blank-label refusals for `authority` and `identity`, and project their complete diagnostics with `OutcomeDiagnostic::from_source_diagnostic`. Serialize a document containing each diagnostic. Repeat for an empty-path refusal, a byte-budget refusal with no region and an invalid-UTF-8 refusal with its original region. Compare each diagnostic with the same source refusal through compile, parse and format outcome producers, using actual source-operation refusals where reachable.
 
 Tag the tests `#[trace("TC-770", "<AC id>")]`.
 
@@ -47,3 +48,4 @@ Until QSL-596 (FR-281) and QSL-597 (FR-283) land the `analyze` and `monitor` out
 - Step 9: the violated item is `refuted` with `position` 0, a `counterexample` (three-identity `prefix`, `loop` `[]`, `trace_position` 0), a `decisive` beside it with `position` 2, no quantifier or index, element `false` and the root value path, a `witness` only if the report holds one (none for this `closed-scope` run) and `cause` null; the undefined-evaluation item is `refuted` with `position` 1, a `counterexample`, cause `undefined-evaluation` / `division-by-zero` and no `witness`; the insufficient-data item is `undefined` with cause `insufficient-data`, `position` 0, `count` 1, `min_count` 2 and no `counterexample` or `witness`.
 - Step 10: the two documents are byte-equal.
 - Step 11: the first item is `refuted`, category violation, with a `formula` `counterexample` and no `position`, `decisive` or `witness`; the second returns `Err(OutcomeItemError::MissingCounterexample)`; the third carries no `counterexample`; each other variant's item has that variant's spelling; the two serializations of the first are byte-equal.
+- Step 12: a blank-label diagnostic retains code `invalid_source_identity`, cause `blank-label`, the exact typed label, `locus` null and its original message. The other cases omit `label` and retain their original code, cause, message and optional region. A located refusal retains the source reference and both region endpoints; no unlocated refusal gains a byte-zero locus. The public projection and the outcome producers give equal diagnostic members, with no consumer-written JSON member.
