@@ -81,10 +81,10 @@ fn native_projection_borrows_all_typed_causes_and_preserves_the_original_for_cst
 #[trace("TC-424", "FR-001-AC-16")]
 fn offered_byte_coordinates_and_unrenderable_fallback_do_not_change_the_typed_region() {
     let identity = SourceIdentity::new("issuer", "unit");
-    for (bytes, start, end, column) in [
-        (b"a\xffb".as_slice(), 1, 1, 2),
-        (b"\xef\xbb\xbftext".as_slice(), 0, 3, 1),
-        (b"ab\0c".as_slice(), 2, 3, 3),
+    for (bytes, start, end, column, end_column) in [
+        (b"a\xffb".as_slice(), 1, 1, 2, 2),
+        (b"\xef\xbb\xbftext".as_slice(), 0, 3, 1, 2),
+        (b"ab\0c".as_slice(), 2, 3, 3, 4),
     ] {
         let refusal =
             Source::read_typed(identity.clone(), "offered.native", bytes, 128).unwrap_err();
@@ -94,6 +94,8 @@ fn offered_byte_coordinates_and_unrenderable_fallback_do_not_change_the_typed_re
         assert_eq!(native.span.end.byte, end);
         assert_eq!(native.span.start.line, 1);
         assert_eq!(native.span.start.column, column);
+        assert_eq!(native.span.end.line, 1);
+        assert_eq!(native.span.end.column, end_column);
         assert_eq!(refusal.error.region, original);
         let complete = qsl_cst::diagnostic::source_refusal(*refusal, 128);
         assert_eq!(complete.region, original);
