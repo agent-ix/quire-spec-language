@@ -718,6 +718,7 @@ fn subject_graph(
     limits: ProbabilityDocumentLimits,
     cancel: &Cancel,
     cyclic_dtmc: bool,
+    meter: &mut quire_exact::Meter,
 ) -> Result<SubjectGraph, ProbabilityDocumentError> {
     subject_graph_with_identity(
         system,
@@ -824,8 +825,10 @@ fn subject_graph_with_identity(
             target: ReachTarget::Eventually(predicate),
         } if cyclic_dtmc => (
             bound,
-            super::cyclic::enumerate(system, predicate, reference, workload, limits, cancel)
-                .map(|(graph, ranks)| (graph, Some(ranks))),
+            super::cyclic::enumerate(
+                system, predicate, reference, workload, limits, cancel, meter,
+            )
+            .map(|(graph, ranks)| (graph, Some(ranks))),
         ),
         ProbForm::Reach {
             bound,
@@ -940,7 +943,8 @@ pub fn admit_expected_reward_certificate_subject(
     ) {
         return Err(ProbabilityDocumentError::Unsupported);
     }
-    subject_graph(system, claims, item, limits, cancel, false)?;
+    let mut meter = quire_exact::Meter::new(limits.accounting).with_cancel(cancel.clone());
+    subject_graph(system, claims, item, limits, cancel, false, &mut meter)?;
     Ok(())
 }
 
@@ -974,7 +978,8 @@ pub fn probability_certificate_document(
     limits: ProbabilityDocumentLimits,
     cancel: &Cancel,
 ) -> Result<ProbabilityCertificateDocument, ProbabilityDocumentError> {
-    let original = subject_graph(system, claims, item, limits, cancel, false);
+    let mut meter = quire_exact::Meter::new(limits.accounting).with_cancel(cancel.clone());
+    let original = subject_graph(system, claims, item, limits, cancel, false, &mut meter);
     let cyclic_dtmc = matches!(
         &original,
         Err(ProbabilityDocumentError::Graph(
@@ -982,7 +987,7 @@ pub fn probability_certificate_document(
         ))
     );
     let (graph, optimization, _, bounded_ranks, event, failures, reward) = if cyclic_dtmc {
-        subject_graph(system, claims, item, limits, cancel, true)?
+        subject_graph(system, claims, item, limits, cancel, true, &mut meter)?
     } else {
         original?
     };
@@ -1071,8 +1076,15 @@ pub fn check_probability_certificate_document(
     if &document.identity != item {
         return Err(ProbabilityDocumentError::IdentityMismatch);
     }
-    let (graph, objective, bound, bounded_ranks, event, failures, reward) =
-        subject_graph(system, claims, item, limits, cancel, document.cyclic_dtmc)?;
+    let (graph, objective, bound, bounded_ranks, event, failures, reward) = subject_graph(
+        system,
+        claims,
+        item,
+        limits,
+        cancel,
+        document.cyclic_dtmc,
+        &mut meter,
+    )?;
     if objective != document.optimization
         || target_keys(&graph) != document.targets
         || event != document.event

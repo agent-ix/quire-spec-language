@@ -148,7 +148,9 @@ pub(super) fn enumerate<P: StatePredicate>(
     workload: Option<&Workload>,
     limits: ProbabilityDocumentLimits,
     cancel: &Cancel,
+    meter: &mut quire_exact::Meter,
 ) -> Result<(CheckerGraph, BTreeMap<ProbabilityProductKey, u64>), ProbabilityDocumentError> {
+    let meter = std::cell::RefCell::new(meter);
     let used = std::cell::RefCell::new(0_u64);
     let failure = std::cell::RefCell::new(None);
     let mut issue = None;
@@ -183,10 +185,12 @@ pub(super) fn enumerate<P: StatePredicate>(
         false,
         &key_of,
         &mut |bytes| {
-            charge(&mut used.borrow_mut(), limits.storage_bytes, bytes).map_err(|error| {
-                *failure.borrow_mut() = Some(error);
-                ExactProbabilityGraphError::ExpansionRefused
-            })
+            visit(cancel, &mut meter.borrow_mut())
+                .and_then(|()| charge(&mut used.borrow_mut(), limits.storage_bytes, bytes))
+                .map_err(|error| {
+                    *failure.borrow_mut() = Some(error);
+                    ExactProbabilityGraphError::ExpansionRefused
+                })
         },
         #[cfg(feature = "test-support")]
         &mut |_| {},
@@ -201,7 +205,7 @@ pub(super) fn enumerate<P: StatePredicate>(
     }
     let mut graph = result?;
     for state in graph.states.values() {
-        poll_cancel(cancel)?;
+        visit(cancel, &mut meter.borrow_mut())?;
         if !state.choices.is_empty() && state.choices.len() != 1 {
             return Err(ProbabilityDocumentError::Unsupported);
         }
@@ -209,7 +213,7 @@ pub(super) fn enumerate<P: StatePredicate>(
     // Reserve stopped traversal, complete-key copies and analysis storage
     // before retaining them. The shared raw model key owner is separate.
     for (key, state) in &graph.states {
-        poll_cancel(cancel)?;
+        visit(cancel, &mut meter.borrow_mut())?;
         charge(
             &mut used.borrow_mut(),
             limits.storage_bytes,
@@ -232,7 +236,7 @@ pub(super) fn enumerate<P: StatePredicate>(
     let mut seen = BTreeSet::from([graph.initial.clone()]);
     let mut stopped = BTreeMap::new();
     while let Some(key) = pending.pop_front() {
-        poll_cancel(cancel)?;
+        visit(cancel, &mut meter.borrow_mut())?;
         let mut state = graph
             .states
             .remove(&key)
@@ -241,7 +245,7 @@ pub(super) fn enumerate<P: StatePredicate>(
             state.choices.clear();
         }
         for edge in state.choices.iter().flatten() {
-            poll_cancel(cancel)?;
+            visit(cancel, &mut meter.borrow_mut())?;
             if seen.insert(edge.target.clone()) {
                 pending.push_back(edge.target.clone());
             }
@@ -249,7 +253,7 @@ pub(super) fn enumerate<P: StatePredicate>(
         stopped.insert(key, state);
     }
     graph.states = stopped;
-    let ranks = analyze(&mut graph, limits, cancel)?;
+    let ranks = analyze(&mut graph, limits, cancel, &mut meter.borrow_mut())?;
     Ok((graph, ranks))
 }
 
@@ -259,8 +263,8 @@ fn analyze(
     graph: &mut CheckerGraph,
     limits: ProbabilityDocumentLimits,
     cancel: &Cancel,
+    meter: &mut quire_exact::Meter,
 ) -> Result<BTreeMap<ProbabilityProductKey, u64>, ProbabilityDocumentError> {
-    let mut meter = quire_exact::Meter::new(limits.accounting).with_cancel(cancel.clone());
     let keys: Vec<_> = graph.states.keys().cloned().collect();
     let indexes: BTreeMap<_, _> = keys
         .iter()
@@ -272,7 +276,7 @@ fn analyze(
     let mut reverse = vec![Vec::new(); n];
     let mut targets = vec![false; n];
     for (i, key) in keys.iter().enumerate() {
-        visit(cancel, &mut meter)?;
+        visit(cancel, meter)?;
         let state = graph
             .states
             .get(key)
@@ -286,14 +290,14 @@ fn analyze(
         }
         let mut mass = rational(0);
         for edge in state.choices.iter().flatten() {
-            visit(cancel, &mut meter)?;
+            visit(cancel, meter)?;
             if edge.probability <= rational(0) {
                 return Err(ProbabilityDocumentError::Malformed);
             }
             document::check_scalar(&edge.probability, limits)?;
             mass = document::arithmetic(
                 quire_exact::RationalArithmetic::Add(&mass, &edge.probability),
-                &mut meter,
+                meter,
                 cancel,
             )?;
             document::check_scalar(&mass, limits)?;
@@ -310,14 +314,14 @@ fn analyze(
     let mut visited = vec![false; n];
     let mut order = Vec::with_capacity(n);
     for start in 0..n {
-        visit(cancel, &mut meter)?;
+        visit(cancel, meter)?;
         if visited[start] {
             continue;
         }
         visited[start] = true;
         let mut stack = vec![(start, 0_usize)];
         while let Some((node, edge)) = stack.last_mut() {
-            visit(cancel, &mut meter)?;
+            visit(cancel, meter)?;
             if let Some(&next) = outgoing[*node].get(*edge) {
                 *edge += 1;
                 if !visited[next] {
@@ -333,16 +337,16 @@ fn analyze(
     let mut component = vec![usize::MAX; n];
     let mut count = 0;
     for start in order.into_iter().rev() {
-        visit(cancel, &mut meter)?;
+        visit(cancel, meter)?;
         if component[start] != usize::MAX {
             continue;
         }
         component[start] = count;
         let mut stack = vec![start];
         while let Some(node) = stack.pop() {
-            visit(cancel, &mut meter)?;
+            visit(cancel, meter)?;
             for &next in &reverse[node] {
-                visit(cancel, &mut meter)?;
+                visit(cancel, meter)?;
                 if component[next] == usize::MAX {
                     component[next] = count;
                     stack.push(next);
@@ -354,10 +358,10 @@ fn analyze(
     let mut closed = vec![true; count];
     let mut has_target = vec![false; count];
     for node in 0..n {
-        visit(cancel, &mut meter)?;
+        visit(cancel, meter)?;
         has_target[component[node]] |= targets[node];
         for &next in &outgoing[node] {
-            visit(cancel, &mut meter)?;
+            visit(cancel, meter)?;
             if component[node] != component[next] {
                 closed[component[node]] = false;
             }
@@ -366,17 +370,17 @@ fn analyze(
     let mut distance: Vec<Option<u64>> = vec![None; n];
     let mut pending = VecDeque::new();
     for (node, target) in targets.iter().enumerate() {
-        visit(cancel, &mut meter)?;
+        visit(cancel, meter)?;
         if *target {
             distance[node] = Some(0);
             pending.push_back(node);
         }
     }
     while let Some(node) = pending.pop_front() {
-        visit(cancel, &mut meter)?;
+        visit(cancel, meter)?;
         let rank = distance[node].ok_or(ProbabilityDocumentError::Malformed)?;
         for &previous in &reverse[node] {
-            visit(cancel, &mut meter)?;
+            visit(cancel, meter)?;
             if distance[previous].is_none() {
                 let next = rank
                     .checked_add(1)
@@ -393,7 +397,7 @@ fn analyze(
     }
     let mut ranks = BTreeMap::new();
     for (node, key) in keys.into_iter().enumerate() {
-        visit(cancel, &mut meter)?;
+        visit(cancel, meter)?;
         if !targets[node]
             && (distance[node].is_none()
                 || (closed[component[node]] && !has_target[component[node]]))
@@ -485,7 +489,13 @@ mod tests {
         use std::sync::{Arc, OnceLock};
         let live = Cancel::new();
         let _count = live.count_charges();
-        let ranks = analyze(&mut graph(), limits(), &live).unwrap();
+        let ranks = analyze(
+            &mut graph(),
+            limits(),
+            &live,
+            &mut quire_exact::Meter::new(limits().accounting).with_cancel(live.clone()),
+        )
+        .unwrap();
         assert_eq!(
             ranks.values().copied().collect::<Vec<_>>(),
             vec![2, 1, 0, 0]
@@ -505,7 +515,13 @@ mod tests {
                 });
                 slot.set(cancel.clone()).unwrap();
                 assert_eq!(
-                    analyze(&mut graph(), limits(), &cancel),
+                    analyze(
+                        &mut graph(),
+                        limits(),
+                        &cancel,
+                        &mut quire_exact::Meter::new(limits().accounting)
+                            .with_cancel(cancel.clone())
+                    ),
                     Err(ProbabilityDocumentError::Cancelled(cause)),
                     "support pass poll {at}/{total}"
                 );
