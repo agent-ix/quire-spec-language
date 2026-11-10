@@ -298,3 +298,97 @@ fn visit(cancel: &Cancel, meter: &mut quire_exact::Meter) -> Result<(), Probabil
             None => ProbabilityDocumentError::Accounting(Box::new(incomplete)),
         })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ix_trace_rs::trace;
+
+    fn graph() -> CheckerGraph {
+        let key = |i| ProbabilityProductKey::from_canonical_bytes(vec![i]);
+        let edge = |i, n, d| ProbabilityEdge {
+            target: key(i),
+            probability: Rational::new(Integer::from(n), Integer::from(d)).unwrap(),
+        };
+        CheckerGraph {
+            initial: key(0),
+            states: BTreeMap::from([
+                (
+                    key(0),
+                    CheckerState {
+                        terminal: None,
+                        choices: vec![vec![edge(1, 1_i64, 1_i64)]],
+                    },
+                ),
+                (
+                    key(1),
+                    CheckerState {
+                        terminal: None,
+                        choices: vec![vec![edge(0, 1, 2), edge(2, 1, 4), edge(3, 1, 4)]],
+                    },
+                ),
+                (
+                    key(2),
+                    CheckerState {
+                        terminal: Some(true),
+                        choices: vec![],
+                    },
+                ),
+                (
+                    key(3),
+                    CheckerState {
+                        terminal: None,
+                        choices: vec![vec![edge(3, 1, 1)]],
+                    },
+                ),
+            ]),
+        }
+    }
+
+    fn limits() -> ProbabilityDocumentLimits {
+        ProbabilityDocumentLimits {
+            bytes: 1_000_000,
+            storage_bytes: 8_000_000,
+            states: 100,
+            edges: 100,
+            scalar_bits: 128,
+            accounting: crate::AccountingLimits::default().0,
+        }
+    }
+
+    #[trace("TC-636", "FR-201-AC-26", "FR-282-AC-19")]
+    #[test]
+    fn every_support_scc_and_distance_poll_preserves_typed_cancellation() {
+        use std::sync::atomic::{AtomicU32, Ordering};
+        use std::sync::{Arc, OnceLock};
+        let live = Cancel::new();
+        let _count = live.count_charges();
+        let ranks = analyze(&mut graph(), limits(), &live).unwrap();
+        assert_eq!(
+            ranks.values().copied().collect::<Vec<_>>(),
+            vec![2, 1, 0, 0]
+        );
+        let total = live.charges();
+        assert!(total > 0);
+        for cause in [CancelCause::Requested, CancelCause::Deadline] {
+            for at in 1..=total {
+                let slot = Arc::new(OnceLock::<Cancel>::new());
+                let weak = Arc::downgrade(&slot);
+                let seen = Arc::new(AtomicU32::new(0));
+                let count = Arc::clone(&seen);
+                let cancel = Cancel::observing(move || {
+                    if count.fetch_add(1, Ordering::Relaxed) + 1 == at {
+                        weak.upgrade().unwrap().get().unwrap().cancel(cause);
+                    }
+                });
+                slot.set(cancel.clone()).unwrap();
+                assert_eq!(
+                    analyze(&mut graph(), limits(), &cancel),
+                    Err(ProbabilityDocumentError::Cancelled(cause)),
+                    "support pass poll {at}/{total}"
+                );
+                assert_eq!(seen.load(Ordering::Relaxed), at);
+            }
+        }
+    }
+}
