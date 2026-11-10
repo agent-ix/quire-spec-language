@@ -329,13 +329,15 @@ pub(crate) fn text_equal_with_work<E>(
     if left.len() != right.len() {
         return Ok(false);
     }
-    for (left, right) in left.bytes().zip(right.bytes()) {
+    let (mut left, mut right) = (left.bytes(), right.bytes());
+    loop {
         work(1)?;
-        if left != right {
-            return Ok(false);
+        match (left.next(), right.next()) {
+            (Some(left), Some(right)) if left == right => {}
+            (None, None) => return Ok(true),
+            _ => return Ok(false),
         }
     }
-    Ok(true)
 }
 pub(crate) fn declaration_equal_with_work<E>(
     left: &DeclarationKey,

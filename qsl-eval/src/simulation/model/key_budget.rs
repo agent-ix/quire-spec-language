@@ -11,6 +11,12 @@ use crate::simulation::EncodingRefusal;
 /// primitive work units. Denial causes stay with the caller. No reservation is
 /// refunded. Integer admission is representation policy, not probability range
 /// or the certificate's rational-value bit bound.
+///
+/// Key work counts source/task visits, compared or scanned UTF-8 bytes,
+/// output-copy bytes and ordering movements. Bounded atomic byte comparisons
+/// may admit their maximum compared prefix first. Decimal conversion uses
+/// the kernel's documented work schedule. This scope does not budget model
+/// interpretation or the separate transition-identity encoder.
 pub trait ModelKeyBudget: IntegerDecimalBudget {
     /// Admit the borrowed integer representation before inspecting/rendering it.
     fn integer(&mut self, value: &Integer) -> Result<(), ReservationDenied>;
@@ -58,15 +64,21 @@ pub(super) trait KeyPolicy {
         left: &[u8],
         right: &[u8],
     ) -> Result<std::cmp::Ordering, crate::simulation::ExpansionStop> {
-        for (left, right) in left.iter().zip(right) {
+        let (mut left, mut right) = (left.iter(), right.iter());
+        loop {
             self.work(1)?;
-            let order = left.cmp(right);
-            if !order.is_eq() {
-                return Ok(order);
+            match (left.next(), right.next()) {
+                (Some(left), Some(right)) => {
+                    let order = left.cmp(right);
+                    if !order.is_eq() {
+                        return Ok(order);
+                    }
+                }
+                (None, None) => return Ok(std::cmp::Ordering::Equal),
+                (None, Some(_)) => return Ok(std::cmp::Ordering::Less),
+                (Some(_), None) => return Ok(std::cmp::Ordering::Greater),
             }
         }
-        self.work(1)?;
-        Ok(left.len().cmp(&right.len()))
     }
     fn key(
         &self,

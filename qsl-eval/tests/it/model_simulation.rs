@@ -2005,7 +2005,7 @@ impl quire_exact::Reservation for RawKeyBudget {
         }
     }
 }
-impl quire_exact::IntegerDecimalRawKeyBudget for RawKeyBudget {
+impl quire_exact::IntegerDecimalBudget for RawKeyBudget {
     fn work(&mut self, units: u64) -> Result<(), quire_exact::ReservationDenied> {
         match self
             .work
@@ -2023,7 +2023,7 @@ impl quire_exact::IntegerDecimalRawKeyBudget for RawKeyBudget {
         }
     }
 }
-impl qsl_eval::simulation::model::ModelKeyRawKeyBudget for RawKeyBudget {
+impl qsl_eval::simulation::model::ModelKeyBudget for RawKeyBudget {
     fn integer(&mut self, _: &quire_exact::Integer) -> Result<(), quire_exact::ReservationDenied> {
         if let Some(cancel) = &self.cancel_on_integer {
             cancel.cancel(quire_exact::CancelCause::Deadline);
