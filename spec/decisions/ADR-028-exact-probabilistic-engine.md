@@ -249,6 +249,31 @@ kinds and its own `ProofBasis` members, never with ADR-024's `measured`.
 | CE-6 | **Size and cost.** A certificate holds one value per state it names, plus a rank and a policy choice where CE-3 needs them. The checker's arithmetic pass is linear in the enumerated edges in exact rationals; qualitative component/refinement/admissibility work (§13a where applicable) is additional checker-owned graph work, charged to the same budgets. It runs under the request's B-5 budgets. |
 | CE-7 | **A small trusted base.** The checker lives in the qualified core, as the owner ruled for certificate checkers (ADR-029, References). The checker's arithmetic and its graph algorithms are separate code from EN-5's iterative and linear-algebra methods and are kept small. The product construction is shared with EN-1, whose translations already answer to SM-1 (ADR-018 SM-7). |
 
+#### Closed cyclic DTMC expected-reward proof profile
+
+FR-201's separate `quire.probability-objective/dtmc-expected-reward/v1`
+keeps the existing exact reward objective and values/ranking transport,
+while replacing the acyclic profile's original-DAG and height restrictions
+with a checked finite-DTMC properness witness. Every non-target state,
+including a zero-value/zero-cost one, has a positive-probability edge to a
+strictly lower rank; targets have rank zero. A finite closed non-target
+class would contradict its minimum rank, so the stopped chain reaches B
+almost surely. Finite admitted costs and Bellman equality then determine
+the unique finite first-hit reward without a checker linear solve.
+
+This is distinct from probability progress: zero values are not exempt,
+and the lower-rank successor need not have positive value. Zero-cost
+nontermination retains FR-198's positive infinity, not a spurious finite
+zero. The claim stops at first B, charging the entering edge once; an
+original cycle solely after B neither adds cost nor requires certificate
+rows. Original-subject admission and its budgets still apply. Actual
+checked reward/unit evaluation and cumulative caller controls remain the
+acyclic profile's; no policy/action wire or new reward semantics is added.
+The old acyclic profile remains preferred where eligible and unchanged in
+bytes and verdicts. This proof-only slice does not admit MDP choices,
+fairness, timed, multi-post, infinity documents or refutations, nor claim
+whole-expansion allocation qualification.
+
 #### Closed unweighted DTMC long-run proof profile
 
 FR-201's `quire.probability-objective/dtmc-long-run/v1` closes the

@@ -533,6 +533,98 @@ change the bytes or interpretation of either existing probability profile.
   extensions, including native FR-202 reward witnesses and FR-413 wire,
   remain outside this profile.
 
+### Closed cyclic DTMC expected-reward document profile
+
+For checked `expected accumulate R until holds(B) op c` claims under a
+fully resolved workload, the codec SHALL additionally admit
+`"quire.probability-objective/dtmc-expected-reward/v1"`. This finite-only
+proof profile SHALL retain exactly the acyclic reward objective's
+`profile`, `targets`, `reward`, `unit`, `optimization` and `fairness`
+members; `optimization` SHALL be `"workload"` and `fairness` empty. The
+document SHALL retain the existing exact `identity`, `objective`, `kind`,
+`values` and `ranking` members, with kind `"exact"`. No policy, component,
+action transport, second reward expression or new unit algebra is added.
+
+- Admission SHALL require an untimed finite DTMC subject, one initial
+  state, at most one actual S3 binding, fully resolved workload and the
+  existing one-post-state-per-draw Markov restrictions. General MDP or
+  every-scheduler, authored fairness, timed, multi-post, interval and
+  refutation/infinity documents remain outside this profile. Preserve full
+  original-subject validity, identity and Markov/workload admission; this
+  profile SHALL NOT inherit the acyclic reward profile's original-DAG or
+  all-original-terminals-are-B restrictions. Original graph admission and
+  its caller budgets are not waived by an early B. Existing model-admission
+  refusals, including FR-187's negative-reward refusal, SHALL retain their
+  actual cause before profile evaluation; post-admission unsupported or
+  undefined evaluation SHALL retain typed nonacceptance, not reward zero.
+- The checker SHALL independently rebuild the graph reachable from the
+  admitted initial state BEFORE the first B, evaluating B on that stopped
+  traversal. A reached B SHALL absorb, with V zero and rank zero, without
+  expanding its outgoing steps for the claim. A state reachable only after
+  B SHALL have no value/rank row or contribution to the accumulated reward;
+  a post-B cycle alone SHALL NOT invalidate this profile. Objective targets
+  SHALL be exactly the B keys in this stopped graph. Query-expression
+  evaluation solely after B is not required; earlier original-subject
+  admission refusals remain authoritative.
+- `reward` and `unit` SHALL use the acyclic profile's actual checked
+  FR-196 model/reward identity, selected comparison unit, exact conversion
+  graph and null/declared/compound UnitId descriptor. Independently
+  evaluate every relevant semantic transition and typed draw BEFORE
+  coalescing, preserving operation/receiver/non-random-argument identity.
+  Missing R contributes zero; admitted costs are defined, finite and
+  nonnegative integers or quantities. At every non-B state s check
+  `V(s) = sum_e p(e) * (r_R(e) + V(to(e)))` under the actual single
+  workload distribution. Include the cost on the step entering B exactly
+  once, and no cost on a step leaving B. Values SHALL be nonnegative exact
+  rationals without an upper bound of 1; they are expressed in the checked
+  comparison unit, not probabilities.
+- Values and natural-number ranks SHALL cover exactly the stopped graph
+  in existing canonical complete-key order. Every non-B state SHALL have
+  positive rank and SOME independently rederived positive-probability edge
+  to a strictly smaller rank. This applies EVEN when its value and every
+  step reward are zero. It does not require a positive successor VALUE,
+  and it does not require every edge to decrease: retry self-loops and
+  other cyclic edges may retain or increase rank. These are properness
+  ranks, not exact acyclic heights. The checker SHALL verify this condition
+  rather than trust producer `Prob1` labels or reuse the generic rank
+  exemptions for reward or zero-value states.
+- On a finite DTMC, the rank condition excludes every closed non-B class:
+  a minimum-rank member of such a class would have a positive edge leaving
+  it to a lower rank. Thus B is reached almost surely, expected hitting
+  time and finite admitted reward are finite, and reward Bellman equality
+  has a unique finite solution. This is the independent finiteness check;
+  the checker SHALL solve no linear system, run no value/policy iteration
+  or import producer graph/cost/properness classifications. FR-198 still
+  assigns positive infinity to nonreachability, including zero-cost
+  nontermination. An offered V=0/rank=0 finite document for a closed
+  non-B zero-cost class SHALL reject `RankBroken` at its first complete key,
+  not accept through its otherwise true Bellman equations. A producer
+  encountering infinity SHALL emit no document of this finite-only profile
+  and preserve the existing typed unsupported outcome; infinity SHALL NOT
+  become a finite rational, `broken()` result or FR-202 refutation.
+- Either workload bound side SHALL be checked inclusively at the initial
+  complete key under existing S3 expected-reward admission. In particular,
+  zero is a valid expected-reward threshold; the probability-threshold
+  endpoint policy SHALL NOT be imposed on reward bounds. Wrong values
+  SHALL reject `InequalityFails`, wrong ranks `RankBroken`, and an otherwise
+  valid document missing its bound `ThresholdMissed`, at the first
+  applicable complete key. Conflicting identity SHALL refuse before graph
+  enumeration; changed reward/unit/targets/optimization/profile SHALL
+  refuse objective mismatch. Malformed, duplicate, missing, out-of-order,
+  foreign-binding or model-only key/member data retain existing typed
+  rule/locus behavior, including `Malformed` at `values` or `ranking` for
+  coverage errors. No rejected/stopped check yields an accepted token.
+- Original/stopped expansion, actual key construction, reward/unit and B
+  evaluation, graph/rank passes, retained rows and exact sums SHALL retain
+  the real caller's byte/state/edge, representation/arithmetic,
+  cumulative work/storage and cancellation controls with typed causes.
+  Zero direct `over` instances retain `UnsupportedBinding` and unsupported
+  EN-5 disposal with no invented evidence. Existing profiles retain their
+  canonical bytes, admission and verdicts; the producer SHALL prefer the
+  existing acyclic reward profile when it already applies. No completed
+  implementation, full FR-201-AC-30/all-expansion memory qualification or
+  shared FR-413 witness contract is claimed by this specification.
+
 ### Closed unweighted DTMC long-run document profile
 
 For a checked unweighted `long-run fraction holds(P)` claim under an
@@ -788,6 +880,10 @@ another same-dimension UnitId SHALL NOT substitute for that identity.
 | FR-201-AC-32 | A periodic chain alternates P state a and not-P state b; at a two equally probable draws to b have R magnitudes 1 and 3, and b's step to a has R 1. The weighted component accepts rho=gain=2/3 and biases (a,b)=(0,-2/3). Swapping the two a draw weights preserves acceptance; changing 3 to 5 falsifies that certificate. A zero-weight transient s entering this component and an all-P state c with probabilities 1/4 and 3/4, where c has an explicit probability-one self-step of R 1, accepts V(s)=11/12; a globally pooled numerator/denominator substitute 8/9 rejects. A reachable all-zero-weight BSCC, alone or beside a positive-weight BSCC, and any reachable terminal stutter settle Unsupported(ZeroWeightComponent), with no certificate. | Test |
 | FR-201-AC-33 | AC-31/32 documents round-trip canonical bytes through a fresh independent checker without analyzer/provider linkage. Wrong checked weight name/model or actual unit, changed predicate set/optimization/profile, foreign binding/model-only keys, malformed rational/JSON/key data and duplicate/missing/out-of-order component/value/bias members prevent acceptance with their specified typed rule/locus. Independently checked equivalent quantity expressions normalize through the actual weight UnitId; another same-dimension descriptor cannot replace it. Gain 0, a numerator payoff in gain, unscaled unweighted bias, false BSCC coverage or changed transient values reject. Older unweighted/reward/eventual profiles keep their bytes/verdicts. | Test |
 | FR-201-AC-34 | Pre-cancellation and exhaustion/cancellation during actual admission, key construction, graph/draw expansion, predicate/weight/unit evaluation, SCC/membership and exact weighted sums retain the actual typed limit/cancellation cause with no acceptance. Undefined or negative reachable weights, undefined predicates/workload and unsupported reward types preserve typed nonacceptance rather than zero. Unsupported shape/kind/fairness/every-scheduler cases issue no weighted proof. Zero direct over instances preserve UnsupportedBinding/unsupported with no invented evidence. Integer representation and exact weight arithmetic retain their respective existing limits, without imposing a probability-value range on weights. No weighted claim is relabelled as an unweighted profile or an FR-202 refutation. | Test |
+| FR-201-AC-35 | A DTMC retry state s has self and B-entering draws each of probability 1/2 and R=1 on both. The cyclic reward profile accepts V(s)=2, V(B)=0 and ranks (s,B)=(1,0), at both workload equality bounds. AtMost 3/2 and AtLeast 5/2 reject ThresholdMissed. Changing only entry-B R to 3 accepts V(s)=4; offering 2 rejects InequalityFails. Swapping equally probable draw costs preserves 4, while changing their mean falsifies it. Costs 2 ms on self and 6 ms on entry give 8 ms and accept an equivalent 0.008 s bound through actual checked conversion; declared/compound descriptors retain their actual identity rather than a fixed step cost or display alias. | Test |
+| FR-201-AC-36 | A zero-cost retry with positive exit probability accepts V(s)=V(B)=0 and ranks (1,0), including either bound at 0. Giving s rank 0 rejects RankBroken despite zero values. A closed non-B zero-cost self-loop or cycle rejects otherwise Bellman-valid finite V=0 evidence as RankBroken; the producer preserves FR-198 infinity without a finite document. Initial B accepts only its zero value/rank even when its original outgoing operation has positive cost. An admitted A-to-B subject with a positive-cost cycle reachable solely after B accepts first-hit evidence with rows only for A and B; adding after-B value/rank/target keys rejects the specified coverage/objective rule. | Test |
+| FR-201-AC-37 | AC-35/36 documents round-trip canonically through a fresh checker without analyzer/provider linkage. Changed actual reward name/model/unit, target set, optimization/profile or binding prevents acceptance; dimension-equivalent foreign UnitIds are not aliases. Noncanonical rational/JSON/key data, malformed or duplicate/missing/out-of-order rows, model-only keys, false Bellman values, and absent/wrong progress ranks retain precise rule/locus diagnostics. The old acyclic reward and probability/long-run profile bytes/verdicts remain unchanged; an eligible acyclic producer keeps its existing profile. | Test |
+| FR-201-AC-38 | Pre-cancellation and phase-observed Requested/Deadline or byte/state/edge/work/storage/representation/arithmetic exhaustion during original/stopped admission, raw/internal/full keys, draw/B/reward/unit evaluation, progress checking and exact sums preserve the actual typed cause with no accepted truth. Earlier model refusals and deferred undefined/negative evaluation are not coerced to zero. Unsupported kind/shape/fairness/every-scheduler, multi-post or refutation/infinity requests emit no finite cyclic reward proof. Direct zero over instances retain UnsupportedBinding/unsupported without a fabricated binding, terminal verdict, certificate or counterexample. | Test |
 
 ## Dependencies
 
