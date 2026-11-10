@@ -20,5 +20,6 @@ mod probabilistic;
 mod protocol_memory_refinement;
 mod reserved_declaration_names;
 mod selection;
+mod source_refusal;
 mod taskset;
 mod terminal_declaration;

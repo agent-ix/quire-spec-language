@@ -3,7 +3,9 @@
 
 use qsl_foundation::diagnostic::LimitKind;
 use qsl_foundation::source::provenance::SourceRegion;
-use qsl_foundation::source::{SourceLabel, SourceReadCause, BLANK_LABEL_TAG, EMPTY_PATH_TAG};
+use qsl_foundation::source::{
+    SourceLabel, SourceReadCause, SourceReadRefusal, BLANK_LABEL_TAG, EMPTY_PATH_TAG,
+};
 use qsl_foundation::{Phase, Source, SourceIdentity, SyntaxLimit};
 
 /// Compatibility name for the crate's pre-existing diagnostic code type. The
@@ -278,7 +280,15 @@ pub fn read_source(
     bytes: &[u8],
     byte_limit: usize,
 ) -> Result<Source, Box<CompleteDiagnostic>> {
-    Source::read_typed(identity, path, bytes, byte_limit).map_err(|refusal| {
+    Source::read_typed(identity, path, bytes, byte_limit)
+        .map_err(|refusal| source_refusal(refusal, byte_limit))
+}
+
+/// Project a typed source refusal without reading bytes or admitting a source.
+///
+/// Retains the offered identity, path, human detail and optional region exactly.
+/// Only a byte-budget refusal carries `byte_limit` as its source-byte ceiling.
+pub fn source_refusal(refusal: SourceReadRefusal, byte_limit: usize) -> Box<CompleteDiagnostic> {
         let limit = (refusal.cause == SourceReadCause::ByteBudget)
             .then_some(SyntaxLimit::SourceBytes { bound: byte_limit });
         let (code, cause) = match refusal.cause {
@@ -319,7 +329,6 @@ pub fn read_source(
             message: refusal.error.message,
             limit,
         })
-    })
 }
 
 /// Build a located diagnostic at `source`'s exact `start..end` byte span.
