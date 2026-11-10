@@ -97,6 +97,8 @@ pub(super) fn enumerate(
                 ExactProbabilityGraphError::ExpansionRefused
             })
         },
+        #[cfg(feature = "test-support")]
+        &mut |_| {},
         &mut |key, state| {
             let mut storage = storage.borrow_mut();
             let result = charge(
