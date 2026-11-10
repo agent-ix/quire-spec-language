@@ -2263,7 +2263,7 @@ fn raw_model_key_preserves_legacy_reference_enum_and_extent_vectors() {
 #[test]
 fn bounded_raw_model_key_refuses_large_initial_and_post_state_growth() {
     use qsl_eval::simulation::model::{ModelKeyError, ModelKeyExpansionError};
-    let large = "x".repeat(1 << 20);
+    let large = "x".repeat(1 << 19);
     let mut world = self::world(Vec::new(), "");
     let initial = world.start("large-identity", &[Obj(&large, 0, 0, None)]);
     let system = self::system(&world, vec![initial], &[&large], UNLIMITED);

@@ -157,13 +157,20 @@ impl Scope<'_> {
                     .unwrap_or(ModelKeyError::Denied),
                 IntegerDecimalBudgetError::Decimal(
                     quire_exact::IntegerDecimalError::ByteLimit { required, .. },
-                ) => ModelKeyError::Encoding(EncodingRefusal::Limit(
-                    qsl_foundation::diagnostic::LimitExceeded::new(
-                        Setting::IdentityInputBytes,
-                        self.identity.input_bytes,
-                        required as u128 + offset as u128,
-                    ),
-                )),
+                ) => {
+                    let actual = required as u128 + offset as u128;
+                    if actual > u128::from(self.identity.input_bytes) {
+                        ModelKeyError::Encoding(EncodingRefusal::Limit(
+                            qsl_foundation::diagnostic::LimitExceeded::new(
+                                Setting::IdentityInputBytes,
+                                self.identity.input_bytes,
+                                actual,
+                            ),
+                        ))
+                    } else {
+                        ModelKeyError::SizeOverflow
+                    }
+                }
                 IntegerDecimalBudgetError::Decimal(
                     quire_exact::IntegerDecimalError::Allocation { requested },
                 ) => ModelKeyError::Encoding(EncodingRefusal::Allocation { requested }),
