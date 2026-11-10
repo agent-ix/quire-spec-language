@@ -355,3 +355,28 @@ fn weighted_every_scheduler_and_finite_profile_claims_issue_no_long_run_document
         assert!(records[0].terminal().is_none());assert!(records[0].exact_probabilistic.is_none());
     }
 }
+
+#[trace("TC-1401", "FR-201-AC-30")]
+#[test]
+fn no_bound_instance_produces_no_document_or_fabricated_probability() {
+    let source="probabilistic Empty using inf on M over (s: M::Server) under Steady on origin { long_run_fraction holds(s.phase = 0) >= rational(1,2) }";
+    let world = World::with_objects(&prob_world::service(source), &[]);
+    let records = analyze_items(
+        &Engines::qsl().unwrap(),
+        vec![exact_probabilistic_item(
+            RequestIndex::new(0),
+            world.request("Empty", ModelCheckLimits::default()),
+        )],
+        &Cancel::new(),
+    );
+    let qsl_analyze::analyze::Settlement::Disposed(disposed) = &records[0].settlement else {
+        panic!("expected unsupported disposition: {:?}", records[0]);
+    };
+    assert_eq!(
+        disposed.kind,
+        qsl_analyze::analyze::DispositionKind::Unsupported
+    );
+    assert!(records[0].terminal().is_none());
+    assert!(records[0].exact_probabilistic.is_none());
+    assert!(records[0].counterexample().is_none());
+}
