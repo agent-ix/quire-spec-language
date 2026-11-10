@@ -77,6 +77,25 @@ fn cyclic_and_native_preserve_raw_post_and_full_key_identity_causes() {
         &cancel,
     )
     .unwrap();
+    // State level 99 needs seven representation bits; semantic edge masses
+    // are one, so the probability arithmetic ceiling may still be one bit.
+    let mut probability_bits = limits();
+    probability_bits.scalar_bits = 1;
+    admit(
+        &world,
+        &system,
+        probability_bits,
+        IdentityLimits::default(),
+        &cancel,
+    )
+    .unwrap();
+    let mut representation_bits = limits();
+    representation_bits.accounting.integer_bits = 1;
+    assert!(
+        matches!(admit(&world, &system, representation_bits, IdentityLimits::default(), &cancel),
+        Err(ProbabilityDocumentError::Accounting(incomplete))
+            if incomplete.limit_kind == quire_exact::LimitKind::IntegerBits)
+    );
     identity_error(
         admit(
             &world,
