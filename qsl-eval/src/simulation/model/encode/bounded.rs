@@ -3,7 +3,6 @@
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
-use std::ops::Range;
 
 use qsl_foundation::{IdentityLimits, Setting};
 use qsl_semantics::model::state::{ModelState, StateField, StateModel, StateObject};
@@ -51,12 +50,16 @@ impl Scope<'_> {
             .checked_add(extra)
             .ok_or(ModelKeyError::SizeOverflow)?;
         if needed > values.capacity() {
-            let bytes = needed
+            let target = values
+                .capacity()
+                .checked_mul(2)
+                .map_or(needed, |doubled| needed.max(doubled));
+            let bytes = target
                 .checked_mul(size_of::<T>())
                 .ok_or(ModelKeyError::SizeOverflow)?;
             self.admit(bytes)?;
             values
-                .try_reserve_exact(needed - values.len())
+                .try_reserve_exact(target - values.len())
                 .map_err(|_| EncodingRefusal::Allocation { requested: bytes })?;
         }
         Ok(())
@@ -122,17 +125,9 @@ impl Scope<'_> {
                 ModelKeyError::Encoding(EncodingRefusal::of(&error, self.identity))
             }
             Error::ReservationDenied { .. } => ModelKeyError::Denied,
-            _ => ModelKeyError::Unsupported("canonical leaf"),
+            _ => ModelKeyError::Unsupported("canonical value"),
         })?;
         Ok(output.bytes)
-    }
-
-    fn text(&self, source: &str) -> Result<Vec<u8>, ModelKeyError> {
-        // JCS escaping is one bounded atomic scan; source bytes are admitted
-        // before it starts and cancellation is polled again after completion.
-        self.bytes(source.len())?;
-        self.work(source.len() as u64)?;
-        self.canonical(|writer| writer.string(source))
     }
 
     fn decimal(
@@ -332,13 +327,124 @@ impl Sink for Output<'_, '_> {
     }
 }
 
-struct Fragment {
-    bytes: Vec<u8>,
-    key: Option<Range<usize>>,
+enum Emit {
+    Node(usize),
+    Name(&'static str),
+    EndObject(u64),
+    EndArray,
+}
+
+fn write_arena<S: Sink + ?Sized>(
+    scope: &Scope<'_>,
+    nodes: &[ArenaNode],
+    root: usize,
+    writer: &mut Writer<'_, S>,
+) -> Result<(), Error> {
+    let mut pending = Vec::new();
+    scope
+        .reserve(&mut pending, 1)
+        .map_err(|error| scope.refuse(error))?;
+    pending.push(Emit::Node(root));
+    while !pending.is_empty() {
+        scope.work(1).map_err(|error| scope.refuse(error))?;
+        let Some(event) = pending.pop() else { break };
+        match event {
+            Emit::Name(name) => writer.name(name)?,
+            Emit::EndArray => writer.end_array()?,
+            Emit::EndObject(work) => {
+                scope.work(work).map_err(|error| scope.refuse(error))?;
+                writer.end_object()?;
+                scope.poll().map_err(|error| scope.refuse(error))?;
+            }
+            Emit::Node(index) => {
+                let node = nodes
+                    .get(index)
+                    .ok_or_else(|| scope.refuse(ModelKeyError::Unsupported("arena node")))?;
+                match node {
+                    ArenaNode::Null => writer.null()?,
+                    ArenaNode::Boolean(value) => writer.bool(*value)?,
+                    ArenaNode::Text(text) => {
+                        scope
+                            .work(text.len() as u64)
+                            .map_err(|error| scope.refuse(error))?;
+                        writer.string(text)?;
+                        scope.poll().map_err(|error| scope.refuse(error))?;
+                    }
+                    ArenaNode::Ordinal { value, digits } => {
+                        scope
+                            .work(*digits as u64)
+                            .map_err(|error| scope.refuse(error))?;
+                        writer.integer(i128::from(*value))?;
+                    }
+                    ArenaNode::Object(members) => {
+                        writer.begin_object()?;
+                        let extra = members
+                            .len()
+                            .checked_mul(2)
+                            .and_then(|count| count.checked_add(1))
+                            .ok_or_else(|| scope.refuse(ModelKeyError::SizeOverflow))?;
+                        scope
+                            .reserve(&mut pending, extra)
+                            .map_err(|error| scope.refuse(error))?;
+                        // These closed schema records have at most eight ASCII
+                        // names. The pinned Rust writer's small-slice insertion
+                        // sort plus duplicate scan performs fewer than n*n name
+                        // comparisons; each visits at most both complete names.
+                        let mut longest = 0;
+                        for member in members {
+                            scope.work(1).map_err(|error| scope.refuse(error))?;
+                            longest = longest.max(member.name.unwrap_or_default().len());
+                        }
+                        let work = members
+                            .len()
+                            .checked_mul(members.len())
+                            .and_then(|count| count.checked_mul(longest))
+                            .and_then(|count| count.checked_mul(2))
+                            .and_then(|count| u64::try_from(count).ok())
+                            .ok_or_else(|| scope.refuse(ModelKeyError::SizeOverflow))?;
+                        pending.push(Emit::EndObject(work));
+                        for member in members.iter().rev() {
+                            scope.work(1).map_err(|error| scope.refuse(error))?;
+                            pending.push(Emit::Node(member.node));
+                            pending.push(Emit::Name(member.name.ok_or_else(|| {
+                                scope.refuse(ModelKeyError::Unsupported("object member"))
+                            })?));
+                        }
+                    }
+                    ArenaNode::Array(members) => {
+                        writer.begin_array()?;
+                        let extra = members
+                            .len()
+                            .checked_add(1)
+                            .ok_or_else(|| scope.refuse(ModelKeyError::SizeOverflow))?;
+                        scope
+                            .reserve(&mut pending, extra)
+                            .map_err(|error| scope.refuse(error))?;
+                        pending.push(Emit::EndArray);
+                        for member in members.iter().rev() {
+                            scope.work(1).map_err(|error| scope.refuse(error))?;
+                            pending.push(Emit::Node(member.node));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+enum ArenaNode {
+    Null,
+    Boolean(bool),
+    Text(String),
+    Ordinal { value: u64, digits: usize },
+    Object(Vec<Member>),
+    Array(Vec<Member>),
 }
 struct Member {
     name: Option<&'static str>,
-    value: Fragment,
+    node: usize,
+    order_bytes: Option<Vec<u8>>,
 }
 struct Frame {
     members: Vec<Member>,
@@ -349,7 +455,8 @@ struct Frame {
 struct Bounded<'s, 'a> {
     scope: &'s Scope<'a>,
     stack: Vec<Frame>,
-    root: Option<Fragment>,
+    nodes: Vec<ArenaNode>,
+    root: Option<usize>,
     produced: usize,
 }
 impl<'s, 'a> Bounded<'s, 'a> {
@@ -357,19 +464,55 @@ impl<'s, 'a> Bounded<'s, 'a> {
         Self {
             scope,
             stack: Vec::new(),
+            nodes: Vec::new(),
             root: None,
             produced: 0,
         }
     }
-    fn push(&mut self, value: Fragment) -> Result<(), ModelKeyError> {
+    fn encode_node(&self, node: usize) -> Result<Vec<u8>, ModelKeyError> {
+        self.scope
+            .canonical(|writer| write_arena(self.scope, &self.nodes, node, writer))
+    }
+    fn finish_bytes(&self) -> Result<Vec<u8>, ModelKeyError> {
+        self.encode_node(
+            self.root
+                .ok_or(ModelKeyError::Unsupported("identity root"))?,
+        )
+    }
+    fn store(&mut self, node: ArenaNode) -> Result<(), ModelKeyError> {
+        self.scope.reserve(&mut self.nodes, 1)?;
+        let identity = self.nodes.len();
+        self.nodes.push(node);
+        self.push(identity)
+    }
+    fn push(&mut self, node: usize) -> Result<(), ModelKeyError> {
+        let order_bytes = match self.stack.last().map(|frame| frame.order) {
+            Some(ArrayOrder::CanonicalBytes) => Some(self.encode_node(node)?),
+            Some(ArrayOrder::MapKeys) => {
+                let Some(ArenaNode::Object(members)) = self.nodes.get(node) else {
+                    return Err(ModelKeyError::Unsupported("map entry shape"));
+                };
+                let mut key = None;
+                for member in members {
+                    self.scope.work(1)?;
+                    if member.name == Some("key") {
+                        key = Some(member.node);
+                        break;
+                    }
+                }
+                Some(self.encode_node(key.ok_or(ModelKeyError::Unsupported("map entry key"))?)?)
+            }
+            _ => None,
+        };
         if let Some(frame) = self.stack.last_mut() {
             self.scope.reserve(&mut frame.members, 1)?;
             frame.members.push(Member {
                 name: frame.name.take(),
-                value,
+                node,
+                order_bytes,
             });
         } else {
-            self.root = Some(value);
+            self.root = Some(node)
         }
         Ok(())
     }
@@ -392,11 +535,6 @@ impl<'s, 'a> Bounded<'s, 'a> {
         }
         Ok(())
     }
-    fn leaf(&mut self, bytes: Vec<u8>) -> Result<(), ModelKeyError> {
-        self.separator()?;
-        self.charge(bytes.len())?;
-        self.push(Fragment { bytes, key: None })
-    }
     fn begin(&mut self, object: bool, order: ArrayOrder) -> Result<(), ModelKeyError> {
         self.separator()?;
         self.charge(2)?;
@@ -415,37 +553,22 @@ impl<'s, 'a> Bounded<'s, 'a> {
             .stack
             .pop()
             .ok_or(ModelKeyError::Unsupported("container protocol"))?;
-        // Stable insertion ordering allocates no hidden sort scratch. Work and
-        // cancellation are admitted before every comparison and movement.
-        if frame.object || !matches!(frame.order, ArrayOrder::Retained) {
+        // Only FR-181 semantic array ordering is owned here. Every JSON
+        // container and member ordering is emitted by the shared writer.
+        if !frame.object && !matches!(frame.order, ArrayOrder::Retained) {
             for at in 1..frame.members.len() {
                 let mut next = at;
                 while next > 0 {
-                    let left = &frame.members[next - 1];
-                    let right = &frame.members[next];
-                    let order = if frame.object {
-                        self.scope.work(
-                            (left
-                                .name
-                                .unwrap_or_default()
-                                .len()
-                                .min(right.name.unwrap_or_default().len())
-                                + 1) as u64,
-                        )?;
-                        left.name.cmp(&right.name)
-                    } else {
-                        let key = |member: &Member| match &member.value.key {
-                            Some(range) if matches!(frame.order, ArrayOrder::MapKeys) => {
-                                range.clone()
-                            }
-                            _ => 0..member.value.bytes.len(),
-                        };
-                        let left = &left.value.bytes[key(left)];
-                        let right = &right.value.bytes[key(right)];
-                        self.scope.work((left.len().min(right.len()) + 1) as u64)?;
-                        left.cmp(right)
-                    };
-                    if !order.is_gt() {
+                    let left = frame.members[next - 1]
+                        .order_bytes
+                        .as_deref()
+                        .ok_or(ModelKeyError::Unsupported("array order key"))?;
+                    let right = frame.members[next]
+                        .order_bytes
+                        .as_deref()
+                        .ok_or(ModelKeyError::Unsupported("array order key"))?;
+                    self.scope.work((left.len().min(right.len()) + 1) as u64)?;
+                    if !left.cmp(right).is_gt() {
                         break;
                     }
                     self.scope.work(1)?;
@@ -454,27 +577,11 @@ impl<'s, 'a> Bounded<'s, 'a> {
                 }
             }
         }
-        let mut bytes = Vec::new();
-        let mut key = None;
-        self.scope
-            .append(&mut bytes, if frame.object { b"{" } else { b"[" })?;
-        for (at, member) in frame.members.into_iter().enumerate() {
-            if at != 0 {
-                self.scope.append(&mut bytes, b",")?;
-            }
-            if let Some(name) = member.name {
-                let text = self.scope.text(name)?;
-                self.scope.append(&mut bytes, &text)?;
-                self.scope.append(&mut bytes, b":")?;
-                if name == "key" {
-                    key = Some(bytes.len()..bytes.len() + member.value.bytes.len());
-                }
-            }
-            self.scope.append(&mut bytes, &member.value.bytes)?;
-        }
-        self.scope
-            .append(&mut bytes, if frame.object { b"}" } else { b"]" })?;
-        self.push(Fragment { bytes, key })
+        self.store(if frame.object {
+            ArenaNode::Object(frame.members)
+        } else {
+            ArenaNode::Array(frame.members)
+        })
     }
     fn available(&self) -> Result<(usize, usize), ModelKeyError> {
         let separator = usize::from(
@@ -600,8 +707,17 @@ impl StructuralSink for Bounded<'_, '_> {
         let length = self.scope.string_length(source)?;
         self.separator()?;
         self.charge(length)?;
-        let bytes = self.scope.text(source)?;
-        self.push(Fragment { bytes, key: None })
+        self.scope.work(source.len() as u64)?;
+        let mut text = String::new();
+        if !source.is_empty() {
+            self.scope.admit(source.len())?;
+            text.try_reserve_exact(source.len())
+                .map_err(|_| EncodingRefusal::Allocation {
+                    requested: source.len(),
+                })?;
+        }
+        text.push_str(source);
+        self.store(ArenaNode::Text(text))
     }
     fn node(&mut self, source: &NodeKey) -> Result<(), Self::Error> {
         qsl_foundation::node_wire::project_node_key(source, self)
@@ -629,7 +745,12 @@ impl qsl_foundation::node_wire::NodeIdentitySink for Bounded<'_, '_> {
         let text = self
             .scope
             .decimal(&Integer::from(ordinal), available, offset)?;
-        self.leaf(text.into_bytes())
+        self.separator()?;
+        self.charge(text.len())?;
+        self.store(ArenaNode::Ordinal {
+            value: ordinal,
+            digits: text.len(),
+        })
     }
     fn text(&mut self, text: &str) -> Result<(), Self::Error> {
         StructuralSink::text(self, text)
@@ -669,14 +790,12 @@ impl ValueSink for Bounded<'_, '_> {
             Scalar::Null => {
                 self.separator()?;
                 self.charge(4)?;
-                let bytes = self.scope.canonical(|writer| writer.null())?;
-                self.push(Fragment { bytes, key: None })
+                self.store(ArenaNode::Null)
             }
             Scalar::Boolean(value) => {
                 self.separator()?;
                 self.charge(if value { 4 } else { 5 })?;
-                let bytes = self.scope.canonical(|writer| writer.bool(value))?;
-                self.push(Fragment { bytes, key: None })
+                self.store(ArenaNode::Boolean(value))
             }
             Scalar::Text(value) => self.text(value),
             Scalar::Integer(value) => self.integer(value),
@@ -701,10 +820,7 @@ impl ValueSink for Bounded<'_, '_> {
             Scalar::Declaration(value) => {
                 let mut nested = Bounded::new(self.scope);
                 projection::project_declaration(&mut nested, value)?;
-                let bytes = nested
-                    .root
-                    .ok_or(ModelKeyError::Unsupported("declaration identity"))?
-                    .bytes;
+                let bytes = nested.finish_bytes()?;
                 self.text(
                     std::str::from_utf8(&bytes)
                         .map_err(|_| ModelKeyError::Unsupported("declaration UTF-8"))?,
@@ -760,10 +876,7 @@ impl ValueSink for Bounded<'_, '_> {
             Scalar::UnitText(value) => {
                 let mut nested = Bounded::new(self.scope);
                 projection::project_unit(&mut nested, value)?;
-                let bytes = nested
-                    .root
-                    .ok_or(ModelKeyError::Unsupported("unit identity"))?
-                    .bytes;
+                let bytes = nested.finish_bytes()?;
                 self.text(
                     std::str::from_utf8(&bytes)
                         .map_err(|_| ModelKeyError::Unsupported("unit UTF-8"))?,
@@ -870,9 +983,7 @@ pub(crate) fn model_bytes(
     scope.work(1)?;
     projection::project_model_state(&mut sink, model, state, typing)?;
     scope.poll()?;
-    sink.root
-        .map(|value| value.bytes)
-        .ok_or(ModelKeyError::Unsupported("model identity"))
+    sink.finish_bytes()
 }
 
 #[cfg(test)]
@@ -903,10 +1014,7 @@ pub(super) fn value_for_test(value: &Value, typing: Typing<'_>) -> Result<Vec<u8
     };
     let mut sink = Bounded::new(&scope);
     projection::project_value(&mut sink, value, typing, None, false)?;
-    Ok(sink
-        .root
-        .ok_or(ModelKeyError::Unsupported("value root"))?
-        .bytes)
+    sink.finish_bytes()
 }
 
 #[cfg(test)]
@@ -923,6 +1031,7 @@ mod tests {
         integers: usize,
         deny_integer: bool,
         cancel_after_storage: Option<Cancel>,
+        cancel_on_integer: Option<Cancel>,
     }
     impl quire_exact::Reservation for Admission {
         fn reserve(&mut self, bytes: usize) -> Result<(), ReservationDenied> {
@@ -952,6 +1061,9 @@ mod tests {
     impl ModelKeyBudget for Admission {
         fn integer(&mut self, _: &Integer) -> Result<(), ReservationDenied> {
             self.integers += 1;
+            if let Some(cancel) = &self.cancel_on_integer {
+                cancel.cancel(quire_exact::CancelCause::Deadline);
+            }
             if self.deny_integer {
                 Err(ReservationDenied)
             } else {
@@ -1086,5 +1198,95 @@ mod tests {
         );
         drop(scope);
         assert!(budget.storage > 0);
+    }
+
+    #[test]
+    #[trace("TC-729", "FR-259-AC-3")]
+    fn real_deep_value_projection_uses_admitted_heap_frames_and_complete_writer() {
+        const DEPTH: usize = 100_000;
+        let mut value = Value::Integer(Integer::from(42_i64));
+        let mut value_type = quire_exact::ValueType::Integer;
+        for _ in 0..DEPTH {
+            value = quire_exact::OptionValue::from_admitted(value_type.clone(), Some(value));
+            value_type = quire_exact::ValueType::option(value_type);
+        }
+        // Kernel construction and the final owned-handle drops stay here.
+        // Each worker only drops a shallow clone while this root remains held.
+        let encode = |stack| {
+            let source = value.clone();
+            std::thread::Builder::new()
+                .stack_size(stack)
+                .spawn(move || value_for_test(&source, Typing::none()).expect("real value encodes"))
+                .unwrap()
+                .join()
+                .unwrap()
+        };
+        let constrained = encode(512 * 1024);
+        let control = encode(8 * 1024 * 1024);
+        let mut expected = r#"{"type":"option","value":"#.repeat(DEPTH);
+        expected.push_str(r#"{"type":"integer","value":"42"}"#);
+        expected.push_str(&"}".repeat(DEPTH));
+        assert_eq!(
+            constrained,
+            expected.as_bytes(),
+            "independent literal canonical value oracle"
+        );
+        assert_eq!(
+            constrained, control,
+            "thread stack size must not change the actual Value projection"
+        );
+
+        for cancelled in [false, true] {
+            let source = value.clone();
+            let (error, depth, integers, storage) = std::thread::Builder::new()
+                .stack_size(512 * 1024)
+                .spawn(move || {
+                    let cancel = Cancel::new();
+                    let mut budget = Admission {
+                        storage_limit: usize::MAX,
+                        work_limit: u64::MAX,
+                        deny_integer: !cancelled,
+                        cancel_on_integer: cancelled.then(|| cancel.clone()),
+                        ..Admission::default()
+                    };
+                    let scope = Scope {
+                        budget: RefCell::new(&mut budget),
+                        cancel: &cancel,
+                        identity: IdentityLimits::default(),
+                        refused: RefCell::new(None),
+                    };
+                    let mut sink = Bounded::new(&scope);
+                    let error =
+                        projection::project_value(&mut sink, &source, Typing::none(), None, false)
+                            .expect_err("inner scalar admission stops the real deep traversal");
+                    let depth = sink.stack.len();
+                    assert!(
+                        sink.nodes.is_empty(),
+                        "deepest integer was denied before retained scalar construction"
+                    );
+                    drop(sink);
+                    drop(scope);
+                    (error, depth, budget.integers, budget.storage)
+                })
+                .unwrap()
+                .join()
+                .unwrap();
+            assert_eq!(
+                depth, DEPTH,
+                "the semantic innermost-integer event occurs only after the actual deep traversal"
+            );
+            assert_eq!(integers, 1);
+            assert!(storage > 0);
+            assert_eq!(
+                error,
+                if cancelled {
+                    ModelKeyError::Cancelled(quire_exact::CancelCause::Deadline)
+                } else {
+                    ModelKeyError::Denied
+                }
+            );
+        }
+        drop(value);
+        drop(value_type);
     }
 }

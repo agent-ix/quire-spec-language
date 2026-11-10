@@ -234,16 +234,10 @@ pub fn node_key_to_text(key: &NodeKey) -> Result<String, NodeWireError> {
     Ok(out)
 }
 
-/// Emit the shared structural node shape directly into a canonical writer.
-///
-/// The writer admits its own storage and this traversal's stack before growth.
-/// No intermediate identity text or JSON tree is retained.
-///
-/// # Errors
-///
-/// The writer's byte, reservation, allocation or scalar refusal.
-/// Storage and events for the single structural node identity projection.
-/// Each implementation admits its own retained storage and traversal work.
+/// Borrowed events and admitted traversal storage for the single structural
+/// node-identity projection. The sink chooses how to retain or emit events;
+/// this trait itself supplies no canonical writer, byte limit or allocation.
+/// Every sink refusal propagates through its associated error unchanged.
 pub trait NodeIdentitySink {
     /// The sink's typed refusal.
     type Error;
