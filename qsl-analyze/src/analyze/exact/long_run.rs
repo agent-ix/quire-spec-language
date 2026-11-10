@@ -139,15 +139,46 @@ pub(super) fn run(
         return not_yet();
     }
     let reference = binding.as_ref().map(|b| &b.reference);
+    let mut retained = 0u64;
+    for (state, value) in product.states.iter().zip(&solution.values) {
+        let ExtRational::Finite(value) = value else {
+            return broken();
+        };
+        let bytes = state
+            .model
+            .len()
+            .saturating_mul(8)
+            .saturating_add(std::mem::size_of::<ExactProbabilityValue>())
+            .saturating_add(
+                usize::try_from(
+                    value
+                        .numerator()
+                        .magnitude_bits()
+                        .saturating_add(value.denominator().magnitude_bits())
+                        .div_ceil(8),
+                )
+                .unwrap_or(usize::MAX),
+            );
+        if let Err(error) = reserve(&mut retained, bytes, io, cancel) {
+            return document_failure(error, subject);
+        }
+    }
     let mut certificate = match certificate_of(&product, reference, &solution.values, io, cancel) {
         Ok(certificate) => certificate,
         Err(error) => return document_failure(error, subject),
     };
-    document.components =
-        match components(&product, reference, &solution, io, document_limits, cancel) {
-            Ok(components) => components,
-            Err(error) => return document_failure(error, subject),
-        };
+    document.components = match components(
+        &product,
+        reference,
+        &solution,
+        io,
+        document_limits,
+        &mut retained,
+        cancel,
+    ) {
+        Ok(components) => components,
+        Err(error) => return document_failure(error, subject),
+    };
     if let Some(tamper) = tamper {
         tamper(&mut certificate);
     }
@@ -172,13 +203,23 @@ fn components(
     solution: &LongRunResult,
     io: ProbabilityDocumentIoLimits,
     limits: ProbabilityDocumentLimits,
+    retained: &mut u64,
     cancel: &Cancel,
 ) -> Result<Vec<LongRunProbabilityComponent>, ProbabilityDocumentError> {
     if solution.components.len() != solution.gain_bias.len() {
         return Err(ProbabilityDocumentError::Malformed);
     }
     let mut meter = quire_exact::Meter::new(limits.accounting).with_cancel(cancel.clone());
-    let mut components = Vec::new();
+    reserve(
+        retained,
+        solution
+            .components
+            .len()
+            .saturating_mul(std::mem::size_of::<LongRunProbabilityComponent>()),
+        io,
+        cancel,
+    )?;
+    let mut components = Vec::with_capacity(solution.components.len());
     for (component, evidence) in solution.components.iter().zip(&solution.gain_bias) {
         if let Some(cause) = cancel.tripped() {
             return Err(ProbabilityDocumentError::Cancelled(cause));
@@ -186,12 +227,36 @@ fn components(
         if component.states.len() != evidence.bias.len() {
             return Err(ProbabilityDocumentError::Malformed);
         }
-        let mut bias = Vec::new();
+        reserve(
+            retained,
+            evidence
+                .bias
+                .len()
+                .saturating_mul(std::mem::size_of::<ExactProbabilityValue>()),
+            io,
+            cancel,
+        )?;
+        let mut bias = Vec::with_capacity(evidence.bias.len());
         for (state, value) in &evidence.bias {
             let state = product
                 .states
                 .get(state.index())
                 .ok_or(ProbabilityDocumentError::Malformed)?;
+            reserve(
+                retained,
+                state.model.len().saturating_mul(8).saturating_add(
+                    usize::try_from(
+                        value
+                            .numerator()
+                            .magnitude_bits()
+                            .saturating_add(value.denominator().magnitude_bits())
+                            .div_ceil(8),
+                    )
+                    .unwrap_or(usize::MAX),
+                ),
+                io,
+                cancel,
+            )?;
             bias.push(ExactProbabilityValue {
                 state: ProbabilityProductKey::for_model_state_with_limits(
                     binding,
@@ -202,7 +267,7 @@ fn components(
                 value: value.clone(),
             });
         }
-        bias.sort_by(|a, b| a.state.cmp(&b.state));
+        sort(&mut bias, |row| &row.state, &mut meter, cancel)?;
         let offset = bias
             .first()
             .ok_or(ProbabilityDocumentError::Malformed)?
@@ -230,6 +295,69 @@ fn components(
             bias,
         });
     }
-    components.sort_by(|a, b| a.bias[0].state.cmp(&b.bias[0].state));
+    sort(
+        &mut components,
+        |component| &component.bias[0].state,
+        &mut meter,
+        cancel,
+    )?;
     Ok(components)
+}
+
+fn reserve(
+    retained: &mut u64,
+    bytes: usize,
+    limits: ProbabilityDocumentIoLimits,
+    cancel: &Cancel,
+) -> Result<(), ProbabilityDocumentError> {
+    if let Some(cause) = cancel.tripped() {
+        return Err(ProbabilityDocumentError::Cancelled(cause));
+    }
+    let actual = retained.saturating_add(bytes as u64);
+    if actual > limits.storage_bytes {
+        return Err(ProbabilityDocumentError::Limit {
+            limit: qsl_replay::ProbabilityDocumentLimit::StorageBytes,
+            bound: limits.storage_bytes,
+            actual,
+        });
+    }
+    *retained = actual;
+    Ok(())
+}
+
+// In-place insertion gives a fallible, allocation-free comparison boundary.
+fn sort<T>(
+    rows: &mut [T],
+    key: impl Fn(&T) -> &ProbabilityProductKey,
+    meter: &mut quire_exact::Meter,
+    cancel: &Cancel,
+) -> Result<(), ProbabilityDocumentError> {
+    for index in 1..rows.len() {
+        let mut position = index;
+        while position > 0 {
+            if let Some(cause) = cancel.tripped() {
+                return Err(ProbabilityDocumentError::Cancelled(cause));
+            }
+            let bytes = key(&rows[position])
+                .as_bytes()
+                .len()
+                .min(key(&rows[position - 1]).as_bytes().len())
+                .saturating_add(1);
+            meter
+                .charge(
+                    quire_exact::Charge::new(quire_exact::ChargePoint::GraphEdge)
+                        .work(quire_exact::Integer::from(bytes as u64)),
+                )
+                .map_err(|error| match cancel.tripped() {
+                    Some(cause) => ProbabilityDocumentError::Cancelled(cause),
+                    None => ProbabilityDocumentError::Accounting(Box::new(error)),
+                })?;
+            if key(&rows[position - 1]) <= key(&rows[position]) {
+                break;
+            }
+            rows.swap(position - 1, position);
+            position -= 1;
+        }
+    }
+    Ok(())
 }
