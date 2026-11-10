@@ -12,11 +12,11 @@
 use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, Mutex, RwLock};
 
-use qsl_foundation::node_wire::{node_key_from_json, node_key_to_json};
+use qsl_foundation::node_wire::node_key_from_json;
 use quire_canonical::{Encode, Error, Limits, Sink, Writer};
 use quire_exact::{
     CollectionKind, EffectiveId, FieldValue, IeeeWidth, NodeKey, ObjectReference,
-    OriginalDeclarationKey, UniverseId, Value,
+    OriginalDeclarationKey, PathSegmentView, UniverseId, Value,
 };
 use quire_semantic_value::declaration::{CompositeDeclaration, CompositeShape, TypeEnvironment};
 use serde_json::Value as Json;
@@ -477,16 +477,45 @@ impl Encode for BorrowedIdentity<'_> {
 
 /// The one declaration-record projection, used as an owned tree or borrowed
 /// canonical events before its text is embedded as a string value.
-fn declaration_members(key: &DeclarationKey) -> [(&'static str, &str); 2] {
-    [("node", &key.node), ("package", &key.package)]
+fn declaration_members<'a>(key: DeclarationRecord<'a>) -> [(&'static str, &'a str); 2] {
+    [("node", key.node), ("package", key.package)]
 }
 
-struct DeclarationRecord<'a>(&'a DeclarationKey);
+#[derive(Clone, Copy)]
+struct DeclarationRecord<'a> {
+    package: &'a str,
+    node: &'a str,
+}
+
+impl<'a> DeclarationRecord<'a> {
+    fn of_key(key: &'a DeclarationKey) -> Self {
+        Self {
+            package: &key.package,
+            node: &key.node,
+        }
+    }
+
+    fn of_node(key: &'a NodeKey) -> Option<Self> {
+        let view = key.view();
+        match view.path().last()? {
+            PathSegmentView::Text(node) => Some(Self {
+                package: view.package(),
+                node,
+            }),
+            PathSegmentView::Node(_) => None,
+        }
+    }
+
+    fn text(self, limits: Limits) -> Result<String, Error> {
+        let bytes = quire_canonical::to_vec(&self, limits)?;
+        String::from_utf8(bytes).map_err(|_| Error::Serialize("canonical text is UTF-8".into()))
+    }
+}
 
 impl Encode for DeclarationRecord<'_> {
     fn encode_into<S: Sink + ?Sized>(&self, writer: &mut Writer<'_, S>) -> Result<(), Error> {
         writer.begin_object()?;
-        for (name, value) in declaration_members(self.0) {
+        for (name, value) in declaration_members(*self) {
             writer.name(name)?;
             writer.string(value)?;
         }
@@ -525,7 +554,7 @@ fn write_effective<S: Sink + ?Sized>(
 /// gives, which checked clauses lower operation labels to.
 pub(crate) fn declaration_enc(key: &DeclarationKey) -> Enc {
     Enc::Object(
-        declaration_members(key)
+        declaration_members(DeclarationRecord::of_key(key))
             .into_iter()
             .map(|(name, value)| (name, Enc::text(value)))
             .collect(),
@@ -534,8 +563,7 @@ pub(crate) fn declaration_enc(key: &DeclarationKey) -> Enc {
 
 /// The declaration identity text of `key`.
 pub(super) fn declaration_text(key: &DeclarationKey, limits: Limits) -> Result<String, Error> {
-    let bytes = quire_canonical::to_vec(&DeclarationRecord(key), limits)?;
-    String::from_utf8(bytes).map_err(|_| Error::Serialize("canonical text is UTF-8".into()))
+    DeclarationRecord::of_key(key).text(limits)
 }
 
 /// FR-181's reference triple.
@@ -625,22 +653,14 @@ fn unit_identity_enc(unit: &quire_exact::UnitId) -> Enc {
 /// A checked type node's producer declaration identity, `{package, node}`.
 /// Type-environment keys are minted with the declaration's opaque producer
 /// node as the final segment of their structural path.
-fn declaration_key_for_node(key: &NodeKey) -> Option<DeclarationKey> {
-    let Json::Object(fields) = node_key_to_json(key).ok()? else {
-        return None;
-    };
-    let package = fields.get("package")?.as_str()?.to_owned();
-    let Json::Array(path) = fields.get("path")? else {
-        return None;
-    };
-    let node = path.last()?.as_str()?.to_owned();
-    Some(DeclarationKey { package, node })
-}
-
 fn declaration_name(key: &NodeKey) -> Enc {
-    declaration_key_for_node(key).map_or(Enc::Unencodable("a declaration identity"), |key| {
-        identity_text(declaration_enc(&key), "a declaration identity")
-    })
+    DeclarationRecord::of_node(key)
+        .and_then(|record| {
+            record
+                .text(Limits::new(super::identity_limits().input_bytes))
+                .ok()
+        })
+        .map_or(Enc::Unencodable("a declaration identity"), Enc::Str)
 }
 
 /// The first JSON value of `text` and the text after it.
