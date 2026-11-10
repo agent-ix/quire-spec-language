@@ -159,7 +159,6 @@ fn other_source_causes_omit_label_and_preserve_the_original_region_and_detail() 
             "message": detail
         });
         assert_projections(&diagnostic, &expected);
-        assert!(!expected.as_object().unwrap().contains_key("label"));
     }
     let ordinary = OutcomeDiagnostic::new(None, "cancelled", None, "ordinary diagnostic");
     assert_eq!(

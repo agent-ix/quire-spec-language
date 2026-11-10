@@ -1308,6 +1308,7 @@ impl From<&Locus> for OutcomeLocus {
 }
 
 /// One diagnostic: its typed cause, catalog code, locus and message.
+/// A source blank-label refusal also retains the owner's typed label.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct OutcomeDiagnostic {
     cause: Option<Box<str>>,
