@@ -702,15 +702,30 @@ fn read_document_profile(
             u64::try_from(rows).unwrap_or(u64::MAX),
         ));
     }
-    let bounded_fair = matches!(objective.and_then(|node| node.get("profile")).map(|node| node.node()), Some(quire_canonical::Node::String(BOUNDED_FAIR_PROFILE)));
+    let bounded_fair = matches!(
+        objective
+            .and_then(|node| node.get("profile"))
+            .map(|node| node.node()),
+        Some(quire_canonical::Node::String(BOUNDED_FAIR_PROFILE))
+    );
     if bounded_fair {
-        let mut admission = ProbabilityKeyAdmission::new(meter, storage, limits.storage_bytes, cancel);
-        quire_exact::IntegerDecimalBudget::work(&mut admission, u64::try_from(bytes.len()).unwrap_or(u64::MAX))
-            .map_err(|_| admission.refusal(qsl_eval::simulation::model::ModelKeyError::Denied))?;
-        let shared = std::cell::RefCell::new(writer::Admission::with_used(limits.storage_bytes, cancel, *storage));
+        let mut admission =
+            ProbabilityKeyAdmission::new(meter, storage, limits.storage_bytes, cancel);
+        quire_exact::IntegerDecimalBudget::work(
+            &mut admission,
+            u64::try_from(bytes.len()).unwrap_or(u64::MAX),
+        )
+        .map_err(|_| admission.refusal(qsl_eval::simulation::model::ModelKeyError::Denied))?;
+        let shared = std::cell::RefCell::new(writer::Admission::with_used(
+            limits.storage_bytes,
+            cancel,
+            *storage,
+        ));
         let canonical = writer::encode_reserved(&parsed, limits.bytes, &shared)?;
         *storage = shared.borrow().used();
-        if canonical != bytes { return Err(ProbabilityDocumentError::Noncanonical); }
+        if canonical != bytes {
+            return Err(ProbabilityDocumentError::Noncanonical);
+        }
     }
     drop(parsed);
     let wire: WireDocument =
@@ -1437,19 +1452,41 @@ pub fn check_cyclic_reward_probability_certificate_observing(
     observe: &mut dyn FnMut(super::reward::RewardProbabilityPhase),
 ) -> Result<ExactProbabilityCertificateCheck, ProbabilityDocumentError> {
     let control = super::reward::RewardControl::observing(cancel, observe);
-    check_document_with_control(system, claims, item, bytes, limits, cancel, &control, &fairness::Control::new(cancel))
+    check_document_with_control(
+        system,
+        claims,
+        item,
+        bytes,
+        limits,
+        cancel,
+        &control,
+        &fairness::Control::new(cancel),
+    )
 }
 
 /// Observe the actual bounded fairness checker with caller cancellation tokens.
 #[cfg(feature = "test-support")]
 #[allow(clippy::too_many_arguments)]
 pub fn check_bounded_fair_probability_certificate_observing(
-    system: &ModelSystem<'_>, claims: &[CheckedProbabilisticClaim], item: &ObligationIdentity,
-    bytes: &[u8], limits: ProbabilityDocumentLimits, cancel: &Cancel,
+    system: &ModelSystem<'_>,
+    claims: &[CheckedProbabilisticClaim],
+    item: &ObligationIdentity,
+    bytes: &[u8],
+    limits: ProbabilityDocumentLimits,
+    cancel: &Cancel,
     observe: &mut dyn FnMut(BoundedFairProbabilityPhase),
 ) -> Result<ExactProbabilityCertificateCheck, ProbabilityDocumentError> {
     let control = fairness::Control::observing(cancel, observe);
-    check_document_with_control(system, claims, item, bytes, limits, cancel, &super::reward::RewardControl::new(cancel), &control)
+    check_document_with_control(
+        system,
+        claims,
+        item,
+        bytes,
+        limits,
+        cancel,
+        &super::reward::RewardControl::new(cancel),
+        &control,
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1498,8 +1535,23 @@ fn check_document_with_control(
         return Err(ProbabilityDocumentError::ObjectiveMismatch);
     }
     if !fairness_records.is_empty() {
-        let expected = fairness::checked_with_control(system, claim, limits, cancel, &mut meter, &mut storage, fair_control)?;
-        if !fairness::same(&expected, &fairness_records, limits, cancel, &mut meter, &mut storage)? {
+        let expected = fairness::checked_with_control(
+            system,
+            claim,
+            limits,
+            cancel,
+            &mut meter,
+            &mut storage,
+            fair_control,
+        )?;
+        if !fairness::same(
+            &expected,
+            &fairness_records,
+            limits,
+            cancel,
+            &mut meter,
+            &mut storage,
+        )? {
             return Err(ProbabilityDocumentError::ObjectiveMismatch);
         }
     }

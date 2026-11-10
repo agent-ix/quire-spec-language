@@ -138,9 +138,11 @@ fn enumerate_controlled(
     let scope = std::cell::RefCell::new(scope);
     let reserve = |bytes: usize| -> Result<(), ProbabilityDocumentError> {
         if let Some((meter, storage)) = scope.borrow_mut().as_mut() {
-            let mut admission = ProbabilityKeyAdmission::new(meter, storage, limits.storage_bytes, cancel);
-            quire_exact::Reservation::reserve(&mut admission, bytes)
-                .map_err(|_| admission.refusal(qsl_eval::simulation::model::ModelKeyError::Denied))?;
+            let mut admission =
+                ProbabilityKeyAdmission::new(meter, storage, limits.storage_bytes, cancel);
+            quire_exact::Reservation::reserve(&mut admission, bytes).map_err(|_| {
+                admission.refusal(qsl_eval::simulation::model::ModelKeyError::Denied)
+            })?;
         }
         Ok(())
     };
@@ -227,8 +229,16 @@ fn enumerate_controlled(
         )
     };
     let root = key_of(first, first_control, &monitor)?;
-    reserve(root.as_bytes().len().saturating_mul(3)
-        .saturating_add(std::mem::size_of::<(ProbabilityProductKey, ModelSimState, Control)>()))?;
+    reserve(
+        root.as_bytes()
+            .len()
+            .saturating_mul(3)
+            .saturating_add(std::mem::size_of::<(
+                ProbabilityProductKey,
+                ModelSimState,
+                Control,
+            )>()),
+    )?;
     let mut queue = VecDeque::from([(root.clone(), first.clone(), first_control)]);
     let mut seen = BTreeSet::from([root.clone()]);
     let mut states = BTreeMap::new();
@@ -236,8 +246,12 @@ fn enumerate_controlled(
     let mut edge_count = 0usize;
     while let Some((key, model, control)) = queue.pop_front() {
         poll_cancel(cancel)?;
-        reserve(key.as_bytes().len().saturating_add(std::mem::size_of::<(ProbabilityProductKey, u64)>())
-            .saturating_add(std::mem::size_of::<CheckerState>()))?;
+        reserve(
+            key.as_bytes()
+                .len()
+                .saturating_add(std::mem::size_of::<(ProbabilityProductKey, u64)>())
+                .saturating_add(std::mem::size_of::<CheckerState>()),
+        )?;
         ranks.insert(key.clone(), control.rank(&monitor)?);
         if let Control::Decided(accepted) = control {
             states.insert(
@@ -315,20 +329,25 @@ fn enumerate_controlled(
                     if seen.len() >= limits.states {
                         return Err(state_limit(limits.states, seen.len().saturating_add(1)));
                     }
-                    reserve(target.as_bytes().len().saturating_mul(2)
-                        .saturating_add(std::mem::size_of::<(ProbabilityProductKey, ModelSimState, Control)>()))?;
+                    reserve(target.as_bytes().len().saturating_mul(2).saturating_add(
+                        std::mem::size_of::<(ProbabilityProductKey, ModelSimState, Control)>(),
+                    ))?;
                     seen.insert(target.clone());
                     queue.push_back((target.clone(), post, control));
                 }
                 reserve(std::mem::size_of::<ProbabilityEdge>())?;
-                choice.try_reserve_exact(1).map_err(|_| ProbabilityDocumentError::KeySizeOverflow)?;
+                choice
+                    .try_reserve_exact(1)
+                    .map_err(|_| ProbabilityDocumentError::KeySizeOverflow)?;
                 choice.push(ProbabilityEdge {
                     target,
                     probability,
                 });
             }
             reserve(std::mem::size_of::<Vec<ProbabilityEdge>>())?;
-            choices.try_reserve_exact(1).map_err(|_| ProbabilityDocumentError::KeySizeOverflow)?;
+            choices
+                .try_reserve_exact(1)
+                .map_err(|_| ProbabilityDocumentError::KeySizeOverflow)?;
             choices.push(choice);
         }
         states.insert(

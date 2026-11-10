@@ -10,8 +10,12 @@ const DOMAIN: &[u8] = include_bytes!("../fixtures/link.semantic-ir.json");
 
 fn limits() -> qsl_replay::ProbabilityDocumentLimits {
     qsl_replay::ProbabilityDocumentLimits {
-        bytes: 1_000_000, storage_bytes: 16_000_000, states: 128, edges: 1024,
-        scalar_bits: 128, accounting: qsl_replay::AccountingLimits::default().0,
+        bytes: 1_000_000,
+        storage_bytes: 16_000_000,
+        states: 128,
+        edges: 1024,
+        scalar_bits: 128,
+        accounting: qsl_replay::AccountingLimits::default().0,
     }
 }
 
@@ -209,12 +213,9 @@ fn zero_horizon_and_legacy_bytes_keep_their_actual_context_and_closed_rows() {
     }
     let ordinary = proof(&source("", ">=", "0.95", 2, "m.delivered"), SNAPSHOT);
     let bytes = ordinary["certificate"].as_str().unwrap().as_bytes();
-    let decoded = qsl_replay::read_probability_proof_document(
-        bytes,
-        limits(),
-        &quire_exact::Cancel::new(),
-    )
-    .unwrap();
+    let decoded =
+        qsl_replay::read_probability_proof_document(bytes, limits(), &quire_exact::Cancel::new())
+            .unwrap();
     assert!(!decoded.is_bounded_fair());
     assert_eq!(
         qsl_replay::write_probability_proof_document(
