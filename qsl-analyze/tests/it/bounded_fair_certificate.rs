@@ -135,9 +135,22 @@ fn empty_multiple_bindings_and_refuted_fair_bound_never_emit_new_profile_proofs(
     for threshold in ["0", "1"] {
         assert!(World::try_new(&prob_world::link(&CLAIM.replace("0.95", threshold))).is_err());
     }
+}
+
+#[trace("TC-1406", "FR-201-AC-47", "FR-201-AC-48", "FR-201-AC-50")]
+#[test]
+fn multiple_receivers_require_actual_markov_draws_and_keep_each_identity() {
+    use qsl_eval::simulation::TransitionSystem;
     let global = CLAIM
         .replace("over (m: M::Msg) ", "")
         .replace("holds(m.delivered)", "holds(true)");
+    let invalid = World::with_objects(&prob_world::link(&global), &["a", "b"]);
+    let invalid_system = ModelSystem::new(invalid.subject().simulation).unwrap();
+    let actions = invalid_system.actions(&invalid_system.initial()[0]).unwrap().unwrap();
+    assert!(actions.iter().flat_map(|action| &action.draws).any(|draw| draw.successors.len() > 1), "a self-only postcondition with a type-wide frame leaves other receivers unresolved");
+    let records = analyze_items(&Engines::qsl().unwrap(), vec![exact_probabilistic_item(RequestIndex::new(0), invalid.request("Likely", ModelCheckLimits::default()))], &Cancel::new());
+    assert!(records[0].terminal().is_none());
+    assert!(matches!(&records[0].settlement, Settlement::Disposed(disposal) if disposal.kind == DispositionKind::Unsupported));
     let mut model = prob_world::link(&global);
     for operation in &mut model.operations { operation.modifies.clear(); }
     model.body = model.body.replace("self.attempts - pre(self.attempts) = 1 and self.delivered = (not lost)", "self.attempts = pre(self.attempts) and self.delivered = pre(self.delivered)");
@@ -146,6 +159,11 @@ fn empty_multiple_bindings_and_refuted_fair_bound_never_emit_new_profile_proofs(
     let terminal = records[0].terminal().unwrap_or_else(|| panic!("actual multi-receiver admission: {:?}", records[0].settlement));
     let bytes = terminal.exact_certificate_document().unwrap().to_vec();
     let system = ModelSystem::new(world.subject().simulation).unwrap();
+    let actions = system.actions(&system.initial()[0]).unwrap().unwrap();
+    assert_eq!(actions.len(), 4);
+    let receivers: std::collections::BTreeSet<_> = actions.iter().map(|action| action.identity.receiver.clone()).collect();
+    assert_eq!(receivers.len(), 2);
+    assert!(actions.iter().flat_map(|action| &action.draws).all(|draw| draw.successors.len() == 1));
     let item = probabilistic_claim_identity(world.claim("Likely")).unwrap();
     assert!(matches!(
         check_probability_certificate_document(
