@@ -108,6 +108,18 @@ fn two_step_named_reward_checks_minimum_maximum_and_both_workload_bounds() {
         let (code, output) = run(&stronger);
         assert_eq!(code, 1, "{output}");
         assert_eq!(output["rule"], "threshold-missed");
+        if scheduler == "Even" {
+            let changed_model =
+                two_step().replace("weight Msg::send_a = 1", "weight Msg::send_a = 3");
+            let mut changed_workload = request.clone();
+            replace_source(
+                &mut changed_workload,
+                &claim(&changed_model, scheduler, op, threshold, "m.delivered"),
+            );
+            let (code, output) = run(&changed_workload);
+            assert_eq!(code, 1, "{output}");
+            assert_eq!(output["rule"], "inequality-fails");
+        }
         let target = doc["objective"]["targets"][0].clone();
         let target_one = mutate(&request, |doc| {
             let row = doc["values"]
@@ -152,6 +164,17 @@ fn independent_draw_costs_accept_value_preserving_swap_and_reject_changed_equati
             assert_eq!(output["rule"], "inequality-fails");
         }
     }
+    let mut changed_weights = request.clone();
+    replace_source(
+        &mut changed_weights,
+        &source.replace(
+            "Msg::send_a(lost) ~ { true: 1, false: 1 }",
+            "Msg::send_a(lost) ~ { true: 3, false: 1 }",
+        ),
+    );
+    let (code, output) = run(&changed_weights);
+    assert_eq!(code, 1, "{output}");
+    assert_eq!(output["rule"], "inequality-fails");
     let initial = proof(&claim(
         &draws("99"),
         "every scheduler",
