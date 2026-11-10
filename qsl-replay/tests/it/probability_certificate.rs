@@ -202,7 +202,7 @@ fn typed_value_coverage_and_order_rejections_name_the_values_member() {
     ));
     let foreign = ProbabilityProductKey::for_model_state(
         None,
-        include_bytes!("../../../qsl-probability-check/tests/fixtures/link.model-key-0.json"),
+        include_bytes!("../../../tools/qsl-probability-check/tests/fixtures/link.model-key-0.json"),
     )
     .expect("a valid key from a different model");
     assert_ne!(foreign, root);

@@ -1341,7 +1341,7 @@ mod tests {
     #[test]
     fn bounded_model_product_key_uses_the_complete_fr196_v1_tuple() {
         let model =
-            include_bytes!("../../qsl-probability-check/tests/fixtures/link.model-key-0.json");
+            include_bytes!("../../tools/qsl-probability-check/tests/fixtures/link.model-key-0.json");
         let key = product_key(None, model).expect("the production model key encodes");
         let actual: serde_json::Value =
             serde_json::from_slice(key.as_bytes()).expect("the key is JSON");
