@@ -389,7 +389,7 @@ fn write_arena<S: Sink + ?Sized>(
                         // These closed schema records have at most eight ASCII
                         // names. The pinned Rust writer's small-slice insertion
                         // sort plus duplicate scan performs fewer than n*n name
-                        // comparisons; each visits at most both complete names.
+                        // comparisons; each visits both names and their closing quotes.
                         let mut longest = 0;
                         for member in members {
                             scope.work(1).map_err(|error| scope.refuse(error))?;
@@ -398,7 +398,11 @@ fn write_arena<S: Sink + ?Sized>(
                         let work = members
                             .len()
                             .checked_mul(members.len())
-                            .and_then(|count| count.checked_mul(longest))
+                            .and_then(|count| {
+                                longest
+                                    .checked_add(1)
+                                    .and_then(|width| count.checked_mul(width))
+                            })
                             .and_then(|count| count.checked_mul(2))
                             .and_then(|count| u64::try_from(count).ok())
                             .ok_or_else(|| scope.refuse(ModelKeyError::SizeOverflow))?;
@@ -1272,8 +1276,9 @@ mod tests {
                 .join()
                 .unwrap();
             assert_eq!(
-                depth, DEPTH,
-                "the semantic innermost-integer event occurs only after the actual deep traversal"
+                depth,
+                DEPTH + 1,
+                "all option objects and the integer leaf object are open at inner scalar admission"
             );
             assert_eq!(integers, 1);
             assert!(storage > 0);
