@@ -86,6 +86,11 @@ fn weak_strong_whole_each_preserve_actual_minimum_and_both_bounded_extrema() {
 #[trace("TC-1406", "FR-201-AC-48")]
 #[test]
 fn checked_set_normalizes_authored_order_and_duplicates_but_wire_set_is_strict() {
+    let both = proof(&source("fair weak Msg::send_a fair strong Msg::send_a", ">=", "0.95", 2, "m.delivered"), SNAPSHOT);
+    let set = document(&both)["objective"]["fairness"].clone();
+    assert_eq!(set.as_array().unwrap().len(), 2);
+    assert_ne!(set[0]["fairness_kind"], set[1]["fairness_kind"]);
+    assert_eq!(run(&both).0, 0);
     let a = source(
         "fair weak Msg::send_a fair strong each Msg::send_b fair weak Msg::send_a",
         ">=",

@@ -95,17 +95,19 @@ impl Encode for Record {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct WireRecord {
-    fairness_kind: String,
-    granularity: String,
-    target: WireTarget,
+struct WireRecord<'a> {
+    fairness_kind: &'a str,
+    granularity: &'a str,
+    #[serde(borrow)]
+    target: WireTarget<'a>,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct WireTarget {
-    kind: String,
-    declaration: Box<serde_json::value::RawValue>,
-    name: String,
+struct WireTarget<'a> {
+    kind: &'a str,
+    #[serde(borrow)]
+    declaration: &'a serde_json::value::RawValue,
+    name: &'a str,
 }
 
 pub(super) fn admit(claim: &CheckedProbabilisticClaim) -> Result<(), ProbabilityDocumentError> {
@@ -163,6 +165,24 @@ impl Admission<'_> {
     fn bytes(&mut self, record: &Record) -> Result<Vec<u8>, ProbabilityDocumentError> {
         project_node_key(&record.declaration, self)?;
         self.work(u64::try_from(record.name.as_str().len()).unwrap_or(u64::MAX))?;
+        self.encoded(record)
+    }
+    fn declaration(&mut self, text: &str) -> Result<NodeKey, ProbabilityDocumentError> {
+        let mut admission = ProbabilityKeyAdmission::new(self.meter, self.storage, self.limits.storage_bytes, self.cancel);
+        qsl_foundation::node_wire::node_key_from_text_with_budget(text, &mut admission).map_err(|error| match error {
+            qsl_foundation::node_wire::NodeWireError::Denied => admission.refusal(qsl_eval::simulation::model::ModelKeyError::Denied),
+            _ => ProbabilityDocumentError::MalformedMember("objective"),
+        })
+    }
+    fn grow<T>(&mut self, rows: &mut Vec<T>) -> Result<(), ProbabilityDocumentError> {
+        if rows.len() == rows.capacity() {
+            let capacity = rows.capacity().checked_mul(2).unwrap_or(usize::MAX).max(4);
+            self.reserve(capacity.checked_mul(std::mem::size_of::<T>()).ok_or(ProbabilityDocumentError::KeySizeOverflow)?)?;
+            rows.try_reserve_exact(capacity - rows.len()).map_err(|_| ProbabilityDocumentError::KeySizeOverflow)?;
+        }
+        Ok(())
+    }
+    fn encoded(&mut self, value: &impl Encode) -> Result<Vec<u8>, ProbabilityDocumentError> {
         let mut admission = ProbabilityKeyAdmission::new(
             self.meter,
             self.storage,
@@ -182,7 +202,7 @@ impl Admission<'_> {
             }
         }
         let result =
-            writer::encode_admitted(record, self.limits.bytes, &mut Reserve(&mut admission));
+            writer::encode_admitted(value, self.limits.bytes, &mut Reserve(&mut admission));
         result.map_err(|error| match error {
             Error::ReservationDenied { .. } => {
                 admission.refusal(qsl_eval::simulation::model::ModelKeyError::Denied)
@@ -225,10 +245,7 @@ impl NodeIdentitySink for Admission<'_> {
         stack: &mut Vec<NodePathIter<'a>>,
         path: NodePathIter<'a>,
     ) -> Result<(), Self::Error> {
-        self.reserve(std::mem::size_of::<NodePathIter<'a>>())?;
-        stack
-            .try_reserve_exact(1)
-            .map_err(|_| ProbabilityDocumentError::KeySizeOverflow)?;
+        self.grow(stack)?;
         stack.push(path);
         Ok(())
     }
@@ -287,26 +304,22 @@ pub(super) fn checked_with_control(
             )
             .unwrap_or(u64::MAX),
         )?;
-        cx.reserve(
-            key.package
-                .len()
-                .saturating_add(key.node.len())
-                .saturating_add(operation.name().len())
-                .saturating_add(3 * std::mem::size_of::<quire_exact::PathSegment>()),
-        )?;
+        let identity = qsl_semantics::model::key::ModelNodeIdentity::new(&key.package, "model", "object_type", &key.node)
+            .map_err(|_| ProbabilityDocumentError::MalformedMember("objective"))?;
+        identity.project(&mut cx)?;
+        let identity = cx.encoded(&identity)?;
+        let declaration = cx.declaration(std::str::from_utf8(&identity).map_err(|_| ProbabilityDocumentError::MalformedMember("objective"))?)?;
+        cx.reserve(operation.name().len())?;
         let record = Record {
             kind: constraint.kind(),
             granularity: constraint.granularity(),
-            declaration: qsl_semantics::model::key::object_type_node_key(key)
-                .map_err(|_| ProbabilityDocumentError::MalformedMember("objective"))?,
+            declaration,
             name: Identifier::new(operation.name())
                 .map_err(|_| ProbabilityDocumentError::MalformedMember("objective"))?,
         };
         control.phase(BoundedFairProbabilityPhase::Metadata)?;
         let bytes = cx.bytes(&record)?;
-        cx.reserve(std::mem::size_of::<(Vec<u8>, Record)>())?;
-        rows.try_reserve_exact(1)
-            .map_err(|_| ProbabilityDocumentError::KeySizeOverflow)?;
+        cx.grow(&mut rows)?;
         let mut at = rows.len();
         while at > 0 {
             cx.work(
@@ -402,24 +415,21 @@ pub(super) fn read(
     let mut previous: Option<Vec<u8>> = None;
     for raw in records {
         cx.work(u64::try_from(raw.get().len()).unwrap_or(u64::MAX))?;
-        cx.reserve(raw.get().len())?;
-        let wire: WireRecord = serde_json::from_str(raw.get())
+        let wire: WireRecord<'_> = serde_json::from_str(raw.get())
             .map_err(|_| ProbabilityDocumentError::MalformedMember("objective"))?;
+        cx.reserve(wire.target.name.len())?;
         let record = Record {
-            kind: match wire.fairness_kind.as_str() {
+            kind: match wire.fairness_kind {
                 "weak" => FairnessKind::Weak,
                 "strong" => FairnessKind::Strong,
                 _ => return Err(ProbabilityDocumentError::MalformedMember("objective")),
             },
-            granularity: match wire.granularity.as_str() {
+            granularity: match wire.granularity {
                 "whole" => FairnessGranularity::Whole,
                 "each" => FairnessGranularity::Each,
                 _ => return Err(ProbabilityDocumentError::MalformedMember("objective")),
             },
-            declaration: qsl_foundation::node_wire::node_key_from_text(
-                wire.target.declaration.get(),
-            )
-            .map_err(|_| ProbabilityDocumentError::MalformedMember("objective"))?,
+            declaration: cx.declaration(wire.target.declaration.get())?,
             name: Identifier::new(wire.target.name)
                 .map_err(|_| ProbabilityDocumentError::MalformedMember("objective"))?,
         };
@@ -431,10 +441,7 @@ pub(super) fn read(
             return Err(ProbabilityDocumentError::MalformedMember("objective"));
         }
         previous = Some(bytes);
-        cx.reserve(std::mem::size_of::<Record>())?;
-        result
-            .try_reserve_exact(1)
-            .map_err(|_| ProbabilityDocumentError::KeySizeOverflow)?;
+        cx.grow(&mut result)?;
         result.push(record);
     }
     Ok(result)
@@ -525,6 +532,17 @@ mod tests {
                             | ProbabilityDocumentError::Accounting(_))
                     ));
                 }
+            let text = qsl_foundation::node_wire::node_key_to_text(&record.declaration).unwrap();
+            let mut bound = limits();
+            bound.storage_bytes = 0;
+            let mut meter = quire_exact::Meter::new(bound.accounting);
+            assert!(matches!(Admission { limits: bound, cancel: &cancel, meter: &mut meter, storage: &mut 0 }.declaration(&text), Err(ProbabilityDocumentError::Limit { limit: ProbabilityDocumentLimit::StorageBytes, .. })));
+            for cause in [CancelCause::Requested, CancelCause::Deadline] {
+                let cancel = Cancel::new();
+                cancel.cancel(cause);
+                let mut meter = quire_exact::Meter::new(limits().accounting);
+                assert_eq!(Admission { limits: limits(), cancel: &cancel, meter: &mut meter, storage: &mut 0 }.declaration(&text), Err(ProbabilityDocumentError::Cancelled(cause)));
+            }
             })
             .unwrap()
             .join()

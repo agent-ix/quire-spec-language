@@ -135,7 +135,16 @@ fn enumerate_controlled(
     failure: &mut impl FnMut(crate::ExactProbBuildIssue),
     scope: Option<(&mut quire_exact::Meter, &mut u64)>,
 ) -> Result<(CheckerGraph, BTreeMap<ProbabilityProductKey, u64>), ProbabilityDocumentError> {
+    let budgeted = scope.is_some();
     let scope = std::cell::RefCell::new(scope);
+    fn grow<T>(rows: &mut Vec<T>, reserve: &impl Fn(usize) -> Result<(), ProbabilityDocumentError>) -> Result<(), ProbabilityDocumentError> {
+        if rows.len() == rows.capacity() {
+            let capacity = rows.capacity().checked_mul(2).unwrap_or(usize::MAX).max(4);
+            reserve(capacity.checked_mul(std::mem::size_of::<T>()).ok_or(ProbabilityDocumentError::KeySizeOverflow)?)?;
+            rows.try_reserve_exact(capacity - rows.len()).map_err(|_| ProbabilityDocumentError::KeySizeOverflow)?;
+        }
+        Ok(())
+    }
     let reserve = |bytes: usize| -> Result<(), ProbabilityDocumentError> {
         if let Some((meter, storage)) = scope.borrow_mut().as_mut() {
             let mut admission =
@@ -335,19 +344,13 @@ fn enumerate_controlled(
                     seen.insert(target.clone());
                     queue.push_back((target.clone(), post, control));
                 }
-                reserve(std::mem::size_of::<ProbabilityEdge>())?;
-                choice
-                    .try_reserve_exact(1)
-                    .map_err(|_| ProbabilityDocumentError::KeySizeOverflow)?;
+                if budgeted { grow(&mut choice, &reserve)?; }
                 choice.push(ProbabilityEdge {
                     target,
                     probability,
                 });
             }
-            reserve(std::mem::size_of::<Vec<ProbabilityEdge>>())?;
-            choices
-                .try_reserve_exact(1)
-                .map_err(|_| ProbabilityDocumentError::KeySizeOverflow)?;
+            if budgeted { grow(&mut choices, &reserve)?; }
             choices.push(choice);
         }
         states.insert(
