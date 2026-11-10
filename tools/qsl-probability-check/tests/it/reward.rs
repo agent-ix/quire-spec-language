@@ -422,6 +422,15 @@ fn nonreaching_terminals_hidden_raw_cycles_and_negative_rewards_never_accept() {
         let (code, output) = run(&invalid);
         assert_eq!(code, 2, "{output}");
         assert!(output.get("value").is_none());
+        if cost == "-1" {
+            assert!(
+                output["reason"]
+                    .as_str()
+                    .unwrap()
+                    .contains("negative-reward"),
+                "{output}"
+            );
+        }
     }
     let mut foreign_item = request;
     foreign_item["item"]["ordinal"] = json!(99);
