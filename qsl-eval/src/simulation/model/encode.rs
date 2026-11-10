@@ -1139,7 +1139,7 @@ fn value_enc_with_decimal_mode(
                     Enc::tagged(
                         "enum",
                         vec![
-                            ("name", declaration_name(&declared.node())),
+                            ("name", declaration_name(declared.node_ref())),
                             ("member", Enc::text(case.name())),
                         ],
                     )
