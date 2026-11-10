@@ -35,7 +35,7 @@ const WEIGHTED_PROFILE: &str = "quire.probability-objective/dtmc-weighted-long-r
 pub struct LongRunProbabilityComponent {
     /// Long-run fraction of the checked indicator in this component.
     pub value: Rational,
-    /// Average original indicator reward, equal to `value`.
+    /// Selected long-run ratio marker, equal to `value`.
     pub gain: Rational,
     /// Signed biases in strictly ascending complete-key order, first bias zero.
     pub bias: Vec<ExactProbabilityValue>,

@@ -145,13 +145,17 @@ fn periodic_model(initial: i64, a_rewards: &str, b_reward: &str, terminal: bool)
             deletes: false,
         },
     ];
-    Model {package,object:"Server",population:"servers",key:"s",
+    let mut model = Model {package,object:"Server",population:"servers",key:"s",
         integers:vec![("Phase",0,3),("Weight",1,6)],fields:vec![("phase",format!("ix://{package}/Phase"))],operations,
         body: format!("pre A using v on M::Server::a {{ self.phase = 0 }}\npost NextA using v on M::Server::a {{ self.phase = 1 }}\npre B using v on M::Server::b {{ self.phase = 1 }}\npost NextB using v on M::Server::b {{ self.phase = 0 }}\npre Enter using v on M::Server::enter {{ self.phase = 2 }}\npost Entered using v on M::Server::enter {{ (heads and self.phase = 0) or (not heads and self.phase = 3) }}\npre Stay using v on M::Server::stay {{ self.phase = 3 }}\nrandom Server::a(d) ~ {{ {a_rewards} }};\nrandom Server::enter(heads) ~ {{ true: 1, false: 3 }};\nreward duration on Server::a = d;\nreward duration on Server::b = {b_reward};\nreward duration on Server::stay = 1;\nworkload Steady on M {{ weight Server::a = 1; weight Server::b = 1; weight Server::enter = 1; weight Server::stay = 1; }}\n{}{}",
             if terminal { "terminal End using v on M when { self.phase = 3 };\n" } else {""},
             claim("Fraction","s.phase = 0 or s.phase = 3",if initial == 2 {">= rational(11,12)"} else {">= rational(2,3)"})),
         initial:serde_json::json!({"phase":{"integer":initial.to_string()}}),
+    };
+    if terminal {
+        model.body = model.body.replace("pre Stay using v on M::Server::stay { self.phase = 3 }", "pre Stay using v on M::Server::stay { false }");
     }
+    model
 }
 
 #[trace("TC-1402", "FR-201-AC-32", "FR-201-AC-33")]
@@ -220,7 +224,8 @@ fn reachable_zero_weight_components_remain_typed_unsupported() {
     let result = qsl_replay::check_probability_certificate_document(
         &system, world.package.graph().probabilistic_model().claims(), &identity, &bytes, limits(), &Cancel::new(),
     );
-    assert!(matches!(result, Err(ProbabilityDocumentError::ZeroWeightComponent { .. })), "{result:?}");
+    let zero_key = &document.certificate.components.iter().find(|component| component.value == ratio(1,1)).unwrap().bias[0].state;
+    assert!(matches!(result, Err(ProbabilityDocumentError::ZeroWeightComponent { ref state }) if state == zero_key), "expected actual zero-component key");
     let records = analyze_items(
         &Engines::qsl().unwrap(),
         vec![exact_probabilistic_item(
@@ -233,6 +238,7 @@ fn reachable_zero_weight_components_remain_typed_unsupported() {
         panic!("{:?}", records[0]);
     };
     assert_eq!(disposed.kind, DispositionKind::Unsupported);
+    assert_eq!(disposed.diagnostic.as_ref().unwrap().code.cause(), "zero-weight-component");
     assert!(records[0].terminal().is_none());
     assert!(records[0].exact_probabilistic.is_none());
 }
