@@ -322,27 +322,49 @@ fn clock_place_reference(
         .map_err(|_| invariant("clock-place-reference-key-encoding-failed"))?;
     let owner_identity = clock_place_identity_component(owner.object().as_str().as_bytes());
     let place_identity = clock_place_identity_component(place_text.as_bytes());
-    let slot_indices = selectors
-        .into_iter()
-        .map(|selector| match selector {
-            Value::Integer(index) => Ok(index.to_string()),
-            _ => Err(invariant("clock-place-reference-slot-index-expected")),
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    let slots = if slot_indices.is_empty() {
-        "-".to_owned()
+    let mut identity = String::new();
+    identity.push_str("place/v1/");
+    identity.push_str(&owner_identity);
+    identity.push('/');
+    identity.push_str(&place_identity);
+    identity.push('/');
+    if selectors.is_empty() {
+        identity.push('-');
     } else {
-        slot_indices.join(".")
-    };
-    let object = ObjectId::new(format!(
-        "place/v1/{owner_identity}/{place_identity}/{slots}"
-    ))
-    .map_err(|_| invariant("clock-place-reference-identity-empty"))?;
+        for (position, selector) in selectors.into_iter().enumerate() {
+            let Value::Integer(index) = selector else {
+                return Err(invariant("clock-place-reference-slot-index-expected"));
+            };
+            if position != 0 {
+                identity.push('.');
+            }
+            identity.push_str(&clock_place_slot_index(index)?);
+        }
+    }
+    let object =
+        ObjectId::new(identity).map_err(|_| invariant("clock-place-reference-identity-empty"))?;
     Ok(ObjectReference::new(
         owner.universe().clone(),
         clock_type,
         object,
     ))
+}
+
+/// A checked slot is a concrete, non-negative sequence index; encode its
+/// decimal digits directly without consulting its display implementation.
+fn clock_place_slot_index(index: Integer) -> Result<String, Halt> {
+    let mut value = index
+        .to_u64()
+        .ok_or_else(|| invariant("clock-place-reference-slot-index-out-of-range"))?;
+    let mut digits = Vec::with_capacity(20);
+    loop {
+        digits.push(char::from(b'0' + (value % 10) as u8));
+        value /= 10;
+        if value == 0 {
+            break;
+        }
+    }
+    Ok(digits.into_iter().rev().collect())
 }
 
 /// FR-230 uses lowercase hex for identity components, including printable
