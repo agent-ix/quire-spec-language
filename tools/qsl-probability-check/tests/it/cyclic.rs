@@ -481,7 +481,7 @@ fn native_acyclicity_probe_uses_native_counts_and_working_storage_without_transp
     exact.model.limits.max_states = 0;
     assert!(matches!(
         probe(&source, exact, &Cancel::new()),
-        Err(qsl_replay::ExactProbBuildIssue::Limit {
+        Err(issue) if matches!(issue.as_ref(), qsl_replay::ExactProbBuildIssue::Limit {
             limit: qsl_replay::ModelCheckLimit::ExactProbMaxStates,
             value: 0
         })
@@ -490,7 +490,7 @@ fn native_acyclicity_probe_uses_native_counts_and_working_storage_without_transp
     exact.document.storage_bytes = 0;
     assert!(matches!(
         probe(&source, exact, &Cancel::new()),
-        Err(qsl_replay::ExactProbBuildIssue::Limit {
+        Err(issue) if matches!(issue.as_ref(), qsl_replay::ExactProbBuildIssue::Limit {
             limit: qsl_replay::ModelCheckLimit::CertificateMaxWorkingBytes,
             value: 0
         })
@@ -499,7 +499,7 @@ fn native_acyclicity_probe_uses_native_counts_and_working_storage_without_transp
     cancel.cancel(CancelCause::Requested);
     assert!(matches!(
         probe(&source, ExactProbLimits::default(), &cancel),
-        Err(qsl_replay::ExactProbBuildIssue::Cancelled(
+        Err(issue) if matches!(issue.as_ref(), qsl_replay::ExactProbBuildIssue::Cancelled(
             CancelCause::Requested
         ))
     ));

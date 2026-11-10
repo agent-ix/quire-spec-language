@@ -10,7 +10,7 @@ pub fn admit_acyclic_probabilistic_refutation_subject(
     system: &ModelSystem<'_>,
     limits: &crate::ExactProbLimits,
     cancel: &Cancel,
-) -> Result<bool, crate::ExactProbBuildIssue> {
+) -> Result<bool, Box<crate::ExactProbBuildIssue>> {
     let used = std::cell::RefCell::new(0_u64);
     let failure = std::cell::RefCell::new(None);
     let mut meter = quire_exact::Meter::new(system.meter_limits()).with_cancel(cancel.clone());
@@ -65,7 +65,7 @@ pub fn admit_acyclic_probabilistic_refutation_subject(
         &mut |failure| issue = Some(failure),
     );
     if let Some(error) = failure.into_inner().or(issue) {
-        return Err(error);
+        return Err(Box::new(error));
     }
     let mut admission_issue = None;
     let result = result.and_then(|graph| {
@@ -125,7 +125,7 @@ pub fn admit_acyclic_probabilistic_refutation_subject(
         topological_order(&graph, cancel).map(|_| ())
     });
     if let Some(issue) = admission_issue {
-        return Err(issue);
+        return Err(Box::new(issue));
     }
     match result {
         Ok(()) => Ok(true),
@@ -151,6 +151,7 @@ pub fn admit_acyclic_probabilistic_refutation_subject(
         }),
         Err(_) => Err(crate::ExactProbBuildIssue::BrokenInvariant),
     }
+    .map_err(Box::new)
 }
 
 fn charge(used: &mut u64, bound: u64, bytes: usize) -> Result<(), ProbabilityDocumentError> {
