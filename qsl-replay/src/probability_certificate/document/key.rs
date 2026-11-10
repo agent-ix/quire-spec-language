@@ -274,6 +274,74 @@ mod tests {
     use super::*;
     use ix_trace_rs::trace;
 
+    #[trace("TC-636", "FR-201-AC-22", "FR-282-AC-17")]
+    #[test]
+    fn model_keys_share_the_exact_cumulative_graph_storage_ceiling() {
+        let models = [
+            super::super::tests::model_bytes(0),
+            super::super::tests::model_bytes(1),
+        ];
+        let cancel = Cancel::new();
+        let defaults = ProbabilityDocumentIoLimits::default();
+        let mut used = 0;
+        let mut expected = Vec::new();
+        let mut individual = 0;
+        for model in models {
+            let mut own = 0;
+            let key =
+                model_product_key_with_storage(None, model, None, defaults, &cancel, &mut own)
+                    .unwrap();
+            individual = individual.max(own);
+            expected.push(key);
+            model_product_key_with_storage(None, model, None, defaults, &cancel, &mut used)
+                .unwrap();
+        }
+        let required = used;
+        assert!(
+            required > individual,
+            "shared graph storage must accumulate across distinct model keys"
+        );
+        for bound in [required, required - 1, individual] {
+            let limits = ProbabilityDocumentIoLimits {
+                storage_bytes: bound,
+                ..defaults
+            };
+            let mut used = 0;
+            for (index, model) in models.into_iter().enumerate() {
+                let result =
+                    model_product_key_with_storage(None, model, None, limits, &cancel, &mut used);
+                if index == 0 || bound == required {
+                    assert_eq!(result.unwrap(), expected[index]);
+                } else {
+                    assert!(matches!(
+                        result,
+                        Err(ProbabilityDocumentError::Limit {
+                            limit: ProbabilityDocumentLimit::StorageBytes,
+                            bound: actual_bound,
+                            actual,
+                        }) if actual_bound == bound && actual > bound
+                    ));
+                }
+            }
+            if bound == required {
+                assert_eq!(used, required);
+            }
+        }
+        for model in models {
+            assert!(model_product_key(
+                None,
+                model,
+                None,
+                ProbabilityDocumentIoLimits {
+                    storage_bytes: individual,
+                    ..defaults
+                },
+                &cancel,
+            )
+            .is_ok());
+        }
+    }
+
     #[trace("FR-196-AC-6", "FR-201-AC-9", "FR-255-AC-1")]
     #[test]
     fn real_model_form_is_embedded_once_under_exact_constructor_budgets() {
