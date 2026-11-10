@@ -364,6 +364,103 @@ No policy, component partition, formula AST or additional body field is added.
   Proof coverage alone is extended: FR-202 native cyclic refutations,
   QSpec FR-413 wire, fairness, timed, long-run and reward coverage remain open.
 
+### Closed cyclic MDP eventual document profile
+
+For checked untimed infinite-trace `probability op c [eventually holds(P)]`
+claims over every scheduler, the codec SHALL additionally admit
+`"quire.probability-objective/cyclic-mdp-eventual/v1"`. This separate proof
+profile SHALL retain exactly the reachability objective's `profile`,
+`targets`, `optimization` and `fairness` members and the existing exact
+`identity`, `objective`, `kind`, `values` and `ranking` document body.
+`kind` SHALL be `"exact"`; `fairness` SHALL be empty. No policy, action
+ordinal, action-key transport, qualitative-set field or formula AST is added.
+
+- Admission SHALL require a finite untimed Markov subject, one initial
+  state, at most one actual S3 binding and the existing single-post-per-draw
+  restrictions. The checker SHALL reconstruct EVERY enabled semantic action
+  distribution from the checked subject rather than select a producer
+  policy or merge different actions into one workload distribution. Multiple
+  choices and real cycles are admitted. Source `Every` AtLeast SHALL select
+  `"minimum"`; `Every` AtMost SHALL select `"maximum"`. This profile adds
+  no minimum AtMost or maximum AtLeast source mode. Workload, fairness,
+  rewards, clocks, other temporal forms, pending multi-post choice, interval
+  kinds and refutation documents remain outside this profile.
+- Preserve full original-subject identity, action/draw and Markov admission,
+  including beyond an early P, under the actual caller controls. The checker
+  SHALL independently evaluate the checked P occurrence and binding while
+  traversing the initial graph BEFORE first P, stopping outgoing expansion
+  at reached P. Objective targets, values and ranks SHALL cover precisely
+  this stopped graph. A state reachable only after P contributes no row;
+  query-P evaluation solely after P is not required. Earlier subject
+  admission refusals remain authoritative. Full binding-bearing model keys
+  SHALL use the existing FR-196 owner, with absent monitor, accumulator,
+  fairness context and pending components actually null, not invented ids.
+- Every value SHALL be an exact rational in [0,1]. A target SHALL have
+  value 1 and a non-target terminal value 0. At each other state s and
+  independently rederived action a, compute
+  `Q_a(v,s) = sum_t p(s,a,t) * v(t)` with exact nonnegative probabilities
+  whose complete action mass is 1. For minimum, check
+  `v(s) = min_a Q_a(v,s)`; for maximum, check
+  `v(s) = max_a Q_a(v,s)`. A tight action means exact equality
+  `Q_a(v,s) = v(s)`, not closeness under a tolerance. All source actions
+  SHALL enter these comparisons, including nonselected and tied actions.
+- Let Z be the offered zero-valued non-target states. Every target and
+  every state in Z SHALL have rank 0; every positive-valued non-target
+  state SHALL have positive natural-number rank. Lower-rank successors
+  MAY have value 0: the progress boundary is targets UNION Z, not targets
+  alone and not positive-valued successors only. A probability-zero edge
+  SHALL NOT establish progress or positive-support closure.
+- For minimum, EVERY enabled action at EVERY positive-valued non-target
+  state SHALL have SOME positive-probability successor of strictly smaller
+  rank. Every live state in Z SHALL admit SOME enabled action whose entire
+  positive-probability support lies in Z. This zero-support action also
+  follows from exact min Bellman equality and nonnegative values, but the
+  checker SHALL establish that condition rather than trust an asserted
+  `Prob0` label. A false terminal needs no enabled action; its implicit
+  stutter remains in Z. No universal progress obligation applies to Z.
+- For maximum, EVERY positive-valued non-target state SHALL admit SOME
+  TIGHT maximizing action with SOME positive-probability lower-rank
+  successor. Progress under a nontight action SHALL NOT satisfy this rule.
+  Exact max Bellman equality at a live state in Z forces ALL enabled
+  actions to remain in Z; the checker SHALL retain that consequence.
+  These ranks certify progress and need not equal producer BFS distances
+  or SCC heights. Other edges may retain or increase rank.
+- The checker SHALL verify these conditions without solving equations,
+  importing producer values/classifications, policy iteration or a policy
+  witness. In a finite MDP, minimum progress makes target-or-Z absorption
+  almost sure under every policy; choose tight minimizing actions outside
+  Z and zero-support actions in Z to realize v. Maximum progress supplies
+  a proper tight policy outside Z, realizing v, while Bellman inequalities
+  bound every other policy from above, including improper policies. Thus
+  both values are exact extrema, not arbitrary Bellman fixed points.
+  The required finite progress rankings exist for the genuine optimal
+  values; a tie to a waiting self-loop is not an attaining-policy proof.
+- Independently check the admitted initial threshold inclusively. Existing
+  S3 probability endpoint admission remains unchanged: source thresholds
+  0 and 1 are refused, although transported values 0 and 1 are valid.
+  Wrong Bellman values or zero-support conditions SHALL reject
+  `InequalityFails` at the first failing complete key; wrong boundary or
+  progress ranks SHALL reject `RankBroken` there. A valid exact vector
+  missing its initial threshold SHALL reject `ThresholdMissed`. Identity
+  conflict refuses before enumeration; changed targets, optimization,
+  fairness or profile refuses objective mismatch. Malformed/duplicate/
+  missing/out-of-order data and foreign-binding or model-only keys retain
+  existing typed rule/locus behavior, including `Malformed` at `values` or
+  `ranking` for structural coverage errors. No failure or stop yields an
+  accepted token or a refutation.
+- Original/stopped expansion, all action/draw reconstruction, internal
+  raw/current/candidate/post/full keys, exact action sums, zero support,
+  progress passes and retained rows SHALL preserve the real caller's byte,
+  state/edge, representation/arithmetic and cumulative work/storage limits
+  and actual cancellation cause. Undefined P or source evaluation SHALL
+  retain typed nonacceptance rather than false, zero or a missing action.
+  Zero direct `over` instances retain `UnsupportedBinding` and unsupported
+  disposal without invented evidence. Existing profiles retain their
+  bytes, admission and verdicts; an eligible existing acyclic or cyclic
+  DTMC producer SHALL retain its existing profile preference. No completed
+  runtime, full repository/all-expansion FR-201-AC-30 assurance or shared
+  FR-413 witness transport is claimed by this specification.
+
 ### General checking conditions
 
 - Digital timed certificate objectives SHALL select ADR-028 §13a from the
@@ -884,6 +981,10 @@ another same-dimension UnitId SHALL NOT substitute for that identity.
 | FR-201-AC-36 | A zero-cost retry with positive exit probability accepts V(s)=V(B)=0 and ranks (1,0), including either bound at 0. Giving s rank 0 rejects RankBroken despite zero values. A closed non-B zero-cost self-loop or cycle rejects otherwise Bellman-valid finite V=0 evidence as RankBroken; the producer preserves FR-198 infinity without a finite document. Initial B accepts only its zero value/rank even when its original outgoing operation has positive cost. An admitted A-to-B subject with a positive-cost cycle reachable solely after B accepts first-hit evidence with rows only for A and B; adding after-B value/rank/target keys rejects the specified coverage/objective rule. | Test |
 | FR-201-AC-37 | AC-35/36 documents round-trip canonically through a fresh checker without analyzer/provider linkage. Changed actual reward name/model/unit, target set, optimization/profile or binding prevents acceptance; dimension-equivalent foreign UnitIds are not aliases. Noncanonical rational/JSON/key data, malformed or duplicate/missing/out-of-order rows, model-only keys, false Bellman values, and absent/wrong progress ranks retain precise rule/locus diagnostics. The old acyclic reward and probability/long-run profile bytes/verdicts remain unchanged; an eligible acyclic producer keeps its existing profile. | Test |
 | FR-201-AC-38 | Pre-cancellation and phase-observed Requested/Deadline or byte/state/edge/work/storage/representation/arithmetic exhaustion during original/stopped admission, raw/internal/full keys, draw/B/reward/unit evaluation, progress checking and exact sums preserve the actual typed cause with no accepted truth. Earlier model refusals and deferred undefined/negative evaluation are not coerced to zero. Unsupported kind/shape/fairness/every-scheduler, multi-post or refutation/infinity requests emit no finite cyclic reward proof. Direct zero over instances retain UnsupportedBinding/unsupported without a fabricated binding, terminal verdict, certificate or counterexample. | Test |
+| FR-201-AC-39 | A live state s has actions a with probabilities (self,target,fail)=(1/2,1/5,3/10) and b with (1/2,2/5,1/10). With target value 1 and false-terminal fail value 0, the new profile accepts minimum 2/5 under AtLeast 2/5 and maximum 4/5 under AtMost 4/5, with rank(s)=1 and boundary ranks 0. Minimum AtLeast 1/2 and maximum AtMost 3/4 reject ThresholdMissed. Changing an otherwise matching actual action probability, omitting a source action from the extremum or replacing separate actions by their averaged distribution cannot verify the old vector. Separately let S choose A=(1/2 fail,1/2 T) or B=(1/4 fail,3/4 T), and let T step to target with probability 2/3 and S with 1/3. Minimum (vS,vT)=(2/5,4/5) and maximum (2/3,8/9) accept with rank(S)=rank(T)=1 and boundary ranks 0: S progresses only to value-zero fail, while its positive successor T has equal rank. | Test |
+| FR-201-AC-40 | For wait-to-self versus go-to-target, the actual minimum is 0. A bogus minimum v(s)=1/2 satisfies Bellman equality but rejects RankBroken because wait supplies no lower-rank successor, even though go does. For wait-to-self versus attempt to target/fail with probabilities 4/5 and 1/5, the maximum is 4/5: bogus v(s)=9/10 is a Bellman fixed point through wait but rejects RankBroken because only the nontight attempt progresses; at v(s)=4/5 the tight attempt and rank 1 accept under AtMost 19/20. Zero-valued live minimum states require a closed zero-support action; maximum zeros require all action supports to remain zero. Lower-rank value-zero successors count, but probability-zero successors do not. | Test |
+| FR-201-AC-41 | AC-39/40 valid documents round-trip canonical bytes through a fresh checker without analyzer/provider linkage. Target/non-target-terminal boundaries, stopped targets/coverage and complete full-key bindings are independently checked. Wrong objective/identity, malformed rational/JSON/key data, duplicate/missing/out-of-order values or ranks, extra after-target rows, model-only keys, false Bellman values, zero support and rank progress prevent acceptance with the specified rule/locus. A valid post-target cycle alone does not add certificate rows. Earlier profile bytes/verdicts and eligible producer preferences remain unchanged. | Test |
+| FR-201-AC-42 | Actual pre-cancellation and phase-observed Requested/Deadline or byte/state/edge/work/storage/representation/arithmetic exhaustion during original/stopped admission, raw/internal/full keys, all-action and draw reconstruction, min/max sums, zero-support and progress checks retain their real typed cause without an accepted truth. Undefined predicates/workload or source refusals are not coerced to zero or dropped actions. Fairness, workload selection, rewards, timed/general temporal, pending multi-post, multiple-initial/binding, non-exact or refutation requests issue no new-profile proof. Zero direct instances retain UnsupportedBinding/unsupported without fabricated evidence. Existing source thresholds 0/1 stay refused and no new min-AtMost/max-AtLeast syntax is added. | Test |
 
 ## Dependencies
 
