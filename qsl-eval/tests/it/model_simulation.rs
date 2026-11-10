@@ -1931,6 +1931,64 @@ fn link_repeated(source: &str, target: &str, times: usize) -> Json {
     }])
 }
 
+#[trace("TC-471", "FR-120-AC-4", "FR-120-AC-27")]
+#[test]
+fn raw_model_key_preserves_legacy_reference_enum_and_extent_vectors() {
+    let mut enums = build_world_with_enum_mode(Vec::new(), "").expect("enum fixture checks");
+    let first = enums.start(
+        "enum-forward",
+        &[Obj("c1", 2, 1, Some("c2")), Obj("c2", 1, 0, None)],
+    );
+    let second = enums.start(
+        "enum-reverse",
+        &[Obj("c2", 1, 0, None), Obj("c1", 2, 1, Some("c2"))],
+    );
+    let enum_system = self::system(&enums, vec![first, second], &["c1", "c2"], UNLIMITED);
+    let states = enum_system.initial();
+    let first = enum_system.state_key(&states[0]).expect("enum key");
+    let second = enum_system
+        .state_key(&states[1])
+        .expect("permuted enum key");
+    assert_eq!(
+        first, second,
+        "object document order must not change the key"
+    );
+    println!(
+        "LEGACY_ENUM_KEY={}",
+        String::from_utf8(first.0).expect("UTF-8")
+    );
+
+    let mut extents = build_world_with(Vec::new(), "", false, vec![link_relationship()])
+        .expect("relationship fixture checks");
+    let linked = extents.snapshot_with(
+        "linked-key-vector",
+        "current",
+        json!({"kind": "initialization", "name": "start"}),
+        &[Obj("c1", 2, 1, Some("c2")), Obj("c2", 1, 0, None)],
+        link_repeated("c1", "c2", 2),
+    );
+    let unlinked = extents.start(
+        "unlinked-key-vector",
+        &[Obj("c2", 1, 0, None), Obj("c1", 2, 1, Some("c2"))],
+    );
+    let extent_system = self::system(&extents, vec![linked, unlinked], &["c1", "c2"], UNLIMITED);
+    let states = extent_system.initial();
+    let linked = extent_system.state_key(&states[0]).expect("extent key");
+    let unlinked = extent_system.state_key(&states[1]).expect("unlinked key");
+    assert_ne!(
+        linked, unlinked,
+        "repeated relationship pairs belong to the key"
+    );
+    println!(
+        "LEGACY_EXTENT_KEY={}",
+        String::from_utf8(linked.0).expect("UTF-8")
+    );
+    println!(
+        "LEGACY_UNLINKED_KEY={}",
+        String::from_utf8(unlinked.0).expect("UTF-8")
+    );
+}
+
 /// Deleting `c1` drops its listed link and a later `spawn` recreates `c1`
 /// with the same fields, so the recreated state has the initial state's
 /// objects and none of its extent. The two are different states, so they
