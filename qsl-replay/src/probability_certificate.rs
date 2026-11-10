@@ -123,6 +123,19 @@ impl ProbabilityProductKey {
     ) -> Result<Self, ProbabilityDocumentError> {
         document::model_product_key(binding, model_bytes, Some(monitor), limits, cancel)
     }
+
+    /// Construct the complete formula key using the raw identity policy and
+    /// the caller's cumulative work and storage admission.
+    pub fn for_formula_state_with_budget(
+        binding: Option<&ObjectReference>,
+        model_bytes: &[u8],
+        monitor: &qsl_eval::automaton::AutomatonStateKey,
+        identity: qsl_foundation::IdentityLimits,
+        budget: &mut dyn qsl_eval::simulation::model::ModelKeyBudget,
+        cancel: &Cancel,
+    ) -> Result<Self, qsl_eval::simulation::model::ModelKeyError> {
+        document::formula_product_key_with_budget(binding, model_bytes, Some(monitor), identity, budget, cancel)
+    }
 }
 
 /// The timed-tail control included in an FR-204 model key.

@@ -526,6 +526,16 @@ impl<'a> ModelSystem<'a> {
         self.package
     }
 
+    /// Resolve a checked operation's declaring type without substituting the
+    /// receiver's inheriting type. Owner-chain lookup work belongs to the caller.
+    pub fn declaration_key_with_work<E>(
+        &self,
+        effective: &EffectiveId,
+        work: &mut impl FnMut(u64) -> Result<(), E>,
+    ) -> Result<Option<&DeclarationKey>, E> {
+        self.model.declaration_key_with_work(effective, work)
+    }
+
     /// Every field some operation's frame grants: the fields it writes and
     /// every field of a type it creates.
     fn granted(&self) -> BTreeSet<DeclarationKey> {

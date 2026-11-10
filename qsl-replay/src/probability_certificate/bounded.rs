@@ -92,6 +92,38 @@ pub(super) fn enumerate(
     cancel: &Cancel,
     failure: &mut impl FnMut(crate::ExactProbBuildIssue),
 ) -> Result<(CheckerGraph, BTreeMap<ProbabilityProductKey, u64>), ProbabilityDocumentError> {
+    enumerate_controlled(system, formula, context, binding, workload, limits, cancel, failure, None)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn enumerate_with_budget(
+    system: &ModelSystem<'_>,
+    formula: &CheckedTemporalFormula,
+    context: &StateContext,
+    binding: Option<&ObjectReference>,
+    workload: Option<&Workload>,
+    limits: ProbabilityDocumentLimits,
+    cancel: &Cancel,
+    failure: &mut impl FnMut(crate::ExactProbBuildIssue),
+    meter: &mut quire_exact::Meter,
+    storage: &mut u64,
+) -> Result<(CheckerGraph, BTreeMap<ProbabilityProductKey, u64>), ProbabilityDocumentError> {
+    enumerate_controlled(system, formula, context, binding, workload, limits, cancel, failure, Some((meter, storage)))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn enumerate_controlled(
+    system: &ModelSystem<'_>,
+    formula: &CheckedTemporalFormula,
+    context: &StateContext,
+    binding: Option<&ObjectReference>,
+    workload: Option<&Workload>,
+    limits: ProbabilityDocumentLimits,
+    cancel: &Cancel,
+    failure: &mut impl FnMut(crate::ExactProbBuildIssue),
+    scope: Option<(&mut quire_exact::Meter, &mut u64)>,
+) -> Result<(CheckerGraph, BTreeMap<ProbabilityProductKey, u64>), ProbabilityDocumentError> {
+    let scope = std::cell::RefCell::new(scope);
     poll_cancel(cancel)?;
     if limits.states == 0 {
         return Err(state_limit(0, 1));
@@ -137,6 +169,16 @@ pub(super) fn enumerate(
         .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?;
     let first_control = Control::read(&monitor, first_control)?;
     let key_of = |model: &ModelSimState, control: Control, monitor: &QualifiedBoundedMonitor| {
+        if let Some((meter, storage)) = scope.borrow_mut().as_mut() {
+            let mut admission = ProbabilityKeyAdmission::new(meter, storage, limits.storage_bytes, cancel);
+            let identity = qsl_foundation::IdentityLimits::default();
+            let encoded = (|| {
+                let bytes = system.state_key_bytes_with_budget(model, identity, &mut admission, cancel)?;
+                let monitor = control.key(monitor).map_err(|_| qsl_eval::simulation::model::ModelKeyError::Unsupported("formula control identity"))?;
+                ProbabilityProductKey::for_formula_state_with_budget(binding, &bytes, &monitor, identity, &mut admission, cancel)
+            })();
+            return encoded.map_err(|error| admission.refusal(error));
+        }
         let (bytes, _) = system
             .state_key(model)
             .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?;
@@ -173,7 +215,12 @@ pub(super) fn enumerate(
         let Control::Running(running) = control else {
             return Err(ExactProbabilityGraphError::ExpansionRefused.into());
         };
-        let distributions = model_distributions(system, &model, workload, cancel, failure)?;
+        let distributions = if let Some((meter, storage)) = scope.borrow_mut().as_mut() {
+            let mut admission = ProbabilityKeyAdmission::new(meter, storage, limits.storage_bytes, cancel);
+            model_distributions_with_budget(system, &model, workload, qsl_foundation::IdentityLimits::default(), &mut admission, cancel)?
+        } else {
+            model_distributions(system, &model, workload, cancel, failure)?
+        };
         let mut choices = Vec::new();
         let mut successors = Vec::new();
         if distributions.is_empty() {

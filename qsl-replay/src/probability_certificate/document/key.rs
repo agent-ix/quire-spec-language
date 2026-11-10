@@ -108,6 +108,17 @@ pub(crate) fn model_product_key_with_budget(
     budget: &mut dyn qsl_eval::simulation::model::ModelKeyBudget,
     cancel: &Cancel,
 ) -> Result<ProbabilityProductKey, qsl_eval::simulation::model::ModelKeyError> {
+    formula_product_key_with_budget(binding, model_bytes, None, identity, budget, cancel)
+}
+
+pub(crate) fn formula_product_key_with_budget(
+    binding: Option<&ObjectReference>,
+    model_bytes: &[u8],
+    monitor: Option<&qsl_eval::automaton::AutomatonStateKey>,
+    identity: qsl_foundation::IdentityLimits,
+    budget: &mut dyn qsl_eval::simulation::model::ModelKeyBudget,
+    cancel: &Cancel,
+) -> Result<ProbabilityProductKey, qsl_eval::simulation::model::ModelKeyError> {
     use qsl_eval::simulation::model::ModelKeyError;
     use qsl_eval::simulation::EncodingRefusal;
     use quire_canonical::{Reservation, ReservationDenied};
@@ -159,10 +170,22 @@ pub(crate) fn model_product_key_with_budget(
     if encoded != model_bytes || !model_form(model.root()) {
         return Err(ModelKeyError::Unsupported("canonical raw model identity"));
     }
+    let monitor = monitor.map(|monitor| {
+        budget.work(u64::try_from(monitor.as_bytes().len()).unwrap_or(u64::MAX)).map_err(|_| ModelKeyError::Denied)?;
+        let parsed = quire_canonical::read_with_reservation(monitor.as_bytes(), identity.input_bytes, &mut Reserve(budget))
+            .map_err(|error| match error {
+                quire_canonical::ReadError::ReservationDenied { .. } => ModelKeyError::Denied,
+                _ => ModelKeyError::Unsupported("canonical formula monitor identity"),
+            })?;
+        if !automaton_key(parsed.root()) {
+            return Err(ModelKeyError::Unsupported("canonical formula monitor identity"));
+        }
+        Ok(parsed)
+    }).transpose()?;
     let product = Product {
         binding,
         model: model.root(),
-        monitor: None,
+        monitor: monitor.as_ref().map(|monitor| monitor.root()),
     };
     let bytes = writer::encode_admitted(&product, identity.input_bytes, &mut Reserve(budget))
         .map_err(|error| match error {
