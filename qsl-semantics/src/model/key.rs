@@ -82,6 +82,17 @@ impl<'a> ModelNodeIdentity<'a> {
             .map(|node| Self { node })
     }
 
+    /// Emit the shared borrowed model-node recipe through an admitted sink.
+    ///
+    /// # Errors
+    /// The sink's typed admission or encoding refusal.
+    pub fn project<S: qsl_foundation::node_wire::NodeIdentitySink>(
+        &self,
+        sink: &mut S,
+    ) -> Result<(), S::Error> {
+        self.node.project(sink)
+    }
+
     pub(crate) fn to_node_key(self) -> Result<NodeKey, InvalidNodeKey> {
         crate::check::declared_node_key(
             self.node.package().to_owned(),
@@ -307,4 +318,50 @@ pub fn universe_identity_refusal(
             detail: "the object universe declares no root object type".to_owned(),
         },
     }
+}
+
+pub(crate) fn text_equal_with_work<E>(
+    left: &str,
+    right: &str,
+    work: &mut impl FnMut(u64) -> Result<(), E>,
+) -> Result<bool, E> {
+    work(1)?;
+    if left.len() != right.len() {
+        return Ok(false);
+    }
+    for (left, right) in left.bytes().zip(right.bytes()) {
+        work(1)?;
+        if left != right {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+pub(crate) fn declaration_equal_with_work<E>(
+    left: &DeclarationKey,
+    right: &DeclarationKey,
+    work: &mut impl FnMut(u64) -> Result<(), E>,
+) -> Result<bool, E> {
+    Ok(text_equal_with_work(&left.package, &right.package, work)?
+        && text_equal_with_work(&left.node, &right.node, work)?)
+}
+pub(crate) fn effective_equal_with_work<E>(
+    left: &EffectiveId,
+    right: &EffectiveId,
+    work: &mut impl FnMut(u64) -> Result<(), E>,
+) -> Result<bool, E> {
+    work(1)?;
+    let (left, right) = (left.owner_chain(), right.owner_chain());
+    if left.len() != right.len() {
+        return Ok(false);
+    }
+    for (left, right) in left.iter().zip(right) {
+        work(1)?;
+        if !text_equal_with_work(left.package(), right.package(), work)?
+            || !text_equal_with_work(left.node(), right.node(), work)?
+        {
+            return Ok(false);
+        }
+    }
+    Ok(true)
 }

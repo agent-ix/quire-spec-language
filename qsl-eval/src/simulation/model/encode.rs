@@ -517,12 +517,7 @@ impl<'a> DeclarationRecord<'a> {
 
 impl Encode for DeclarationRecord<'_> {
     fn encode_into<S: Sink + ?Sized>(&self, writer: &mut Writer<'_, S>) -> Result<(), Error> {
-        writer.begin_object()?;
-        for (name, value) in declaration_members(*self) {
-            writer.name(name)?;
-            writer.string(value)?;
-        }
-        writer.end_object()
+        projection::write_declaration(writer, *self)
     }
 }
 
@@ -532,23 +527,7 @@ fn write_effective<S: Sink + ?Sized>(
     writer: &mut Writer<'_, S>,
     id: &EffectiveId,
 ) -> Result<(), Error> {
-    let chain = id.owner_chain();
-    for original in chain.iter().rev() {
-        writer.begin_object()?;
-        writer.name("original")?;
-        writer.begin_object()?;
-        writer.name("node")?;
-        writer.string(original.node())?;
-        writer.name("package")?;
-        writer.string(original.package())?;
-        writer.end_object()?;
-        writer.name("owner_effective_type")?;
-    }
-    writer.null()?;
-    for _ in chain {
-        writer.end_object()?;
-    }
-    Ok(())
+    projection::write_effective(writer, id)
 }
 
 /// A declaration's identity text: the RFC 8785 text of its

@@ -1476,6 +1476,20 @@ impl ModelView {
         self.declaration_key_borrowed(&effective)
     }
 
+    pub(crate) fn declaration_key_with_work<E>(
+        &self,
+        effective: &EffectiveId,
+        work: &mut impl FnMut(u64) -> Result<(), E>,
+    ) -> Result<Option<&DeclarationKey>, E> {
+        for (candidate, key) in &self.by_effective_id {
+            work(1)?;
+            if crate::model::key::effective_equal_with_work(candidate, effective, work)? {
+                return Ok(Some(key));
+            }
+        }
+        Ok(None)
+    }
+
     pub(crate) fn declaration_key_borrowed(
         &self,
         effective: &EffectiveId,

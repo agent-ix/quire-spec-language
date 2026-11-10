@@ -7,7 +7,7 @@ use std::ops::Range;
 
 use qsl_foundation::{IdentityLimits, Setting};
 use qsl_semantics::model::state::{ModelState, StateField, StateModel, StateObject};
-use quire_canonical::{Encode, Error, Limits, Sink, Writer};
+use quire_canonical::{Error, Limits, Sink, Writer};
 use quire_checked::key::DeclarationKey;
 use quire_exact::{
     Cancel, Integer, IntegerDecimalBudget, IntegerDecimalBudgetError, NodeKey, ReservationDenied,
@@ -29,6 +29,7 @@ struct Scope<'a> {
 
 impl Scope<'_> {
     fn poll(&self) -> Result<(), ModelKeyError> {
+        self.cancel.poll();
         match self.cancel.tripped() {
             Some(cause) => Err(ModelKeyError::Cancelled(cause)),
             None => Ok(()),
@@ -135,6 +136,10 @@ impl Scope<'_> {
     }
 
     fn integer(&self, value: &Integer) -> Result<Vec<u8>, ModelKeyError> {
+        let text = self.decimal(value)?;
+        self.text(&text)
+    }
+    fn decimal(&self, value: &Integer) -> Result<String, ModelKeyError> {
         self.poll()?;
         self.budget
             .borrow_mut()
@@ -168,7 +173,68 @@ impl Scope<'_> {
                     quire_exact::IntegerDecimalError::OutputSizeOverflow,
                 ) => ModelKeyError::SizeOverflow,
             })?;
-        self.text(&text)
+        Ok(text)
+    }
+
+    fn text_equal(&self, left: &str, right: &str) -> Result<bool, ModelKeyError> {
+        self.work(1)?;
+        if left.len() != right.len() {
+            return Ok(false);
+        }
+        for (left, right) in left.bytes().zip(right.bytes()) {
+            self.work(1)?;
+            if left != right {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+
+    fn node_equal(&self, left: &NodeKey, right: &NodeKey) -> Result<bool, ModelKeyError> {
+        use quire_exact::{NodeKeyView, PathSegmentView};
+        let head = |left: NodeKeyView<'_>, right: NodeKeyView<'_>| -> Result<bool, ModelKeyError> {
+            self.work(1)?;
+            Ok(left.ordinal() == right.ordinal()
+                && self.text_equal(left.package(), right.package())?)
+        };
+        let (left, right) = (left.view(), right.view());
+        if !head(left, right)? {
+            return Ok(false);
+        }
+        let mut stack = Vec::new();
+        self.reserve(&mut stack, 1)?;
+        stack.push((left.path(), right.path()));
+        while let Some((left, right)) = stack.last_mut() {
+            self.work(1)?;
+            match (left.next(), right.next()) {
+                (Some(PathSegmentView::Text(left)), Some(PathSegmentView::Text(right))) => {
+                    if !self.text_equal(left, right)? {
+                        return Ok(false);
+                    }
+                }
+                (Some(PathSegmentView::Node(left)), Some(PathSegmentView::Node(right))) => {
+                    if !head(left, right)? {
+                        return Ok(false);
+                    }
+                    self.reserve(&mut stack, 1)?;
+                    stack.push((left.path(), right.path()));
+                }
+                (None, None) => {
+                    stack.pop();
+                }
+                _ => return Ok(false),
+            }
+        }
+        Ok(true)
+    }
+
+    fn declaration_equal(
+        &self,
+        left: &DeclarationKey,
+        right: &DeclarationKey,
+    ) -> Result<bool, ModelKeyError> {
+        Ok(self.text_equal(&left.package, &right.package)?
+            && self.text_equal(&left.node, &right.node)?)
     }
 
     fn refuse(&self, error: ModelKeyError) -> Error {
@@ -418,18 +484,53 @@ impl StructuralSink for Bounded<'_, '_> {
         self.leaf(self.scope.text(source)?)
     }
     fn node(&mut self, source: &NodeKey) -> Result<(), Self::Error> {
-        self.leaf(
-            self.scope
-                .canonical(|writer| qsl_foundation::node_wire::encode_node_key(source, writer))?,
-        )
+        qsl_foundation::node_wire::project_node_key(source, self)
     }
     fn effective(&mut self, source: &quire_exact::EffectiveId) -> Result<(), Self::Error> {
-        self.leaf(
-            self.scope
-                .canonical(|writer| super::write_effective(writer, source))?,
-        )
+        projection::project_effective(self, source)
+    }
+    fn null(&mut self) -> Result<(), Self::Error> {
+        self.scalar(Scalar::Null)
     }
 }
+impl qsl_foundation::node_wire::NodeIdentitySink for Bounded<'_, '_> {
+    type Error = ModelKeyError;
+    fn visit(&mut self) -> Result<(), Self::Error> {
+        self.scope.work(1)
+    }
+    fn begin_object(&mut self) -> Result<(), Self::Error> {
+        StructuralSink::begin_object(self)
+    }
+    fn name(&mut self, name: &'static str) -> Result<(), Self::Error> {
+        StructuralSink::name(self, name)
+    }
+    fn ordinal(&mut self, ordinal: u64) -> Result<(), Self::Error> {
+        let text = self.scope.decimal(&Integer::from(ordinal))?;
+        self.leaf(text.into_bytes())
+    }
+    fn text(&mut self, text: &str) -> Result<(), Self::Error> {
+        StructuralSink::text(self, text)
+    }
+    fn begin_array(&mut self) -> Result<(), Self::Error> {
+        self.begin(false, ArrayOrder::Retained)
+    }
+    fn end_array(&mut self) -> Result<(), Self::Error> {
+        self.end()
+    }
+    fn end_object(&mut self) -> Result<(), Self::Error> {
+        self.end()
+    }
+    fn push_path<'a>(
+        &mut self,
+        stack: &mut Vec<quire_exact::NodePathIter<'a>>,
+        path: quire_exact::NodePathIter<'a>,
+    ) -> Result<(), Self::Error> {
+        self.scope.reserve(stack, 1)?;
+        stack.push(path);
+        Ok(())
+    }
+}
+
 impl ValueSink for Bounded<'_, '_> {
     fn visit(&mut self) -> Result<(), Self::Error> {
         self.scope.work(1)
@@ -449,13 +550,20 @@ impl ValueSink for Bounded<'_, '_> {
                 }
                 self.formatted(Hex(bits, digits))
             }
-            Scalar::Scale(value) => self.formatted(value),
+            Scalar::Scale(value) => self.leaf(self.scope.integer(&Integer::from(value))?),
             Scalar::Uuid(value) => self.formatted(value),
-            Scalar::Timestamp(value) => self.formatted(value),
+            Scalar::Timestamp(value) => {
+                self.leaf(self.scope.integer(&Integer::from(value.nanoseconds()))?)
+            }
             Scalar::Node(value) => self.node(value),
             Scalar::Effective(value) => self.effective(value),
             Scalar::Declaration(value) => {
-                let bytes = self.scope.canonical(|writer| value.encode_into(writer))?;
+                let mut nested = Bounded::new(self.scope);
+                projection::project_declaration(&mut nested, value)?;
+                let bytes = nested
+                    .root
+                    .ok_or(ModelKeyError::Unsupported("declaration identity"))?
+                    .bytes;
                 self.text(
                     std::str::from_utf8(&bytes)
                         .map_err(|_| ModelKeyError::Unsupported("declaration UTF-8"))?,
@@ -471,19 +579,16 @@ impl ValueSink for Bounded<'_, '_> {
                 ..
             } => {
                 let (effective, universe) = model
-                    .reference_components(object_type)
+                    .reference_components_with_work(object_type, &mut |units| {
+                        self.scope.work(units)
+                    })?
                     .ok_or(ModelKeyError::Unsupported("unresolved object reference"))?;
                 let universe = universe
                     .identity_view()
                     .map_err(|_| ModelKeyError::Unsupported("universe identity"))?;
                 projection::project_reference_parts(
                     self,
-                    |sink| {
-                        sink.leaf(
-                            sink.scope
-                                .canonical(|writer| universe.encode_into(writer))?,
-                        )
-                    },
+                    |sink| universe.project(sink),
                     effective,
                     object,
                 )
@@ -518,12 +623,18 @@ impl ValueSink for Bounded<'_, '_> {
         types: &'t TypeEnvironment,
         key: &NodeKey,
     ) -> Result<Option<&'t CompositeDeclaration>, Self::Error> {
-        self.scope.work(1)?;
-        Ok(types.composite(key.clone()))
+        for declared in types.composites() {
+            self.scope.work(1)?;
+            // The owner key clone only retains its Arc. No identity tree is copied.
+            if self.scope.node_equal(&declared.key(), key)? {
+                return Ok(Some(declared));
+            }
+        }
+        Ok(None)
     }
     fn variant(&mut self, left: &VariantId, right: &VariantId) -> Result<bool, Self::Error> {
-        self.scope.work(1)?;
-        Ok(left == right)
+        Ok(self.scope.text_equal(left.case(), right.case())?
+            && self.scope.node_equal(left.owner(), right.owner())?)
     }
     fn fields(
         &mut self,
@@ -537,28 +648,33 @@ impl ValueSink for Bounded<'_, '_> {
         fields: &'t BTreeMap<DeclarationKey, Vec<StateField>>,
         key: &DeclarationKey,
     ) -> Result<Option<&'t [StateField]>, Self::Error> {
-        self.scope.work(1)?;
-        Ok(fields.get(key).map(Vec::as_slice))
+        for (candidate, fields) in fields {
+            self.scope.work(1)?;
+            if self.scope.declaration_equal(candidate, key)? {
+                return Ok(Some(fields.as_slice()));
+            }
+        }
+        Ok(None)
     }
     fn field<'v>(
         &mut self,
         object: &'v StateObject,
         key: &DeclarationKey,
     ) -> Result<Option<&'v Value>, Self::Error> {
-        self.scope.work(1)?;
-        Ok(object.fields.get(key))
+        for (candidate, value) in &object.fields {
+            self.scope.work(1)?;
+            if self.scope.declaration_equal(candidate, key)? {
+                return Ok(Some(value));
+            }
+        }
+        Ok(None)
     }
     fn declaration_equal(
         &mut self,
         left: &DeclarationKey,
         right: &DeclarationKey,
     ) -> Result<bool, Self::Error> {
-        self.scope.work(
-            (left.package.len().min(right.package.len())
-                + left.node.len().min(right.node.len())
-                + 2) as u64,
-        )?;
-        Ok(left == right)
+        self.scope.declaration_equal(left, right)
     }
     fn clock_count(&mut self, value: &Integer) -> Result<Option<u64>, Self::Error> {
         self.scope.work(1)?;
@@ -590,4 +706,122 @@ pub(crate) fn model_bytes(
     sink.root
         .map(|value| value.bytes)
         .ok_or(ModelKeyError::Unsupported("model identity"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ix_trace_rs::trace;
+
+    #[derive(Default)]
+    struct Admission {
+        storage: usize,
+        work: u64,
+        storage_limit: usize,
+        work_limit: u64,
+        integers: usize,
+        deny_integer: bool,
+    }
+    impl quire_exact::Reservation for Admission {
+        fn reserve(&mut self, bytes: usize) -> Result<(), ReservationDenied> {
+            let next = self.storage.checked_add(bytes).ok_or(ReservationDenied)?;
+            if next > self.storage_limit {
+                return Err(ReservationDenied);
+            }
+            self.storage = next;
+            Ok(())
+        }
+    }
+    impl IntegerDecimalBudget for Admission {
+        fn work(&mut self, units: u64) -> Result<(), ReservationDenied> {
+            let next = self.work.checked_add(units).ok_or(ReservationDenied)?;
+            if next > self.work_limit {
+                return Err(ReservationDenied);
+            }
+            self.work = next;
+            Ok(())
+        }
+    }
+    impl ModelKeyBudget for Admission {
+        fn integer(&mut self, _: &Integer) -> Result<(), ReservationDenied> {
+            self.integers += 1;
+            if self.deny_integer {
+                Err(ReservationDenied)
+            } else {
+                Ok(())
+            }
+        }
+    }
+
+    #[test]
+    #[trace("TC-471", "FR-120-AC-4")]
+    fn denied_model_projection_growth_leaves_actual_buffers_empty() {
+        let cancel = Cancel::new();
+        let mut budget = Admission {
+            work_limit: u64::MAX,
+            ..Admission::default()
+        };
+        let scope = Scope {
+            budget: RefCell::new(&mut budget),
+            cancel: &cancel,
+            identity: IdentityLimits::default(),
+            refused: RefCell::new(None),
+        };
+        let mut sink = Bounded::new(&scope);
+        assert_eq!(sink.begin_object(), Err(ModelKeyError::Denied));
+        assert_eq!(sink.stack.capacity(), 0);
+        let mut output = Vec::new();
+        assert_eq!(scope.append(&mut output, b"x"), Err(ModelKeyError::Denied));
+        assert_eq!(output.capacity(), 0);
+        drop(sink);
+        drop(scope);
+        assert_eq!(budget.storage, 0);
+
+        let mut budget = Admission {
+            storage_limit: usize::MAX,
+            work_limit: u64::MAX,
+            ..Admission::default()
+        };
+        let scope = Scope {
+            budget: RefCell::new(&mut budget),
+            cancel: &cancel,
+            identity: IdentityLimits { input_bytes: 0 },
+            refused: RefCell::new(None),
+        };
+        let mut sink = Bounded::new(&scope);
+        assert!(matches!(
+            sink.begin_object(),
+            Err(ModelKeyError::Encoding(EncodingRefusal::Limit(_)))
+        ));
+        assert_eq!(sink.stack.capacity(), 0);
+        drop(sink);
+        drop(scope);
+        assert_eq!(budget.storage, 0);
+    }
+
+    #[test]
+    #[trace("TC-471", "FR-120-AC-4")]
+    fn integer_representation_denial_precedes_decimal_work_and_storage() {
+        let integer = "987654321098765432109876543210987654321098765432109876543210"
+            .parse::<Integer>()
+            .unwrap();
+        let cancel = Cancel::new();
+        let mut budget = Admission {
+            storage_limit: usize::MAX,
+            work_limit: u64::MAX,
+            deny_integer: true,
+            ..Admission::default()
+        };
+        let scope = Scope {
+            budget: RefCell::new(&mut budget),
+            cancel: &cancel,
+            identity: IdentityLimits::default(),
+            refused: RefCell::new(None),
+        };
+        assert_eq!(scope.integer(&integer), Err(ModelKeyError::Denied));
+        drop(scope);
+        assert_eq!(budget.integers, 1);
+        assert_eq!(budget.storage, 0);
+        assert_eq!(budget.work, 0);
+    }
 }

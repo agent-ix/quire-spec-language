@@ -1953,7 +1953,10 @@ fn raw_model_key_preserves_legacy_reference_enum_and_extent_vectors() {
             Ok(())
         }
     }
-    fn bounded(system: &ModelSystem<'_>, state: &ModelSimState) -> Vec<u8> {
+    fn bounded(
+        system: &ModelSystem<'_>,
+        state: &qsl_eval::simulation::model::ModelSimState,
+    ) -> Vec<u8> {
         system
             .state_key_bytes_with_budget(
                 state,

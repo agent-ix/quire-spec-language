@@ -66,6 +66,7 @@ pub(super) trait StructuralSink {
     fn text(&mut self, source: &str) -> Result<(), Self::Error>;
     fn node(&mut self, source: &NodeKey) -> Result<(), Self::Error>;
     fn effective(&mut self, source: &EffectiveId) -> Result<(), Self::Error>;
+    fn null(&mut self) -> Result<(), Self::Error>;
 }
 
 /// Each sink owns its storage, scalar rendering, metadata lookup and ordering.
@@ -313,6 +314,9 @@ impl ValueSink for Retained {
 
 impl StructuralSink for Retained {
     type Error = Infallible;
+    fn null(&mut self) -> Result<(), Self::Error> {
+        self.scalar(Scalar::Null)
+    }
 
     fn begin_object(&mut self) -> Result<(), Self::Error> {
         self.stack.push(Frame::Object {
@@ -381,6 +385,9 @@ struct ReferenceWriter<'w, 's, S: Sink + ?Sized> {
 
 impl<S: Sink + ?Sized> StructuralSink for ReferenceWriter<'_, '_, S> {
     type Error = Error;
+    fn null(&mut self) -> Result<(), Self::Error> {
+        self.writer.null()
+    }
 
     fn begin_object(&mut self) -> Result<(), Self::Error> {
         self.writer.begin_object()
@@ -782,6 +789,55 @@ fn declaration<S: ValueSink>(sink: &mut S, key: &NodeKey) -> Result<(), S::Error
         Scalar::Unencodable("a declaration identity"),
         Scalar::Declaration,
     ))
+}
+
+pub(super) fn project_effective<S: StructuralSink>(
+    sink: &mut S,
+    id: &EffectiveId,
+) -> Result<(), S::Error> {
+    let chain = id.owner_chain();
+    for original in chain.iter().rev() {
+        sink.begin_object()?;
+        sink.name("original")?;
+        sink.begin_object()?;
+        sink.name("node")?;
+        sink.text(original.node())?;
+        sink.name("package")?;
+        sink.text(original.package())?;
+        sink.end_object()?;
+        sink.name("owner_effective_type")?;
+    }
+    // Structural encoders need a null event for the root owner.
+    sink.null()?;
+    for _ in chain {
+        sink.end_object()?;
+    }
+    Ok(())
+}
+
+pub(super) fn write_effective<S: Sink + ?Sized>(
+    writer: &mut Writer<'_, S>,
+    id: &EffectiveId,
+) -> Result<(), Error> {
+    project_effective(&mut ReferenceWriter { writer }, id)
+}
+
+pub(super) fn project_declaration<S: StructuralSink>(
+    sink: &mut S,
+    key: DeclarationRecord<'_>,
+) -> Result<(), S::Error> {
+    sink.begin_object()?;
+    for (name, value) in super::declaration_members(key) {
+        sink.name(name)?;
+        sink.text(value)?;
+    }
+    sink.end_object()
+}
+pub(super) fn write_declaration<S: Sink + ?Sized>(
+    writer: &mut Writer<'_, S>,
+    key: DeclarationRecord<'_>,
+) -> Result<(), Error> {
+    project_declaration(&mut ReferenceWriter { writer }, key)
 }
 
 pub(super) fn project_reference<S: StructuralSink>(

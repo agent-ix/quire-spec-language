@@ -578,6 +578,20 @@ impl EffectiveView {
             .and_then(|index| self.body.universes.get(*index))
     }
 
+    pub(crate) fn object_universe_with_work<E>(
+        &self,
+        type_key: &DeclarationKey,
+        work: &mut impl FnMut(u64) -> Result<(), E>,
+    ) -> Result<Option<&ObjectUniverse>, E> {
+        for (candidate, index) in &self.body.universe_index_by_type {
+            work(1)?;
+            if crate::model::key::declaration_equal_with_work(candidate, type_key, work)? {
+                return Ok(self.body.universes.get(*index));
+            }
+        }
+        Ok(None)
+    }
+
     /// The first object universe, ascending by first root type identity:
     /// the sole universe of a domain package whose object-type supertype
     /// graph has exactly one connected component. A domain package with
