@@ -110,7 +110,11 @@ fn the_incomplete_cells_are_one_below_the_counter_their_input_reaches() {
             panic!("a limited case");
         };
         let limited = run_case(&case).expect("the limited case runs");
-        assert_eq!(limited.exit_code(), 22, "{verb:?} must reach its stated limit");
+        assert_eq!(
+            limited.exit_code(),
+            22,
+            "{verb:?} must reach its stated limit"
+        );
         assert_eq!(diagnostic(&limited).0, "stage_limit_exceeded");
         let wrap = |input| match case.input {
             CaseInput::Check(_) => CaseInput::Check(input),
