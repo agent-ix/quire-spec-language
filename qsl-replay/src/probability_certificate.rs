@@ -22,6 +22,7 @@ use crate::identity::ObligationIdentity;
 mod bounded;
 mod key_admission;
 pub use key_admission::ProbabilityKeyAdmission;
+mod cyclic;
 mod document;
 mod reward;
 mod state_predicate;
