@@ -185,6 +185,15 @@ fn build_configured(
     let builder = Builder {
         system: &system,
         key_policy,
+        target_mode: if key_policy.is_some()
+            && matches!(
+                claim.form,
+                qsl_semantics::check::ProbForm::ExpectedReward { .. }
+            ) {
+            CandidateTargetMode::FirstRewardTarget
+        } else {
+            CandidateTargetMode::Continue
+        },
         workload,
         kind,
         plan,
@@ -350,9 +359,17 @@ struct TraceStep {
     probability: Rational,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum CandidateTargetMode {
+    Continue,
+    FirstRewardTarget,
+}
+
 struct Builder<'r, 'c, 'p, 'k> {
     system: &'r ModelSystem<'r>,
     key_policy: Option<&'p KeyPolicy<'k>>,
+    // The proof candidate needs only the first-target stopped reward graph.
+    target_mode: CandidateTargetMode,
     workload: Option<&'r Workload>,
     kind: ProductKind,
     plan: Plan<'c>,
@@ -448,6 +465,11 @@ impl Builder<'_, '_, '_, '_> {
             .filter_map(|(index, node)| match node.key.monitor {
                 Some(MonitorState::Formula(FormulaState::Decided(verdict))) => {
                     Some((ProbStateId(index), verdict))
+                }
+                _ if self.target_mode == CandidateTargetMode::FirstRewardTarget
+                    && node.truths.first() == Some(&true) =>
+                {
+                    Some((ProbStateId(index), super::MonitorVerdict::Accept))
                 }
                 _ => None,
             })
@@ -633,7 +655,9 @@ impl Builder<'_, '_, '_, '_> {
         let initial = parent
             .map(|parent| self.nodes[parent].initial)
             .unwrap_or(initial);
-        let decided = target.key.monitor.is_some_and(MonitorState::is_decided);
+        let decided = target.key.monitor.is_some_and(MonitorState::is_decided)
+            || (self.target_mode == CandidateTargetMode::FirstRewardTarget
+                && target.truths.first() == Some(&true));
         self.reserve_key(
             target
                 .key

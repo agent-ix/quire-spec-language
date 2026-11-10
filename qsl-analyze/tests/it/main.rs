@@ -135,3 +135,5 @@ mod cyclic_key_admission;
 mod long_run_key_admission;
 
 mod weighted_long_run_certificate;
+
+mod cyclic_reward_certificate;

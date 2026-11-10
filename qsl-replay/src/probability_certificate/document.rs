@@ -28,6 +28,7 @@ pub(super) use key::{model_product_key, model_product_key_with_budget};
 const PROFILE: &str = "quire.probability-objective/reachability/v1";
 const STATE_PROFILE: &str = "quire.probability-objective/state-predicate/v1";
 const REWARD_PROFILE: &str = "quire.probability-objective/expected-reward/v1";
+const CYCLIC_REWARD_PROFILE: &str = "quire.probability-objective/dtmc-expected-reward/v1";
 const CYCLIC_PROFILE: &str = "quire.probability-objective/cyclic-dtmc-eventual/v1";
 const MAX_COUNT: u64 = 9_007_199_254_740_991;
 
@@ -99,8 +100,8 @@ pub enum ProbabilityStateEvent {
 /// Exact probability or expected-reward evidence, before semantic checking.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProbabilityCertificateDocument {
-    /// Select the closed cyclic DTMC eventual profile, including for an
-    /// eligible acyclic DTMC. False preserves the existing profile selection.
+    /// Select the closed cyclic DTMC profile: eventual probability, or first-hit
+    /// expected reward when `reward` is present. False preserves legacy selection.
     pub cyclic_dtmc: bool,
     /// Structural claim identity.
     pub identity: ObligationIdentity,
@@ -116,7 +117,8 @@ pub struct ProbabilityCertificateDocument {
     pub optimization: ProbabilityObjective,
     /// Exact values, covering every reachable product state.
     pub values: Vec<ExactProbabilityValue>,
-    /// Required positive-value progress ranks, covering every reachable state.
+    /// Progress ranks for every reachable state. Cyclic reward requires progress
+    /// for every non-target state, including states whose reward value is zero.
     pub ranking: Vec<(ProbabilityProductKey, u64)>,
 }
 
@@ -552,7 +554,7 @@ fn read_document(
     let root = parsed.root();
     let objective = root.get("objective");
     let outside_profile = matches!(root.get("kind").map(|node| node.node()), Some(quire_canonical::Node::String(kind)) if kind != "exact")
-        || matches!(objective.and_then(|node| node.get("profile")).map(|node| node.node()), Some(quire_canonical::Node::String(profile)) if profile != PROFILE && profile != STATE_PROFILE && profile != REWARD_PROFILE && profile != CYCLIC_PROFILE)
+        || matches!(objective.and_then(|node| node.get("profile")).map(|node| node.node()), Some(quire_canonical::Node::String(profile)) if profile != PROFILE && profile != STATE_PROFILE && profile != REWARD_PROFILE && profile != CYCLIC_PROFILE && profile != CYCLIC_REWARD_PROFILE)
         || matches!(objective.and_then(|node| node.get("event")).map(|node| node.node()), Some(quire_canonical::Node::String(event)) if !matches!(event, "until" | "always"))
         || matches!(objective.and_then(|node| node.get("optimization")).map(|node| node.node()), Some(quire_canonical::Node::String(operator)) if !matches!(operator, "minimum" | "maximum" | "workload"))
         || match objective
@@ -607,14 +609,17 @@ fn read_document(
     if wire.kind != "exact"
         || !matches!(
             wire.objective.profile.as_str(),
-            PROFILE | STATE_PROFILE | REWARD_PROFILE | CYCLIC_PROFILE
+            PROFILE | STATE_PROFILE | REWARD_PROFILE | CYCLIC_PROFILE | CYCLIC_REWARD_PROFILE
         )
         || !wire.objective.fairness.is_empty()
     {
         return Err(ProbabilityDocumentError::Unsupported);
     }
     let state_profile = wire.objective.profile == STATE_PROFILE;
-    let reward_profile = wire.objective.profile == REWARD_PROFILE;
+    let reward_profile = matches!(
+        wire.objective.profile.as_str(),
+        REWARD_PROFILE | CYCLIC_REWARD_PROFILE
+    );
     if state_profile != wire.objective.event.is_some()
         || state_profile != wire.objective.failures.is_some()
         || reward_profile != wire.objective.reward.is_some()
@@ -688,7 +693,10 @@ fn read_document(
     ordered(ranking.iter().map(|(state, _)| state.clone()))?;
     poll(cancel)?;
     Ok(ProbabilityCertificateDocument {
-        cyclic_dtmc: wire.objective.profile == CYCLIC_PROFILE,
+        cyclic_dtmc: matches!(
+            wire.objective.profile.as_str(),
+            CYCLIC_PROFILE | CYCLIC_REWARD_PROFILE
+        ),
         identity,
         targets,
         event: wire.objective.event,
@@ -719,27 +727,6 @@ type SubjectGraph = (
     Option<super::reward::RewardGraph>,
 );
 
-fn subject_graph(
-    system: &ModelSystem<'_>,
-    claims: &[CheckedProbabilisticClaim],
-    item: &ObligationIdentity,
-    limits: ProbabilityDocumentLimits,
-    cancel: &Cancel,
-    cyclic_dtmc: bool,
-    meter: &mut quire_exact::Meter,
-) -> Result<SubjectGraph, ProbabilityDocumentError> {
-    subject_graph_with_identity(
-        system,
-        claims,
-        item,
-        limits,
-        cancel,
-        qsl_foundation::IdentityLimits::default(),
-        cyclic_dtmc,
-        meter,
-    )
-}
-
 #[allow(clippy::too_many_arguments)]
 fn subject_graph_with_identity(
     system: &ModelSystem<'_>,
@@ -750,6 +737,8 @@ fn subject_graph_with_identity(
     identity: qsl_foundation::IdentityLimits,
     cyclic_dtmc: bool,
     meter: &mut quire_exact::Meter,
+    storage: &mut u64,
+    control: &super::reward::RewardControl<'_>,
 ) -> Result<SubjectGraph, ProbabilityDocumentError> {
     use qsl_eval::simulation::model::{TimedSubjectRefusal, TimedSystem};
     if !std::ptr::eq(
@@ -765,7 +754,7 @@ fn subject_graph_with_identity(
             ProbForm::Reach {
                 target: ReachTarget::Eventually(_),
                 ..
-            }
+            } | ProbForm::ExpectedReward { .. }
         ) || qsl_semantics::check::TemporalProfile::from_identity(claim.profile.identity())
             != Some(qsl_semantics::check::TemporalProfile::InfiniteTrace))
     {
@@ -798,7 +787,23 @@ fn subject_graph_with_identity(
                 return Err(ProbabilityDocumentError::Unsupported);
             }
             let result = super::reward::enumerate(
-                system, claim, name, until, reference, workload, limits, cancel, identity,
+                system,
+                claim,
+                name,
+                until,
+                reference,
+                workload,
+                limits,
+                cancel,
+                identity,
+                if cyclic_dtmc {
+                    super::reward::RewardProfile::CyclicDtmc
+                } else {
+                    super::reward::RewardProfile::Acyclic
+                },
+                meter,
+                storage,
+                control,
             )
             .map(|(graph, ranks, costs)| {
                 reward = Some(costs);
@@ -938,8 +943,8 @@ fn target_keys(graph: &CheckerGraph) -> Vec<ProbabilityProductKey> {
 }
 
 /// Admit an expected-reward subject before an engine invokes its general
-/// solver. This independently checks the finite acyclic profile, actual
-/// costs, units and terminal targets under caller controls. It grants no
+/// solver. This independently checks the eligible acyclic or cyclic DTMC
+/// profile, actual costs, units and targets under caller controls. It grants no
 /// certificate acceptance and computes no expected value.
 pub fn admit_expected_reward_certificate_subject(
     system: &ModelSystem<'_>,
@@ -954,9 +959,67 @@ pub fn admit_expected_reward_certificate_subject(
     ) {
         return Err(ProbabilityDocumentError::Unsupported);
     }
+    admit_reward_with_identity(
+        system,
+        claims,
+        item,
+        limits,
+        cancel,
+        qsl_foundation::IdentityLimits::default(),
+    )
+}
+
+fn legacy_reward_may_retry(error: &ProbabilityDocumentError) -> bool {
+    matches!(
+        error,
+        ProbabilityDocumentError::Unsupported
+            | ProbabilityDocumentError::UndefinedPredicate(_)
+            | ProbabilityDocumentError::Graph(ExactProbabilityGraphError::Cycle)
+    ) || matches!(error, ProbabilityDocumentError::Build(issue)
+            if matches!(issue.as_ref(), crate::ExactProbBuildIssue::Predicate(_)))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn admit_reward_with_identity(
+    system: &ModelSystem<'_>,
+    claims: &[CheckedProbabilisticClaim],
+    item: &ObligationIdentity,
+    limits: ProbabilityDocumentLimits,
+    cancel: &Cancel,
+    identity: qsl_foundation::IdentityLimits,
+) -> Result<(), ProbabilityDocumentError> {
     let mut meter = quire_exact::Meter::new(limits.accounting).with_cancel(cancel.clone());
-    subject_graph(system, claims, item, limits, cancel, false, &mut meter)?;
-    Ok(())
+    let mut storage = 0;
+    match subject_graph_with_identity(
+        system,
+        claims,
+        item,
+        limits,
+        cancel,
+        identity,
+        false,
+        &mut meter,
+        &mut storage,
+        &super::reward::RewardControl::new(cancel),
+    ) {
+        Ok(_) => Ok(()),
+        Err(error) if legacy_reward_may_retry(&error) => {
+            subject_graph_with_identity(
+                system,
+                claims,
+                item,
+                limits,
+                cancel,
+                identity,
+                true,
+                &mut meter,
+                &mut storage,
+                &super::reward::RewardControl::new(cancel),
+            )?;
+            Ok(())
+        }
+        Err(error) => Err(error),
+    }
 }
 
 /// Qualify the actual reward subject route with an explicit owner identity ceiling.
@@ -975,11 +1038,7 @@ pub fn admit_expected_reward_certificate_subject_with_identity(
     ) {
         return Err(ProbabilityDocumentError::Unsupported);
     }
-    let mut meter = quire_exact::Meter::new(limits.accounting).with_cancel(cancel.clone());
-    subject_graph_with_identity(
-        system, claims, item, limits, cancel, identity, false, &mut meter,
-    )?;
-    Ok(())
+    admit_reward_with_identity(system, claims, item, limits, cancel, identity)
 }
 
 /// Qualify cyclic eventual admission with the real owner identity ceiling.
@@ -994,7 +1053,16 @@ pub fn admit_cyclic_eventual_certificate_subject_with_identity(
 ) -> Result<(), ProbabilityDocumentError> {
     let mut meter = quire_exact::Meter::new(limits.accounting).with_cancel(cancel.clone());
     subject_graph_with_identity(
-        system, claims, item, limits, cancel, identity, true, &mut meter,
+        system,
+        claims,
+        item,
+        limits,
+        cancel,
+        identity,
+        true,
+        &mut meter,
+        &mut 0,
+        &super::reward::RewardControl::new(cancel),
     )?;
     Ok(())
 }
@@ -1010,16 +1078,46 @@ pub fn probability_certificate_document(
     cancel: &Cancel,
 ) -> Result<ProbabilityCertificateDocument, ProbabilityDocumentError> {
     let mut meter = quire_exact::Meter::new(limits.accounting).with_cancel(cancel.clone());
-    let original = subject_graph(system, claims, item, limits, cancel, false, &mut meter);
-    let cyclic_dtmc = matches!(
-        &original,
-        Err(ProbabilityDocumentError::Unsupported)
-            | Err(ProbabilityDocumentError::Graph(
-                ExactProbabilityGraphError::Cycle
-            ))
+    let mut storage = 0;
+    let identity = qsl_foundation::IdentityLimits::default();
+    let original = subject_graph_with_identity(
+        system,
+        claims,
+        item,
+        limits,
+        cancel,
+        identity,
+        false,
+        &mut meter,
+        &mut storage,
+        &super::reward::RewardControl::new(cancel),
     );
+    let cyclic_dtmc = match &original {
+        Err(ProbabilityDocumentError::Unsupported)
+        | Err(ProbabilityDocumentError::Graph(ExactProbabilityGraphError::Cycle)) => true,
+        Err(error)
+            if matches!(
+                bind_claim(claims, item, cancel)?.form,
+                ProbForm::ExpectedReward { .. }
+            ) =>
+        {
+            legacy_reward_may_retry(error)
+        }
+        _ => false,
+    };
     let (graph, optimization, _, bounded_ranks, event, failures, reward) = if cyclic_dtmc {
-        subject_graph(system, claims, item, limits, cancel, true, &mut meter)?
+        subject_graph_with_identity(
+            system,
+            claims,
+            item,
+            limits,
+            cancel,
+            identity,
+            true,
+            &mut meter,
+            &mut storage,
+            &super::reward::RewardControl::new(cancel),
+        )?
     } else {
         original?
     };
@@ -1097,6 +1195,43 @@ pub fn check_probability_certificate_document(
     limits: ProbabilityDocumentLimits,
     cancel: &Cancel,
 ) -> Result<ExactProbabilityCertificateCheck, ProbabilityDocumentError> {
+    check_document_with_control(
+        system,
+        claims,
+        item,
+        bytes,
+        limits,
+        cancel,
+        &super::reward::RewardControl::new(cancel),
+    )
+}
+
+/// Observe actual cyclic reward stages while retaining the caller's real control.
+#[cfg(feature = "test-support")]
+#[allow(clippy::too_many_arguments)]
+pub fn check_cyclic_reward_probability_certificate_observing(
+    system: &ModelSystem<'_>,
+    claims: &[CheckedProbabilisticClaim],
+    item: &ObligationIdentity,
+    bytes: &[u8],
+    limits: ProbabilityDocumentLimits,
+    cancel: &Cancel,
+    observe: &mut dyn FnMut(super::reward::RewardProbabilityPhase),
+) -> Result<ExactProbabilityCertificateCheck, ProbabilityDocumentError> {
+    let control = super::reward::RewardControl::observing(cancel, observe);
+    check_document_with_control(system, claims, item, bytes, limits, cancel, &control)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn check_document_with_control(
+    system: &ModelSystem<'_>,
+    claims: &[CheckedProbabilisticClaim],
+    item: &ObligationIdentity,
+    bytes: &[u8],
+    limits: ProbabilityDocumentLimits,
+    cancel: &Cancel,
+    control: &super::reward::RewardControl<'_>,
+) -> Result<ExactProbabilityCertificateCheck, ProbabilityDocumentError> {
     if long_run::has_profile(bytes, limits, cancel)? {
         return long_run::check(system, claims, item, bytes, limits, cancel);
     }
@@ -1108,15 +1243,19 @@ pub fn check_probability_certificate_document(
     if &document.identity != item {
         return Err(ProbabilityDocumentError::IdentityMismatch);
     }
-    let (graph, objective, bound, bounded_ranks, event, failures, reward) = subject_graph(
-        system,
-        claims,
-        item,
-        limits,
-        cancel,
-        document.cyclic_dtmc,
-        &mut meter,
-    )?;
+    let (graph, objective, bound, bounded_ranks, event, failures, reward) =
+        subject_graph_with_identity(
+            system,
+            claims,
+            item,
+            limits,
+            cancel,
+            qsl_foundation::IdentityLimits::default(),
+            document.cyclic_dtmc,
+            &mut meter,
+            &mut 0,
+            control,
+        )?;
     if objective != document.optimization
         || target_keys(&graph) != document.targets
         || event != document.event
@@ -1152,7 +1291,7 @@ pub fn check_probability_certificate_document(
     if ranks.len() != graph.states.len() {
         return Ok(malformed_ranking());
     }
-    if let Some(expected) = bounded_ranks {
+    if let Some(expected) = bounded_ranks.filter(|_| !(document.cyclic_dtmc && reward.is_some())) {
         for (key, actual) in &expected {
             poll(cancel)?;
             if ranks.get(key) != Some(actual) {
@@ -1165,6 +1304,32 @@ pub fn check_probability_certificate_document(
     }
     for (key, state) in &graph.states {
         poll(cancel)?;
+        if document.cyclic_dtmc && reward.is_some() {
+            control.phase(super::reward::RewardProbabilityPhase::Progress)?;
+            let rank = ranks.get(key).ok_or(ProbabilityDocumentError::Malformed)?;
+            let progress = if state.terminal == Some(true) {
+                *rank == 0
+            } else {
+                let mut lower = false;
+                for edge in state.choices.iter().flatten() {
+                    super::reward::visit(cancel, &mut meter)?;
+                    if edge.probability > rational(0)
+                        && ranks.get(&edge.target).is_some_and(|next| next < rank)
+                    {
+                        lower = true;
+                        break;
+                    }
+                }
+                *rank > 0 && lower
+            };
+            if !progress {
+                return Ok(rejected(
+                    ProbabilityCertificateRule::RankBroken,
+                    key.clone(),
+                ));
+            }
+            continue;
+        }
         if reward.is_some()
             || state.terminal.is_some()
             || values.get(key).is_some_and(|value| *value == rational(0))
@@ -1197,6 +1362,7 @@ pub fn check_probability_certificate_document(
         limits,
         cancel,
         &mut meter,
+        control,
     )?;
     if let ExactProbabilityCertificateCheck::Accepted(accepted) = &mut check {
         accepted.document = Some(bytes.into());
@@ -1263,6 +1429,7 @@ fn check_document_equalities(
     limits: ProbabilityDocumentLimits,
     cancel: &Cancel,
     meter: &mut quire_exact::Meter,
+    control: &super::reward::RewardControl<'_>,
 ) -> Result<ExactProbabilityCertificateCheck, ProbabilityDocumentError> {
     for (key, state) in &graph.states {
         poll(cancel)?;
@@ -1281,7 +1448,7 @@ fn check_document_equalities(
                     let mut sum = rational(0);
                     let mut mass = rational(0);
                     for (edge_index, edge) in choice.iter().enumerate() {
-                        poll(cancel)?;
+                        control.phase(super::reward::RewardProbabilityPhase::Arithmetic)?;
                         if edge.probability < rational(0) {
                             return Err(ProbabilityDocumentError::Malformed);
                         }
@@ -1781,6 +1948,7 @@ mod tests {
                 limits,
                 &cancel,
                 &mut meter,
+                &super::super::reward::RewardControl::new(&cancel),
             )
         };
         assert!(matches!(

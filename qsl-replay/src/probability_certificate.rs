@@ -28,6 +28,8 @@ pub use cyclic::admit_acyclic_probabilistic_refutation_subject;
 pub use cyclic::admit_acyclic_probabilistic_refutation_subject_with_identity;
 mod document;
 mod reward;
+#[cfg(feature = "test-support")]
+pub use reward::RewardProbabilityPhase;
 mod state_predicate;
 pub use bounded::probabilistic_formula_monitor_context;
 mod source;
@@ -595,6 +597,57 @@ fn enumerate_model_graph_with_distributions<P: StatePredicate>(
     ) -> Result<(), ExactProbabilityGraphError>,
     failure: &mut impl FnMut(crate::ExactProbBuildIssue),
 ) -> Result<CheckerGraph, ExactProbabilityGraphError> {
+    enumerate_model_graph_visiting(
+        system,
+        target,
+        binding,
+        max_states,
+        max_edges,
+        cancel,
+        stop_at_target,
+        key_of,
+        reserve,
+        distributions,
+        ModelVisitPhase::BeforeTarget,
+        &mut |key, state, _| visit(key, state),
+        &mut |_| {},
+        failure,
+    )
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum ModelVisitPhase {
+    BeforeTarget,
+    AfterTarget,
+}
+
+#[allow(clippy::too_many_arguments)]
+fn enumerate_model_graph_visiting<P: StatePredicate>(
+    system: &ModelSystem<'_>,
+    target: Option<&P>,
+    binding: Option<&ObjectReference>,
+    max_states: usize,
+    max_edges: usize,
+    cancel: &Cancel,
+    stop_at_target: bool,
+    key_of: &impl Fn(&ModelSimState) -> Result<ProbabilityProductKey, ExactProbabilityGraphError>,
+    reserve: &mut impl FnMut(usize) -> Result<(), ExactProbabilityGraphError>,
+    distributions: &mut impl FnMut(
+        &ModelSimState,
+        &mut dyn FnMut(crate::ExactProbBuildIssue),
+    ) -> Result<
+        Vec<Vec<(Rational, ModelSimState)>>,
+        ExactProbabilityGraphError,
+    >,
+    visit_phase: ModelVisitPhase,
+    visit: &mut impl FnMut(
+        &ProbabilityProductKey,
+        &ModelSimState,
+        Option<bool>,
+    ) -> Result<(), ExactProbabilityGraphError>,
+    undefined: &mut impl FnMut(qsl_eval::temporal::UndefinedCause),
+    failure: &mut impl FnMut(crate::ExactProbBuildIssue),
+) -> Result<CheckerGraph, ExactProbabilityGraphError> {
     poll_cancel(cancel)?;
     let initial = system.initial();
     if initial.len() != 1 {
@@ -624,7 +677,9 @@ fn enumerate_model_graph_with_distributions<P: StatePredicate>(
     let mut edge_count = 0usize;
     while let Some((key, state)) = pending.pop_front() {
         poll_cancel(cancel)?;
-        visit(&key, &state)?;
+        if visit_phase == ModelVisitPhase::BeforeTarget {
+            visit(&key, &state, None)?;
+        }
         let terminal = if let Some(target) = target {
             let reading = system
                 .state_predicates_with_cancel(&state, &[(target, binding)], cancel)
@@ -645,11 +700,17 @@ fn enumerate_model_graph_with_distributions<P: StatePredicate>(
                     failure(crate::ExactProbBuildIssue::Predicate(outcome));
                     return Err(ExactProbabilityGraphError::ExpansionRefused);
                 }
-                _ => return Err(ExactProbabilityGraphError::ExpansionRefused),
+                qsl_eval::simulation::model::PredicateReading::Undefined { cause, .. } => {
+                    undefined(cause);
+                    return Err(ExactProbabilityGraphError::ExpansionRefused);
+                }
             }
         } else {
             None
         };
+        if visit_phase == ModelVisitPhase::AfterTarget {
+            visit(&key, &state, terminal)?;
+        }
         let choices = if terminal.is_some() && stop_at_target {
             Vec::new()
         } else {
