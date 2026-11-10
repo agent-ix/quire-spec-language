@@ -795,7 +795,10 @@ pub(crate) fn produce_witness_stopping(
             });
             if sum > *past {
                 control(WitnessWork::Slots(slots(
-                    induced.len(),
+                    induced
+                        .values()
+                        .filter(|(action, _)| resolves(scope, action))
+                        .count(),
                     std::mem::size_of::<(ProbStateId, ProductAction)>(),
                 )?))?;
                 for (_, (action, _)) in &induced {
@@ -834,6 +837,7 @@ pub(crate) fn produce_witness_stopping(
             control(WitnessWork::Slots(
                 std::mem::size_of::<Partial>().saturating_add(std::mem::size_of::<Link>()),
             ))?;
+            control(WitnessWork::Rational(&probability))?;
             frontier
                 .try_reserve_exact(1)
                 .map_err(|_| WitnessError::InvalidState)?;
