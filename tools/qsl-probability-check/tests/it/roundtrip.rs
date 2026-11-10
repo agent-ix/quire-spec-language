@@ -170,16 +170,32 @@ fn proof_source_request(
         scalar_bits: 128,
         accounting: qsl_replay::AccountingLimits::default().0,
     };
-    let document = probability_certificate_document(
-        &system,
-        package.graph().probabilistic_model().claims(),
-        &item,
-        &evidence.certificate,
-        document_limits,
-        &cancel,
-    )
-    .unwrap();
-    let written = write_probability_certificate(&document, document_limits, &cancel).unwrap();
+    let written = if matches!(
+        claim.form,
+        qsl_semantics::check::ProbForm::LongRunFraction { .. }
+    ) {
+        let retained = record
+            .terminal()
+            .unwrap()
+            .exact_certificate_document()
+            .unwrap();
+        let document =
+            qsl_replay::read_long_run_probability_certificate(retained, document_limits, &cancel)
+                .unwrap();
+        qsl_replay::write_long_run_probability_certificate(&document, document_limits, &cancel)
+            .unwrap()
+    } else {
+        let document = probability_certificate_document(
+            &system,
+            package.graph().probabilistic_model().claims(),
+            &item,
+            &evidence.certificate,
+            document_limits,
+            &cancel,
+        )
+        .unwrap();
+        write_probability_certificate(&document, document_limits, &cancel).unwrap()
+    };
     let retained = record
         .terminal()
         .unwrap()
@@ -707,4 +723,349 @@ fn real_model_keys_embed_parsed_forms_and_refuse_inner_base64_transport() {
         "the invalid inner base64 model transport must refuse: {result}"
     );
     assert_ne!(result["status"], "accepted");
+}
+
+#[trace("TC-1401", "FR-201-AC-29")]
+#[test]
+fn long_run_terminal_components_round_trip_through_an_independent_source_process() {
+    let claim = "\nprobabilistic Likely using inf on M over (m: M::Msg) under Even on origin { long_run_fraction holds(m.delivered) >= rational(391,400) }\n";
+    let request = proof_request(claim);
+    let (code, result) = run(&request, &[]);
+    assert_eq!(code, 0, "{result}");
+    assert_eq!(result["status"], "accepted");
+    let document: Value = serde_json::from_str(request["certificate"].as_str().unwrap()).unwrap();
+    assert_eq!(document["kind"], "long-run");
+    assert!(document["components"].as_array().unwrap().len() >= 2);
+    for mutation in 0..4 {
+        let mut bad = request.clone();
+        change_certificate(&mut bad, |document| match mutation {
+            0 => {
+                document.as_object_mut().unwrap().remove("components");
+            }
+            1 => {
+                document["components"][0]["gain"]["numerator"] = json!("77");
+            }
+            2 => {
+                let components = document["components"].as_array_mut().unwrap();
+                components.push(components[0].clone());
+            }
+            _ => {
+                document["objective"]["predicate_states"] = json!([]);
+            }
+        });
+        let (code, result) = run(&bad, &[]);
+        assert_ne!(code, 0, "mutation {mutation}: {result}");
+        assert_ne!(result["status"], "accepted");
+    }
+}
+
+const LONG_RUN: &str = "\nprobabilistic Likely using inf on M over (m: M::Msg) under Even on origin { long_run_fraction holds(m.delivered) >= rational(1,2) }\n";
+
+fn recurrent_long_run_request() -> Value {
+    let source = SOURCE
+        .replace("not self.delivered and self.attempts < 2", "true")
+        .replace(
+            "self.attempts - pre(self.attempts) = 1",
+            "self.attempts = 0",
+        )
+        .replace(
+            "terminal Stop using v on M when { self.delivered or self.attempts = 2 };\n",
+            "",
+        );
+    assert!(!source.contains("terminal Stop"));
+    proof_source_request(&format!("{source}{LONG_RUN}"), |_, _, _, _, _| {})
+}
+
+fn decoder_limits() -> ProbabilityDocumentLimits {
+    ProbabilityDocumentLimits {
+        bytes: 1_000_000,
+        storage_bytes: 8_000_000,
+        states: 100,
+        edges: 1000,
+        scalar_bits: 128,
+        accounting: qsl_replay::AccountingLimits::default().0,
+    }
+}
+
+#[trace("TC-1401", "FR-201-AC-29")]
+#[test]
+fn long_run_noncanonical_json_rationals_and_key_encodings_are_refused() {
+    use qsl_replay::{read_long_run_probability_certificate, ProbabilityDocumentError as Error};
+    let original = proof_request(LONG_RUN);
+    let certificate = original["certificate"].as_str().unwrap();
+    let mut cases = vec![
+        (
+            "JSON whitespace",
+            format!(" {certificate}"),
+            Error::Noncanonical,
+        ),
+        (
+            "malformed JSON",
+            certificate[..certificate.len() - 1].to_owned(),
+            Error::Malformed,
+        ),
+        (
+            "duplicate JSON member",
+            format!("{{\"kind\":\"long-run\",{}", &certificate[1..]),
+            Error::Malformed,
+        ),
+    ];
+    for (name, numerator, denominator) in [
+        ("leading-zero integer", "00", "1"),
+        ("nonreduced rational", "2", "2"),
+        ("zero denominator", "1", "0"),
+    ] {
+        let mut request = original.clone();
+        change_certificate(&mut request, |document| {
+            document["values"][0]["value"] =
+                json!({"numerator":numerator,"denominator":denominator});
+        });
+        cases.push((
+            name,
+            request["certificate"].as_str().unwrap().to_owned(),
+            Error::Malformed,
+        ));
+    }
+    for noncanonical_key in [false, true] {
+        let mut request = original.clone();
+        change_certificate(&mut request, |document| {
+            let key = document["values"][0]["state"].as_str().unwrap();
+            document["values"][0]["state"] = if noncanonical_key {
+                let mut bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+                    .decode(key)
+                    .unwrap();
+                bytes.push(b' ');
+                json!(base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes))
+            } else {
+                json!(format!("{key}="))
+            };
+        });
+        cases.push((
+            if noncanonical_key {
+                "noncanonical key JSON"
+            } else {
+                "padded key base64"
+            },
+            request["certificate"].as_str().unwrap().to_owned(),
+            if noncanonical_key {
+                Error::Noncanonical
+            } else {
+                Error::Malformed
+            },
+        ));
+    }
+    for (name, certificate, expected) in cases {
+        assert_eq!(
+            read_long_run_probability_certificate(
+                certificate.as_bytes(),
+                decoder_limits(),
+                &Cancel::new()
+            ),
+            Err(expected),
+            "{name}"
+        );
+        let mut request = original.clone();
+        request["certificate"] = json!(certificate);
+        let (code, result) = run(&request, &[]);
+        assert_eq!(code, 2, "{name}: {result}");
+        assert_eq!(result["status"], "refused", "{name}: {result}");
+        assert!(result.get("value").is_none());
+    }
+    let (code, result) = run(&original, &[]);
+    assert_eq!(code, 0, "{result}");
+    assert_eq!(result["status"], "accepted");
+}
+
+#[trace("TC-1401", "FR-201-AC-29")]
+#[test]
+fn long_run_missing_duplicate_and_out_of_order_rows_have_member_rejections() {
+    let original = proof_request(LONG_RUN);
+    for member in ["values", "bias", "gain", "value"] {
+        let mut request = original.clone();
+        change_certificate(&mut request, |document| {
+            if member == "values" {
+                document.as_object_mut().unwrap().remove(member);
+            } else {
+                document["components"][0]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove(member);
+            }
+        });
+        let (code, result) = run(&request, &[]);
+        assert_eq!(code, 1, "missing {member}: {result}");
+        assert_eq!(result["status"], "rejected");
+        assert_eq!(result["rule"], "malformed");
+        assert_eq!(
+            result["at"],
+            json!({"member":if member=="values" {"values"}else{"components"}})
+        );
+    }
+    let recurrent = recurrent_long_run_request();
+    for rows in ["values", "bias", "components"] {
+        let baseline = if rows == "bias" {
+            &recurrent
+        } else {
+            &original
+        };
+        for duplicate in [false, true] {
+            let mut request = baseline.clone();
+            change_certificate(&mut request, |document| {
+                let array = match rows {
+                    "values" => document["values"].as_array_mut().unwrap(),
+                    "bias" => document["components"][0]["bias"].as_array_mut().unwrap(),
+                    "components" => document["components"].as_array_mut().unwrap(),
+                    _ => unreachable!(),
+                };
+                assert!(
+                    array.len() >= 2,
+                    "the {rows} ordering case must compare distinct rows"
+                );
+                if duplicate {
+                    array.insert(1, array[0].clone());
+                } else {
+                    array.reverse();
+                }
+            });
+            let (code, result) = run(&request, &[]);
+            assert_eq!(code, 1, "{rows} duplicate={duplicate}: {result}");
+            assert_eq!(result["status"], "rejected");
+            assert_eq!(result["rule"], "malformed");
+            assert_eq!(
+                result["at"],
+                json!({"member":if rows=="values" {"values"}else{"components"}})
+            );
+        }
+    }
+    for baseline in [&original, &recurrent] {
+        let (code, result) = run(baseline, &[]);
+        assert_eq!(code, 0, "{result}");
+        assert_eq!(result["status"], "accepted");
+    }
+}
+
+fn alter_long_run_keys(document: &mut Value, change: impl Fn(&mut Value)) {
+    let alter = |text: &mut Value| {
+        let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .decode(text.as_str().unwrap())
+            .unwrap();
+        let mut key: Value = serde_json::from_slice(&bytes).unwrap();
+        change(&mut key);
+        *text = json!(base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .encode(serde_json::to_vec(&key).unwrap()));
+    };
+    for row in document["values"].as_array_mut().unwrap() {
+        alter(&mut row["state"]);
+    }
+    for component in document["components"].as_array_mut().unwrap() {
+        for row in component["bias"].as_array_mut().unwrap() {
+            alter(&mut row["state"]);
+        }
+    }
+    for key in document["objective"]["predicate_states"]
+        .as_array_mut()
+        .unwrap()
+    {
+        alter(key);
+    }
+}
+
+#[trace("TC-1401", "FR-201-AC-29")]
+#[test]
+fn long_run_foreign_and_model_only_keys_cannot_alias_the_checked_subject() {
+    use qsl_replay::{
+        check_probability_certificate_document, read_long_run_probability_certificate,
+        ProbabilityDocumentError as Error,
+    };
+    let original = proof_request_with(LONG_RUN, |system, claims, item, bytes, limits| {
+        let original: Value = serde_json::from_slice(bytes).unwrap();
+        for shape in [
+            "foreign binding",
+            "absent binding",
+            "stale model-only key",
+            "changed predicate set",
+        ] {
+            let mut document = original.clone();
+            if shape == "changed predicate set" {
+                assert!(!document["objective"]["predicate_states"]
+                    .as_array()
+                    .unwrap()
+                    .is_empty());
+                document["objective"]["predicate_states"] = json!([]);
+            } else {
+                alter_long_run_keys(&mut document, |key| match shape {
+                    "foreign binding" => {
+                        assert!(key[1].get("identity").is_some());
+                        key[1]["identity"] = json!("foreign-instance");
+                    }
+                    "absent binding" => key[1] = Value::Null,
+                    "stale model-only key" => {
+                        key.as_array_mut().unwrap().remove(1);
+                    }
+                    _ => unreachable!(),
+                });
+            }
+            let bytes = serde_json::to_vec(&document).unwrap();
+            if shape == "stale model-only key" {
+                assert_eq!(
+                    read_long_run_probability_certificate(&bytes, limits, &Cancel::new()),
+                    Err(Error::Unsupported)
+                );
+            } else {
+                assert!(
+                    read_long_run_probability_certificate(&bytes, limits, &Cancel::new()).is_ok(),
+                    "{shape} must reach semantic checking"
+                );
+                assert_eq!(
+                    check_probability_certificate_document(
+                        system,
+                        claims,
+                        item,
+                        &bytes,
+                        limits,
+                        &Cancel::new()
+                    ),
+                    Err(Error::ObjectiveMismatch),
+                    "{shape}"
+                );
+            }
+        }
+    });
+    for shape in [
+        "foreign binding",
+        "absent binding",
+        "stale model-only key",
+        "changed predicate set",
+    ] {
+        let mut request = original.clone();
+        change_certificate(&mut request, |document| {
+            if shape == "changed predicate set" {
+                document["objective"]["predicate_states"] = json!([]);
+            } else {
+                alter_long_run_keys(document, |key| match shape {
+                    "foreign binding" => key[1]["identity"] = json!("foreign-instance"),
+                    "absent binding" => key[1] = Value::Null,
+                    "stale model-only key" => {
+                        key.as_array_mut().unwrap().remove(1);
+                    }
+                    _ => unreachable!(),
+                });
+            }
+        });
+        let (code, result) = run(&request, &[]);
+        assert_eq!(code, 2, "{shape}: {result}");
+        assert_eq!(
+            result["status"],
+            if shape == "stale model-only key" {
+                "unsupported"
+            } else {
+                "refused"
+            },
+            "{shape}: {result}"
+        );
+        assert!(result.get("value").is_none());
+    }
+    let (code, result) = run(&original, &[]);
+    assert_eq!(code, 0, "{result}");
+    assert_eq!(result["status"], "accepted");
 }

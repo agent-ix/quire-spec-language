@@ -53,6 +53,10 @@ impl Reservation for Reserve<'_, '_> {
 
 struct Events<'a> {
     document: &'a ProbabilityCertificateDocument,
+    text: Text<'a>,
+}
+
+pub(super) struct Text<'a> {
     limits: ProbabilityDocumentLimits,
     cancel: &'a Cancel,
     stopped: RefCell<Option<ProbabilityDocumentError>>,
@@ -60,8 +64,21 @@ struct Events<'a> {
     texts: std::cell::Cell<usize>,
 }
 
-impl Events<'_> {
-    fn poll(&self) -> Result<(), Error> {
+impl<'a> Text<'a> {
+    pub(super) fn new(limits: ProbabilityDocumentLimits, cancel: &'a Cancel) -> Self {
+        Self {
+            limits,
+            cancel,
+            stopped: RefCell::new(None),
+            #[cfg(test)]
+            texts: std::cell::Cell::new(0),
+        }
+    }
+    pub(super) fn take_stop(&self) -> Option<ProbabilityDocumentError> {
+        self.stopped.borrow_mut().take()
+    }
+
+    pub(super) fn poll(&self) -> Result<(), Error> {
         poll(self.cancel).map_err(|error| {
             *self.stopped.borrow_mut() = Some(error);
             Error::ReservationDenied { requested: 0 }
@@ -94,7 +111,7 @@ impl Events<'_> {
         Ok(())
     }
 
-    fn key<S: Sink + ?Sized>(
+    pub(super) fn key<S: Sink + ?Sized>(
         &self,
         key: &ProbabilityProductKey,
         writer: &mut Writer<'_, S>,
@@ -114,7 +131,7 @@ impl Events<'_> {
         writer.string(&text)
     }
 
-    fn integer<S: Sink + ?Sized>(
+    pub(super) fn integer<S: Sink + ?Sized>(
         &self,
         integer: &Integer,
         writer: &mut Writer<'_, S>,
@@ -172,7 +189,7 @@ impl Events<'_> {
 
 impl Encode for Events<'_> {
     fn encode_into<S: Sink + ?Sized>(&self, writer: &mut Writer<'_, S>) -> Result<(), Error> {
-        self.poll()?;
+        self.text.poll()?;
         writer.begin_object()?;
         writer.name("identity")?;
         writer.begin_object()?;
@@ -203,14 +220,14 @@ impl Encode for Events<'_> {
             writer.name("failures")?;
             writer.begin_array()?;
             for (index, key) in self.document.failures.iter().enumerate() {
-                self.key(key, writer, index != 0)?;
+                self.text.key(key, writer, index != 0)?;
             }
             writer.end_array()?;
         }
         writer.name("targets")?;
         writer.begin_array()?;
         for (index, key) in self.document.targets.iter().enumerate() {
-            self.key(key, writer, index != 0)?;
+            self.text.key(key, writer, index != 0)?;
         }
         writer.end_array()?;
         writer.name("optimization")?;
@@ -228,16 +245,16 @@ impl Encode for Events<'_> {
         writer.name("values")?;
         writer.begin_array()?;
         for row in &self.document.values {
-            self.poll()?;
+            self.text.poll()?;
             writer.begin_object()?;
             writer.name("state")?;
-            self.key(&row.state, writer, false)?;
+            self.text.key(&row.state, writer, false)?;
             writer.name("value")?;
             writer.begin_object()?;
             writer.name("numerator")?;
-            self.integer(row.value.numerator(), writer)?;
+            self.text.integer(row.value.numerator(), writer)?;
             writer.name("denominator")?;
-            self.integer(row.value.denominator(), writer)?;
+            self.text.integer(row.value.denominator(), writer)?;
             writer.end_object()?;
             writer.end_object()?;
         }
@@ -245,10 +262,10 @@ impl Encode for Events<'_> {
         writer.name("ranking")?;
         writer.begin_array()?;
         for (key, rank) in &self.document.ranking {
-            self.poll()?;
+            self.text.poll()?;
             writer.begin_object()?;
             writer.name("state")?;
-            self.key(key, writer, false)?;
+            self.text.key(key, writer, false)?;
             writer.name("rank")?;
             writer.integer(i128::from(*rank))?;
             writer.end_object()?;
@@ -282,18 +299,20 @@ fn encode(
     }
     let events = Events {
         document,
-        limits,
-        cancel,
-        stopped: RefCell::new(None),
-        #[cfg(test)]
-        texts: std::cell::Cell::new(0),
+        text: Text {
+            limits,
+            cancel,
+            stopped: RefCell::new(None),
+            #[cfg(test)]
+            texts: std::cell::Cell::new(0),
+        },
     };
     encode_events(&events)
 }
 
 fn encode_events(events: &Events<'_>) -> Result<Vec<u8>, ProbabilityDocumentError> {
-    let limits = events.limits;
-    let cancel = events.cancel;
+    let limits = events.text.limits;
+    let cancel = events.text.cancel;
     let admission = RefCell::new(Admission {
         used: 0,
         bound: limits.storage_bytes,
@@ -301,7 +320,7 @@ fn encode_events(events: &Events<'_>) -> Result<Vec<u8>, ProbabilityDocumentErro
         stopped: None,
     });
     let result = encode_reserved(events, limits.bytes, &admission);
-    if let Some(error) = events.stopped.borrow_mut().take() {
+    if let Some(error) = events.text.stopped.borrow_mut().take() {
         return Err(error);
     }
     result
@@ -312,16 +331,38 @@ pub(super) fn encode_reserved(
     bytes: u64,
     admission: &RefCell<Admission<'_>>,
 ) -> Result<Vec<u8>, ProbabilityDocumentError> {
-    let mut output = Vec::new();
-    // The metered canonical writer retains output internally until finish.
-    // Charge its destination separately before the sink reserves that capacity.
-    struct Output<'a, 'c> {
-        bytes: &'a mut Vec<u8>,
-        admission: &'a RefCell<Admission<'c>>,
+    let result = encode_admitted(value, bytes, &mut Reserve(admission));
+    if let Some(error) = admission.borrow_mut().take_stop() {
+        return Err(error);
     }
-    impl Sink for Output<'_, '_> {
+    result.map_err(|error| match error {
+        Error::Limit(limit) => {
+            exceeded(ProbabilityDocumentLimit::Bytes, limit.bound, limit.required)
+        }
+        _ => ProbabilityDocumentError::Malformed,
+    })
+}
+
+/// Reserve canonical staging and destination capacity against the same caller.
+pub(super) fn encode_admitted(
+    value: &impl Encode,
+    bytes: u64,
+    reservation: &mut dyn Reservation,
+) -> Result<Vec<u8>, Error> {
+    let shared = RefCell::new(reservation);
+    struct Shared<'a, 'b>(&'a RefCell<&'b mut dyn Reservation>);
+    impl Reservation for Shared<'_, '_> {
+        fn reserve(&mut self, bytes: usize) -> Result<(), ReservationDenied> {
+            self.0.borrow_mut().reserve(bytes)
+        }
+    }
+    struct Output<'a, 'b, 'c> {
+        bytes: &'a mut Vec<u8>,
+        reservation: &'b RefCell<&'c mut dyn Reservation>,
+    }
+    impl Sink for Output<'_, '_, '_> {
         fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), Error> {
-            self.admission
+            self.reservation
                 .borrow_mut()
                 .reserve(bytes.len())
                 .map_err(|_| Error::ReservationDenied {
@@ -336,28 +377,17 @@ pub(super) fn encode_reserved(
             Ok(())
         }
     }
-    // Writer::finish holds its admitted output while copying to the sink. Its
-    // full cumulative reservation already includes that output; the sink's
-    // additional bytes are charged against the remaining working budget.
+    let mut output = Vec::new();
     let mut sink = Output {
         bytes: &mut output,
-        admission,
+        reservation: &shared,
     };
-    let result = quire_canonical::encode_with_reservation(
+    quire_canonical::encode_with_reservation(
         &mut sink,
         value,
         quire_canonical::Limits::new(bytes),
-        &mut Reserve(admission),
-    );
-    if let Some(error) = admission.borrow_mut().take_stop() {
-        return Err(error);
-    }
-    result.map_err(|error| match error {
-        Error::Limit(limit) => {
-            exceeded(ProbabilityDocumentLimit::Bytes, limit.bound, limit.required)
-        }
-        _ => ProbabilityDocumentError::Malformed,
-    })?;
+        &mut Shared(&shared),
+    )?;
     Ok(output)
 }
 
@@ -385,15 +415,17 @@ mod tests {
         for (bytes, storage_bytes) in [(3, 1_000_000), (1_000_000, 0)] {
             let events = Events {
                 document: &document,
-                limits: ProbabilityDocumentLimits {
-                    bytes,
-                    storage_bytes,
-                    scalar_bits: 100_000,
-                    ..super::super::tests::limits()
+                text: Text {
+                    limits: ProbabilityDocumentLimits {
+                        bytes,
+                        storage_bytes,
+                        scalar_bits: 100_000,
+                        ..super::super::tests::limits()
+                    },
+                    cancel: &cancel,
+                    stopped: RefCell::new(None),
+                    texts: std::cell::Cell::new(0),
                 },
-                cancel: &cancel,
-                stopped: RefCell::new(None),
-                texts: std::cell::Cell::new(0),
             };
             let admission = RefCell::new(Admission {
                 used: 0,
@@ -408,9 +440,9 @@ mod tests {
                 quire_canonical::Limits::new(bytes),
                 &mut reservation,
             );
-            let error = events.integer(&integer, &mut writer).unwrap_err();
+            let error = events.text.integer(&integer, &mut writer).unwrap_err();
             assert_eq!(
-                events.texts.get(),
+                events.text.texts.get(),
                 0,
                 "oversized decimal transport was not retained"
             );
@@ -447,23 +479,25 @@ mod tests {
         let cap = 1 + 2 * (encoded_key + 2);
         let events = Events {
             document: &document,
-            limits: ProbabilityDocumentLimits {
-                bytes: cap,
-                ..generous
+            text: Text {
+                limits: ProbabilityDocumentLimits {
+                    bytes: cap,
+                    ..generous
+                },
+                cancel: &cancel,
+                stopped: RefCell::new(None),
+                texts: std::cell::Cell::new(0),
             },
-            cancel: &cancel,
-            stopped: RefCell::new(None),
-            texts: std::cell::Cell::new(0),
         };
         let mut output = Vec::new();
         let mut writer = Writer::new(&mut output, quire_canonical::Limits::new(cap));
         writer.begin_array().unwrap();
-        events.key(&key, &mut writer, false).unwrap();
+        events.text.key(&key, &mut writer, false).unwrap();
         assert!(
-            matches!(events.key(&key, &mut writer, true), Err(Error::Limit(quire_canonical::LimitExceeded { required, .. })) if required == cap + 1)
+            matches!(events.text.key(&key, &mut writer, true), Err(Error::Limit(quire_canonical::LimitExceeded { required, .. })) if required == cap + 1)
         );
         assert_eq!(
-            events.texts.get(),
+            events.text.texts.get(),
             1,
             "the rejected second transport string was never encoded"
         );
@@ -483,14 +517,16 @@ mod tests {
         ] {
             let events = Events {
                 document: &document,
-                limits: ProbabilityDocumentLimits {
-                    bytes,
-                    storage_bytes,
-                    ..generous
+                text: Text {
+                    limits: ProbabilityDocumentLimits {
+                        bytes,
+                        storage_bytes,
+                        ..generous
+                    },
+                    cancel: &cancel,
+                    stopped: RefCell::new(None),
+                    texts: std::cell::Cell::new(0),
                 },
-                cancel: &cancel,
-                stopped: RefCell::new(None),
-                texts: std::cell::Cell::new(0),
             };
             let error = encode_events(&events).unwrap_err();
             assert!(
@@ -498,7 +534,7 @@ mod tests {
                 "{error:?}"
             );
             assert_eq!(
-                events.texts.get(),
+                events.text.texts.get(),
                 0,
                 "no base64 or decimal text was materialized before admission: {error:?}"
             );

@@ -332,22 +332,27 @@ pub use planner::{
 pub use probability_certificate::{
     check_claim_exact_reachability, check_probability_certificate_document,
     check_probability_certificate_source, claim_binding, digital_probability_product_key,
-    probabilistic_claim_identity, probabilistic_formula_monitor_context,
-    probability_certificate_document, read_probability_certificate, replay_probabilistic_witness,
+    long_run_probability_certificate_document, probabilistic_claim_identity,
+    probabilistic_formula_monitor_context, probability_certificate_document,
+    read_long_run_probability_certificate, read_probability_certificate,
+    replay_probabilistic_witness, write_long_run_probability_certificate,
     write_probability_certificate, ClaimBinding, DigitalClockKey, DigitalDeadlineKey,
     DigitalProductKeyInput, DigitalTail, ExactProbabilityAcceptance, ExactProbabilityCertificate,
     ExactProbabilityCertificateCheck, ExactProbabilityGraphError, ExactProbabilityValue,
-    ProbabilisticCounterexample, ProbabilityBoundSide, ProbabilityCertificateDocument,
-    ProbabilityCertificateLocus, ProbabilityCertificateRejection, ProbabilityCertificateRule,
-    ProbabilityDocumentError, ProbabilityDocumentIoLimits, ProbabilityDocumentLimit,
-    ProbabilityDocumentLimits, ProbabilityObjective, ProbabilityProductKey, ProbabilitySourceError,
+    LongRunProbabilityComponent, LongRunProbabilityDocument, ProbabilisticCounterexample,
+    ProbabilityBoundSide, ProbabilityCertificateDocument, ProbabilityCertificateLocus,
+    ProbabilityCertificateRejection, ProbabilityCertificateRule, ProbabilityDocumentError,
+    ProbabilityDocumentIoLimits, ProbabilityDocumentLimit, ProbabilityDocumentLimits,
+    ProbabilityKeyAdmission, ProbabilityObjective, ProbabilityProductKey, ProbabilitySourceError,
     ProbabilitySourceLimits, ProbabilitySourceRequest, ProbabilityStateEvent,
     ProbabilityWitnessError, ProbabilityWitnessPath, ProbabilityWitnessReplay,
     ProbabilityWitnessStep, ReproducedProbabilityWitness,
 };
 #[cfg(feature = "test-support")]
 pub use probability_certificate::{
-    replay_probabilistic_witness_observing, ProbabilityWitnessSemanticPhase,
+    check_long_run_probability_certificate_observing,
+    check_long_run_probability_certificate_with_identity, replay_probabilistic_witness_observing,
+    LongRunProbabilityPhase, ProbabilityWitnessSemanticPhase,
 };
 pub use product_action::{
     FreeDelayActionRow, FreeDelayRow, FreeDelaysRace, FreeRacer, GivenRacer, NotMixedRace,

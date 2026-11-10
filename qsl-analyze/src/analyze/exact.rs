@@ -1,18 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! The EN-5 item adapter (FR-281, FR-203): builds FR-196's product for an
-//! unbounded `eventually` reachability claim, solves it exactly (FR-198),
-//! turns the solution into FR-201's certificate, has the qualified core's
-//! checker re-enumerate the subject and check it, and only then settles
-//! `proved`. No verdict is built by hand: `proved` is built from the
-//! checker's acceptance.
+//! EN-5's item adapter (FR-281, FR-203) builds and solves the supported
+//! probabilistic products, writes the corresponding FR-201 document, and
+//! settles `proved` only after independent source-subject checking accepts it.
 //!
-//! This is the first cut. It decides the shape the checker core covers
-//! (`check_claim_exact_reachability`: one initial state, at most one `over`
-//! instance, an acyclic model whose draws each have one post-state); every other shape
-//! settles `unsupported` with `unsupported_construct`/`not-yet-implemented`
-//! and is never relabelled as a verdict. Missed bounds use the existing
-//! witness producer and the independent typed replay core; only the core's
-//! reproduced token can settle `refuted` with its counterexample evidence.
+//! Each closed document profile owns its graph, binding and workload admission.
+//! Unsupported forms remain explicit unsupported dispositions. Missed bounds
+//! settle `refuted` only when the profile has native witness production and
+//! independent FR-202 replay; long-run document evidence authorizes proofs.
+
+mod long_run;
 
 use qsl_eval::simulation::model::ModelSystem;
 use qsl_eval::simulation::TransitionSystem;
@@ -83,6 +79,8 @@ pub(crate) enum ExactReport {
         /// The certificate the record carries.
         evidence: Box<ExactProbabilityEvidence>,
     },
+    /// A construction overflow or actual allocator refusal exhausted resources.
+    ResourceExhausted,
     /// FR-203's map settled a stop of the build or the check.
     Settled(ExactProbBuildRecord),
 }
@@ -160,6 +158,14 @@ impl ExactReport {
                 Some(record) => (record, Some(evidence)),
                 None => (TerminalRecord::failed_with(index, backend, BROKEN), None),
             },
+            Self::ResourceExhausted => (
+                TerminalRecord::incomplete(
+                    index,
+                    backend,
+                    qsl_replay::IncompleteCause::ResourceExhausted,
+                ),
+                None,
+            ),
             Self::Settled(record) => (record.into_terminal(index, backend), None),
         };
         (record, evidence, None)
@@ -222,6 +228,9 @@ fn run(
     tamper: Option<&dyn Fn(&mut ExactProbabilityCertificate)>,
     tamper_witness: Option<&dyn Fn(&mut ProbabilisticCounterexample)>,
 ) -> EngineReport {
+    if matches!(request.claim.form, ProbForm::LongRunFraction { .. }) {
+        return long_run::run(request, cancel, tamper);
+    }
     let claim = request.claim;
     let simulation = request.subject.simulation.clone();
     let package = simulation.package;
@@ -505,6 +514,16 @@ fn run(
         )?;
         Ok::<_, ProbabilityDocumentError>(check)
     })();
+    checked_report(checked, certificate, binding, extremum, subject)
+}
+
+fn checked_report(
+    checked: Result<ExactProbabilityCertificateCheck, ProbabilityDocumentError>,
+    certificate: ExactProbabilityCertificate,
+    binding: Option<qsl_replay::ClaimBinding>,
+    extremum: Option<Extremum>,
+    subject: SubjectLimits<'_>,
+) -> EngineReport {
     match checked {
         Ok(check) => match &check {
             ExactProbabilityCertificateCheck::Accepted(accepted) => {
@@ -586,9 +605,38 @@ fn document_failure(error: ProbabilityDocumentError, subject: SubjectLimits<'_>)
             },
             subject,
         ),
+        ProbabilityDocumentError::KeyEncoding(qsl_eval::simulation::EncodingRefusal::Limit(
+            limit,
+        )) => settled(
+            &ExactProbBuildIssue::Limit {
+                limit: ModelCheckLimit::IdentityInputBytes,
+                value: limit.configured_bound(),
+            },
+            subject,
+        ),
+        ProbabilityDocumentError::KeyEncoding(
+            qsl_eval::simulation::EncodingRefusal::Allocation { .. },
+        )
+        | ProbabilityDocumentError::KeySizeOverflow => {
+            EngineReport::Exact(Box::new(ExactReport::ResourceExhausted))
+        }
+        ProbabilityDocumentError::KeyEncoding(
+            qsl_eval::simulation::EncodingRefusal::NoEncoding(_),
+        ) => EngineReport::Refused(Refusal::Declined(
+            qsl_replay::ProofRefusalCause::InvalidInput,
+            qsl_replay::DeclineCode::Qsl(qsl_foundation::diagnostic::Code::InvalidRuntimeInput),
+            quire_semantic_value::catalog::CatalogCode::new(
+                "invalid_runtime_input",
+                "invalid-value",
+            ),
+        )),
+        ProbabilityDocumentError::KeyDenied => broken(),
         ProbabilityDocumentError::Build(issue) => settled(&issue, subject),
-        ProbabilityDocumentError::Unsupported => not_yet(),
-        ProbabilityDocumentError::Malformed
+        ProbabilityDocumentError::Unsupported | ProbabilityDocumentError::UndefinedPredicate(_) => {
+            not_yet()
+        }
+        ProbabilityDocumentError::MalformedMember(_)
+        | ProbabilityDocumentError::Malformed
         | ProbabilityDocumentError::MissingMember(_)
         | ProbabilityDocumentError::Noncanonical
         | ProbabilityDocumentError::IdentityMismatch

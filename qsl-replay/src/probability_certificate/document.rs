@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-201's closed exact reachability document profile and strict JCS codec.
+//! FR-201's closed probability document profiles and strict JCS codec.
 
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
@@ -8,8 +8,19 @@ use serde::{Deserialize, Serialize};
 use super::*;
 
 mod key;
+mod long_run;
+#[cfg(feature = "test-support")]
+pub use long_run::{
+    check_long_run_probability_certificate_observing,
+    check_long_run_probability_certificate_with_identity, LongRunProbabilityPhase,
+};
+pub use long_run::{
+    long_run_probability_certificate_document, read_long_run_probability_certificate,
+    write_long_run_probability_certificate, LongRunProbabilityComponent,
+    LongRunProbabilityDocument,
+};
 mod writer;
-pub(super) use key::model_product_key;
+pub(super) use key::{model_product_key, model_product_key_with_budget};
 
 const PROFILE: &str = "quire.probability-objective/reachability/v1";
 const STATE_PROFILE: &str = "quire.probability-objective/state-predicate/v1";
@@ -125,6 +136,9 @@ pub enum ProbabilityDocumentError {
     /// A required evidence member was omitted.
     #[error("invalid_runtime_input: missing probability certificate member {0}")]
     MissingMember(&'static str),
+    /// A structurally invalid evidence row group.
+    #[error("invalid_runtime_input: malformed probability certificate member {0}")]
+    MalformedMember(&'static str),
     /// Bytes are valid JSON but not their RFC 8785 encoding.
     #[error("invalid_runtime_input: noncanonical probability certificate")]
     Noncanonical,
@@ -164,6 +178,19 @@ pub enum ProbabilityDocumentError {
     /// Independent subject admission or graph traversal stopped.
     #[error("probability certificate graph stopped: {0:?}")]
     Graph(ExactProbabilityGraphError),
+    /// Raw or full-product identity encoding retained its actual owner refusal.
+    #[error(transparent)]
+    KeyEncoding(qsl_eval::simulation::EncodingRefusal),
+    /// The owner could not represent a requested construction size.
+    #[error("resource_exhausted: model key construction size overflow")]
+    KeySizeOverflow,
+    /// A key budget denied admission without retaining its caller cause.
+    #[error("runtime_invariant: model key denial has no caller cause")]
+    KeyDenied,
+
+    /// The checked state predicate is undefined, with its original cause.
+    #[error("probability certificate predicate undefined: {0:?}")]
+    UndefinedPredicate(qsl_eval::temporal::UndefinedCause),
     /// Subject expansion or predicate admission retained its actual stop cause.
     #[error("probability certificate subject stopped: {0:?}")]
     Build(Box<crate::ExactProbBuildIssue>),
@@ -358,7 +385,22 @@ fn ratio(
     meter: &mut quire_exact::Meter,
     cancel: &Cancel,
 ) -> Result<Rational, ProbabilityDocumentError> {
-    for text in [&wire.numerator, &wire.denominator] {
+    ratio_checked(wire, bits, meter, cancel, true)
+}
+
+fn ratio_checked(
+    wire: WireRational,
+    bits: u64,
+    meter: &mut quire_exact::Meter,
+    cancel: &Cancel,
+    probability: bool,
+) -> Result<Rational, ProbabilityDocumentError> {
+    for (index, text) in [&wire.numerator, &wire.denominator].into_iter().enumerate() {
+        let text = if index == 0 && !probability {
+            text.strip_prefix('-').unwrap_or(text)
+        } else {
+            text.as_str()
+        };
         if text.is_empty()
             || !text.bytes().all(|byte| byte.is_ascii_digit())
             || text.len() > 1 && text.starts_with('0')
@@ -407,8 +449,7 @@ fn ratio(
     )?;
     if value.numerator().to_string() != wire.numerator
         || value.denominator().to_string() != wire.denominator
-        || value < rational(0)
-        || value > rational(1)
+        || probability && (value < rational(0) || value > rational(1))
     {
         return Err(ProbabilityDocumentError::Malformed);
     }
@@ -833,6 +874,9 @@ pub fn check_probability_certificate_document(
     limits: ProbabilityDocumentLimits,
     cancel: &Cancel,
 ) -> Result<ExactProbabilityCertificateCheck, ProbabilityDocumentError> {
+    if long_run::has_profile(bytes, limits, cancel)? {
+        return long_run::check(system, claims, item, bytes, limits, cancel);
+    }
     let mut meter = quire_exact::Meter::new(limits.accounting).with_cancel(cancel.clone());
     let document = match read_document(bytes, limits, cancel, &mut meter) {
         Ok(document) => document,
@@ -931,6 +975,18 @@ pub(super) fn document_admission_error(
 ) -> Result<ExactProbabilityCertificateCheck, ProbabilityDocumentError> {
     match error {
         ProbabilityDocumentError::MissingMember("ranking") => Ok(malformed_ranking()),
+        ProbabilityDocumentError::MalformedMember(member) => Ok(
+            ExactProbabilityCertificateCheck::Rejected(ProbabilityCertificateRejection {
+                rule: ProbabilityCertificateRule::Malformed,
+                at: ProbabilityCertificateLocus::Member(member),
+            }),
+        ),
+        ProbabilityDocumentError::MissingMember("components") => Ok(
+            ExactProbabilityCertificateCheck::Rejected(ProbabilityCertificateRejection {
+                rule: ProbabilityCertificateRule::Malformed,
+                at: ProbabilityCertificateLocus::Member("components"),
+            }),
+        ),
         other => Err(other),
     }
 }
@@ -1088,6 +1144,18 @@ fn arithmetic(
             Err(ProbabilityDocumentError::Malformed)
         }
     }
+}
+
+// Admission is shared by the source facade, before compilation or enumeration.
+pub(super) fn certificate_identity(
+    bytes: &[u8],
+    limits: ProbabilityDocumentLimits,
+    cancel: &Cancel,
+) -> Result<ObligationIdentity, ProbabilityDocumentError> {
+    if long_run::has_profile(bytes, limits, cancel)? {
+        return Ok(read_long_run_probability_certificate(bytes, limits, cancel)?.identity);
+    }
+    Ok(read_probability_certificate(bytes, limits, cancel)?.identity)
 }
 
 #[cfg(test)]
