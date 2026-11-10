@@ -37,3 +37,7 @@ A manual gap check was limited to PR #2672's changed behavior and its TC-685 con
 ## Disposition pass 1
 
 Re-checked the fix commit `fa8d2d239` and focused test against FR-230's place-identity encoding requirement. The test asserts lowercase hexadecimal output for the owner and canonical node-key text and verifies ordered slot encoding. There were no actionable findings from the original pass and no new test-to-code gap in this fix. No disposition rows or ticket comment were needed.
+
+## Disposition pass 2
+
+Re-checked fix commit `bb4bb3b72` against the final PR diff and the relevant FR-230 place identity behavior. The focused evaluator test still covers the no-slot form and ordered slot encoding; the source guard covers the display-string restriction that exposed this regression. The new decimal encoder handles zero and repeated base-10 division, and out-of-range or negative selectors return an internal invariant fault. No prior actionable findings or new test-to-code gaps were found. No disposition rows or ticket comment were needed.
