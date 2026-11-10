@@ -479,6 +479,17 @@ impl RunError {
             RunCause::Limit(LimitKind::FixedDependentBytes { maximum }) => {
                 format!("dependent_bytes limit {maximum} exceeded")
             }
+            RunCause::Limit(LimitKind::ObservationDocumentBytes { maximum }) => {
+                format!("observation.document_bytes limit {maximum} exceeded; raise --limit observation.document_bytes")
+            }
+            RunCause::Limit(LimitKind::SelectedFiles {
+                category,
+                requested,
+                remaining,
+                maximum,
+            }) => {
+                format!("selected files limit {maximum} exceeded: {category:?} requested {requested}, remaining {remaining}")
+            }
             _ => self.to_string(),
         }
     }
