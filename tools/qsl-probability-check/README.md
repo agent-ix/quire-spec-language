@@ -2,7 +2,7 @@
 
 `qsl-probability-check` reads a JSON request from standard input or its one
 file argument, recompiles the supplied native source through S1–S3 and checks
-its exact reachability certificate in the qualified core. Its normal dependency
+its exact quantitative certificate in the qualified core. Its normal dependency
 closure contains no analyzer. Tests use EN-5 as a development dependency to
 produce evidence, then launch the built checker executable in a fresh process.
 
