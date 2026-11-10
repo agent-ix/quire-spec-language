@@ -14,6 +14,8 @@
 //! witness producer and the independent typed replay core; only the core's
 //! reproduced token can settle `refuted` with its counterexample evidence.
 
+mod long_run;
+
 use qsl_eval::simulation::model::ModelSystem;
 use qsl_eval::simulation::TransitionSystem;
 use qsl_foundation::{BackendId, RequestIndex};
@@ -222,6 +224,9 @@ fn run(
     tamper: Option<&dyn Fn(&mut ExactProbabilityCertificate)>,
     tamper_witness: Option<&dyn Fn(&mut ProbabilisticCounterexample)>,
 ) -> EngineReport {
+    if matches!(request.claim.form, ProbForm::LongRunFraction { .. }) {
+        return long_run::run(request, cancel, tamper);
+    }
     let claim = request.claim;
     let simulation = request.subject.simulation.clone();
     let package = simulation.package;
@@ -505,6 +510,16 @@ fn run(
         )?;
         Ok::<_, ProbabilityDocumentError>(check)
     })();
+    checked_report(checked, certificate, binding, extremum, subject)
+}
+
+fn checked_report(
+    checked: Result<ExactProbabilityCertificateCheck, ProbabilityDocumentError>,
+    certificate: ExactProbabilityCertificate,
+    binding: Option<qsl_replay::ClaimBinding>,
+    extremum: Option<Extremum>,
+    subject: SubjectLimits<'_>,
+) -> EngineReport {
     match checked {
         Ok(check) => match &check {
             ExactProbabilityCertificateCheck::Accepted(accepted) => {

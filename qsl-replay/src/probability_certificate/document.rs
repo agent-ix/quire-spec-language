@@ -8,6 +8,12 @@ use serde::{Deserialize, Serialize};
 use super::*;
 
 mod key;
+mod long_run;
+pub use long_run::{
+    long_run_probability_certificate_document, read_long_run_probability_certificate,
+    write_long_run_probability_certificate, LongRunProbabilityComponent,
+    LongRunProbabilityDocument,
+};
 mod writer;
 pub(super) use key::model_product_key;
 
@@ -358,7 +364,22 @@ fn ratio(
     meter: &mut quire_exact::Meter,
     cancel: &Cancel,
 ) -> Result<Rational, ProbabilityDocumentError> {
-    for text in [&wire.numerator, &wire.denominator] {
+    ratio_checked(wire, bits, meter, cancel, true)
+}
+
+fn ratio_checked(
+    wire: WireRational,
+    bits: u64,
+    meter: &mut quire_exact::Meter,
+    cancel: &Cancel,
+    probability: bool,
+) -> Result<Rational, ProbabilityDocumentError> {
+    for (index, text) in [&wire.numerator, &wire.denominator].into_iter().enumerate() {
+        let text = if index == 0 && !probability {
+            text.strip_prefix('-').unwrap_or(text)
+        } else {
+            text.as_str()
+        };
         if text.is_empty()
             || !text.bytes().all(|byte| byte.is_ascii_digit())
             || text.len() > 1 && text.starts_with('0')
@@ -407,8 +428,7 @@ fn ratio(
     )?;
     if value.numerator().to_string() != wire.numerator
         || value.denominator().to_string() != wire.denominator
-        || value < rational(0)
-        || value > rational(1)
+        || probability && (value < rational(0) || value > rational(1))
     {
         return Err(ProbabilityDocumentError::Malformed);
     }
@@ -833,6 +853,9 @@ pub fn check_probability_certificate_document(
     limits: ProbabilityDocumentLimits,
     cancel: &Cancel,
 ) -> Result<ExactProbabilityCertificateCheck, ProbabilityDocumentError> {
+    if long_run::has_profile(bytes, limits, cancel)? {
+        return long_run::check(system, claims, item, bytes, limits, cancel);
+    }
     let mut meter = quire_exact::Meter::new(limits.accounting).with_cancel(cancel.clone());
     let document = match read_document(bytes, limits, cancel, &mut meter) {
         Ok(document) => document,
@@ -931,6 +954,12 @@ pub(super) fn document_admission_error(
 ) -> Result<ExactProbabilityCertificateCheck, ProbabilityDocumentError> {
     match error {
         ProbabilityDocumentError::MissingMember("ranking") => Ok(malformed_ranking()),
+        ProbabilityDocumentError::MissingMember("components") => Ok(
+            ExactProbabilityCertificateCheck::Rejected(ProbabilityCertificateRejection {
+                rule: ProbabilityCertificateRule::Malformed,
+                at: ProbabilityCertificateLocus::Member("components"),
+            }),
+        ),
         other => Err(other),
     }
 }
@@ -1501,4 +1530,16 @@ mod tests {
             );
         }
     }
+}
+
+// Admission is shared by the source facade, before compilation or enumeration.
+pub(super) fn certificate_identity(
+    bytes: &[u8],
+    limits: ProbabilityDocumentLimits,
+    cancel: &Cancel,
+) -> Result<ObligationIdentity, ProbabilityDocumentError> {
+    if long_run::has_profile(bytes, limits, cancel)? {
+        return Ok(read_long_run_probability_certificate(bytes, limits, cancel)?.identity);
+    }
+    Ok(read_probability_certificate(bytes, limits, cancel)?.identity)
 }

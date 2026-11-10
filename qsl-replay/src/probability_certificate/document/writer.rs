@@ -53,6 +53,17 @@ impl Reservation for Reserve<'_, '_> {
 
 struct Events<'a> {
     document: &'a ProbabilityCertificateDocument,
+    text: Text<'a>,
+}
+
+impl<'a> std::ops::Deref for Events<'a> {
+    type Target = Text<'a>;
+    fn deref(&self) -> &Self::Target {
+        &self.text
+    }
+}
+
+pub(super) struct Text<'a> {
     limits: ProbabilityDocumentLimits,
     cancel: &'a Cancel,
     stopped: RefCell<Option<ProbabilityDocumentError>>,
@@ -60,8 +71,21 @@ struct Events<'a> {
     texts: std::cell::Cell<usize>,
 }
 
-impl Events<'_> {
-    fn poll(&self) -> Result<(), Error> {
+impl<'a> Text<'a> {
+    pub(super) fn new(limits: ProbabilityDocumentLimits, cancel: &'a Cancel) -> Self {
+        Self {
+            limits,
+            cancel,
+            stopped: RefCell::new(None),
+            #[cfg(test)]
+            texts: std::cell::Cell::new(0),
+        }
+    }
+    pub(super) fn take_stop(&self) -> Option<ProbabilityDocumentError> {
+        self.stopped.borrow_mut().take()
+    }
+
+    pub(super) fn poll(&self) -> Result<(), Error> {
         poll(self.cancel).map_err(|error| {
             *self.stopped.borrow_mut() = Some(error);
             Error::ReservationDenied { requested: 0 }
@@ -94,7 +118,7 @@ impl Events<'_> {
         Ok(())
     }
 
-    fn key<S: Sink + ?Sized>(
+    pub(super) fn key<S: Sink + ?Sized>(
         &self,
         key: &ProbabilityProductKey,
         writer: &mut Writer<'_, S>,
@@ -114,7 +138,7 @@ impl Events<'_> {
         writer.string(&text)
     }
 
-    fn integer<S: Sink + ?Sized>(
+    pub(super) fn integer<S: Sink + ?Sized>(
         &self,
         integer: &Integer,
         writer: &mut Writer<'_, S>,
@@ -282,11 +306,13 @@ fn encode(
     }
     let events = Events {
         document,
-        limits,
-        cancel,
-        stopped: RefCell::new(None),
-        #[cfg(test)]
-        texts: std::cell::Cell::new(0),
+        text: Text {
+            limits,
+            cancel,
+            stopped: RefCell::new(None),
+            #[cfg(test)]
+            texts: std::cell::Cell::new(0),
+        },
     };
     encode_events(&events)
 }
@@ -385,15 +411,17 @@ mod tests {
         for (bytes, storage_bytes) in [(3, 1_000_000), (1_000_000, 0)] {
             let events = Events {
                 document: &document,
-                limits: ProbabilityDocumentLimits {
-                    bytes,
-                    storage_bytes,
-                    scalar_bits: 100_000,
-                    ..super::super::tests::limits()
+                text: Text {
+                    limits: ProbabilityDocumentLimits {
+                        bytes,
+                        storage_bytes,
+                        scalar_bits: 100_000,
+                        ..super::super::tests::limits()
+                    },
+                    cancel: &cancel,
+                    stopped: RefCell::new(None),
+                    texts: std::cell::Cell::new(0),
                 },
-                cancel: &cancel,
-                stopped: RefCell::new(None),
-                texts: std::cell::Cell::new(0),
             };
             let admission = RefCell::new(Admission {
                 used: 0,
@@ -447,13 +475,15 @@ mod tests {
         let cap = 1 + 2 * (encoded_key + 2);
         let events = Events {
             document: &document,
-            limits: ProbabilityDocumentLimits {
-                bytes: cap,
-                ..generous
+            text: Text {
+                limits: ProbabilityDocumentLimits {
+                    bytes: cap,
+                    ..generous
+                },
+                cancel: &cancel,
+                stopped: RefCell::new(None),
+                texts: std::cell::Cell::new(0),
             },
-            cancel: &cancel,
-            stopped: RefCell::new(None),
-            texts: std::cell::Cell::new(0),
         };
         let mut output = Vec::new();
         let mut writer = Writer::new(&mut output, quire_canonical::Limits::new(cap));
@@ -483,14 +513,16 @@ mod tests {
         ] {
             let events = Events {
                 document: &document,
-                limits: ProbabilityDocumentLimits {
-                    bytes,
-                    storage_bytes,
-                    ..generous
+                text: Text {
+                    limits: ProbabilityDocumentLimits {
+                        bytes,
+                        storage_bytes,
+                        ..generous
+                    },
+                    cancel: &cancel,
+                    stopped: RefCell::new(None),
+                    texts: std::cell::Cell::new(0),
                 },
-                cancel: &cancel,
-                stopped: RefCell::new(None),
-                texts: std::cell::Cell::new(0),
             };
             let error = encode_events(&events).unwrap_err();
             assert!(

@@ -1,0 +1,232 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//! End-to-end exact long-run candidates checked against an independent graph.
+
+use crate::prob_world::{self, Model, Operation, World};
+use ix_trace_rs::trace;
+use qsl_analyze::analyze::{analyze_items, exact_probabilistic_item, Engines};
+use qsl_eval::simulation::model::ModelSystem;
+use qsl_foundation::RequestIndex;
+use qsl_replay::{
+    check_probability_certificate_document, read_long_run_probability_certificate,
+    write_long_run_probability_certificate, ExactProbabilityCertificateCheck,
+    LongRunProbabilityDocument, ModelCheckLimits, ProbabilityDocumentError,
+    ProbabilityDocumentLimits,
+};
+use quire_exact::{Cancel, CancelCause, Integer, Rational};
+
+fn ratio(n: i64, d: i64) -> Rational {
+    Rational::new(Integer::from(n), Integer::from(d)).unwrap()
+}
+fn limits() -> ProbabilityDocumentLimits {
+    ProbabilityDocumentLimits {
+        bytes: 1_000_000,
+        storage_bytes: 16_000_000,
+        states: 128,
+        edges: 1024,
+        scalar_bits: 128,
+        accounting: qsl_replay::AccountingLimits::default().0,
+    }
+}
+fn claim(name: &str, predicate: &str, bound: &str) -> String {
+    format!("probabilistic {name} using inf on M over (s: M::Server) under Steady on origin {{ long_run_fraction holds({predicate}) {bound} }}\n")
+}
+fn availability() -> World {
+    let mut model = prob_world::avail2(&format!(
+        "{}{}",
+        claim("Lower", "s.up", ">= rational(1800,1801)"),
+        claim("Upper", "s.up", "<= rational(1800,1801)")
+    ));
+    model.body = model.body.replace(
+        "pre Down_slow using v on M::Server::repair_slow { not self.up }",
+        "pre Down_slow using v on M::Server::repair_slow { false }",
+    );
+    World::new(&model)
+}
+fn produce(world: &World, name: &str) -> Vec<u8> {
+    let records = analyze_items(
+        &Engines::qsl().unwrap(),
+        vec![exact_probabilistic_item(
+            RequestIndex::new(0),
+            world.request(name, ModelCheckLimits::default()),
+        )],
+        &Cancel::new(),
+    );
+    let terminal = records[0].terminal().unwrap();
+    terminal
+        .exact_certificate_document()
+        .unwrap_or_else(|| panic!("expected proof: {:?}", terminal.value()))
+        .to_vec()
+}
+fn check(
+    world: &World,
+    name: &str,
+    bytes: &[u8],
+    control: &Cancel,
+    limits: ProbabilityDocumentLimits,
+) -> Result<ExactProbabilityCertificateCheck, ProbabilityDocumentError> {
+    let system = ModelSystem::new(world.subject().simulation).unwrap();
+    let item = qsl_replay::probabilistic_claim_identity(world.claim(name)).unwrap();
+    check_probability_certificate_document(
+        &system,
+        world.package.graph().probabilistic_model().claims(),
+        &item,
+        bytes,
+        limits,
+        control,
+    )
+}
+fn accepted(world: &World, name: &str, doc: &LongRunProbabilityDocument) -> bool {
+    let bytes = write_long_run_probability_certificate(doc, limits(), &Cancel::new()).unwrap();
+    matches!(
+        check(world, name, &bytes, &Cancel::new(), limits()).unwrap(),
+        ExactProbabilityCertificateCheck::Accepted(_)
+    )
+}
+#[trace("TC-1401", "FR-201-AC-27", "FR-199-AC-1")]
+#[test]
+fn availability_proofs_preserve_original_transitions_and_gain_bias() {
+    let world = availability();
+    for name in ["Lower", "Upper"] {
+        let bytes = produce(&world, name);
+        let doc = read_long_run_probability_certificate(&bytes, limits(), &Cancel::new()).unwrap();
+        assert_eq!(doc.components.len(), 1);
+        assert_eq!(doc.components[0].value, ratio(1800, 1801));
+        assert_eq!(doc.components[0].gain, ratio(1800, 1801));
+        assert_eq!(doc.components[0].bias[0].value, ratio(0, 1));
+        assert!(
+            doc.components[0].bias[1].value == ratio(2000, 1801)
+                || doc.components[0].bias[1].value == ratio(-2000, 1801)
+        );
+        assert!(doc.values.iter().all(|row| row.value == ratio(1800, 1801)));
+        assert_eq!(
+            write_long_run_probability_certificate(&doc, limits(), &Cancel::new()).unwrap(),
+            bytes
+        );
+        assert!(accepted(&world, name, &doc));
+        for mutation in 0..4 {
+            let mut bad = doc.clone();
+            match mutation {
+                0 => bad.components[0].bias[1].value = ratio(2001, 1801),
+                1 => bad.components[0].gain = ratio(0, 1),
+                2 => {
+                    for row in &mut bad.components[0].bias {
+                        row.value = row.value.add(&ratio(1, 1));
+                    }
+                }
+                _ => {
+                    for row in &mut bad.values {
+                        row.value = ratio(1, 1);
+                    }
+                    bad.components[0].value = ratio(1, 1);
+                    bad.components[0].gain = ratio(1, 1);
+                }
+            }
+            assert!(!accepted(&world, name, &bad), "mutation {mutation}");
+        }
+    }
+}
+
+fn finite(periodic: bool) -> World {
+    let package = "test/longrun-finite";
+    let body = if periodic {
+        "post Next using v on M::Server::step { self.phase = 1-pre(self.phase) }\nworkload Steady on M { weight Server::step = 1; }\n".to_owned()+&claim("Fraction","s.phase = 1", ">= rational(1,2)")
+    } else {
+        "pre Begin using v on M::Server::step { self.phase = 0 }\npost Next using v on M::Server::step { (heads and self.phase = 1) or (not heads and self.phase = 2) }\nrandom Server::step(heads) ~ { true: 1, false: 2 };\nterminal Done using v on M when { self.phase > 0 };\nworkload Steady on M { weight Server::step = 1; }\n".to_owned()+&claim("Fraction","s.phase = 1", ">= rational(1,3)")
+    };
+    World::new(&Model {
+        package,
+        object: "Server",
+        population: "servers",
+        key: "s",
+        integers: vec![("Phase", 0, if periodic { 1 } else { 2 })],
+        fields: vec![("phase", format!("ix://{package}/Phase"))],
+        operations: vec![Operation {
+            name: "step",
+            parameters: if periodic {
+                vec![]
+            } else {
+                vec![("heads", prob_world::BOOLEAN.to_owned())]
+            },
+            modifies: vec!["phase"],
+            deletes: false,
+        }],
+        body,
+        initial: serde_json::json!({"phase":{"integer":"0"}}),
+    })
+}
+#[trace("TC-1401", "FR-201-AC-28", "FR-201-AC-29")]
+#[test]
+fn independent_components_fix_terminal_values_transients_and_periodic_classes() {
+    for periodic in [false, true] {
+        let world = finite(periodic);
+        let bytes = produce(&world, "Fraction");
+        let doc = read_long_run_probability_certificate(&bytes, limits(), &Cancel::new()).unwrap();
+        assert_eq!(doc.components.len(), if periodic { 1 } else { 2 });
+        assert!(accepted(&world, "Fraction", &doc));
+        if periodic {
+            assert!(doc.values.iter().all(|r| r.value == ratio(1, 2)));
+        } else {
+            assert_eq!(doc.values.len(), 3);
+            for v in [ratio(0, 1), ratio(1, 3), ratio(1, 1)] {
+                assert!(doc.values.iter().any(|r| r.value == v));
+            }
+        }
+        let mut missing = doc.clone();
+        missing.components.pop();
+        assert!(!accepted(&world, "Fraction", &missing));
+        if !periodic {
+            let mut merged = doc.clone();
+            let extra = merged.components.pop().unwrap();
+            merged.components[0].bias.extend(extra.bias);
+            merged.components[0]
+                .bias
+                .sort_by(|a, b| a.state.cmp(&b.state));
+            assert!(!accepted(&world, "Fraction", &merged));
+            let mut bad = doc.clone();
+            bad.values
+                .iter_mut()
+                .find(|r| r.value == ratio(1, 3))
+                .unwrap()
+                .value = ratio(1, 2);
+            assert!(!accepted(&world, "Fraction", &bad));
+        }
+    }
+}
+#[trace("TC-1401", "FR-201-AC-30")]
+#[test]
+fn long_run_control_stops_preserve_actual_causes_without_acceptance() {
+    let world = availability();
+    let bytes = produce(&world, "Lower");
+    for cause in [CancelCause::Requested, CancelCause::Deadline] {
+        let cancel = Cancel::new();
+        cancel.cancel(cause);
+        assert_eq!(
+            check(&world, "Lower", &bytes, &cancel, limits()),
+            Err(ProbabilityDocumentError::Cancelled(cause))
+        );
+    }
+    let mut capped = limits();
+    capped.accounting.work_units = 0;
+    assert!(matches!(
+        check(&world, "Lower", &bytes, &Cancel::new(), capped),
+        Err(ProbabilityDocumentError::Accounting(_))
+    ));
+    let mut capped = limits();
+    capped.states = 1;
+    assert!(matches!(
+        check(&world, "Lower", &bytes, &Cancel::new(), capped),
+        Err(ProbabilityDocumentError::Limit {
+            limit: qsl_replay::ProbabilityDocumentLimit::States,
+            ..
+        })
+    ));
+    let mut capped = limits();
+    capped.storage_bytes = 0;
+    assert!(matches!(
+        check(&world, "Lower", &bytes, &Cancel::new(), capped),
+        Err(ProbabilityDocumentError::Limit {
+            limit: qsl_replay::ProbabilityDocumentLimit::StorageBytes,
+            ..
+        })
+    ));
+}
