@@ -550,7 +550,9 @@ impl ValueSink for Bounded<'_, '_> {
                 }
                 self.formatted(Hex(bits, digits))
             }
-            Scalar::Scale(value) => self.leaf(self.scope.integer(&Integer::from(value))?),
+            Scalar::Scale(value) => {
+                self.leaf(self.scope.integer(&Integer::from(u64::from(value)))?)
+            }
             Scalar::Uuid(value) => self.formatted(value),
             Scalar::Timestamp(value) => {
                 self.leaf(self.scope.integer(&Integer::from(value.nanoseconds()))?)

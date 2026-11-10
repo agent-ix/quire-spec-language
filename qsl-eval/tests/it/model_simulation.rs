@@ -1980,6 +1980,158 @@ fn raw_model_key_preserves_legacy_reference_enum_and_extent_vectors() {
     let states = enum_system.initial();
     let first = enum_system.state_key(&states[0]).expect("enum key");
     assert_eq!(bounded(&enum_system, &states[0]), first.0);
+    #[derive(Clone)]
+    struct Budget {
+        storage: usize,
+        work: u64,
+        storage_limit: usize,
+        work_limit: u64,
+        cause: Option<&'static str>,
+        cancel_on_integer: Option<quire_exact::Cancel>,
+    }
+    impl Budget {
+        fn unlimited() -> Self {
+            Self {
+                storage: 0,
+                work: 0,
+                storage_limit: usize::MAX,
+                work_limit: u64::MAX,
+                cause: None,
+                cancel_on_integer: None,
+            }
+        }
+    }
+    impl quire_exact::Reservation for Budget {
+        fn reserve(&mut self, bytes: usize) -> Result<(), quire_exact::ReservationDenied> {
+            match self
+                .storage
+                .checked_add(bytes)
+                .filter(|next| *next <= self.storage_limit)
+            {
+                Some(next) => {
+                    self.storage = next;
+                    Ok(())
+                }
+                None => {
+                    self.cause = Some("storage");
+                    Err(quire_exact::ReservationDenied)
+                }
+            }
+        }
+    }
+    impl quire_exact::IntegerDecimalBudget for Budget {
+        fn work(&mut self, units: u64) -> Result<(), quire_exact::ReservationDenied> {
+            match self
+                .work
+                .checked_add(units)
+                .filter(|next| *next <= self.work_limit)
+            {
+                Some(next) => {
+                    self.work = next;
+                    Ok(())
+                }
+                None => {
+                    self.cause = Some("work");
+                    Err(quire_exact::ReservationDenied)
+                }
+            }
+        }
+    }
+    impl qsl_eval::simulation::model::ModelKeyBudget for Budget {
+        fn integer(
+            &mut self,
+            _: &quire_exact::Integer,
+        ) -> Result<(), quire_exact::ReservationDenied> {
+            if let Some(cancel) = &self.cancel_on_integer {
+                cancel.cancel(quire_exact::CancelCause::Deadline);
+            }
+            Ok(())
+        }
+    }
+    use qsl_eval::simulation::model::ModelKeyError;
+    let identity = qsl_foundation::IdentityLimits::default();
+    let live = quire_exact::Cancel::new();
+    let mut measured = Budget::unlimited();
+    assert_eq!(
+        enum_system
+            .state_key_bytes_with_budget(&states[0], identity, &mut measured, &live)
+            .unwrap(),
+        first.0
+    );
+    let mut exact = Budget {
+        storage_limit: measured.storage,
+        work_limit: measured.work,
+        ..Budget::unlimited()
+    };
+    assert_eq!(
+        enum_system
+            .state_key_bytes_with_budget(&states[0], identity, &mut exact, &live)
+            .unwrap(),
+        first.0
+    );
+    assert_eq!(
+        enum_system.state_key_bytes_with_budget(&states[0], identity, &mut exact, &live),
+        Err(ModelKeyError::Denied),
+        "the cumulative budget must not reset between keys"
+    );
+    assert_eq!(exact.cause, Some("work"));
+    for (storage_limit, work_limit, cause) in [
+        (0, u64::MAX, "storage"),
+        (measured.storage - 1, u64::MAX, "storage"),
+        (usize::MAX, 0, "work"),
+        (usize::MAX, measured.work - 1, "work"),
+    ] {
+        let mut budget = Budget {
+            storage_limit,
+            work_limit,
+            ..Budget::unlimited()
+        };
+        assert_eq!(
+            enum_system.state_key_bytes_with_budget(&states[0], identity, &mut budget, &live),
+            Err(ModelKeyError::Denied)
+        );
+        assert_eq!(budget.cause, Some(cause));
+    }
+    for bytes in [0, first.0.len() - 1] {
+        let mut budget = Budget::unlimited();
+        let error = enum_system
+            .state_key_bytes_with_budget(
+                &states[0],
+                qsl_foundation::IdentityLimits {
+                    input_bytes: bytes as u64,
+                },
+                &mut budget,
+                &live,
+            )
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            ModelKeyError::Encoding(qsl_eval::simulation::EncodingRefusal::Limit(_))
+        ));
+        if bytes == 0 {
+            assert_eq!(budget.storage, 0);
+        }
+    }
+    let cancel = quire_exact::Cancel::new();
+    let mut during = Budget {
+        cancel_on_integer: Some(cancel.clone()),
+        ..Budget::unlimited()
+    };
+    assert_eq!(
+        enum_system.state_key_bytes_with_budget(&states[0], identity, &mut during, &cancel),
+        Err(ModelKeyError::Cancelled(quire_exact::CancelCause::Deadline))
+    );
+    assert!(
+        during.storage > 0,
+        "cancellation must happen during real identity construction"
+    );
+    assert_eq!(bounded(&enum_system, &states[0]), first.0);
+    assert_eq!(
+        enum_system.state_key(&states[0]).unwrap().0,
+        first.0,
+        "caller denial/cancellation must not change the next legacy call"
+    );
+
     let second = enum_system
         .state_key(&states[1])
         .expect("permuted enum key");

@@ -71,6 +71,10 @@ impl KeyScope<'_> {
         if let Some(error) = self.refused.borrow_mut().take() {
             return Err(error.into());
         }
+        self.cancel.poll();
+        if let Some(cause) = self.cancel.tripped() {
+            return Err(ModelKeyError::Cancelled(cause).into());
+        }
         result.map_err(ModelKeyExpansionError::Expansion)
     }
 }
