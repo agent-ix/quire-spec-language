@@ -392,3 +392,40 @@ fn preparation_does_not_compile_the_source_and_retains_caller_byte_limits() {
         command::RunCause::Limit(command::LimitKind::DependentBytes { maximum: 2 })
     ));
 }
+
+#[test]
+#[trace("TC-771", "FR-287-AC-11")]
+fn borrowed_run_failure_projection_preserves_cancellation_and_fault_categories() {
+    for (cause, spelling) in [
+        (quire_exact::CancelCause::Requested, "requested"),
+        (quire_exact::CancelCause::Deadline, "deadline"),
+    ] {
+        let error = command::RunError {
+            cause: command::RunCause::SpineRun(Box::new(spine::RunRefusal::Cancelled(cause))),
+        };
+        for (operation, spelling_operation) in [
+            (Operation::Execute, "execute"),
+            (Operation::Package, "package"),
+        ] {
+            let outcome = document(&error.outcome_document(operation));
+            assert_eq!(outcome["operation"], spelling_operation);
+            assert_eq!(outcome["last_stage"], Value::Null);
+            assert_eq!(outcome["category"], "incomplete");
+            assert_eq!(outcome["diagnostics"][0]["code"], "cancelled");
+            assert_eq!(outcome["diagnostics"][0]["cause"], spelling);
+        }
+    }
+    let error = command::RunError {
+        cause: command::RunCause::SpineRun(Box::new(spine::RunRefusal::Fault(
+            quire_semantic_value::catalog::InternalFault::new("S6a", "test-invariant"),
+        ))),
+    };
+    let outcome = document(&error.outcome_document(Operation::Execute));
+    assert_eq!(outcome["last_stage"], Value::Null);
+    assert_eq!(outcome["category"], "internal_failure");
+    assert_eq!(outcome["diagnostics"][0]["code"], "runtime_invariant");
+    assert_eq!(
+        outcome["diagnostics"][0]["cause"],
+        "established-invariant-broken"
+    );
+}
