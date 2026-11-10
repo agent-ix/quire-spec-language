@@ -291,6 +291,77 @@ neither SHALL be trusted as a qualitative result supplied by EN-5.
   this profile SHALL NOT authorize new FR-202 refutation semantics or
   complete the blocked QSpec FR-413 witness wire.
 
+### Closed cyclic DTMC eventual document profile
+
+The codec SHALL admit `"quire.probability-objective/cyclic-dtmc-eventual/v1"`
+only for untimed infinite-trace unbounded `eventually holds(P)` over a checked
+state predicate. This is a separate closed profile: it SHALL NOT change the
+admission, canonical bytes or meaning of any existing profile. Its objective
+has exactly `profile`, `targets`, `optimization`, `fairness`; the existing
+reachability profile's exact document body, strict canonical decoding,
+rational representation, full-key ordering/coverage and identity rules apply.
+No policy, component partition, formula AST or additional body field is added.
+
+- Admission SHALL independently enumerate the finite original reachable model
+  graph, permitting real cycles, with one initial state, at most one actual
+  S3 binding, no clocks, rewards or authored fairness, and FR-196's current
+  single-post Markov restrictions. Over every scheduler, every original live
+  state SHALL have exactly one semantic enabled distribution; merely finding
+  a good policy, equal certified action values or equal action distributions
+  SHALL NOT admit residual choices. A workload SHALL be fully resolved by its
+  authored semantics to one distribution per live state, with no residual
+  scheduler choice. Admission applies even beyond an early target. General
+  MDPs, other formulas, multiple initials/bindings and non-exact kinds remain
+  explicitly unsupported. Minimum AtLeast, maximum AtMost and either workload
+  bound are admitted; optimization is independently derived from the claim.
+- The checker SHALL independently read P at position 0 and each reached
+  original state using the actual checked occurrence, infinite-trace profile
+  and binding, then construct the stopped reachable graph by not expanding
+  targets. Targets are exactly its reached P states and have value 1.
+  Non-target model terminals have value 0: infinite terminal stutter cannot
+  make P true later. For graph analysis only, these terminal boundaries and
+  targets are absorbing; no synthetic model/product key is introduced.
+- The checker SHALL compute positive-support SCCs and closed bottom SCCs on
+  that stopped graph using its own bounded graph algorithms. All states in
+  non-target closed bottom SCCs SHALL have value 0, including non-target
+  terminals. It SHALL independently derive Prob0 as states with no
+  positive-support path to a target and require value 0 there too. It SHALL
+  check exact harmonic equality `x(s) = sum(p(s,t) * x(t))` at every other
+  non-target live state, with normalized positive semantic edge masses and
+  all values in [0,1]. These boundaries remove every recurrent non-target
+  degree of freedom; the remaining finite transient system has a unique
+  solution. The checker SHALL check equations, not solve them or run value
+  iteration, and SHALL trust no producer graph, SCC labels or qualitative set.
+- Ranking SHALL cover the same stopped graph as values. Targets and Prob0
+  states SHALL have rank 0; every other state SHALL have the independently
+  derived shortest positive-support edge distance to any target. This
+  satisfies CE-3: each positive non-target state has a positive-valued
+  lower-rank successor. It does not require every edge to decrease: a
+  self-loop may retain its rank. Acyclic edge-decreasing heights and SCC
+  condensation heights SHALL NOT substitute for these distances. Wrong
+  distances reject `RankBroken` at the first differing complete key;
+  missing/extra coverage uses the existing malformed-coverage check.
+- Full keys SHALL use FR-196's authoritative model-key and real binding
+  owners through `ProbabilityProductKey::for_model_state`, with actually
+  absent monitor, accumulator and pending components null. Model-only keys,
+  local ids, invented transport or substituted bindings are not aliases.
+  Identity mismatch refuses before enumeration; independently changed target
+  or optimization refuses objective mismatch. Wrong values reject
+  `InequalityFails`; an unmet exact threshold rejects `ThresholdMissed`.
+  Equivalent source changes may still accept if all independently derived
+  contracts and equations hold; source spelling is not a new identity field.
+- Original/stopped exploration, SCC/reverse reachability, distance queues,
+  canonical-key materialization, parsing and exact sums SHALL obey caller
+  byte, state, edge, storage, work, scalar/rational and cancellation controls.
+  Graph passes SHALL use O(V+E) graph work/storage, with representation bytes
+  and exact arithmetic charged separately before allocation/operation;
+  rank overflow stops under the actual named limit. Pre-cancellation and
+  cancellation during any pass preserve typed nonacceptance without truth
+  values. The raw-model-key owner budget prerequisite remains open; this
+  profile does not invent an upstream API or establish that prerequisite.
+  Proof coverage alone is extended: FR-202 native cyclic refutations,
+  QSpec FR-413 wire, fairness, timed, long-run and reward coverage remain open.
+
 ### General checking conditions
 
 - Digital timed certificate objectives SHALL select ADR-028 §13a from the
@@ -482,11 +553,14 @@ change the bytes or interpretation of either existing probability profile.
 | FR-201-AC-16 | For always, an initial nonterminal P state has choices a and b reaching terminal P with probability 1/4 and 3/4 respectively, otherwise not-P followed by terminal P. Direct-event minimum AtLeast 1/4, maximum AtMost 3/4 and equal-weight resolved workload both sides at 1/2 are accepted. A prefix not-P has value 0 despite later P; initial terminal P has value 1 and initial not-P value 0. Treating the initial P as target, using 3/4 as minimum via an unswapped complement, or changing either boundary value fails checking. The beyond-side thresholds of AC-15 fail here too. | Test |
 | FR-201-AC-17 | Canonical state-predicate documents for AC-15 and AC-16 round-trip byte for byte. Replacing until B by a different checked predicate that changes the derived target set, or always P by one that changes failures, prevents acceptance of the original document under that claim even with internally consistent old rows. Changed event/optimization/targets/failures refuses objective mismatch; a foreign S3 binding or altered complete key is not an alias. Altered value, missing coverage or broken positive-value rank fails its existing check. A reachability/v1 document cannot encode these events by relabelling its targets. | Test |
 | FR-201-AC-18 | AC-15 and AC-16 obey pre-cancellation and byte/state/edge/arithmetic limits throughout independent admission, original/stopped graph construction and checking, with typed stop/cancellation and no accepted truth value. Cycles in the original graph even after an early success, nonempty fairness, clocks, rewards, multiple initials/bindings, nested temporal forms, unresolved workload and non-exact documents remain explicitly unsupported. No state-predicate proof document is treated as a refutation witness. | Test |
-
 | FR-201-AC-19 | For an acyclic two-step source with named integer reward R, initial choices a (cost 1, then cost 2 to B) and b (cost 4 directly to B) have exact minimum 3 and maximum 4. The minimum AtLeast 3 and maximum AtMost 4 documents accept at equality; thresholds 4 and 3 respectively reject ThresholdMissed. An equal-weight resolved workload has value 7/2 and accepts either bound at 7/2. Values above 1 are accepted; a probability-style target value 1 rejects. | Test |
-| FR-201-AC-20 | A draw-dependent authored reward of 2 or 6 with equal probability on an edge entering B gives value 4, including the entry cost. Swapping costs 2 and 6 between those equally probable draws preserves the value 4; the same certificate SHALL accept after independent recomputation when every equation, target, identity and rank remains valid. Changing the costs to 2 and 8 falsifies the certified initial value 4 and SHALL reject; substituting a fixed unit-step cost also SHALL reject because its value 1 fails that equation. Initial B has value 0 even with an enabled positive-cost operation. A reached B absorbs a later positive-cost edge; a reached non-B terminal, including a zero-cost terminal, is explicitly unsupported under FR-198's nonreachability rule. A raw reachable cycle beyond B is unsupported before stopping. | Test |
+| FR-201-AC-20 | A draw-dependent authored reward of 2 or 6 with equal probability on an edge entering B gives value 4, including the entry cost. Swapping costs 2 and 6 between those equally probable draws preserves the value 4; the same certificate accepts after independent recomputation when every equation, target, identity and rank remains valid. Changing the costs to 2 and 8 falsifies the certified initial value 4 and rejects; substituting a fixed unit-step cost also rejects because its value 1 fails that equation. Initial B has value 0 even with an enabled positive-cost operation. A reached B absorbs a later positive-cost edge; a reached non-B terminal, including a zero-cost terminal, is explicitly unsupported under FR-198's nonreachability rule. A raw reachable cycle beyond B is unsupported before stopping. | Test |
 | FR-201-AC-21 | A checked quantity reward expressed as 2 ms and 6 ms under equal draws gives 4 ms and accepts a source threshold 0.004 s after exact checked-unit normalization. Wrong reward name/model, target set, optimization, binding or full key prevents acceptance; changing the claimed reward/unit identity with the same numeric magnitudes prevents objective acceptance. Equivalent independently rederived costs under the actual admitted subject remain valid; source changes alone do not imply a staleness rejection. A dimensionally wrong source bound preserves the typing refusal. Noncanonical, duplicate, omitted or oversized keys/rows/rationals refuse or stop under the actual caller control; missing/wrong ranks reject, including a zero-cost live state's wrong height. | Test |
 | FR-201-AC-22 | The checker independently checks analyze's AC-19 to AC-21 exact documents with no qsl-analyze/provider dependency or reused solver graph/cost labels. Negative/undefined reward evaluation, unsupported profile/kind, exhausted graph/arithmetic/representation budgets, pre-cancellation and cancellation during expansion or reward evaluation preserve typed nonacceptance without truth values. Existing reachability/v1 and state-predicate/v1 canonical bytes/verdicts are unchanged. | Test |
+| FR-201-AC-23 | A DTMC s with probabilities 1/3 each to s, target g and non-target absorbing f has exact eventual probability 1/2; values (s,g,f)=(1/2,1,0), ranks (1,0,0) accept minimum AtLeast and maximum AtMost at 1/2. Target g absorbs despite its original outgoing cycle. Initial target accepts at 1 and non-target terminal at 0 under infinite stutter. Thresholds 3/5 AtLeast and 2/5 AtMost reject ThresholdMissed. A target-free two-state closed cycle has values/ranks 0 and accepts at 0; assigning its states 1/2 despite valid harmonic equalities rejects. | Test |
+| FR-201-AC-24 | In a transient SCC, a goes to b with probability 1, b to a with 1/2, target g with 1/4 and closed failure f with 1/4. Values a=b=1/2, g=1, f=0 and ranks a=2,b=1,g=f=0 accept; both SCC members having condensation rank 1 rejects RankBroken. A fully authored workload at s choosing equally between deterministic return-to-s and a distribution g:1/3,f:2/3 resolves to s:1/2,g:1/6,f:1/3 and accepts exact value 1/3, rank 1 on either workload bound at equality; 2/5 AtLeast and 1/4 AtMost reject. | Test |
+| FR-201-AC-25 | AC-23/24 documents round-trip canonically; wrong values, distances, missing/extra coverage, foreign binding, altered complete model key, model-only key, changed derived targets/optimization or mismatched identity prevent acceptance. Changed source probabilities that falsify equations reject; equivalent source changes may accept. A live state with stay and exit scheduler choices refuses as unsupported even if a producer supplies a policy or equal values, including when that state lies beyond an early target. Unresolved workload, fairness, clocks, rewards, other formulas, multi-post and multiple bindings/initials remain unsupported. Existing profile bytes and verdicts are unchanged. | Test |
+| FR-201-AC-26 | AC-23/24 independently check with no solver dependency. Source/document/key byte, state/edge, graph work/storage and scalar/rational budgets are exercised at exhaustion, including SCC, reverse reachability and distance construction; actual typed limit and consumption are retained. Pre-cancellation and cancellation during each pass or exact sum stop without acceptance or truth values; no fabricated upstream key-budget API or cyclic refutation is claimed. | Test |
 
 ## Dependencies
 
