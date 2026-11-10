@@ -247,7 +247,9 @@ impl Encode for Events<'_> {
         writer.name("objective")?;
         writer.begin_object()?;
         writer.name("profile")?;
-        writer.string(if self.cyclic_mdp {
+        writer.string(if self.cyclic_mdp && self.document.reward.is_some() {
+            CYCLIC_MDP_REWARD_PROFILE
+        } else if self.cyclic_mdp {
             CYCLIC_MDP_PROFILE
         } else if self.document.cyclic_dtmc && self.document.reward.is_some() {
             CYCLIC_REWARD_PROFILE
