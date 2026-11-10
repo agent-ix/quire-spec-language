@@ -350,25 +350,62 @@ fn weighted_phase_controls_preserve_actual_cancellation_and_limits() {
     }
     // The row-sum phase must be observed after component membership, rather
     // than the earlier expected-weight arithmetic that uses the same meter.
-    for cause in [None,Some(CancelCause::Requested),Some(CancelCause::Deadline)] {
-        let cancel=Cancel::new();let mut membership=false;let mut reached=false;
-        let result=check_long_run_probability_certificate_observing(&system,world.package.graph().probabilistic_model().claims(),&identity,&bytes,limits(),&cancel,&mut |phase| {
-            if phase==Phase::Membership {membership=true;}
-            if membership && phase==Phase::Arithmetic {reached=true;if let Some(cause)=cause {cancel.cancel(cause);}}
-        });
+    for cause in [
+        None,
+        Some(CancelCause::Requested),
+        Some(CancelCause::Deadline),
+    ] {
+        let cancel = Cancel::new();
+        let mut membership = false;
+        let mut reached = false;
+        let result = check_long_run_probability_certificate_observing(
+            &system,
+            world.package.graph().probabilistic_model().claims(),
+            &identity,
+            &bytes,
+            limits(),
+            &cancel,
+            &mut |phase| {
+                if phase == Phase::Membership {
+                    membership = true;
+                }
+                if membership && phase == Phase::Arithmetic {
+                    reached = true;
+                    if let Some(cause) = cause {
+                        cancel.cancel(cause);
+                    }
+                }
+            },
+        );
         assert!(reached);
-        match cause {Some(cause)=>assert_eq!(result,Err(ProbabilityDocumentError::Cancelled(cause))),None=>assert!(matches!(result.unwrap(),ExactProbabilityCertificateCheck::Accepted(_)))}
+        match cause {
+            Some(cause) => assert_eq!(result, Err(ProbabilityDocumentError::Cancelled(cause))),
+            None => assert!(matches!(
+                result.unwrap(),
+                ExactProbabilityCertificateCheck::Accepted(_)
+            )),
+        }
     }
-    let mut exact_bytes=limits();exact_bytes.bytes=bytes.len() as u64;
-    assert!(matches!(check(&world,"Lower",&bytes,&Cancel::new(),exact_bytes).unwrap(),ExactProbabilityCertificateCheck::Accepted(_)));
-    exact_bytes.bytes-=1;
-    assert!(matches!(check(&world,"Lower",&bytes,&Cancel::new(),exact_bytes),Err(ProbabilityDocumentError::Limit{limit:qsl_replay::ProbabilityDocumentLimit::Bytes,bound,actual}) if bound+1==actual && actual==bytes.len() as u64));
+    let mut exact_bytes = limits();
+    exact_bytes.bytes = bytes.len() as u64;
+    assert!(matches!(
+        check(&world, "Lower", &bytes, &Cancel::new(), exact_bytes).unwrap(),
+        ExactProbabilityCertificateCheck::Accepted(_)
+    ));
+    exact_bytes.bytes -= 1;
+    assert!(
+        matches!(check(&world,"Lower",&bytes,&Cancel::new(),exact_bytes),Err(ProbabilityDocumentError::Limit{limit:qsl_replay::ProbabilityDocumentLimit::Bytes,bound,actual}) if bound+1==actual && actual==bytes.len() as u64)
+    );
     // Independent numeric oracle:2000 is the largest normalized magnitude in
     // this two-state proof and its original probabilities (eleven bits).
-    let mut exact_bits=limits();exact_bits.scalar_bits=11;
-    assert!(matches!(check(&world,"Lower",&bytes,&Cancel::new(),exact_bits).unwrap(),ExactProbabilityCertificateCheck::Accepted(_)));
-    exact_bits.scalar_bits=10;
-    assert!(check(&world,"Lower",&bytes,&Cancel::new(),exact_bits).is_err());
+    let mut exact_bits = limits();
+    exact_bits.scalar_bits = 11;
+    assert!(matches!(
+        check(&world, "Lower", &bytes, &Cancel::new(), exact_bits).unwrap(),
+        ExactProbabilityCertificateCheck::Accepted(_)
+    ));
+    exact_bits.scalar_bits = 10;
+    assert!(check(&world, "Lower", &bytes, &Cancel::new(), exact_bits).is_err());
     for control in 0..5 {
         let mut cap = limits();
         match control {
