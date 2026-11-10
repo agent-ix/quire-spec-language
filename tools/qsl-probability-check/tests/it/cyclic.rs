@@ -305,6 +305,9 @@ fn cyclic_evidence_mutations_and_caller_controls_prevent_acceptance() {
             alter_keys(doc, |key| key[1] = Value::Null);
         }),
         mutate(&request, |doc| {
+            alter_keys(doc, |key| *key = key[2].clone());
+        }),
+        mutate(&request, |doc| {
             doc["objective"]["targets"] = json!([]);
         }),
         mutate(&request, |doc| {
@@ -335,6 +338,28 @@ fn cyclic_evidence_mutations_and_caller_controls_prevent_acceptance() {
     let (code, output) = run(&changed_source);
     assert_eq!(code, 1, "{output}");
     assert_eq!(output["rule"], "inequality-fails");
+    let mut equivalent = request.clone();
+    replace_source(
+        &mut equivalent,
+        &claim(
+            &base.replace("0: 1, 1: 1, 2: 1", "0: 2, 1: 2, 2: 2"),
+            "every scheduler",
+            ">=",
+            "rational(1,2)",
+            "m.delivered",
+        ),
+    );
+    accepted(&equivalent, "1", "2");
+    let mut stale = request.clone();
+    stale["source"]["content"] = json!("different source bytes");
+    let (code, output) = run(&stale);
+    assert_ne!(code, 0, "{output}");
+    assert_eq!(output["status"], "refused");
+    let mut foreign = request.clone();
+    foreign["item"]["ordinal"] = json!(99);
+    let (code, output) = run(&foreign);
+    assert_ne!(code, 0, "{output}");
+    assert_eq!(output["status"], "refused");
     let (code, output) = run_with(&request, &["--cancel"]);
     assert_ne!(code, 0, "{output}");
     assert_eq!(output["status"], "stopped");
@@ -351,6 +376,13 @@ fn cyclic_evidence_mutations_and_caller_controls_prevent_acceptance() {
         assert_ne!(code, 0, "{name}: {output}");
         assert_eq!(output["status"], "stopped", "{name}: {output}");
     }
+    let mut work = request;
+    work["limits"]["stages"]["accounting.work_units"] = json!(0);
+    let (code, output) = run(&work);
+    assert_ne!(code, 0, "{output}");
+    assert_eq!(output["status"], "stopped");
+    assert_eq!(output["limit"]["setting"], "accounting.work_units");
+    assert!(output.get("value").is_none());
 }
 
 #[trace("TC-636", "FR-201-AC-26", "FR-282-AC-19")]
