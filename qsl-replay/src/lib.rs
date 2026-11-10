@@ -350,7 +350,8 @@ pub use probability_certificate::{
 };
 #[cfg(feature = "test-support")]
 pub use probability_certificate::{
-    replay_probabilistic_witness_observing, ProbabilityWitnessSemanticPhase,
+    check_long_run_probability_certificate_observing, replay_probabilistic_witness_observing,
+    LongRunProbabilityPhase, ProbabilityWitnessSemanticPhase,
 };
 pub use product_action::{
     FreeDelayActionRow, FreeDelayRow, FreeDelaysRace, FreeRacer, GivenRacer, NotMixedRace,
@@ -633,8 +634,3 @@ mod redaction_tests {
             .any(|(name, _)| name == marker));
     }
 }
-
-#[cfg(feature = "test-support")]
-pub use probability_certificate::{
-    check_long_run_probability_certificate_observing, LongRunProbabilityPhase,
-};

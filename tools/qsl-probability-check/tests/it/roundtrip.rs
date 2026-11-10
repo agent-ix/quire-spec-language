@@ -194,8 +194,7 @@ fn proof_source_request(
             &cancel,
         )
         .unwrap();
-        let written = write_probability_certificate(&document, document_limits, &cancel).unwrap();
-        written
+        write_probability_certificate(&document, document_limits, &cancel).unwrap()
     };
     let retained = record
         .terminal()
