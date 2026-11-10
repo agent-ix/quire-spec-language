@@ -836,11 +836,9 @@ fn replay_refutation(
         }
         _ => None,
     };
-    let (accepting, past) = match &claim.form {
-        ProbForm::Reach { bound, .. } if state_outcomes.is_some() => (
-            state_outcomes
-                .as_ref()
-                .expect("state outcomes were selected")
+    let (accepting, past) = match (&claim.form, state_outcomes.as_deref()) {
+        (ProbForm::Reach { bound, .. }, Some(outcomes)) => (
+            outcomes
                 .iter()
                 .map(|outcome| *outcome == Some(matches!(bound, Bound::AtMost(_))))
                 .collect(),
@@ -849,7 +847,7 @@ fn replay_refutation(
                 Bound::AtLeast(threshold) => Rational::from_integer(1_i64.into()).sub(threshold),
             },
         ),
-        ProbForm::Probability { bound, .. } if monitor.is_some() => (
+        (ProbForm::Probability { bound, .. }, _) if monitor.is_some() => (
             product
                 .states
                 .iter()
@@ -875,14 +873,20 @@ fn replay_refutation(
                 Bound::AtLeast(threshold) => Rational::from_integer(1_i64.into()).sub(threshold),
             },
         ),
-        ProbForm::Reach {
-            bound: Bound::AtMost(threshold),
-            ..
-        } => (target.to_vec(), threshold.clone()),
-        ProbForm::Reach {
-            bound: Bound::AtLeast(threshold),
-            ..
-        } => (
+        (
+            ProbForm::Reach {
+                bound: Bound::AtMost(threshold),
+                ..
+            },
+            _,
+        ) => (target.to_vec(), threshold.clone()),
+        (
+            ProbForm::Reach {
+                bound: Bound::AtLeast(threshold),
+                ..
+            },
+            _,
+        ) => (
             product
                 .states
                 .iter()
