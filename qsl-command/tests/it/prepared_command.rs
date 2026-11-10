@@ -186,7 +186,10 @@ fn preparation_retains_owned_inputs_and_the_existing_run_outcomes() {
         } else {
             assert_eq!(machine["result"]["kind"], "incomplete");
             assert_eq!(machine["result"]["limit"]["counter"], "1");
-            assert_eq!(machine["result"]["limit"]["setting"], "accounting.work_units");
+            assert_eq!(
+                machine["result"]["limit"]["setting"],
+                "accounting.work_units"
+            );
         }
     }
 }
