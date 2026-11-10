@@ -36,9 +36,36 @@ pub(super) fn enumerate(
             reward.name() == name.as_str() && reward.operation().model() == claim.subject.alias
         })
         .ok_or(ProbabilityDocumentError::Unsupported)?;
+    let storage = std::cell::RefCell::new(0_u64);
+    charge(
+        &mut storage.borrow_mut(),
+        limits.storage_bytes,
+        name.as_str().len() as u64,
+    )?;
     let unit = match declared.value_type() {
         ValueType::Integer | ValueType::Int(_) => None,
-        ValueType::Quantity(unit) => Some(unit.clone()),
+        ValueType::Quantity(unit) => {
+            if let Some(terms) = unit.compound_terms() {
+                for (_, exponent) in terms {
+                    poll_cancel(cancel)?;
+                    let bits = exponent.magnitude_bits();
+                    if bits > limits.scalar_bits {
+                        return Err(ProbabilityDocumentError::Limit {
+                            limit: ProbabilityDocumentLimit::RationalBits,
+                            bound: limits.scalar_bits,
+                            actual: bits,
+                        });
+                    }
+                    charge(
+                        &mut storage.borrow_mut(),
+                        limits.storage_bytes,
+                        (std::mem::size_of::<(quire_exact::NodeKey, Integer)>() as u64)
+                            .saturating_add(bits.div_ceil(8)),
+                    )?;
+                }
+            }
+            Some(unit.clone())
+        }
         _ => return Err(ProbabilityDocumentError::Unsupported),
     };
     let model = system
@@ -56,7 +83,6 @@ pub(super) fn enumerate(
     let mut costs = BTreeMap::new();
     let failure = std::cell::RefCell::new(None);
     let mut issue = None;
-    let storage = std::cell::RefCell::new(0_u64);
     let mut remaining_edges = limits.edges;
     let key_of = |state: &ModelSimState| {
         let (bytes, _) = system
