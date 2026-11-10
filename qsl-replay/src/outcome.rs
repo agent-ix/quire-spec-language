@@ -1314,7 +1314,10 @@ pub struct OutcomeDiagnostic {
     code: String,
     locus: Option<OutcomeLocus>,
     message: String,
-    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "serialize_source_label")]
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "serialize_source_label"
+    )]
     label: Option<SourceLabel>,
 }
 

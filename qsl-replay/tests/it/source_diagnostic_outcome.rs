@@ -19,8 +19,9 @@ fn document(diagnostic: OutcomeDiagnostic) -> OutcomeDocument {
 }
 
 fn diagnostic_value(document: &OutcomeDocument) -> Value {
-    let value: Value = serde_json::from_slice(&document.to_bytes().expect("typed document encodes"))
-        .expect("outcome is JSON");
+    let value: Value =
+        serde_json::from_slice(&document.to_bytes().expect("typed document encodes"))
+            .expect("outcome is JSON");
     assert_eq!(value["diagnostics"].as_array().unwrap().len(), 1);
     value["diagnostics"][0].clone()
 }
@@ -74,7 +75,10 @@ fn pre_admission_blank_labels_retain_the_typed_label_without_a_locus() {
             );
         }
     }
-    assert_eq!(SourceIdentity::new("\u{200b}", "document").first_blank_label(), None);
+    assert_eq!(
+        SourceIdentity::new("\u{200b}", "document").first_blank_label(),
+        None
+    );
 }
 
 #[test]
@@ -82,12 +86,42 @@ fn pre_admission_blank_labels_retain_the_typed_label_without_a_locus() {
 fn other_source_causes_omit_label_and_preserve_the_original_region_and_detail() {
     let source = SourceIdentity::new("issuer", "document");
     let cases = [
-        (SourceReadCause::EmptyPath, "invalid_source_identity", "empty-path", None),
-        (SourceReadCause::ByteBudget, "stage_limit_exceeded", "input-bytes-exceeded", None),
-        (SourceReadCause::ReferenceInvariant, "runtime_invariant", "established-invariant-broken", None),
-        (SourceReadCause::InvalidUtf8, "invalid_utf8", "invalid-utf8", Some(b"ab\xffc".as_slice())),
-        (SourceReadCause::Bom, "invalid_syntax", "invalid-token", Some(b"\xef\xbb\xbfunit".as_slice())),
-        (SourceReadCause::Nul, "invalid_syntax", "invalid-token", Some(b"ab\0c".as_slice())),
+        (
+            SourceReadCause::EmptyPath,
+            "invalid_source_identity",
+            "empty-path",
+            None,
+        ),
+        (
+            SourceReadCause::ByteBudget,
+            "stage_limit_exceeded",
+            "input-bytes-exceeded",
+            None,
+        ),
+        (
+            SourceReadCause::ReferenceInvariant,
+            "runtime_invariant",
+            "established-invariant-broken",
+            None,
+        ),
+        (
+            SourceReadCause::InvalidUtf8,
+            "invalid_utf8",
+            "invalid-utf8",
+            Some(b"ab\xffc".as_slice()),
+        ),
+        (
+            SourceReadCause::Bom,
+            "invalid_syntax",
+            "invalid-token",
+            Some(b"\xef\xbb\xbfunit".as_slice()),
+        ),
+        (
+            SourceReadCause::Nul,
+            "invalid_syntax",
+            "invalid-token",
+            Some(b"ab\0c".as_slice()),
+        ),
     ];
     for (cause, code, tag, bytes) in cases {
         let region = bytes.map(|bytes| {
@@ -151,11 +185,17 @@ fn actual_source_reads_and_parse_refusals_use_the_same_projection_bytes() {
             CompileRefusal::Source(read),
         ))));
         let result = spine::parse(
-            &ParseRequest { source: &source, path, bytes },
+            &ParseRequest {
+                source: &source,
+                path,
+                bytes,
+            },
             limits,
             &Cancel::new(),
         );
-        assert!(matches!(&result, Err(StageFailure::Refused(refusal)) if matches!(refusal.as_ref(), CompileRefusal::Source(_))));
+        assert!(
+            matches!(&result, Err(StageFailure::Refused(refusal)) if matches!(refusal.as_ref(), CompileRefusal::Source(_)))
+        );
         let actual = OutcomeDocument::from_parse(&result);
         assert_eq!(actual.to_bytes().unwrap(), expected.to_bytes().unwrap());
         assert_eq!(actual.category(), Category::Refusal);
