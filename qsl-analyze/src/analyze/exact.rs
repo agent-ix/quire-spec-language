@@ -466,6 +466,23 @@ fn run(
         if expected_reward {
             return not_yet();
         }
+        if matches!(
+            claim.form,
+            ProbForm::Reach {
+                target: ReachTarget::Eventually(_),
+                ..
+            }
+        ) {
+            if let Err(error) = qsl_replay::admit_acyclic_eventual_certificate_subject(
+                &system,
+                package.graph().probabilistic_model().claims(),
+                &item,
+                document_limits,
+                cancel,
+            ) {
+                return document_failure(error, subject);
+            }
+        }
         let bounded_monitor = match (bounded_formula, monitor) {
             (Some(formula), Some(monitor)) => {
                 let context =
