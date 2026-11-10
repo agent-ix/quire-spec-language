@@ -9,3 +9,5 @@ mod state_predicate;
 mod cyclic_reward;
 
 mod cyclic_mdp;
+
+mod cyclic_mdp_reward;

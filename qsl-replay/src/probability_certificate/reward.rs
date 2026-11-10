@@ -9,6 +9,7 @@ use quire_exact::{Identifier, Value as ExactValue, ValueType};
 pub(super) enum RewardProfile {
     Acyclic,
     CyclicDtmc,
+    CyclicMdp,
 }
 
 /// Actual independently checked cyclic reward stages.
@@ -255,7 +256,7 @@ pub(super) fn enumerate(
                 ModelVisitPhase::AfterTarget
             },
             &mut |key, state, terminal| {
-                if collect_costs.get() && profile == RewardProfile::CyclicDtmc {
+                if collect_costs.get() && profile != RewardProfile::Acyclic {
                     control
                         .phase(RewardProbabilityPhase::Predicate)
                         .map_err(|error| {
@@ -264,7 +265,7 @@ pub(super) fn enumerate(
                         })?;
                 }
                 if !collect_costs.get()
-                    || profile == RewardProfile::CyclicDtmc && terminal == Some(true)
+                    || profile != RewardProfile::Acyclic && terminal == Some(true)
                 {
                     return Ok(());
                 }
@@ -307,8 +308,8 @@ pub(super) fn enumerate(
             &mut |failure| *issue.borrow_mut() = Some(failure),
         )
     };
-    if profile == RewardProfile::CyclicDtmc {
-        if workload.is_none() {
+    if profile != RewardProfile::Acyclic {
+        if profile == RewardProfile::CyclicDtmc && workload.is_none() {
             return Err(ProbabilityDocumentError::Unsupported);
         }
         // Original model admission does not evaluate the query predicate or
@@ -317,21 +318,27 @@ pub(super) fn enumerate(
         let original = finish_graph(explore(None, false), &failure, &issue)?;
         for state in original.states.values() {
             poll_cancel(cancel)?;
-            if !state.choices.is_empty() && state.choices.len() != 1 {
+            if profile == RewardProfile::CyclicDtmc
+                && !state.choices.is_empty()
+                && state.choices.len() != 1
+            {
                 return Err(ProbabilityDocumentError::Unsupported);
             }
         }
     }
     collect_costs.set(true);
-    if profile == RewardProfile::CyclicDtmc {
+    if profile != RewardProfile::Acyclic {
         control.phase(RewardProbabilityPhase::Stopped)?;
     }
     let mut graph = finish_graph(
-        explore(Some(until), profile == RewardProfile::CyclicDtmc),
+        explore(Some(until), profile != RewardProfile::Acyclic),
         &failure,
         &issue,
     )?;
     let mut costs = costs.into_inner();
+    if profile == RewardProfile::CyclicMdp {
+        return Ok((graph, BTreeMap::new(), RewardGraph { objective, costs }));
+    }
     if profile == RewardProfile::CyclicDtmc {
         let ranks = progress_ranks(
             &graph,

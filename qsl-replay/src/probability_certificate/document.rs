@@ -15,7 +15,8 @@ pub use mdp::{
     check_cyclic_mdp_probability_certificate_with_identity, CyclicMdpProbabilityPhase,
 };
 pub use mdp::{
-    cyclic_mdp_probability_certificate_document, probability_proof_document,
+    cyclic_mdp_probability_certificate_document,
+    cyclic_mdp_reward_probability_certificate_document, probability_proof_document,
     read_probability_proof_document, write_probability_proof_document, ProbabilityProofDocument,
 };
 mod long_run;
@@ -41,6 +42,7 @@ const REWARD_PROFILE: &str = "quire.probability-objective/expected-reward/v1";
 const CYCLIC_REWARD_PROFILE: &str = "quire.probability-objective/dtmc-expected-reward/v1";
 const CYCLIC_PROFILE: &str = "quire.probability-objective/cyclic-dtmc-eventual/v1";
 const CYCLIC_MDP_PROFILE: &str = "quire.probability-objective/cyclic-mdp-eventual/v1";
+const CYCLIC_MDP_REWARD_PROFILE: &str = "quire.probability-objective/cyclic-mdp-expected-reward/v1";
 const MAX_COUNT: u64 = 9_007_199_254_740_991;
 
 /// Caller-owned byte and working-storage ceilings for certificate transport.
@@ -164,6 +166,9 @@ pub struct ProbabilityDocumentLimits {
 /// A document never becomes accepted evidence when one of these occurs.
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum ProbabilityDocumentError {
+    /// At least one covered state has infinite selected expected reward.
+    #[error("finite evidence cannot cover an infinite expected-reward state")]
+    MixedInfiniteCoverage,
     /// Input is malformed or violates the closed wire contract.
     #[error("invalid_runtime_input: malformed probability certificate")]
     Malformed,
@@ -321,6 +326,7 @@ enum ProfileDispatch {
     Exact,
     LongRun,
     CyclicMdp,
+    CyclicMdpReward,
 }
 
 fn profile_dispatch(
@@ -357,6 +363,9 @@ fn profile_dispatch(
                 ProfileDispatch::LongRun
             }
             Some(quire_canonical::Node::String(CYCLIC_MDP_PROFILE)) => ProfileDispatch::CyclicMdp,
+            Some(quire_canonical::Node::String(CYCLIC_MDP_REWARD_PROFILE)) => {
+                ProfileDispatch::CyclicMdpReward
+            }
             _ => ProfileDispatch::Exact,
         },
     )
@@ -621,7 +630,7 @@ fn read_document_profile(
     let root = parsed.root();
     let objective = root.get("objective");
     let outside_profile = matches!(root.get("kind").map(|node| node.node()), Some(quire_canonical::Node::String(kind)) if kind != "exact")
-        || matches!(objective.and_then(|node| node.get("profile")).map(|node| node.node()), Some(quire_canonical::Node::String(profile)) if if cyclic_mdp { profile != CYCLIC_MDP_PROFILE } else { profile != PROFILE && profile != STATE_PROFILE && profile != REWARD_PROFILE && profile != CYCLIC_PROFILE && profile != CYCLIC_REWARD_PROFILE })
+        || matches!(objective.and_then(|node| node.get("profile")).map(|node| node.node()), Some(quire_canonical::Node::String(profile)) if if cyclic_mdp { !matches!(profile, CYCLIC_MDP_PROFILE | CYCLIC_MDP_REWARD_PROFILE) } else { profile != PROFILE && profile != STATE_PROFILE && profile != REWARD_PROFILE && profile != CYCLIC_PROFILE && profile != CYCLIC_REWARD_PROFILE })
         || matches!(objective.and_then(|node| node.get("event")).map(|node| node.node()), Some(quire_canonical::Node::String(event)) if !matches!(event, "until" | "always"))
         || matches!(objective.and_then(|node| node.get("optimization")).map(|node| node.node()), Some(quire_canonical::Node::String(operator)) if !matches!(operator, "minimum" | "maximum" | "workload"))
         || match objective
@@ -678,7 +687,10 @@ fn read_document_profile(
     }
     if wire.kind != "exact"
         || if cyclic_mdp {
-            wire.objective.profile != CYCLIC_MDP_PROFILE
+            !matches!(
+                wire.objective.profile.as_str(),
+                CYCLIC_MDP_PROFILE | CYCLIC_MDP_REWARD_PROFILE
+            )
         } else {
             !matches!(
                 wire.objective.profile.as_str(),
@@ -692,7 +704,7 @@ fn read_document_profile(
     let state_profile = wire.objective.profile == STATE_PROFILE;
     let reward_profile = matches!(
         wire.objective.profile.as_str(),
-        REWARD_PROFILE | CYCLIC_REWARD_PROFILE
+        REWARD_PROFILE | CYCLIC_REWARD_PROFILE | CYCLIC_MDP_REWARD_PROFILE
     );
     if state_profile != wire.objective.event.is_some()
         || state_profile != wire.objective.failures.is_some()
@@ -1031,8 +1043,8 @@ fn target_keys(graph: &CheckerGraph) -> Vec<ProbabilityProductKey> {
 }
 
 /// Admit an expected-reward subject before an engine invokes its general
-/// solver. This independently checks the eligible acyclic or cyclic DTMC
-/// profile, actual costs, units and targets under caller controls. It grants no
+/// solver. This independently checks the eligible acyclic, cyclic DTMC or
+/// cyclic MDP profile, actual costs, units and targets under caller controls. It grants no
 /// certificate acceptance and computes no expected value.
 pub fn admit_expected_reward_certificate_subject(
     system: &ModelSystem<'_>,
@@ -1092,7 +1104,7 @@ fn admit_reward_with_identity(
     ) {
         Ok(_) => Ok(()),
         Err(error) if legacy_reward_may_retry(&error) => {
-            subject_graph_with_identity(
+            match subject_graph_with_identity(
                 system,
                 claims,
                 item,
@@ -1103,8 +1115,20 @@ fn admit_reward_with_identity(
                 &mut meter,
                 &mut storage,
                 &super::reward::RewardControl::new(cancel),
-            )?;
-            Ok(())
+            ) {
+                Ok(_) => Ok(()),
+                Err(error) if legacy_reward_may_retry(&error) => mdp::admit_reward(
+                    system,
+                    claims,
+                    item,
+                    limits,
+                    cancel,
+                    identity,
+                    &mut meter,
+                    &mut storage,
+                ),
+                Err(error) => Err(error),
+            }
         }
         Err(error) => Err(error),
     }
@@ -1347,8 +1371,10 @@ fn check_document_with_control(
         ProfileDispatch::LongRun => {
             return long_run::check(system, claims, item, bytes, limits, cancel)
         }
-        ProfileDispatch::CyclicMdp => {
-            return mdp::check(system, claims, item, bytes, limits, cancel, None)
+        ProfileDispatch::CyclicMdp | ProfileDispatch::CyclicMdpReward => {
+            return mdp::check_with_reward_control(
+                system, claims, item, bytes, limits, cancel, control,
+            )
         }
         ProfileDispatch::Exact => {}
     }
