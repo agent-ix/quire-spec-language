@@ -19,9 +19,9 @@ use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::{BackendId, RequestIndex, SourceIdentity};
 use qsl_replay::backends::run_with_backends;
 use qsl_replay::spine::{
-    check, default_accounting, package, parse, select, AdmittedModels, Call, CallArgument,
-    CheckedUnit, DependencyInput, FrontEndFailure, OverObject, PackageLimits, ParseRequest,
-    ParsedUnitSource, SpineLimits,
+    check, package, parse, select, AdmittedModels, Call, CallArgument, CheckedUnit,
+    DependencyInput, FrontEndFailure, OverObject, PackageLimits, ParseRequest, ParsedUnitSource,
+    SpineLimits,
 };
 use qsl_replay::{
     IncompleteCause, ObjectEnvironment, Operation, OutcomeDocument, OutcomeItem, TerminalRecord,
@@ -361,7 +361,7 @@ fn run_execute(
     cancel: &Cancel,
     typed: &mut Option<ExecuteResult>,
 ) -> Result<Report, CaseError> {
-    let accounting = default_accounting(parameters.accounting.work_units);
+    let accounting = parameters.accounting;
     let choice = match input.backend {
         BackendPlan::Interpreter => ExecutionBackendChoice::Interpreter,
         BackendPlan::JitNotSupplied => ExecutionBackendChoice::Jit,

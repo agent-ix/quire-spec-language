@@ -26,7 +26,8 @@ Scope: FR-565-AC-1 to FR-565-AC-3 and FR-564-AC-7.
    values; check the document's `operation`, `category` and exit code, or the
    item's category and exit code for a `prove` case; check that the exit code
    is the one FR-285's function returns for the category; check each source
-   identity against `SourceIdentity::new("quire", <the case's file name>)`;
+   identity against the case's explicit `source_authority` and
+   `source_identity` labels, independently of its physical input file name;
    serialize each document or item twice through FR-286 and compare the
    bytes.
 3. Repeat step 2's `run_case` call in a process whose working directory is
@@ -39,5 +40,6 @@ Tag the tests `#[trace("TC-1394", "<AC id>")]`.
 - Step 1: one cell per (verb, kind) pair, each of the variant FR-564's table gives it, in FR-564's order.
 - Step 2: equal documents; each category and exit code equal the case's
   expected ones and FR-285's mapping; every source identity is the case's
-  `quire` identity; the two serializations are byte-equal.
+  explicit authored label, separate from its file location; the two
+  serializations are byte-equal.
 - Step 3: the same `OutcomeDocument` as step 2.

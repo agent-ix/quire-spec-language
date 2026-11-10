@@ -121,5 +121,5 @@ fn execute_preserves_the_cases_non_work_accounting_limit() {
     let document = written(&limited);
     assert_eq!(document["result"]["kind"], "incomplete");
     assert_eq!(document["result"]["limit"]["field"], "integer_bits");
-    assert_eq!(document["result"]["limit"]["bound"], 0);
+    assert_eq!(document["result"]["limit"]["bound"], "0");
 }
