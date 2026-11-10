@@ -138,8 +138,13 @@ fn empty_multiple_bindings_and_refuted_fair_bound_never_emit_new_profile_proofs(
     let global = CLAIM
         .replace("over (m: M::Msg) ", "")
         .replace("holds(m.delivered)", "holds(true)");
-    let world = World::with_objects(&prob_world::link(&global), &["a", "b"]);
-    let bytes = produce(&world, "Likely");
+    let mut model = prob_world::link(&global);
+    for operation in &mut model.operations { operation.modifies.clear(); }
+    model.body = model.body.replace("self.attempts - pre(self.attempts) = 1 and self.delivered = (not lost)", "self.attempts = pre(self.attempts) and self.delivered = pre(self.delivered)");
+    let world = World::with_objects(&model, &["a", "b"]);
+    let records = analyze_items(&Engines::qsl().unwrap(), vec![exact_probabilistic_item(RequestIndex::new(0), world.request("Likely", ModelCheckLimits::default()))], &Cancel::new());
+    let terminal = records[0].terminal().unwrap_or_else(|| panic!("actual multi-receiver admission: {:?}", records[0].settlement));
+    let bytes = terminal.exact_certificate_document().unwrap().to_vec();
     let system = ModelSystem::new(world.subject().simulation).unwrap();
     let item = probabilistic_claim_identity(world.claim("Likely")).unwrap();
     assert!(matches!(

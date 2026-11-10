@@ -28,7 +28,7 @@ impl ProbabilityProofDocument {
         self.cyclic_mdp && self.document.reward.is_some()
     }
 
-    /// Whether this document retains a nonempty checked bounded fairness set.
+    /// Whether this unchecked document selects the bounded fair profile.
     pub fn is_bounded_fair(&self) -> bool {
         !self.fairness.is_empty()
     }
