@@ -320,8 +320,8 @@ fn clock_place_reference(
 ) -> Result<ObjectReference, Halt> {
     let place_text = qsl_foundation::node_wire::node_key_to_text(place)
         .map_err(|_| invariant("clock-place-reference-key-encoding-failed"))?;
-    let owner_identity = render_identity(owner.object().as_str().as_bytes());
-    let place_identity = render_identity(place_text.as_bytes());
+    let owner_identity = clock_place_identity_component(owner.object().as_str().as_bytes());
+    let place_identity = clock_place_identity_component(place_text.as_bytes());
     let slot_indices = selectors
         .into_iter()
         .map(|selector| match selector {
@@ -343,6 +343,19 @@ fn clock_place_reference(
         clock_type,
         object,
     ))
+}
+
+/// FR-230 uses lowercase hex for identity components, including printable
+/// UTF-8 bytes that `render_identity` would leave unescaped.
+fn clock_place_identity_component(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+
+    let mut encoded = String::with_capacity(bytes.len().saturating_mul(2));
+    for byte in bytes {
+        encoded.push(char::from(HEX[usize::from(byte >> 4)]));
+        encoded.push(char::from(HEX[usize::from(byte & 0x0f)]));
+    }
+    encoded
 }
 
 /// The one target of a single-valued navigation end `[lower, upper]` (FR-364
