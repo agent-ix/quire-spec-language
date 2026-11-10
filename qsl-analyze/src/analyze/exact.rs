@@ -1348,7 +1348,9 @@ mod tests {
     fn threshold_rejection_retains_its_rule_and_complete_product_key() {
         let key = ProbabilityProductKey::for_model_state(
             None,
-            include_bytes!("../../../tools/qsl-probability-check/tests/fixtures/link.model-key-0.json"),
+            include_bytes!(
+                "../../../tools/qsl-probability-check/tests/fixtures/link.model-key-0.json"
+            ),
         )
         .expect("the key encodes");
         let (terminal, evidence, counterexample) = ExactReport::Rejected {
