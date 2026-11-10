@@ -376,9 +376,9 @@ fn build_world_document(
 }
 
 /// One object of a snapshot: key, `value`, `label` and `next`.
-struct Obj(&'static str, i64, i64, Option<&'static str>);
+struct Obj<'a>(&'a str, i64, i64, Option<&'a str>);
 
-fn object_json(object: &Obj, extras: bool, enum_mode: bool) -> Json {
+fn object_json(object: &Obj<'_>, extras: bool, enum_mode: bool) -> Json {
     let next = match object.3 {
         None => json!({"absent": {}}),
         Some(target) => {
@@ -405,7 +405,7 @@ impl World {
         name: &str,
         observation: &str,
         anchor: Json,
-        objects: &[Obj],
+        objects: &[Obj<'_>],
     ) -> DocumentRef {
         self.snapshot_with(name, observation, anchor, objects, Json::Null)
     }
@@ -416,7 +416,7 @@ impl World {
         name: &str,
         observation: &str,
         anchor: Json,
-        objects: &[Obj],
+        objects: &[Obj<'_>],
         relationships: Json,
     ) -> DocumentRef {
         let mut document = json!({
@@ -446,7 +446,7 @@ impl World {
 
     /// The initial snapshot `s0`: `c1` with `value` `value`, anchored
     /// `{initialization, start}`.
-    fn start(&mut self, name: &str, objects: &[Obj]) -> DocumentRef {
+    fn start(&mut self, name: &str, objects: &[Obj<'_>]) -> DocumentRef {
         self.snapshot(
             name,
             "current",
@@ -1648,6 +1648,38 @@ fn an_undecided_contract_is_an_undecided_successor() {
         let expected = UndecidedSuccessor {
             state: qsl_eval::simulation::StateKey::from_canonical_bytes(bytes),
         };
+        let mut denied = RawKeyBudget {
+            storage_limit: 0,
+            ..RawKeyBudget::unlimited()
+        };
+        assert_eq!(
+            system
+                .actions_with_budget(
+                    &state,
+                    qsl_foundation::IdentityLimits::default(),
+                    &mut denied,
+                    &Cancel::new()
+                )
+                .expect_err("key admission"),
+            qsl_eval::simulation::model::ModelKeyExpansionError::Key(
+                qsl_eval::simulation::model::ModelKeyError::Denied
+            )
+        );
+        assert_eq!(denied.cause, Some("storage"));
+        let mut admitted = RawKeyBudget::unlimited();
+        assert_eq!(
+            system
+                .actions_with_budget(
+                    &state,
+                    qsl_foundation::IdentityLimits::default(),
+                    &mut admitted,
+                    &Cancel::new()
+                )
+                .expect("fresh qualified scope")
+                .expect_err("undecided"),
+            expected
+        );
+
         assert_eq!(
             system
                 .actions(&state)
@@ -1931,9 +1963,130 @@ fn link_repeated(source: &str, target: &str, times: usize) -> Json {
     }])
 }
 
+#[derive(Clone)]
+struct RawKeyBudget {
+    storage: usize,
+    largest_request: usize,
+    work: u64,
+    storage_limit: usize,
+    work_limit: u64,
+    cause: Option<&'static str>,
+    cancel_on_integer: Option<quire_exact::Cancel>,
+}
+impl RawKeyBudget {
+    fn unlimited() -> Self {
+        Self {
+            storage: 0,
+            largest_request: 0,
+            work: 0,
+            storage_limit: usize::MAX,
+            work_limit: u64::MAX,
+            cause: None,
+            cancel_on_integer: None,
+        }
+    }
+}
+impl quire_exact::Reservation for RawKeyBudget {
+    fn reserve(&mut self, bytes: usize) -> Result<(), quire_exact::ReservationDenied> {
+        self.largest_request = self.largest_request.max(bytes);
+        match self
+            .storage
+            .checked_add(bytes)
+            .filter(|next| *next <= self.storage_limit)
+        {
+            Some(next) => {
+                self.storage = next;
+                Ok(())
+            }
+            None => {
+                self.cause = Some("storage");
+                Err(quire_exact::ReservationDenied)
+            }
+        }
+    }
+}
+impl quire_exact::IntegerDecimalBudget for RawKeyBudget {
+    fn work(&mut self, units: u64) -> Result<(), quire_exact::ReservationDenied> {
+        match self
+            .work
+            .checked_add(units)
+            .filter(|next| *next <= self.work_limit)
+        {
+            Some(next) => {
+                self.work = next;
+                Ok(())
+            }
+            None => {
+                self.cause = Some("work");
+                Err(quire_exact::ReservationDenied)
+            }
+        }
+    }
+}
+impl qsl_eval::simulation::model::ModelKeyBudget for RawKeyBudget {
+    fn integer(&mut self, _: &quire_exact::Integer) -> Result<(), quire_exact::ReservationDenied> {
+        if let Some(cancel) = &self.cancel_on_integer {
+            cancel.cancel(quire_exact::CancelCause::Deadline);
+        }
+        Ok(())
+    }
+}
+
+pub(super) fn admitted_raw_key(
+    system: &ModelSystem<'_>,
+    state: &qsl_eval::simulation::model::ModelSimState,
+) -> Vec<u8> {
+    let bytes = system
+        .state_key_bytes_with_budget(
+            state,
+            qsl_foundation::IdentityLimits::default(),
+            &mut RawKeyBudget::unlimited(),
+            &Cancel::new(),
+        )
+        .expect("admitted raw identity");
+    assert_eq!(
+        bytes,
+        system.state_key(state).expect("legacy raw identity").0
+    );
+    bytes
+}
+
 #[trace("TC-471", "FR-120-AC-4", "FR-120-AC-27")]
 #[test]
 fn raw_model_key_preserves_legacy_reference_enum_and_extent_vectors() {
+    struct Admission;
+    impl quire_exact::Reservation for Admission {
+        fn reserve(&mut self, _: usize) -> Result<(), quire_exact::ReservationDenied> {
+            Ok(())
+        }
+    }
+    impl quire_exact::IntegerDecimalBudget for Admission {
+        fn work(&mut self, _: u64) -> Result<(), quire_exact::ReservationDenied> {
+            Ok(())
+        }
+    }
+    impl qsl_eval::simulation::model::ModelKeyBudget for Admission {
+        fn integer(
+            &mut self,
+            _: &quire_exact::Integer,
+        ) -> Result<(), quire_exact::ReservationDenied> {
+            Ok(())
+        }
+    }
+    fn bounded(
+        system: &ModelSystem<'_>,
+        state: &qsl_eval::simulation::model::ModelSimState,
+    ) -> Vec<u8> {
+        system
+            .state_key_bytes_with_budget(
+                state,
+                qsl_foundation::IdentityLimits::default(),
+                &mut Admission,
+                &quire_exact::Cancel::new(),
+            )
+            .expect("bounded key")
+    }
+
     let mut enums = build_world_with_enum_mode(Vec::new(), "").expect("enum fixture checks");
     let first = enums.start(
         "enum-forward",
@@ -1946,6 +2099,91 @@ fn raw_model_key_preserves_legacy_reference_enum_and_extent_vectors() {
     let enum_system = self::system(&enums, vec![first, second], &["c1", "c2"], UNLIMITED);
     let states = enum_system.initial();
     let first = enum_system.state_key(&states[0]).expect("enum key");
+    assert_eq!(bounded(&enum_system, &states[0]), first.0);
+    use qsl_eval::simulation::model::ModelKeyError;
+    let identity = qsl_foundation::IdentityLimits::default();
+    let live = quire_exact::Cancel::new();
+    let mut measured = RawKeyBudget::unlimited();
+    assert_eq!(
+        enum_system
+            .state_key_bytes_with_budget(&states[0], identity, &mut measured, &live)
+            .unwrap(),
+        first.0
+    );
+    let mut exact = RawKeyBudget {
+        storage_limit: measured.storage,
+        work_limit: measured.work,
+        ..RawKeyBudget::unlimited()
+    };
+    assert_eq!(
+        enum_system
+            .state_key_bytes_with_budget(&states[0], identity, &mut exact, &live)
+            .unwrap(),
+        first.0
+    );
+    assert_eq!(
+        enum_system.state_key_bytes_with_budget(&states[0], identity, &mut exact, &live),
+        Err(ModelKeyError::Denied),
+        "the cumulative budget must not reset between keys"
+    );
+    assert_eq!(exact.cause, Some("work"));
+    for (storage_limit, work_limit, cause) in [
+        (0, u64::MAX, "storage"),
+        (measured.storage - 1, u64::MAX, "storage"),
+        (usize::MAX, 0, "work"),
+        (usize::MAX, measured.work - 1, "work"),
+    ] {
+        let mut budget = RawKeyBudget {
+            storage_limit,
+            work_limit,
+            ..RawKeyBudget::unlimited()
+        };
+        assert_eq!(
+            enum_system.state_key_bytes_with_budget(&states[0], identity, &mut budget, &live),
+            Err(ModelKeyError::Denied)
+        );
+        assert_eq!(budget.cause, Some(cause));
+    }
+    for bytes in [0, first.0.len() - 1] {
+        let mut budget = RawKeyBudget::unlimited();
+        let error = enum_system
+            .state_key_bytes_with_budget(
+                &states[0],
+                qsl_foundation::IdentityLimits {
+                    input_bytes: bytes as u64,
+                },
+                &mut budget,
+                &live,
+            )
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            ModelKeyError::Encoding(qsl_eval::simulation::EncodingRefusal::Limit(_))
+        ));
+        if bytes == 0 {
+            assert_eq!(budget.storage, 0);
+        }
+    }
+    let cancel = quire_exact::Cancel::new();
+    let mut during = RawKeyBudget {
+        cancel_on_integer: Some(cancel.clone()),
+        ..RawKeyBudget::unlimited()
+    };
+    assert_eq!(
+        enum_system.state_key_bytes_with_budget(&states[0], identity, &mut during, &cancel),
+        Err(ModelKeyError::Cancelled(quire_exact::CancelCause::Deadline))
+    );
+    assert!(
+        during.storage > 0,
+        "cancellation must happen during real identity construction"
+    );
+    assert_eq!(bounded(&enum_system, &states[0]), first.0);
+    assert_eq!(
+        enum_system.state_key(&states[0]).unwrap().0,
+        first.0,
+        "caller denial/cancellation must not change the next legacy call"
+    );
+
     let second = enum_system
         .state_key(&states[1])
         .expect("permuted enum key");
@@ -1997,6 +2235,8 @@ fn raw_model_key_preserves_legacy_reference_enum_and_extent_vectors() {
     let states = extent_system.initial();
     let linked = extent_system.state_key(&states[0]).expect("extent key");
     let unlinked = extent_system.state_key(&states[1]).expect("unlinked key");
+    assert_eq!(bounded(&extent_system, &states[0]), linked.0);
+    assert_eq!(bounded(&extent_system, &states[1]), unlinked.0);
     assert_ne!(
         linked, unlinked,
         "repeated relationship pairs belong to the key"
@@ -2014,6 +2254,111 @@ fn raw_model_key_preserves_legacy_reference_enum_and_extent_vectors() {
             .trim_end_matches('\n')
             .as_bytes(),
         "literal bytes captured from the unchanged legacy encoder"
+    );
+}
+
+/// Actual source states show that the legacy identity cap is independent of
+/// caller working storage, including a small initial state with large posts.
+#[trace("TC-471", "FR-120-AC-4", "FR-120-AC-27")]
+#[test]
+fn bounded_raw_model_key_refuses_large_initial_and_post_state_growth() {
+    use qsl_eval::simulation::model::{ModelKeyError, ModelKeyExpansionError};
+    let large = "x".repeat(1 << 19);
+    let mut world = self::world(Vec::new(), "");
+    let initial = world.start("large-identity", &[Obj(&large, 0, 0, None)]);
+    let system = self::system(&world, vec![initial], &[&large], UNLIMITED);
+    let state = system.initial().remove(0);
+    let legacy = system
+        .state_key(&state)
+        .expect("legacy identity fits its independent default cap")
+        .0;
+    assert!(legacy.len() > large.len());
+    let mut denied = RawKeyBudget {
+        storage_limit: 32 * 1024,
+        ..RawKeyBudget::unlimited()
+    };
+    assert_eq!(
+        system.state_key_bytes_with_budget(
+            &state,
+            qsl_foundation::IdentityLimits::default(),
+            &mut denied,
+            &Cancel::new()
+        ),
+        Err(ModelKeyError::Denied)
+    );
+    assert_eq!(denied.cause, Some("storage"));
+    assert!(
+        denied.largest_request >= large.len(),
+        "the large source reaches actual before-growth admission"
+    );
+    assert!(denied.storage <= denied.storage_limit);
+    assert_eq!(system.state_key(&state).unwrap().0, legacy);
+
+    let large = "y".repeat(256 * 1024);
+    let spawn = operation("spawn", &[], None, frame(&[], true, false));
+    let mut world = self::world(vec![spawn], "");
+    let initial = world.start("small-origin", &[Obj("c1", 0, 0, None)]);
+    let system = self::system(&world, vec![initial], &["c1", &large], UNLIMITED);
+    let state = system.initial().remove(0);
+    let mut small = RawKeyBudget::unlimited();
+    system
+        .state_key_bytes_with_budget(
+            &state,
+            qsl_foundation::IdentityLimits::default(),
+            &mut small,
+            &Cancel::new(),
+        )
+        .unwrap();
+    let ordinary = system
+        .actions(&state)
+        .expect("ordinary expansion")
+        .expect("decided");
+    assert!(
+        ordinary
+            .iter()
+            .flat_map(|action| &action.draws)
+            .flat_map(|draw| &draw.successors)
+            .any(|(_, post)| post.state().populations[&counters()].contains_key(&large)),
+        "ordinary semantic expansion must reach a genuinely larger post state"
+    );
+    let limit = small.storage * 2;
+    assert!(
+        limit < large.len(),
+        "the fixture separates small-state admission from large post-state growth"
+    );
+    let mut denied = RawKeyBudget {
+        storage_limit: limit,
+        ..RawKeyBudget::unlimited()
+    };
+    assert_eq!(
+        system
+            .actions_with_budget(
+                &state,
+                qsl_foundation::IdentityLimits::default(),
+                &mut denied,
+                &Cancel::new()
+            )
+            .expect_err("post-state key admission"),
+        ModelKeyExpansionError::Key(ModelKeyError::Denied)
+    );
+    assert_eq!(denied.cause, Some("storage"));
+    assert!(denied.largest_request >= large.len());
+    assert!(denied.storage <= limit);
+    let mut admitted = RawKeyBudget::unlimited();
+    let qualified = system
+        .actions_with_budget(
+            &state,
+            qsl_foundation::IdentityLimits::default(),
+            &mut admitted,
+            &Cancel::new(),
+        )
+        .expect("fresh scope")
+        .expect("decided");
+    assert_eq!(qualified.len(), ordinary.len());
+    assert_eq!(
+        system.actions(&state).unwrap().unwrap().len(),
+        ordinary.len(),
+        "denial must not install persistent key policy"
     );
 }
 

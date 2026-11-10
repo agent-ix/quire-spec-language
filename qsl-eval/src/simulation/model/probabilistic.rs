@@ -589,7 +589,7 @@ impl ModelSystem<'_> {
         &self,
         state: &ModelSimState,
     ) -> Result<Result<Vec<Action>, UndecidedSuccessor>, ExpansionStop> {
-        self.actions_impl(state, None)
+        self.actions_impl(state, None, None)
     }
 
     /// [`Self::actions`] with the caller's cancellation shared by each
@@ -603,16 +603,37 @@ impl ModelSystem<'_> {
         state: &ModelSimState,
         cancel: &quire_exact::Cancel,
     ) -> Result<Result<Vec<Action>, UndecidedSuccessor>, ExpansionStop> {
-        self.actions_impl(state, Some(cancel))
+        self.actions_impl(state, Some(cancel), None)
+    }
+
+    /// Actions with cumulative admission for internal raw model-state keys.
+    ///
+    /// # Errors
+    /// Identity admission and ordinary expansion stops remain distinct.
+    pub fn actions_with_budget(
+        &self,
+        state: &ModelSimState,
+        identity: qsl_foundation::IdentityLimits,
+        budget: &mut dyn super::ModelKeyBudget,
+        cancel: &quire_exact::Cancel,
+    ) -> Result<Result<Vec<Action>, UndecidedSuccessor>, super::ModelKeyExpansionError> {
+        let scope = super::key_budget::KeyScope {
+            identity,
+            budget: std::cell::RefCell::new(budget),
+            cancel,
+            refused: std::cell::RefCell::new(None),
+        };
+        scope.finish(self.actions_impl(state, Some(cancel), Some(&scope)))
     }
 
     fn actions_impl(
         &self,
         state: &ModelSimState,
         cancel: Option<&quire_exact::Cancel>,
+        key_policy: Option<&dyn super::key_budget::KeyPolicy>,
     ) -> Result<Result<Vec<Action>, UndecidedSuccessor>, ExpansionStop> {
         Ok(self
-            .enabled_actions_impl(state, cancel)?
+            .enabled_actions_impl(state, cancel, key_policy)?
             .map(|mut actions| {
                 actions
                     .retain(|action| action.draws.iter().any(|draw| !draw.successors.is_empty()));
@@ -627,20 +648,24 @@ impl ModelSystem<'_> {
         &self,
         state: &ModelSimState,
     ) -> Result<Result<Vec<Action>, UndecidedSuccessor>, ExpansionStop> {
-        self.enabled_actions_impl(state, None)
+        self.enabled_actions_impl(state, None, None)
     }
 
     fn enabled_actions_impl(
         &self,
         state: &ModelSimState,
         cancel: Option<&quire_exact::Cancel>,
+        key_policy: Option<&dyn super::key_budget::KeyPolicy>,
     ) -> Result<Result<Vec<Action>, UndecidedSuccessor>, ExpansionStop> {
         // No post-state presences: a postcondition's `present(self.v)`
         // read fails closed with `place-presence-unrecorded`. Dense timed
         // models route only to EN-6, so nothing reaches it here today.
-        let (expansion, enabled) = match cancel {
-            Some(cancel) => super::walk::expand_enabled_with_cancel(self, state, cancel)?,
-            None => expand_enabled(self, state, None)?,
+        let (expansion, enabled) = match (cancel, key_policy) {
+            (Some(cancel), Some(policy)) => {
+                super::walk::expand_enabled_with_key_policy(self, state, cancel, policy)?
+            }
+            (Some(cancel), None) => super::walk::expand_enabled_with_cancel(self, state, cancel)?,
+            (None, _) => expand_enabled(self, state, None)?,
         };
         if cancel.is_some_and(|cancel| cancel.tripped().is_some()) {
             return Err(exhausted(ExpansionLimit::EvaluationMeter(
@@ -652,7 +677,10 @@ impl ModelSystem<'_> {
             .iter()
             .any(|finding| matches!(finding, ModelFinding::ContractUndetermined { .. }))
         {
-            let key = self.canonical_state_key(state).map_err(|_| stop(BROKEN))?;
+            let key = match key_policy {
+                Some(policy) => policy.key(self, &state.state)?,
+                None => self.canonical_state_key(state).map_err(|_| stop(BROKEN))?,
+            };
             return Ok(Err(UndecidedSuccessor { state: key }));
         }
         let mut successors: Vec<Option<(ModelTransition, ModelSimState)>> =
@@ -688,18 +716,27 @@ impl ModelSystem<'_> {
                 &arguments,
                 self.typing(),
             )?;
-            let mut reached = Vec::with_capacity(vector.successors.len());
+            let mut reached = Vec::new();
+            super::key_budget::reserve(key_policy, &mut reached, vector.successors.len())?;
             for index in vector.successors.clone() {
                 let successor = successors
                     .get_mut(index)
                     .and_then(Option::take)
                     .ok_or_else(|| stop(BROKEN))?;
-                let key = self
-                    .canonical_state_key(&successor.1)
-                    .map_err(|_| stop(BROKEN))?;
+                let key = match key_policy {
+                    Some(policy) => policy.key(self, &successor.1.state)?,
+                    None => self
+                        .canonical_state_key(&successor.1)
+                        .map_err(|_| stop(BROKEN))?,
+                };
                 reached.push((key, successor));
             }
-            reached.sort_by(|left, right| left.0.cmp(&right.0));
+            match key_policy {
+                Some(policy) => super::key_budget::sort(policy, &mut reached, |left, right| {
+                    policy.compare(left.0.as_bytes(), right.0.as_bytes())
+                })?,
+                None => reached.sort_by(|left, right| left.0.cmp(&right.0)),
+            };
             let draw = Draw {
                 random,
                 probability,
@@ -768,7 +805,7 @@ impl ModelSystem<'_> {
         state: &ModelSimState,
         workload: &Workload,
     ) -> Result<Result<Vec<WeightedStep>, Unsteppable>, ExpansionStop> {
-        self.weighted_steps_impl(state, workload, None)
+        self.weighted_steps_impl(state, workload, None, None)
     }
 
     /// [`Self::weighted_steps`] with cancellable qualified reward-expression
@@ -782,7 +819,28 @@ impl ModelSystem<'_> {
         workload: &Workload,
         cancel: &quire_exact::Cancel,
     ) -> Result<Result<Vec<WeightedStep>, Unsteppable>, ExpansionStop> {
-        self.weighted_steps_impl(state, workload, Some(cancel))
+        self.weighted_steps_impl(state, workload, Some(cancel), None)
+    }
+
+    /// Weighted steps with cumulative admission for internal raw state keys.
+    ///
+    /// # Errors
+    /// Identity admission and ordinary expansion stops remain distinct.
+    pub fn weighted_steps_with_budget(
+        &self,
+        state: &ModelSimState,
+        workload: &Workload,
+        identity: qsl_foundation::IdentityLimits,
+        budget: &mut dyn super::ModelKeyBudget,
+        cancel: &quire_exact::Cancel,
+    ) -> Result<Result<Vec<WeightedStep>, Unsteppable>, super::ModelKeyExpansionError> {
+        let scope = super::key_budget::KeyScope {
+            identity,
+            budget: std::cell::RefCell::new(budget),
+            cancel,
+            refused: std::cell::RefCell::new(None),
+        };
+        scope.finish(self.weighted_steps_impl(state, workload, Some(cancel), Some(&scope)))
     }
 
     fn weighted_steps_impl(
@@ -790,8 +848,9 @@ impl ModelSystem<'_> {
         state: &ModelSimState,
         workload: &Workload,
         cancel: Option<&quire_exact::Cancel>,
+        key_policy: Option<&dyn super::key_budget::KeyPolicy>,
     ) -> Result<Result<Vec<WeightedStep>, Unsteppable>, ExpansionStop> {
-        let actions = match self.enabled_actions_impl(state, cancel)? {
+        let actions = match self.enabled_actions_impl(state, cancel, key_policy)? {
             Ok(actions) => actions,
             Err(undecided) => return Ok(Err(Unsteppable::UndecidedSuccessor(undecided))),
         };
@@ -805,12 +864,15 @@ impl ModelSystem<'_> {
                 rewards: self.zero_rewards(),
             }]));
         }
-        let key = self.canonical_state_key(state).map_err(|_| stop(BROKEN))?;
+        let key = match key_policy {
+            Some(policy) => policy.key(self, &state.state)?,
+            None => self.canonical_state_key(state).map_err(|_| stop(BROKEN))?,
+        };
         for action in &actions {
             for draw in &action.draws {
                 if draw.successors.len() != 1 {
                     return Ok(Err(Unsteppable::NotMarkov(NotMarkov {
-                        state: key.clone(),
+                        state: key,
                         transition: action.identity.clone(),
                         random: draw.random.clone(),
                         post_states: u32::try_from(draw.successors.len()).unwrap_or(u32::MAX),

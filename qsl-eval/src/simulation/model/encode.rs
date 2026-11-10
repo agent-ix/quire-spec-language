@@ -25,6 +25,7 @@ use qsl_semantics::check::VariantTypeDeclaration;
 use qsl_semantics::model::state::{ModelState, StateField, StateModel};
 use quire_checked::key::DeclarationKey;
 
+pub(super) mod bounded;
 mod projection;
 
 /// One JSON value in FR-181's typed canonical form, before it is written.
@@ -516,12 +517,7 @@ impl<'a> DeclarationRecord<'a> {
 
 impl Encode for DeclarationRecord<'_> {
     fn encode_into<S: Sink + ?Sized>(&self, writer: &mut Writer<'_, S>) -> Result<(), Error> {
-        writer.begin_object()?;
-        for (name, value) in declaration_members(*self) {
-            writer.name(name)?;
-            writer.string(value)?;
-        }
-        writer.end_object()
+        projection::write_declaration(writer, *self)
     }
 }
 
@@ -531,23 +527,7 @@ fn write_effective<S: Sink + ?Sized>(
     writer: &mut Writer<'_, S>,
     id: &EffectiveId,
 ) -> Result<(), Error> {
-    let chain = id.owner_chain();
-    for original in chain.iter().rev() {
-        writer.begin_object()?;
-        writer.name("original")?;
-        writer.begin_object()?;
-        writer.name("node")?;
-        writer.string(original.node())?;
-        writer.name("package")?;
-        writer.string(original.package())?;
-        writer.end_object()?;
-        writer.name("owner_effective_type")?;
-    }
-    writer.null()?;
-    for _ in chain {
-        writer.end_object()?;
-    }
-    Ok(())
+    projection::write_effective(writer, id)
 }
 
 /// A declaration's identity text: the RFC 8785 text of its
@@ -1090,6 +1070,24 @@ mod tests {
 
     use super::*;
 
+    fn value_enc(value: &Value, typing: Typing<'_>) -> Enc {
+        let retained = super::value_enc(value, typing);
+        let legacy = retained.canonical_text(Limits::new(1 << 20));
+        let admitted = super::bounded::value_for_test(value, typing);
+        match (legacy, admitted) {
+            (Ok(expected), Ok(bytes)) => assert_eq!(
+                bytes,
+                expected.as_bytes(),
+                "bounded value projection must satisfy the same literal oracle"
+            ),
+            (Err(_), Err(super::super::ModelKeyError::Unsupported(_))) => {}
+            (legacy, admitted) => {
+                panic!("legacy/bounded refusal mismatch: {legacy:?} / {admitted:?}")
+            }
+        }
+        retained
+    }
+
     /// FR-181's integer form is an exact decimal string.
     #[trace("TC-471", "FR-120-AC-4")]
     #[test]
@@ -1279,7 +1277,7 @@ mod tests {
     /// Boolean }` (node `11…`), `Pair(Boolean, Integer)` (`22…`) and `Shape`
     /// with the nullary member `none` and the member `tagged(Tag)` (`33…`),
     /// and the values `Tag { sku }`, `Pair(true, -3)` and `none`.
-    fn declared() -> (TypeEnvironment, impl Fn(i64) -> Value, Value, Value) {
+    pub(super) fn declared() -> (TypeEnvironment, impl Fn(i64) -> Value, Value, Value) {
         use quire_exact::{from_admitted_slots, Presence, UnionMember, UnionValue};
         use quire_semantic_value::declaration::{
             CompositeDeclaration, FieldDeclaration, UnionMemberDeclaration,

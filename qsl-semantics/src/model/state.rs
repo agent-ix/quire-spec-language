@@ -545,14 +545,48 @@ impl StateModel {
         &self,
         type_key: &DeclarationKey,
     ) -> Option<(&EffectiveId, &crate::model::normalize::ObjectUniverse)> {
-        let effective = self
-            .views
-            .iter()
-            .find_map(|view| view.view.type_identities().get(type_key))?;
-        let (view, declaration) = self.views.iter().find_map(|view| {
-            view.declaration_key_borrowed(effective)
-                .map(|key| (view, key))
-        })?;
-        Some((effective, view.view.object_universe_of(declaration)?))
+        match self.reference_components_with_work(type_key, &mut |_| {
+            Ok::<(), std::convert::Infallible>(())
+        }) {
+            Ok(value) => value,
+            Err(never) => match never {},
+        }
+    }
+
+    /// The same validated reference components with admission before each
+    /// index visit and compared text byte. No identity is copied. The lookup
+    /// retains the first-view and validated reverse-index choices.
+    ///
+    /// # Errors
+    /// The callback's work or cancellation denial.
+    pub fn reference_components_with_work<E>(
+        &self,
+        type_key: &DeclarationKey,
+        work: &mut impl FnMut(u64) -> Result<(), E>,
+    ) -> Result<Option<(&EffectiveId, &crate::model::normalize::ObjectUniverse)>, E> {
+        let mut effective = None;
+        'views: for view in &self.views {
+            work(1)?;
+            for (candidate, value) in view.view.type_identities() {
+                work(1)?;
+                if crate::model::key::declaration_equal_with_work(candidate, type_key, work)? {
+                    effective = Some(value);
+                    break 'views;
+                }
+            }
+        }
+        let Some(effective) = effective else {
+            return Ok(None);
+        };
+        for view in &self.views {
+            work(1)?;
+            if let Some(declaration) = view.declaration_key_with_work(effective, work)? {
+                return Ok(view
+                    .view
+                    .object_universe_with_work(declaration, work)?
+                    .map(|universe| (effective, universe)));
+            }
+        }
+        Ok(None)
     }
 }

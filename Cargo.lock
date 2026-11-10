@@ -1475,7 +1475,6 @@ dependencies = [
  "thiserror",
 ]
 
-
 [[package]]
 name = "qsl-cst"
 version = "0.1.0"
@@ -1778,7 +1777,7 @@ dependencies = [
 [[package]]
 name = "quire-exact"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-exact?branch=main#bd2991e79bf43ac4ec99db667c42aefcc887d2f4"
+source = "git+https://github.com/agent-ix/quire-exact?branch=main#4fe7df6f738f696b98958e6218e50eb3f004c57e"
 dependencies = [
  "allocator-api2",
  "arrayvec",
