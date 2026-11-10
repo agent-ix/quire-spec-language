@@ -67,7 +67,44 @@ pub fn admit_acyclic_probabilistic_refutation_subject(
     if let Some(error) = failure.into_inner().or(issue) {
         return Err(error);
     }
-    let result = result.and_then(|graph| topological_order(&graph, cancel).map(|_| ()));
+    let mut admission_issue = None;
+    let result = result.and_then(|graph| {
+        for (key, state) in &graph.states {
+            poll_cancel(cancel)?;
+            let bytes = key
+                .as_bytes()
+                .len()
+                .saturating_mul(3)
+                .saturating_add(std::mem::size_of::<ProbabilityProductKey>().saturating_mul(3));
+            let actual = used
+                .borrow()
+                .saturating_add(u64::try_from(bytes).unwrap_or(u64::MAX));
+            if actual > limits.document.storage_bytes {
+                admission_issue = Some(crate::ExactProbBuildIssue::Limit {
+                    limit: crate::ModelCheckLimit::CertificateMaxWorkingBytes,
+                    value: limits.document.storage_bytes,
+                });
+                return Err(ExactProbabilityGraphError::ExpansionRefused);
+            }
+            *used.borrow_mut() = actual;
+            for edge in state.choices.iter().flatten() {
+                poll_cancel(cancel)?;
+                if edge.probability.numerator().magnitude_bits() > limits.max_rational_bits
+                    || edge.probability.denominator().magnitude_bits() > limits.max_rational_bits
+                {
+                    admission_issue = Some(crate::ExactProbBuildIssue::Limit {
+                        limit: crate::ModelCheckLimit::ExactProbMaxRationalBits,
+                        value: limits.max_rational_bits,
+                    });
+                    return Err(ExactProbabilityGraphError::UnsupportedDraw);
+                }
+            }
+        }
+        topological_order(&graph, cancel).map(|_| ())
+    });
+    if let Some(issue) = admission_issue {
+        return Err(issue);
+    }
     match result {
         Ok(()) => Ok(true),
         Err(ExactProbabilityGraphError::Cycle) => Ok(false),

@@ -21,10 +21,10 @@ fn model(transient: bool) -> String {
         .next()
         .unwrap();
     let (post, weights) = if transient {
-        ("self.attempts = (if pre(self.attempts) = 0 then 1 else if lost = 0 then 0 else 2) and self.delivered = (pre(self.attempts) = 1 and lost = 1)", "0: 2, 1: 1, 2: 1")
+        ("self.attempts - (if pre(self.attempts) = 0 then 1 else if lost = 0 then 0 else 2) = 0 and self.delivered = (pre(self.attempts) = 1 and lost = 1)", "0: 2, 1: 1, 2: 1")
     } else {
         (
-            "self.attempts = (if lost = 0 then 0 else 2) and self.delivered = (lost = 1)",
+            "self.attempts - (if lost = 0 then 0 else 2) = 0 and self.delivered = (lost = 1)",
             "0: 1, 1: 1, 2: 1",
         )
     };
@@ -151,7 +151,13 @@ fn self_loop_and_transient_scc_accept_exact_values_and_shortest_distances() {
 #[test]
 fn target_free_recurrence_forces_zero_and_early_target_cannot_hide_scheduler_choice() {
     let closed = model(true).replace("0: 2, 1: 1, 2: 1", "0: 1");
-    let source = claim(&closed, "every scheduler", "<=", "0", "m.delivered");
+    let source = claim(
+        &closed,
+        "every scheduler",
+        "<=",
+        "rational(1,2)",
+        "m.delivered",
+    );
     let request = proof(&source);
     accepted(&request, "0", "1");
     let wrong = mutate(&request, |doc| {
@@ -214,7 +220,10 @@ fn target_free_recurrence_forces_zero_and_early_target_cannot_hide_scheduler_cho
 #[trace("TC-636", "FR-201-AC-23", "FR-201-AC-25", "FR-282-AC-19")]
 #[test]
 fn explicit_cyclic_profile_admits_acyclic_dtmc_and_target_precedence() {
-    for (target, op, threshold) in [("true", ">=", "1"), ("m.delivered", "<=", "0")] {
+    for (target, op, threshold) in [
+        ("true", ">=", "rational(1,2)"),
+        ("m.delivered", "<=", "rational(1,2)"),
+    ] {
         let base = model(false).replace("self.attempts = 2 and not self.delivered", "true");
         let request = proof(&claim(&base, "every scheduler", op, threshold, target));
         assert_eq!(
@@ -225,7 +234,7 @@ fn explicit_cyclic_profile_admits_acyclic_dtmc_and_target_precedence() {
             doc["objective"]["profile"] =
                 json!("quire.probability-objective/cyclic-dtmc-eventual/v1")
         });
-        accepted(&explicit, threshold, "1");
+        accepted(&explicit, if target == "true" { "1" } else { "0" }, "1");
     }
 }
 
@@ -234,7 +243,7 @@ fn explicit_cyclic_profile_admits_acyclic_dtmc_and_target_precedence() {
 fn authored_workload_checks_its_resolved_rational_distribution() {
     let base = model(false)
         .replace("pre B using v on M::Msg::send_b { false }", "pre B using v on M::Msg::send_b { true }")
-        .replace("post A_done using v on M::Msg::send_a { self.attempts = (if lost = 0 then 0 else 2) and self.delivered = (lost = 1) }", "post A_done using v on M::Msg::send_a { self.attempts = pre(self.attempts) and self.delivered = pre(self.delivered) }")
+        .replace("post A_done using v on M::Msg::send_a { self.attempts - (if lost = 0 then 0 else 2) = 0 and self.delivered = (lost = 1) }", "post A_done using v on M::Msg::send_a { self.attempts = pre(self.attempts) and self.delivered = pre(self.delivered) }")
         .replace("post B_done using v on M::Msg::send_b { self.attempts = 0 and not self.delivered }", "post B_done using v on M::Msg::send_b { self.attempts = 2 and self.delivered = (lost = 0) }");
     let base = format!("{base}\nworkload Even on M {{ weight Msg::send_a = 1; weight Msg::send_b = 1; weight Msg::send_c = 1; }}\n");
     for op in [">=", "<="] {
