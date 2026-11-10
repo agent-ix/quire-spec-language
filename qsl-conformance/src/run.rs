@@ -361,7 +361,7 @@ fn run_execute(
     cancel: &Cancel,
     typed: &mut Option<ExecuteResult>,
 ) -> Result<Report, CaseError> {
-    let accounting = parameters.accounting;
+    let accounting = qsl_replay::spine::default_accounting(parameters.accounting.work_units);
     let choice = match input.backend {
         BackendPlan::Interpreter => ExecutionBackendChoice::Interpreter,
         BackendPlan::JitNotSupplied => ExecutionBackendChoice::Jit,

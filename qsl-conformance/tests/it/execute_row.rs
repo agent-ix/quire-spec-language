@@ -2,7 +2,7 @@
 //! TC-1390: the `execute` row.
 
 use ix_trace_rs::trace;
-use qsl_conformance::{run_case, CaseOutcome, OutcomeKind, Verb};
+use qsl_conformance::{run_case, CaseInput, CaseOutcome, OutcomeKind, Verb};
 use quire_eval::{CallFailure, FamilyOutcome, UnsupportedCause};
 use quire_exact::{CancelCause, Incomplete, LimitKind, Outcome};
 
@@ -108,9 +108,16 @@ fn execute_returns_each_applicable_kind() {
 #[test]
 fn execute_preserves_the_cases_non_work_accounting_limit() {
     let mut case = case_of(Verb::Execute, OutcomeKind::Success);
-    let unlimited = run_case(&case).expect("the original case runs");
-    assert_eq!(unlimited.exit_code(), 0);
-    assert_eq!(written(&unlimited)["result"]["value"]["decimal"], "7");
+    let CaseInput::Execute(input) = &mut case.input else {
+        panic!("an execute case holds execution input");
+    };
+    input.unit.bytes = br#"language "ix:native" edition "1-draft";
+profile v = "quire.value.complete/v1";
+function seven using v(): Integer pure { 3 + 4 }
+"#;
+    let baseline = run_case(&case).expect("the arithmetic case runs");
+    assert_eq!(baseline.exit_code(), 0);
+    assert_eq!(written(&baseline)["result"]["value"]["decimal"], "7");
 
     case.parameters.accounting.integer_bits = 0;
     let limited = run_case(&case).expect("the limited case runs");
