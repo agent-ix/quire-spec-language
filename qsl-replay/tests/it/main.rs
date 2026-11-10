@@ -35,6 +35,7 @@ mod refinement_unmapped;
 #[path = "../../../tests/support/ring_world.rs"]
 mod ring_world;
 mod script_search;
+mod source_diagnostic_outcome;
 mod static_subject;
 mod tool_failure;
 mod value_family_end_to_end;
