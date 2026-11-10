@@ -932,6 +932,13 @@ fn subject_graph_with_identity(
     let mut issue = None;
     let reference = binding.as_ref().map(|bound| &bound.reference);
     let workload = claim_workload(system, claim)?;
+    if allow_fair {
+        // The finite-prefix fairness rule presumes an admitted Markov subject.
+        // This traversal checks model actions without evaluating the query.
+        super::cyclic::enumerate_graph::<qsl_semantics::check::CheckedPredicate>(
+            system, None, reference, workload, limits, cancel, identity, meter, storage, false, false,
+        )?;
+    }
     let mut state_event = None;
     let mut failures = Vec::new();
     let mut reward = None;
