@@ -33,22 +33,38 @@ fn preflight_identity_refusals_need_no_bytes_or_admitted_source() {
             );
             assert_eq!(refusal.source, source);
             assert_eq!(refusal.region, None);
-            let fields = refusal.cause.identity_cause().expect("identity cause")
-                .identity_fields().expect("identity fields");
+            let fields = refusal
+                .cause
+                .identity_cause()
+                .expect("identity cause")
+                .identity_fields()
+                .expect("identity fields");
             assert_eq!(fields.cause, "blank-label");
             assert_eq!(fields.label, Some(label.as_str()));
         }
     }
-    assert_eq!(SourceIdentity::new("\u{200b}", "document").first_blank_label(), None);
-    let refusal = diagnostic::source_refusal(SourceReadRefusal {
-        cause: SourceReadCause::EmptyPath,
-        error: SourceReadError {
-            source: SourceIdentity::new("issuer", "document"), path: String::new(),
-            region: None, message: "empty locator".into(),
+    assert_eq!(
+        SourceIdentity::new("\u{200b}", "document").first_blank_label(),
+        None
+    );
+    let refusal = diagnostic::source_refusal(
+        SourceReadRefusal {
+            cause: SourceReadCause::EmptyPath,
+            error: SourceReadError {
+                source: SourceIdentity::new("issuer", "document"),
+                path: String::new(),
+                region: None,
+                message: "empty locator".into(),
+            },
         },
-    }, 17);
-    let fields = refusal.cause.identity_cause().expect("identity cause")
-        .identity_fields().expect("identity fields");
+        17,
+    );
+    let fields = refusal
+        .cause
+        .identity_cause()
+        .expect("identity cause")
+        .identity_fields()
+        .expect("identity fields");
     assert_eq!(fields.cause, "empty-path");
     assert_eq!(fields.label, None);
     assert_eq!(refusal.region, None);
@@ -59,25 +75,76 @@ fn preflight_identity_refusals_need_no_bytes_or_admitted_source() {
 fn projection_preserves_each_cause_and_its_original_context() {
     let source = SourceIdentity::new("distinct issuer", "distinct document");
     let cases = [
-        (SourceReadCause::BlankLabel { label: SourceLabel::Identity }, CompleteCode::InvalidSourceIdentity, CompleteCause::Host(HostCause::BlankLabel { label: SourceLabel::Identity }), None),
-        (SourceReadCause::EmptyPath, CompleteCode::InvalidSourceIdentity, CompleteCause::Host(HostCause::EmptyPath), None),
-        (SourceReadCause::ReferenceInvariant, CompleteCode::RuntimeInvariant, CompleteCause::EstablishedInvariantBroken, None),
-        (SourceReadCause::ByteBudget, CompleteCode::StageLimitExceeded, CompleteCause::StageLimit(LimitKind::InputBytes), None),
-        (SourceReadCause::InvalidUtf8, CompleteCode::InvalidUtf8, CompleteCause::Host(HostCause::InvalidUtf8), Some(b"a\xffb".as_slice())),
-        (SourceReadCause::Bom, CompleteCode::InvalidSyntax, CompleteCause::InvalidToken, Some(b"\xef\xbb\xbftext".as_slice())),
-        (SourceReadCause::Nul, CompleteCode::InvalidSyntax, CompleteCause::InvalidToken, Some(b"ab\0c".as_slice())),
+        (
+            SourceReadCause::BlankLabel {
+                label: SourceLabel::Identity,
+            },
+            CompleteCode::InvalidSourceIdentity,
+            CompleteCause::Host(HostCause::BlankLabel {
+                label: SourceLabel::Identity,
+            }),
+            None,
+        ),
+        (
+            SourceReadCause::EmptyPath,
+            CompleteCode::InvalidSourceIdentity,
+            CompleteCause::Host(HostCause::EmptyPath),
+            None,
+        ),
+        (
+            SourceReadCause::ReferenceInvariant,
+            CompleteCode::RuntimeInvariant,
+            CompleteCause::EstablishedInvariantBroken,
+            None,
+        ),
+        (
+            SourceReadCause::ByteBudget,
+            CompleteCode::StageLimitExceeded,
+            CompleteCause::StageLimit(LimitKind::InputBytes),
+            None,
+        ),
+        (
+            SourceReadCause::InvalidUtf8,
+            CompleteCode::InvalidUtf8,
+            CompleteCause::Host(HostCause::InvalidUtf8),
+            Some(b"a\xffb".as_slice()),
+        ),
+        (
+            SourceReadCause::Bom,
+            CompleteCode::InvalidSyntax,
+            CompleteCause::InvalidToken,
+            Some(b"\xef\xbb\xbftext".as_slice()),
+        ),
+        (
+            SourceReadCause::Nul,
+            CompleteCode::InvalidSyntax,
+            CompleteCause::InvalidToken,
+            Some(b"ab\0c".as_slice()),
+        ),
     ];
     for ceiling in [4, 2_097_152] {
         for (cause, code, complete_cause, bytes) in cases {
-            let region = bytes.map(|bytes| Source::read_typed(source.clone(), "original.native", bytes, usize::MAX).err().expect("invalid bytes").error.region.expect("located refusal"));
+            let region = bytes.map(|bytes| {
+                Source::read_typed(source.clone(), "original.native", bytes, usize::MAX)
+                    .err()
+                    .expect("invalid bytes")
+                    .error
+                    .region
+                    .expect("located refusal")
+            });
             let detail = format!("distinct human detail for {cause:?}");
-            let projected = diagnostic::source_refusal(SourceReadRefusal {
-                cause,
-                error: SourceReadError {
-                    source: source.clone(), path: "distinct display path".into(),
-                    region: region.clone(), message: detail.clone(),
+            let projected = diagnostic::source_refusal(
+                SourceReadRefusal {
+                    cause,
+                    error: SourceReadError {
+                        source: source.clone(),
+                        path: "distinct display path".into(),
+                        region: region.clone(),
+                        message: detail.clone(),
+                    },
                 },
-            }, ceiling);
+                ceiling,
+            );
             assert_eq!(projected.code, code);
             assert_eq!(projected.cause, complete_cause);
             assert_eq!(projected.source, source);
@@ -86,9 +153,14 @@ fn projection_preserves_each_cause_and_its_original_context() {
             assert_eq!(projected.region, region);
             assert_eq!(projected.phase, Phase::Source);
             assert!(projected.related.is_empty());
-            assert_eq!(projected.limit(), if cause == SourceReadCause::ByteBudget {
-                Some(SyntaxLimit::SourceBytes { bound: ceiling })
-            } else { None });
+            assert_eq!(
+                projected.limit(),
+                if cause == SourceReadCause::ByteBudget {
+                    Some(SyntaxLimit::SourceBytes { bound: ceiling })
+                } else {
+                    None
+                }
+            );
         }
     }
 }
@@ -103,13 +175,21 @@ fn read_source_uses_the_public_projection_for_actual_refusals() {
             ("issuer", "document", "", b"ok".as_slice()),
             ("issuer", "document", "input.native", oversized.as_slice()),
             ("issuer", "document", "input.native", b"a\xffb".as_slice()),
-            ("issuer", "document", "input.native", b"\xef\xbb\xbf".as_slice()),
+            (
+                "issuer",
+                "document",
+                "input.native",
+                b"\xef\xbb\xbf".as_slice(),
+            ),
             ("issuer", "document", "input.native", b"ab\0c".as_slice()),
         ] {
             let source = SourceIdentity::new(authority, identity);
-            let typed = Source::read_typed(source.clone(), path, bytes, ceiling).err().expect("source refusal");
-            let direct = diagnostic::source_refusal(typed, ceiling);
-            let through_reader = diagnostic::read_source(source, path, bytes, ceiling).expect_err("source refusal");
+            let typed = Source::read_typed(source.clone(), path, bytes, ceiling)
+                .err()
+                .expect("source refusal");
+            let direct = diagnostic::source_refusal(*typed, ceiling);
+            let through_reader =
+                diagnostic::read_source(source, path, bytes, ceiling).expect_err("source refusal");
             assert_eq!(through_reader, direct);
         }
     }
