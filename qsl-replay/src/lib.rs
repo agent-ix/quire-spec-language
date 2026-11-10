@@ -330,7 +330,7 @@ pub use planner::{
     PlannerResult, PremiseItem, PremiseResult, ResultEntry, SettlementRequest,
 };
 pub use probability_certificate::{
-    check_claim_exact_reachability, check_probability_certificate_document,
+    admit_expected_reward_certificate_subject, check_claim_exact_reachability, check_probability_certificate_document,
     check_probability_certificate_source, claim_binding, digital_probability_product_key,
     long_run_probability_certificate_document, probabilistic_claim_identity,
     probabilistic_formula_monitor_context, probability_certificate_document,

@@ -843,7 +843,9 @@ fn subject_graph(
             other => other,
         },
     })?;
-    topological_order(&graph, cancel)?;
+    if reward.is_none() {
+        topological_order(&graph, cancel)?;
+    }
     Ok((
         graph,
         claim_objective(&claim.scheduler, bound),
@@ -862,6 +864,27 @@ fn target_keys(graph: &CheckerGraph) -> Vec<ProbabilityProductKey> {
         .filter(|(_, state)| state.terminal == Some(true))
         .map(|(key, _)| key.clone())
         .collect()
+}
+
+/// Admit an expected-reward subject before an engine invokes its general
+/// solver. This independently checks the finite acyclic profile, actual
+/// costs, units and terminal targets under caller controls. It grants no
+/// certificate acceptance and computes no expected value.
+pub fn admit_expected_reward_certificate_subject(
+    system: &ModelSystem<'_>,
+    claims: &[CheckedProbabilisticClaim],
+    item: &ObligationIdentity,
+    limits: ProbabilityDocumentLimits,
+    cancel: &Cancel,
+) -> Result<(), ProbabilityDocumentError> {
+    if !matches!(
+        &bind_claim(claims, item, cancel)?.form,
+        ProbForm::ExpectedReward { .. }
+    ) {
+        return Err(ProbabilityDocumentError::Unsupported);
+    }
+    subject_graph(system, claims, item, limits, cancel)?;
+    Ok(())
 }
 
 /// Build a transport document from solver values and independently derived
