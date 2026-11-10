@@ -108,6 +108,9 @@ pub fn cyclic_mdp_probability_certificate_document(
     limits: ProbabilityDocumentLimits,
     cancel: &Cancel,
 ) -> Result<ProbabilityProofDocument, ProbabilityDocumentError> {
+    if !matches!(bind_claim(claims, item, cancel)?.form, ProbForm::Reach { target: ReachTarget::Eventually(_), .. }) {
+        return Err(ProbabilityDocumentError::Unsupported);
+    }
     construct(
         system,
         claims,
@@ -847,6 +850,7 @@ fn construct(
     })
 }
 
+#[cfg(feature = "test-support")]
 pub(super) fn check<'a>(
     system: &ModelSystem<'_>,
     claims: &[CheckedProbabilisticClaim],
