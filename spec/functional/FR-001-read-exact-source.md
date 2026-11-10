@@ -105,6 +105,45 @@ That is retained lane-private debt (ADR-013 §6), recorded here so no
 implementer mistakes it for this requirement's behaviour; this requirement
 neither fixes nor extends it.
 
+### Public complete-diagnostic projection of a source refusal
+
+When a caller supplies a `qsl_foundation::SourceReadRefusal`, CST shall
+project it through the public function
+`qsl_cst::diagnostic::source_refusal(refusal: SourceReadRefusal, byte_limit: usize) -> Box<CompleteDiagnostic>`.
+This consumes the existing owned refusal without requiring offered bytes,
+an admitted `Source`, a parser or filesystem access. A caller can therefore
+use `SourceIdentity::first_blank_label` and the public refusal fields to
+report the first blank label before reading a file, using the existing
+predicate and `SourceReadCause`; this introduces no second label validator.
+
+The projection shall retain `error.source`, `error.path`, `error.region` and
+`error.message` exactly, set phase to `Source`, and leave related regions
+empty. In particular, `None` remains `None`, never a region at byte zero.
+The path remains a locator; the projection does not derive source identity
+from it or mint a source reference.
+
+The projection shall use the existing `read_source` mapping:
+
+| SourceReadCause | CompleteCode | CompleteCause |
+| --- | --- | --- |
+| `BlankLabel { label }` | `InvalidSourceIdentity` | `Host(BlankLabel { label })` |
+| `EmptyPath` | `InvalidSourceIdentity` | `Host(EmptyPath)` |
+| `ReferenceInvariant` | `RuntimeInvariant` | `EstablishedInvariantBroken` |
+| `ByteBudget` | `StageLimitExceeded` | `StageLimit(InputBytes)` |
+| `InvalidUtf8` | `InvalidUtf8` | `Host(InvalidUtf8)` |
+| `Bom` or `Nul` | `InvalidSyntax` | `InvalidToken` |
+
+For `ByteBudget`, the projection shall carry
+`SyntaxLimit::SourceBytes { bound: byte_limit }`, using the ceiling supplied
+for the refused read. For every other cause it shall carry no syntax limit.
+`read_source` shall use this same projection for its typed source refusals,
+rather than maintaining a second conversion. The retained identity cause's
+`identity_fields()` shall continue to expose `blank-label` with the exact
+label, or `empty-path` without a label.
+
+This is a CST library projection, not an extension to diagnostic wire
+members or a replacement for native-v1's retained span requirement above.
+
 ### Line and column are derived when rendered
 
 A `SourceRegion` holds bytes only. A renderer derives the one-based line and
@@ -206,6 +245,9 @@ names it with the same two labels (QSpec FR-004).
 | FR-001-AC-8 | Bytes `a\xffb` admitted as (`a`, `u`) refuse with the region `[1, 1)` under the `RawSourceRef` (`a`, `u`), and bytes `ab\0c` with the region `[2, 3)` under it. | Test (TC-424) |
 | FR-001-AC-10 | Admission with an empty identity, and admission of five bytes under a four-byte ceiling each refuse with no region, not a region at byte 0. | Test (TC-424) |
 | FR-001-AC-9 | A renderer given the region `[4, 7)` of admitted source `ab\ncdéf` reports start line 2, column 2 and end line 2, column 4, derived from the admitted bytes; the region itself holds only its `RawSourceRef`, 4 and 7. | Test (TC-424) |
+| FR-001-AC-13 | A caller outside CST constructs a typed blank-label refusal using `first_blank_label` and the existing public refusal fields, then calls `source_refusal` without bytes or an admitted source. For empty, space-only and U+3000 labels, including both labels blank, the projected identity cause retains the first blank label in authority-then-identity order; U+200B is not blank. An empty-path refusal retains `empty-path` with no label. | Test |
+| FR-001-AC-14 | For every `SourceReadCause`, public projection gives the code and complete cause in the mapping above, retains source identity, path, message and optional region exactly, sets phase `Source` and has no related regions. Cases with no region retain `None`; located UTF-8, BOM and NUL cases retain their original reference and endpoints. | Test |
+| FR-001-AC-15 | Projecting `ByteBudget` under ceilings below and above 1 MiB retains exactly the supplied bound as `SyntaxLimit::SourceBytes`; projecting every other cause under either ceiling has no syntax limit. Source refusals returned through `read_source` have the same projected fields as direct public projection of the corresponding `Source::read_typed` refusal with the same ceiling. | Test |
 
 The cause and `label` reach the native `Diagnostic`,
 the `parse`/`format` refusal line, the native-run output, the
