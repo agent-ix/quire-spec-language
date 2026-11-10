@@ -16,7 +16,7 @@ on the authority and identity but not on the source bytes. This catches a
 defaulted or path-derived label, a reference that carries any other member,
 and source content that leaks into a node key.
 
-Scope: FR-001-AC-5 to FR-001-AC-12.
+Scope: FR-001-AC-5 to FR-001-AC-15.
 
 ## Test Procedure
 
@@ -38,6 +38,18 @@ Scope: FR-001-AC-5 to FR-001-AC-12.
    path.
 7. Apply an incremental edit with a stale expected source identity and send a
    complete-editor request bound to another source revision.
+8. From a caller outside CST, use `SourceIdentity::first_blank_label` for
+   the blank-label combinations in steps 2 and 6. Construct the existing
+   typed refusal from its public fields, with no region, and project it
+   through `qsl_cst::diagnostic::source_refusal` before offering bytes or
+   admitting a source. Also project an empty-path refusal.
+9. Project each `SourceReadCause`, retaining distinctive source labels,
+   path and message. Use no region for blank-label, empty-path,
+   reference-invariant and byte-budget refusals; use the original offered
+   source's region for invalid UTF-8, BOM and NUL refusals.
+10. Repeat projection with ceilings below and above 1 MiB. For source-read
+    refusals reachable through `Source::read_typed`, compare direct
+    projection with `read_source` under the same inputs and ceiling.
 
 Tag the tests `#[trace("TC-424", "FR-001-AC-n")]` with the AC each backs.
 
@@ -62,3 +74,14 @@ Tag the tests `#[trace("TC-424", "FR-001-AC-n")]` with the AC each backs.
 - Step 7: the edit and editor request each refuse with `invalid_source_map`
   and no region, with host causes `EditPredecessor` and `RequestRevision`
   respectively; neither is `invalid_source_identity`.
+- Step 8: no bytes, admitted source or filesystem operation is needed.
+  The projected cause's `identity_fields()` names `blank-label` and exactly
+  the first blank label, authority before identity. U+200B is not blank.
+  Empty-path has cause `empty-path` and no label. Every absent region stays
+  absent, never byte zero.
+- Step 9: the code and complete cause match FR-001's projection table;
+  phase is `Source`, related regions are empty, and the identity, path,
+  message and optional region equal the supplied values exactly.
+- Step 10: only byte-budget refusals carry a syntax limit, with precisely
+  the supplied bound. Direct projection and `read_source` agree on every
+  diagnostic field, including the limit and optional region.
