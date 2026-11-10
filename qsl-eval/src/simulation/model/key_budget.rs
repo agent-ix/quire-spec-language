@@ -91,7 +91,7 @@ impl KeyPolicy for KeyScope<'_> {
             Ok(bytes) => Ok(crate::simulation::StateKey::from_canonical_bytes(bytes)),
             Err(error) => {
                 *self.refused.borrow_mut() = Some(error);
-                Err(super::exhausted(
+                Err(super::walk::exhausted(
                     crate::simulation::ExpansionLimit::EvaluationMeter(
                         quire_exact::LimitKind::WorkUnits,
                     ),
