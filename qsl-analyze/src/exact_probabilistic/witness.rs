@@ -801,7 +801,7 @@ pub(crate) fn produce_witness_stopping(
                         .count(),
                     std::mem::size_of::<(ProbStateId, ProductAction)>(),
                 )?))?;
-                for (_, (action, _)) in &induced {
+                for (action, _) in induced.values() {
                     if resolves(scope, action) {
                         control(WitnessWork::Action(action))?;
                     }
