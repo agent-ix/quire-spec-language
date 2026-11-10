@@ -10,6 +10,7 @@ use super::{assemble, assemble_with, checks, protocol_causes, refusals, HEADER};
 use crate::check::protocol_clause::{CausalEdge, EdgeKind, Port, PortRef, ProtocolNodeId};
 use crate::check::refusal::{ArmFault, ObservationReason, ProtocolAnchorCause, SlotKind};
 use crate::check::{CheckRefusal, CheckedAwait, CheckedDeadline, CheckedGraph};
+use quire_semantic_value::checking::CheckMode;
 
 /// A protocol `Flow` with roles `R` and `S` on `M::Actor`, a record type
 /// `Plain`, the `members` written before `run` and the `run` control.
@@ -502,7 +503,10 @@ fn an_await_matches_an_event_in_a_closed_window_under_a_temporal_profile() {
     );
     let (text, assembled) = assemble_with(&header, &source);
     let found = assembled
-        .check(quire_semantic_value::checking::CheckingLimits::default())
+        .check(
+            quire_semantic_value::checking::CheckingLimits::default(),
+            CheckMode::Linked,
+        )
         .expect_err("an await under no temporal profile refuses");
     // `flow`'s protocol input is a Boolean, which the lowering stage reports
     // as `NoOwnerModel`; that emission refusal is not this check's subject.

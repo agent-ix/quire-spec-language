@@ -68,7 +68,7 @@ pub(crate) fn package_of(declarations: &str) -> CheckedPackage {
     .expect("the assembler builds the package declarations");
     CheckedPackage::link(
         declarations
-            .check(CheckingLimits::default())
+            .check(CheckingLimits::default(), CheckMode::Linked)
             .unwrap_or_else(|refusals| panic!("the package checks: {refusals:?}\n{text}")),
     )
 }
@@ -1315,6 +1315,7 @@ fn a_nested_unbounded_operator_shares_the_activation_capacity() {
 
 use crate::monitor_plan::premise_plan_on;
 use qsl_analyze::monitor_entries::{ActivationKind, ClauseSource};
+use quire_semantic_value::checking::CheckMode;
 
 const ON_EACH: &str = "on each (q: M::ConfigVersion)";
 

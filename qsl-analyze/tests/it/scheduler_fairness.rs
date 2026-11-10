@@ -53,6 +53,7 @@ use crate::fill::{
     tcb_01_event_position_selection, unit_text, universe, v, Documents,
 };
 use crate::model_settle::{envelope_at, request};
+use quire_semantic_value::checking::CheckMode;
 
 /// `Chatter`'s channel: unordered, of capacity 2, with delivery `unknown`,
 /// so its queued entries are duplicated and lost.
@@ -572,7 +573,7 @@ pub(crate) fn check_refusal(body: &str) -> CheckRefusal {
         Vec::new(),
     )
     .expect("the unit assembles")
-    .check(CheckingLimits::default())
+    .check(CheckingLimits::default(), CheckMode::Linked)
     .expect_err("the unit refuses");
     assert_eq!(refusals.len(), 1, "{refusals:?}");
     refusals.remove(0)

@@ -18,6 +18,7 @@ use quire_eval::Evaluation;
 use quire_eval::FamilyOutcome;
 use quire_exact::{EffectiveId, OriginalDeclarationKey, Presence, ValueType};
 use quire_exact::{Integer, Meter, Outcome, ScalarLimits, Value};
+use quire_semantic_value::checking::CheckMode;
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::declaration::{
     Admission, FieldDeclaration, ObjectTypeDeclaration, TypeEnvironment, TypeEnvironmentLimits,
@@ -212,7 +213,7 @@ pub fn enum_members(functions: usize, binding: &EnumBinding) -> PackageDeclarati
 
 /// Check `declarations` at the default checking limits (NFR-011).
 pub fn check(declarations: PackageDeclarations) -> Result<CheckedGraph, Vec<CheckRefusal>> {
-    declarations.check(CheckingLimits::default())
+    declarations.check(CheckingLimits::default(), CheckMode::Linked)
 }
 
 /// Check and S4-link an N-function call chain for the evaluator benchmark.

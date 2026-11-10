@@ -5,6 +5,7 @@
 //! projection; IR's v2 reader admits the emitted package.
 
 use super::*;
+use quire_semantic_value::checking::CheckMode;
 
 fn multiplicity(lower: u64, upper: u64) -> Value {
     json!({"lower": lower, "upper": upper, "ordered": false, "unique": true})
@@ -121,7 +122,7 @@ fn a_navigation_lowers_to_one_navigate_application_over_the_reference() {
     );
     let graph = assemble_with_models(unit.as_bytes(), &packages)
         .expect("the unit assembles")
-        .check(CheckingLimits::default())
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .expect("the three navigations check");
     let emission = emit_checked(&CheckedPackage::link(graph)).expect("the package emits");
     assert_eq!(emission.omitted, []);

@@ -11,6 +11,7 @@ use qsl_route::{
     ManifestMembers, ProviderOrigin, Registry,
 };
 use qsl_semantics::check::{Capability, PackageDeclarations};
+use quire_semantic_value::checking::CheckMode;
 use quire_semantic_value::checking::CheckingLimits;
 
 /// The ConfigVersion unit with one infinite-trace clause whose body is `body`.
@@ -43,7 +44,7 @@ pub(crate) fn graph_of(body: &str) -> qsl_semantics::check::CheckedGraph {
     .expect("the model is admitted");
     PackageDeclarations::assemble(raw, "fixture".to_string(), unit, models, Vec::new())
         .expect("the unit assembles")
-        .check(CheckingLimits::default())
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .unwrap_or_else(|refusals| panic!("{body}: {refusals:?}"))
 }
 

@@ -12,6 +12,7 @@ use quire_exact::{
     construct_collection, form_collection, ChargePoint, CollectionKind, CollectionType, Deferred,
     Integer, IntegerInterval, Meter, Outcome, ScalarLimits, Value, ValueType,
 };
+use quire_semantic_value::checking::CheckMode;
 use quire_semantic_value::checking::CheckingLimits;
 
 const UNIT: &str = "language \"ix:native\" edition \"1-draft\";\n\
@@ -52,7 +53,7 @@ fn package() -> CheckedPackage {
     .expect("the unit assembles");
     CheckedPackage::link(
         declarations
-            .check(CheckingLimits::default())
+            .check(CheckingLimits::default(), CheckMode::Linked)
             .expect("the package checks"),
     )
 }

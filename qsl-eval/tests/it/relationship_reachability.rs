@@ -40,6 +40,7 @@ use quire_semantic_value::relationship_extent::{
 };
 
 use crate::support::admitted_charge_points;
+use quire_semantic_value::checking::CheckMode;
 
 const UNLIMITED: ScalarLimits = SCALAR_LIMITS_UNLIMITED;
 const EXPAND: ChargePoint = ChargePoint::GraphExpand;
@@ -210,7 +211,7 @@ fn orders_package(shape: Shape, declarations: &str) -> CheckedPackage {
     .expect("the model assembles");
     CheckedPackage::link(
         declarations
-            .check(CheckingLimits::default())
+            .check(CheckingLimits::default(), CheckMode::Linked)
             .expect("the clauses check"),
     )
 }

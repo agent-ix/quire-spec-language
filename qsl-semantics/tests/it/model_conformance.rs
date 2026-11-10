@@ -22,6 +22,7 @@ use qsl_semantics::model::normalize::{
     normalize, EffectiveView, ModelRefusalCause, NormalizeOutcome, ViewEntry,
 };
 use quire_checked::key::DeclarationKey;
+use quire_semantic_value::checking::CheckMode;
 
 fn mult(lower: u64, upper: Option<u64>) -> Multiplicity {
     Multiplicity {
@@ -1168,7 +1169,7 @@ fn a_wide_domain_and_a_literal_above_i64_max_are_decided_exactly() {
             vec![],
         )
         .expect("model-owned narrowing waits for its checked clause");
-        let result = declarations.check(CheckingLimits::default());
+        let result = declarations.check(CheckingLimits::default(), CheckMode::Linked);
         if succeeds {
             assert!(result.is_ok(), "exact 2^63 bound: {result:?}");
         } else {

@@ -13,6 +13,7 @@ use quire_contract_model::{
 use super::*;
 
 use crate::checked_v2::{read_checked_package_v2, read_hybrids, HybridRead, V2ReadRefusal};
+use quire_semantic_value::checking::CheckMode;
 
 const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
      profile v = \"quire.value.complete/v1\";\n\
@@ -110,7 +111,7 @@ fn compile_checked(declarations: &str) -> (Emission, Value, Checked) {
         Vec::new(),
     )
     .expect("the unit assembles")
-    .check(CheckingLimits::default())
+    .check(CheckingLimits::default(), CheckMode::Linked)
     .unwrap_or_else(|refusals| panic!("the package checks: {refusals:?}"));
     let selections = graph
         .temporal_clauses()

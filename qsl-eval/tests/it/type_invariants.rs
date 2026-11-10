@@ -37,6 +37,7 @@ use crate::tc235_business_meaning_runtime::{lifecycle_document_ref, lifecycle_id
 use crate::tc235_k2::{
     clause, declaration, field, id, mutate_k2, operation, origin, type_named_mut, PACKAGE,
 };
+use quire_semantic_value::checking::CheckMode;
 
 fn key(node: &str) -> DeclarationKey {
     DeclarationKey {
@@ -258,7 +259,7 @@ fn compile_parsed(unit: &str, packages: &Packages) -> Compiled {
         Vec::new(),
     )
     .expect("the unit assembles");
-    match declarations.check(CheckingLimits::default()) {
+    match declarations.check(CheckingLimits::default(), CheckMode::Linked) {
         Ok(graph) => Compiled::Checked(Box::new(graph)),
         Err(refusals) => Compiled::Refused(refusals),
     }

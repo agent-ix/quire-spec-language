@@ -843,7 +843,7 @@ impl EmittedPackage {
 #[cfg(feature = "std")]
 pub(crate) fn dependency_chain(length: usize) -> CheckedPackage {
     use qsl_semantics::check::PackageDeclarations;
-    use quire_semantic_value::checking::CheckingLimits;
+    use quire_semantic_value::checking::{CheckMode, CheckingLimits};
     let source = qsl_foundation::Source::read(
         qsl_foundation::SourceIdentity::new("a", "u"),
         "u".to_owned(),
@@ -859,7 +859,7 @@ pub(crate) fn dependency_chain(length: usize) -> CheckedPackage {
             "test/package",
             qsl_foundation::IdentityLimits::default(),
         )
-        .check(CheckingLimits::default())
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .expect("an empty package checks"),
     );
     (0..length).fold(
@@ -917,7 +917,7 @@ mod tests {
     use super::*;
     use ix_trace_rs::trace;
     use qsl_semantics::check::PackageDeclarations;
-    use quire_semantic_value::checking::CheckingLimits;
+    use quire_semantic_value::checking::{CheckMode, CheckingLimits};
 
     /// ADR-030: dropping a 100,000-long dependency chain runs on a 128 KiB
     /// stack. A derived, recursive drop would use one frame per link.
@@ -1002,7 +1002,7 @@ mod tests {
             qsl_forms::Expression::boolean(true),
         )];
         let graph = declarations
-            .check(CheckingLimits::default())
+            .check(CheckingLimits::default(), CheckMode::Linked)
             .expect("a function over a model reference checks");
         let model_nodes: Vec<quire_exact::NodeKey> = graph
             .semantic_graph()

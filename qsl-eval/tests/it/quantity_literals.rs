@@ -15,6 +15,7 @@ use qsl_semantics::model::intake::SelectedModels;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use quire_eval::FamilyOutcome;
 use quire_exact::{Meter, Outcome, ScalarLimits, Value};
+use quire_semantic_value::checking::CheckMode;
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::loss::ValueLoss;
 
@@ -99,7 +100,7 @@ fn package_with_aliases(
     .expect("the assembler builds the declarations");
     configure(&mut declarations);
     declarations
-        .check(CheckingLimits::default())
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .map(CheckedPackage::link)
 }
 
@@ -192,7 +193,7 @@ fn a_package_typed_unit_conversion_evaluates_true_for_two_ticks() {
     .expect("the package-unit declarations assemble");
     let package = CheckedPackage::link(
         declarations
-            .check(CheckingLimits::default())
+            .check(CheckingLimits::default(), CheckMode::Linked)
             .expect("k1 and its call check"),
     );
     assert!(truth(&package, "k1_at_two_ticks"));

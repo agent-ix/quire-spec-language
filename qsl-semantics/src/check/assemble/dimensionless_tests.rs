@@ -6,6 +6,7 @@ use crate::value::nominal_payload::NominalPayload;
 use ix_trace_rs::trace;
 use qsl_forms::build_unit;
 use qsl_foundation::SourceIdentity;
+use quire_semantic_value::checking::CheckMode;
 use quire_semantic_value::checking::CheckingLimits;
 
 /// A derived `L / L` dimension keeps its derived identity when its normalized
@@ -68,7 +69,7 @@ fn source_assembly_keeps_empty_derived_dimension_dimensionless() {
     );
 
     let checked = package
-        .check(CheckingLimits::default())
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .expect("the assembled package checks");
     let graph = checked.semantic_graph();
     let dimension_of = |unit_name: &str| {

@@ -5,12 +5,12 @@ use qsl_eval::execution::{EntrySelection, ExecutionBackend, PrepareLimits, Prepa
 use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
 use qsl_jit::{Jit, PreparedJit};
 use qsl_package::CheckedPackage;
-use qsl_semantics::check::PackageDeclarations;
+use qsl_semantics::check::{CheckRefusal, CheckedGraph, PackageDeclarations};
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::value::{admit_integer_division, DefinitionRole};
 use quire_eval::{CallFailure, Evaluation};
-use quire_exact::{AdmittedCharge, Cancel, Integer, Meter, ScalarLimits, Value};
-use quire_semantic_value::checking::CheckingLimits;
+use quire_exact::{AdmittedCharge, Cancel, Integer, LimitKind, Meter, ScalarLimits, Value};
+use quire_semantic_value::checking::{CheckMode, CheckingLimits};
 use quire_semantic_value::supplied_stop::{SuppliedLimits, SuppliedRun};
 
 pub const UNLIMITED: ScalarLimits = ScalarLimits {
@@ -44,7 +44,49 @@ pub fn package_with_law(declarations: &str, law: DefinitionRole) -> CheckedPacka
     package_with(declarations, Some(law))
 }
 
+/// [`package_of`] checked under `CheckMode::Kernel` (FR-495): a function's
+/// result bound is a run-time obligation of the kernel evaluation.
+pub fn package_kernel(declarations: &str) -> CheckedPackage {
+    package_in(declarations, None, CheckMode::Kernel)
+}
+
+/// The refusals `declarations` draws under `mode`, with the floor
+/// integer-division law admitted: their `(code, cause)` pairs, or none when
+/// the unit checks.
+pub fn refusal_causes(
+    declarations: &str,
+    mode: CheckMode,
+) -> Vec<(qsl_foundation::diagnostic::Code, Option<&'static str>)> {
+    match check_in(
+        declarations,
+        Some(DefinitionRole::IntegerDivisionFloor),
+        mode,
+    ) {
+        Ok(_) => Vec::new(),
+        Err(refusals) => refusals
+            .iter()
+            .map(|refusal| (refusal.cause.code(), refusal.cause.cause()))
+            .collect(),
+    }
+}
+
 fn package_with(declarations: &str, division: Option<DefinitionRole>) -> CheckedPackage {
+    package_in(declarations, division, CheckMode::Linked)
+}
+
+fn package_in(
+    declarations: &str,
+    division: Option<DefinitionRole>,
+    mode: CheckMode,
+) -> CheckedPackage {
+    CheckedPackage::link(check_in(declarations, division, mode).expect("the unit checks"))
+}
+
+fn check_in(
+    declarations: &str,
+    division: Option<DefinitionRole>,
+    mode: CheckMode,
+) -> Result<CheckedGraph, Vec<CheckRefusal>> {
     let text = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n{declarations}"
@@ -74,15 +116,12 @@ fn package_with(declarations: &str, division: Option<DefinitionRole>) -> Checked
         declarations.integer_division =
             Some(admit_integer_division(&[law.reference()], None).expect("the law is admitted"));
     }
-    CheckedPackage::link(
-        declarations
-            .check(
-                CheckingLimits::default()
-                    .with_nodes(1 << 30)
-                    .with_input_bytes(1 << 30)
-                    .with_work_budget(1 << 40),
-            )
-            .expect("the unit checks"),
+    declarations.check(
+        CheckingLimits::default()
+            .with_nodes(1 << 30)
+            .with_input_bytes(1 << 30)
+            .with_work_budget(1 << 40),
+        mode,
     )
 }
 
@@ -116,6 +155,8 @@ pub fn prepare<'p>(package: &'p CheckedPackage, functions: &[&str]) -> PreparedJ
 pub struct Run {
     pub result: String,
     pub charges: Vec<AdmittedCharge>,
+    /// The `work_units` the call consumed.
+    pub work_spent: u64,
 }
 
 fn rendered(result: Result<Evaluation, CallFailure>) -> String {
@@ -141,6 +182,7 @@ pub fn interpreted(
     Run {
         result: rendered(result),
         charges: meter.admitted_charges().to_vec(),
+        work_spent: meter.consumed(LimitKind::WorkUnits),
     }
 }
 
@@ -164,6 +206,7 @@ pub fn jitted(
     Run {
         result: rendered(result),
         charges: meter.admitted_charges().to_vec(),
+        work_spent: meter.consumed(LimitKind::WorkUnits),
     }
 }
 
@@ -192,4 +235,15 @@ pub fn jitted_call(
         },
         &Cancel::new(),
     )
+}
+
+/// The 10,000 FR-295 generated units at the default seed, generated once for
+/// every test that reads them.
+pub fn generated_units() -> &'static [(qsl_conformance::generator::GeneratedUnit, CheckedPackage)] {
+    static UNITS: std::sync::OnceLock<
+        Vec<(qsl_conformance::generator::GeneratedUnit, CheckedPackage)>,
+    > = std::sync::OnceLock::new();
+    UNITS.get_or_init(|| {
+        qsl_conformance::generator::generate(qsl_conformance::generator::DEFAULT_SEED, 10_000).0
+    })
 }

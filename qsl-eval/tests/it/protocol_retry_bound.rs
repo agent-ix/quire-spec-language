@@ -18,6 +18,7 @@ use qsl_semantics::model::observation::{
     document_reference, DocumentProvision, DocumentRef, ObservationLimits,
 };
 use quire_exact::ScalarLimits;
+use quire_semantic_value::checking::CheckMode;
 use quire_semantic_value::checking::CheckingLimits;
 use serde_json::json;
 
@@ -171,7 +172,7 @@ fn fixture(bound: u64) -> Fixture {
             Vec::new(),
         )
         .expect("unit assembled")
-        .check(CheckingLimits::default())
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .unwrap_or_else(|refusals| panic!("protocol checks: {refusals:?}")),
     );
 

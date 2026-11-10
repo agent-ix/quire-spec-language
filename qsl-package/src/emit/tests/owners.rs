@@ -18,6 +18,7 @@ use quire_exact::{EffectiveId, Integer};
 use quire_semantic_value::declaration::ObjectTypeDeclaration;
 
 use super::*;
+use quire_semantic_value::checking::CheckMode;
 
 /// The owner kind FR-322's presence rule requires of a wire node.
 fn required_kind(node: &Value) -> Option<&'static str> {
@@ -151,7 +152,7 @@ fn source_declared_nodes_carry_their_source_owner() {
     declarations.functions = vec![keep];
     let package = CheckedPackage::link(
         declarations
-            .check(CheckingLimits::default())
+            .check(CheckingLimits::default(), CheckMode::Linked)
             .expect("the package checks"),
     );
     let emission = emit(&package);
@@ -344,7 +345,7 @@ fn acme_dispatch_package(root: &str) -> CheckedPackage {
     declarations.functions.push(held);
     CheckedPackage::link(
         declarations
-            .check(CheckingLimits::default())
+            .check(CheckingLimits::default(), CheckMode::Linked)
             .unwrap_or_else(|refusals| panic!("{root} checks: {refusals:?}")),
     )
 }

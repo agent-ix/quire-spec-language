@@ -29,7 +29,7 @@ pub(super) fn check_on_small_stack(
 ) -> Result<CheckedGraph, Vec<CheckRefusal>> {
     std::thread::Builder::new()
         .stack_size(STACK)
-        .spawn(move || declarations(form, levels).check(limits))
+        .spawn(move || declarations(form, levels).check(limits, CheckMode::Linked))
         .expect("the check thread spawns")
         .join()
         .expect("the check completes on a 512 KiB stack")
@@ -81,7 +81,7 @@ fn a_postcondition_pre_over_1000_levels_refuses_on_a_small_stack() {
         "fixture",
         qsl_foundation::IdentityLimits::default(),
     )
-    .check(CheckingLimits::default())
+    .check(CheckingLimits::default(), CheckMode::Linked)
     .expect("an empty package checks");
     let refused = std::thread::scope(|scope| {
         std::thread::Builder::new()

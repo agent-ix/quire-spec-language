@@ -11,6 +11,7 @@ use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::value::{admit_ieee_profile, DefinitionRole};
 use quire_eval::FamilyOutcome;
 use quire_exact::{IeeeFlag, IeeeFlags, IeeeValue, LimitKind, Meter, Outcome, ScalarLimits, Value};
+use quire_semantic_value::checking::CheckMode;
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::loss::ValueLoss;
 
@@ -57,7 +58,7 @@ fn run(result: &str, body: &str) -> (Outcome<Value>, Vec<ValueLoss>) {
         Some(admit_ieee_profile(&[DefinitionRole::IeeeProfile.reference()], &[]).unwrap());
     let package = CheckedPackage::link(
         declarations
-            .check(CheckingLimits::default())
+            .check(CheckingLimits::default(), CheckMode::Linked)
             .unwrap_or_else(|refusal| panic!("{body}: {refusal:?}")),
     );
     let evaluation = package
@@ -434,7 +435,7 @@ fn spend(result: &str, body: &str, p: u64, q: u64, limits: ScalarLimits) -> (Out
         Some(admit_ieee_profile(&[DefinitionRole::IeeeProfile.reference()], &[]).unwrap());
     let package = CheckedPackage::link(
         declarations
-            .check(CheckingLimits::default())
+            .check(CheckingLimits::default(), CheckMode::Linked)
             .unwrap_or_else(|refusal| panic!("{body}: {refusal:?}")),
     );
     let mut meter = Meter::new(limits);

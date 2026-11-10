@@ -26,6 +26,7 @@ use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
 use qsl_semantics::model::observation::{DocumentRef, ObservationLimits};
 use quire_checked::key::DeclarationKey;
 use quire_exact::{Meter, ScalarLimits, Value};
+use quire_semantic_value::checking::CheckMode;
 use quire_semantic_value::checking::CheckingLimits;
 use serde_json::{json, Value as Json};
 
@@ -275,7 +276,7 @@ impl World {
         };
         let unit = format!("{text}{declared}");
         let graph = declarations(&unit)
-            .check(CheckingLimits::default())
+            .check(CheckingLimits::default(), CheckMode::Linked)
             .unwrap_or_else(|refusals| panic!("{unit}: the unit checks: {refusals:?}"));
         let checked: Vec<CheckedTemporalClause> = graph
             .temporal_clauses()

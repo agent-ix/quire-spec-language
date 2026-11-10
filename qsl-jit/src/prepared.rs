@@ -28,6 +28,8 @@ use crate::exec::{Entry, EntryFrame, EntryRefusal, Halt, Machine, Status};
 use crate::kernel::State;
 #[cfg(feature = "test-support")]
 pub use crate::kernel::{KernelCall, KernelRecorder};
+#[cfg(feature = "test-support")]
+use crate::relocations::{BlockRelocations, StrayCallKind};
 use crate::translate::{carried, integer_to_i64, Carried, Compiler, Failure, Op};
 use qsl_eval::execution::{first_outside, Outside};
 
@@ -84,6 +86,9 @@ pub struct PreparedJit<'p> {
     compiled: BTreeMap<QualifiedName, Compiled>,
     ops: Vec<Op>,
     unsupported: Vec<(EntrySelection, UnsupportedEntry)>,
+    /// The call targets of every generated block (FR-561-AC-3).
+    #[cfg(feature = "test-support")]
+    call_targets: Vec<BlockRelocations>,
     /// The most handles the arena held during the last call.
     #[cfg(feature = "test-support")]
     arena_peak: std::cell::Cell<usize>,
@@ -125,15 +130,30 @@ fn fault(invariant: &'static str) -> PrepareFailure {
     PrepareFailure::Fault(InternalFault::new("FR-560", invariant))
 }
 
-impl ExecutionBackend for Jit {
-    type Prepared<'p> = PreparedJit<'p>;
-
-    fn prepare<'p>(
+impl Jit {
+    /// [`ExecutionBackend::prepare`] through a test code generator that emits
+    /// `stray` into every block (a test hook for FR-561-AC-3).
+    ///
+    /// # Errors
+    /// As [`ExecutionBackend::prepare`].
+    #[cfg(feature = "test-support")]
+    pub fn prepare_with_stray_call_for_test<'p>(
         &self,
         package: &'p CheckedPackage,
         entries: &[EntrySelection],
         limits: &PrepareLimits,
         cancel: &Cancel,
+        stray: StrayCallKind,
+    ) -> Result<PreparedJit<'p>, PrepareFailure> {
+        Self::prepare_entries(package, entries, limits, cancel, Some(stray))
+    }
+
+    fn prepare_entries<'p>(
+        package: &'p CheckedPackage,
+        entries: &[EntrySelection],
+        limits: &PrepareLimits,
+        cancel: &Cancel,
+        #[cfg(feature = "test-support")] stray: Option<StrayCallKind>,
     ) -> Result<PreparedJit<'p>, PrepareFailure> {
         if let Some(cause) = cancel.cause() {
             return Err(PrepareFailure::Cancelled(cause));
@@ -147,8 +167,10 @@ impl ExecutionBackend for Jit {
         let mut unsupported = Vec::new();
         let mut translated = Vec::new();
         let graph = package.graph();
+        #[cfg(feature = "test-support")]
+        let blocks;
         {
-            let mut compiler = Compiler::new(
+            let compiler = Compiler::new(
                 machine.module(),
                 &shim,
                 graph,
@@ -156,6 +178,9 @@ impl ExecutionBackend for Jit {
                 &mut ops,
                 &mut meter,
             );
+            #[cfg(feature = "test-support")]
+            let compiler = compiler.with_stray(stray);
+            let mut compiler = compiler;
             let mut seen = std::collections::BTreeSet::new();
             for selection in entries {
                 if !seen.insert((selection.kind == EntryKind::Clause, selection.name.clone())) {
@@ -187,7 +212,19 @@ impl ExecutionBackend for Jit {
                     Err(Failure::Prepare(failure)) => return Err(failure),
                 }
             }
+            #[cfg(feature = "test-support")]
+            {
+                blocks = compiler.take_blocks();
+            }
         }
+        #[cfg(feature = "test-support")]
+        let call_targets: Vec<BlockRelocations> = {
+            let symbols: Vec<String> = blocks.iter().map(|block| block.name().to_owned()).collect();
+            blocks
+                .into_iter()
+                .map(|block| block.classify(&symbols))
+                .collect()
+        };
         machine
             .finalize()
             .map_err(|_| fault("jit-finalize-definitions"))?;
@@ -219,9 +256,29 @@ impl ExecutionBackend for Jit {
             ops,
             unsupported,
             #[cfg(feature = "test-support")]
+            call_targets,
+            #[cfg(feature = "test-support")]
             arena_peak: std::cell::Cell::new(0),
             _machine: machine,
         })
+    }
+}
+
+impl ExecutionBackend for Jit {
+    type Prepared<'p> = PreparedJit<'p>;
+
+    fn prepare<'p>(
+        &self,
+        package: &'p CheckedPackage,
+        entries: &[EntrySelection],
+        limits: &PrepareLimits,
+        cancel: &Cancel,
+    ) -> Result<PreparedJit<'p>, PrepareFailure> {
+        #[cfg(feature = "test-support")]
+        let prepared = Self::prepare_entries(package, entries, limits, cancel, None);
+        #[cfg(not(feature = "test-support"))]
+        let prepared = Self::prepare_entries(package, entries, limits, cancel);
+        prepared
     }
 }
 
@@ -371,6 +428,14 @@ impl<'p> PreparedJit<'p> {
         self.compiled
             .get(name)
             .map(|compiled| compiled.entry.recorded().shape())
+    }
+
+    /// The call targets of every block this value holds, from the code
+    /// generator's relocation records (FR-561-AC-3).
+    #[cfg(feature = "test-support")]
+    #[must_use]
+    pub fn call_targets_for_test(&self) -> &[BlockRelocations] {
+        &self.call_targets
     }
 
     /// The most handles the arena held during the last call (a test hook for

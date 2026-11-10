@@ -6,6 +6,7 @@ use qsl_forms::build_unit;
 use qsl_foundation::{Code, SourceIdentity};
 use qsl_semantics::check::{CheckCause, PackageDeclarations};
 use qsl_semantics::model::intake::SelectedModels;
+use quire_semantic_value::checking::CheckMode;
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::location::ExpressionOwner as Origin;
 
@@ -34,7 +35,7 @@ fn check(
         Vec::new(),
     )
     .unwrap_or_else(|refusal| panic!("assembly succeeds: {refusal:?}"))
-    .check(CheckingLimits::default())
+    .check(CheckingLimits::default(), CheckMode::Linked)
 }
 
 /// TC-1273's S3 negative vector: Some(Integer) does not match Option<Boolean>.

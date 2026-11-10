@@ -15,6 +15,7 @@ use super::temporal_clause::{node_with, target};
 use super::*;
 use crate::checked_v2::{read_checked_package_v2, V2ReadRefusal};
 use crate::emit::{EmitRefusal, TemporalClockSelection};
+use quire_semantic_value::checking::CheckMode;
 
 const TIMED: &str = "quire.temporal.timed/v1";
 const SOURCE: &str = "time Config dense unit ms;\n";
@@ -55,7 +56,7 @@ fn checked(
     let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     assemble_with_models(unit.as_bytes(), &packages)
         .expect("the unit assembles")
-        .check(CheckingLimits::default())
+        .check(CheckingLimits::default(), CheckMode::Linked)
 }
 
 fn evidence_for(wire: &Value) -> CheckedPackageEvidence {

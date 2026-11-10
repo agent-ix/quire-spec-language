@@ -10,6 +10,7 @@ use qsl_semantics::model::object_environment::ObjectEnvironment;
 use quire_eval::{FamilyOutcome, FamilyResult};
 use quire_exact::{Meter, ScalarLimits};
 use quire_semantic_value::catalog::CatalogCode;
+use quire_semantic_value::checking::CheckMode;
 use quire_semantic_value::checking::CheckingLimits;
 
 const MODEL: &[u8] = include_bytes!("../../../tests/fixtures/spine-model.semantic-ir.json");
@@ -69,7 +70,7 @@ fn evaluating_a_protocol_reference_refuses_unsupported_feature() {
             Vec::new(),
         )
         .expect("the unit assembles")
-        .check(CheckingLimits::default())
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .expect("the package checks"),
     );
     let mut meter = Meter::new(UNLIMITED);

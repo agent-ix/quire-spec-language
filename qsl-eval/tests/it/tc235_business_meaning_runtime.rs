@@ -34,6 +34,7 @@ use quire_exact::{
     ObjectId, ObjectReference, OptionValue, Outcome, Presence, ScalarLimits, Value, ValueType,
 };
 use quire_semantic_value::call::WrongSnapshotCause;
+use quire_semantic_value::checking::CheckMode;
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::declaration::{
     CompositeDeclaration, CompositeShape, FieldDeclaration, ObjectTypeDeclaration, TypeEnvironment,
@@ -241,7 +242,7 @@ fn model_package_with(
         Vec::new(),
     )
     .expect("M15 source assembles");
-    let graph = declarations.check(CheckingLimits::default())?;
+    let graph = declarations.check(CheckingLimits::default(), CheckMode::Linked)?;
     Ok((CheckedPackage::link(graph), view, packages))
 }
 
@@ -546,7 +547,7 @@ fn package_with_types(
             declarations.function_selections = function_selections;
             declarations
         }
-        .check(CheckingLimits::default())
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .unwrap(),
     )
 }
@@ -828,7 +829,7 @@ fn unresolved_object_reference_refuses_at_input_admission() {
             declarations.types = types;
             declarations
         }
-        .check(CheckingLimits::default())
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .unwrap(),
     );
     let reference = ObjectReference::new(
@@ -847,7 +848,7 @@ fn unresolved_object_reference_refuses_at_input_admission() {
             ),
             None,
             ClauseKind::Invariant,
-            quire_semantic_value::checking::CheckMode::Kernel,
+            CheckMode::Kernel,
             CheckingLimits::default(),
         )
         .unwrap();
@@ -1260,7 +1261,7 @@ fn lifecycle_receiver_and_parameter_boolean_components() {
             declarations.types = types;
             declarations
         }
-        .check(CheckingLimits::default())
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .unwrap(),
     );
     let receiver = ObjectReference::new(
@@ -1300,7 +1301,7 @@ fn lifecycle_receiver_and_parameter_boolean_components() {
             )),
             None,
             ClauseKind::Invariant,
-            quire_semantic_value::checking::CheckMode::Kernel,
+            CheckMode::Kernel,
             CheckingLimits::default(),
         )
         .unwrap();

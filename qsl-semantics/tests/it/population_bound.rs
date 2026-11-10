@@ -17,6 +17,7 @@ use quire_semantic_value::checking::CheckingLimits;
 
 use crate::relationship_navigation::assert_refusal;
 use crate::relationship_reachability::{clause, invariant, package};
+use quire_semantic_value::checking::CheckMode;
 
 const NO_LOOP: &str =
     "invariant NoLoop using v on M::Order at current { not reaches(self, self, next) }";
@@ -73,7 +74,7 @@ fn check_with(
     let (_, assembled) = unit(extra, declarations);
     assembled
         .expect("the unit assembles")
-        .check(CheckingLimits::default())
+        .check(CheckingLimits::default(), CheckMode::Linked)
 }
 
 fn checked(declarations: &str) -> CheckedGraph {

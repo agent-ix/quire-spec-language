@@ -24,6 +24,7 @@ use crate::model_operations::{
     admit_and_assemble_with_body, attempt_update_modifies_version_number, config_unit_with_body,
     config_version_document, PACKAGE_IDENTITY,
 };
+use quire_semantic_value::checking::CheckMode;
 
 const POPULATION: &str = "ix://example/config-version/config_history";
 const CONFIG_VERSION: &str = "ix://example/config-version/ConfigVersion";
@@ -100,7 +101,7 @@ fn with_peer_collection(document: &[u8], unique: bool) -> Vec<u8> {
 fn check(document: &[u8], body: &str) -> Result<CheckedGraph, Vec<CheckRefusal>> {
     admit_and_assemble_with_body(document, body)
         .unwrap_or_else(|refusal| panic!("{body}: the unit assembles: {refusal:?}"))
-        .check(CheckingLimits::default())
+        .check(CheckingLimits::default(), CheckMode::Linked)
 }
 
 fn span_of(text: &str, needle: &str) -> Span {

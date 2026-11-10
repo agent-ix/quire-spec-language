@@ -4,6 +4,7 @@
 use super::child_composite::fixture;
 use super::*;
 use qsl_semantics::check::{CheckCause, CheckRefusal, ProtocolConstruct, ProtocolReferenceCause};
+use quire_semantic_value::checking::CheckMode;
 
 fn emitted_compensation_unit() -> (Emission, Value, Read) {
     emitted_unit("", "true", "false").expect("unit checks")
@@ -65,7 +66,7 @@ fn emitted_text(unit: &str) -> Result<(Emission, Value, Read), Vec<CheckRefusal>
     let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
     let graph = assemble_with_models(unit.as_bytes(), &packages)
         .expect("unit assembles")
-        .check(CheckingLimits::default())?;
+        .check(CheckingLimits::default(), CheckMode::Linked)?;
     let selections = graph
         .protocols()
         .iter()

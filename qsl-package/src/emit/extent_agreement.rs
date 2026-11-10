@@ -54,6 +54,7 @@ use quire_semantic_value::declaration::{
 use super::tests::source_metre_units;
 use super::tests::{nodes, source, whole_unit, wire};
 use super::{emit_checked, emit_package, CheckedPackage, Emission, OmittedNode};
+use quire_semantic_value::checking::CheckMode;
 
 const LIMIT: u64 = 1_000;
 
@@ -168,7 +169,7 @@ pub(super) fn package_declaring(types: TypeEnvironment) -> CheckedPackage {
     declarations.types = types;
     CheckedPackage::link(
         declarations
-            .check(CheckingLimits::default())
+            .check(CheckingLimits::default(), CheckMode::Linked)
             .expect("the fixture records check"),
     )
 }
@@ -678,7 +679,7 @@ fn emit_text(declarations: &str) -> (CheckedPackage, Value, Box<CheckedPackageV2
             Vec::new(),
         )
         .expect("the unit assembles")
-        .check(CheckingLimits::default())
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .unwrap_or_else(|refusals| panic!("{declarations}: {refusals:?}")),
     );
     let emission = emit_checked(&package, crate::EmitLimits::fixture()).expect("the package emits");

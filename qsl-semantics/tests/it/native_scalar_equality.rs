@@ -18,6 +18,7 @@ use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::location::ExpressionOwner as Origin;
 
 use crate::model_operations::{admit_and_assemble_with_body, tc465_document};
+use quire_semantic_value::checking::CheckMode;
 
 const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
                       profile v = \"quire.value.complete/v1\";\n";
@@ -58,7 +59,7 @@ fn assemble(
 fn check(declarations: &str) -> Result<CheckedGraph, Vec<CheckRefusal>> {
     assemble(declarations)
         .unwrap_or_else(|refusal| panic!("assembly succeeds: {refusal:?}"))
-        .check(CheckingLimits::default())
+        .check(CheckingLimits::default(), CheckMode::Linked)
 }
 
 fn nodes(graph: &CheckedGraph) -> Vec<&SemanticNode> {
@@ -128,7 +129,7 @@ fn native_names_resolve_as_results_and_alias_targets() {
         [("Stamp".to_owned(), quire_exact::ValueType::Timestamp)]
     );
     declarations
-        .check(CheckingLimits::default())
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .expect("the unit checks");
 }
 
@@ -227,7 +228,7 @@ fn a_uuid_against_a_reference_refuses_type_mismatch() {
     )
     .expect("the unit assembles");
     let refusals = declarations
-        .check(CheckingLimits::default())
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .expect_err("the unit does not check");
     assert_eq!(refusals.len(), 1, "{refusals:?}");
     assert_eq!(
@@ -253,7 +254,7 @@ fn no_other_kind_is_a_source_of_a_reference() {
             )
             .expect("the unit assembles");
             let refusals = declarations
-                .check(CheckingLimits::default())
+                .check(CheckingLimits::default(), CheckMode::Linked)
                 .expect_err("the unit does not check");
             let causes: Vec<_> = refusals.iter().map(|refusal| &refusal.cause).collect();
             assert_eq!(

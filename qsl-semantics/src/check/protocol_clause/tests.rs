@@ -17,6 +17,7 @@ mod attempt_fixture {
     include!("../../../tests/fixtures/protocol_attempt.rs");
 }
 use attempt_fixture::{m_actor_model, HEADER};
+use quire_semantic_value::checking::CheckMode;
 
 mod anchors;
 mod attempts;
@@ -123,22 +124,23 @@ fn check_refusals(declarations: &str) -> (String, Result<CheckedGraph, Vec<Check
         if matches!(**cause, crate::check::refusal::ProtocolReferenceCause::NotEmitted { .. })
                 )
     };
-    let result = match assembled.check_with_protocol_results(CheckingLimits::default()) {
-        Ok(graph) => {
-            let refusals: Vec<CheckRefusal> = graph
-                .protocol_refusals()
-                .iter()
-                .flat_map(|result| result.refusals.iter().cloned())
-                .filter(not_emission)
-                .collect();
-            if refusals.is_empty() {
-                Ok(graph)
-            } else {
-                Err(refusals)
+    let result =
+        match assembled.check_with_protocol_results(CheckingLimits::default(), CheckMode::Linked) {
+            Ok(graph) => {
+                let refusals: Vec<CheckRefusal> = graph
+                    .protocol_refusals()
+                    .iter()
+                    .flat_map(|result| result.refusals.iter().cloned())
+                    .filter(not_emission)
+                    .collect();
+                if refusals.is_empty() {
+                    Ok(graph)
+                } else {
+                    Err(refusals)
+                }
             }
-        }
-        Err(refusals) => Err(refusals.into_iter().filter(not_emission).collect()),
-    };
+            Err(refusals) => Err(refusals.into_iter().filter(not_emission).collect()),
+        };
     (text, result)
 }
 

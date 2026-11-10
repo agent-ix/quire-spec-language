@@ -18,6 +18,7 @@ mod fixture {
     include!("../../../tests/fixtures/protocol_obligations.rs");
 }
 use fixture::{obligation_model, HEADER};
+use quire_semantic_value::checking::CheckMode;
 
 /// A protocol whose one channel `Q` carries `carries`, ordered `ordering`.
 fn with_channel(carries: &str, ordering: &str) -> String {
@@ -66,7 +67,7 @@ fn check_with_limits(
     // lowering stage, whose contract is its own. Any other refusal is the
     // check's answer; when emission refusals are all there are, the graph
     // is read through the per-protocol results.
-    let refusals = match assembled().check(limits) {
+    let refusals = match assembled().check(limits, CheckMode::Linked) {
         Ok(graph) => return Ok(graph),
         Err(refusals) => refusals,
     };
@@ -83,7 +84,7 @@ fn check_with_limits(
     if !checked.is_empty() {
         return Err(checked);
     }
-    assembled().check_with_protocol_results(limits)
+    assembled().check_with_protocol_results(limits, CheckMode::Linked)
 }
 
 /// The one channel's checked ordering.

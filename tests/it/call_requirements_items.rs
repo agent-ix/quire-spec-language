@@ -18,6 +18,7 @@ use qsl_route::request::items_from_requirements;
 use qsl_route::Registry;
 use qsl_semantics::check::{Capability, CheckedGraph, PackageDeclarations};
 use quire_exact::Cancel;
+use quire_semantic_value::checking::CheckMode;
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::supplied_stop::SuppliedLimits;
 
@@ -79,7 +80,7 @@ fn check(text: &str, packages: &qsl_semantics::model::intake::PackageInput) -> C
     .expect("the model is admitted");
     PackageDeclarations::assemble(raw, "fixture".to_string(), unit, models, Vec::new())
         .expect("the unit assembles")
-        .check(CheckingLimits::default())
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .expect("the unit checks")
 }
 

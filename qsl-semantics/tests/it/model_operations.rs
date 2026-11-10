@@ -28,6 +28,7 @@ use qsl_semantics::model::intake::{admit_unit, package_input, UnitIntakeCause};
 use qsl_semantics::model::operation::OperationDeclaration;
 use quire_checked::key::DeclarationKey;
 use quire_exact::{IeeeWidth, Integer, IntegerInterval, Presence, ValueType};
+use quire_semantic_value::checking::CheckMode;
 use quire_semantic_value::declaration::ObjectTypeDeclaration;
 use serde_json::{json, Value};
 /// The original tc464_step5_a_non_reference_parameter_requires_no_population input, before observation construction.
@@ -2535,7 +2536,10 @@ fn a_record_value_type_beside_an_admitted_operation_assembles() {
         "the record value type Address is declared"
     );
     declarations
-        .check(quire_semantic_value::checking::CheckingLimits::default())
+        .check(
+            quire_semantic_value::checking::CheckingLimits::default(),
+            CheckMode::Linked,
+        )
         .expect("the clause reading self.address.street checks");
 }
 
@@ -2773,7 +2777,10 @@ fn inherited_members_resolve_through_a_second_alias() {
         "each object type is declared once, under the first alias"
     );
     let checked = declarations
-        .check(quire_semantic_value::checking::CheckingLimits::default())
+        .check(
+            quire_semantic_value::checking::CheckingLimits::default(),
+            CheckMode::Linked,
+        )
         .unwrap_or_else(|refusals| panic!("the unit checks: {refusals:?}"));
     assert_eq!(checked.state_clauses().len(), 3);
 }

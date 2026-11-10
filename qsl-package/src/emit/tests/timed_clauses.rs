@@ -8,6 +8,7 @@
 
 use super::clock_places::{clocked_document_with, clocked_unit, member, vector_document};
 use super::*;
+use quire_semantic_value::checking::CheckMode;
 
 const CLOCK: &str = "ix://quire/native/Clock";
 
@@ -45,7 +46,7 @@ fn checked(
     let unit = clocked_unit(body);
     let checked = assemble_with_models(unit.as_bytes(), &packages)
         .expect("the unit assembles")
-        .check(CheckingLimits::default());
+        .check(CheckingLimits::default(), CheckMode::Linked);
     (unit, checked)
 }
 
@@ -1072,7 +1073,7 @@ fn a_point_qualified_clock_clause_refuses_at_the_clause() {
         },
     )
     .expect("the unit assembles")
-    .check(CheckingLimits::default())
+    .check(CheckingLimits::default(), CheckMode::Linked)
     .expect_err("a point-qualified clock clause is not written yet");
     let found = refusals.iter().find_map(|refusal| match &refusal.cause {
         qsl_semantics::check::CheckCause::Temporal(cause) => match &**cause {

@@ -36,6 +36,7 @@ use crate::model_operations::{
     admit_and_assemble_with_body, config_unit_with_body, config_version_document, empty_frame,
     operation, operation_parameter, parse_and_build, PACKAGE_IDENTITY,
 };
+use quire_semantic_value::checking::CheckMode;
 
 const P: &str = PACKAGE_IDENTITY;
 const MODULE: &str = "test/variant";
@@ -538,7 +539,7 @@ fn a_unit_naming_a_variant_type_leaves_the_declaration_and_exports_unchanged() {
     let body = "function pick using v(t: Config::Tier): Config::Tier pure { t }";
     admit_and_assemble_with_body(&bytes, body)
         .expect("a function typed by the variant type assembles")
-        .check(CheckingLimits::default())
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .expect("the variant parameter and result pass declared-type checking");
 
     let step_one = admitted(&document);
@@ -1108,7 +1109,7 @@ fn the_assembler_declares_variant_types_in_the_type_environment() {
     // The checked scope holds them too, found by effective identity.
     let expected = declarations.variant_types.clone();
     let graph = declarations
-        .check(CheckingLimits::default())
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .expect("the unit checks");
     let scope = graph.scope();
     assert_eq!(scope.variant_types(), expected.as_slice());

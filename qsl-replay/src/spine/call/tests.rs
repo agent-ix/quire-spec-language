@@ -1972,7 +1972,9 @@ fn tc_786_sum_over_pos_is_sum_out_of_domain_exit_10_or_completes_exit_0() {
         qsl_foundation::IdentityLimits::default(),
     );
     declarations.aliases = vec![("Pos".to_owned(), pos.clone())];
-    let graph = declarations.check(CheckingLimits::default()).unwrap();
+    let graph = declarations
+        .check(CheckingLimits::default(), CheckMode::Linked)
+        .unwrap();
     let package = CheckedPackage::link(graph);
 
     let q_type = ValueType::collection(CollectionType::new(

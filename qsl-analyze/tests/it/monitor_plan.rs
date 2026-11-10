@@ -13,6 +13,7 @@ use qsl_semantics::model::intake::admit_unit;
 use quire_exact::{Integer, Rational};
 
 use crate::units::Domain;
+use quire_semantic_value::checking::CheckMode;
 
 pub(crate) const TIME_UNITS: &str = "dimension Time;\n\
     unit s : Time = rational(1, 1);\n\
@@ -130,7 +131,10 @@ pub(crate) fn checked_clause_on(
         });
     }
     let graph = declarations
-        .check(quire_semantic_value::checking::CheckingLimits::default())
+        .check(
+            quire_semantic_value::checking::CheckingLimits::default(),
+            CheckMode::Linked,
+        )
         .unwrap_or_else(|refusals| panic!("S3: {refusals:?}"));
     assert_eq!(graph.temporal_clauses().len(), 1);
     let atom_count = graph.temporal_clauses()[0]

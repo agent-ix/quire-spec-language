@@ -15,6 +15,7 @@ use qsl_semantics::check::{
 };
 use qsl_semantics::model::intake::SelectedModels;
 use quire_exact::IllTypedCause;
+use quire_semantic_value::checking::CheckMode;
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::location::ExpressionOwner as Origin;
 
@@ -45,7 +46,7 @@ fn check(declarations: &str) -> Result<CheckedGraph, Vec<CheckRefusal>> {
         Vec::new(),
     )
     .unwrap_or_else(|refusal| panic!("assembly succeeds: {refusal:?}"))
-    .check(CheckingLimits::default())
+    .check(CheckingLimits::default(), CheckMode::Linked)
 }
 
 fn nodes(graph: &CheckedGraph) -> Vec<&SemanticNode> {

@@ -15,6 +15,7 @@ use crate::checked_v2::V2ReadRefusal;
 
 use super::abstraction::fixture as abstraction_fixture;
 use super::child_composite::fixture as ledger_fixture;
+use quire_semantic_value::checking::CheckMode;
 #[path = "../../../../qsl-semantics/tests/support/receiver_frames.rs"]
 pub(super) mod fixture;
 #[path = "../../../../qsl-semantics/tests/support/tc235_k2.rs"]
@@ -79,7 +80,7 @@ fn emit_document(document: Value, operations: &[&str]) -> Emitted {
     );
     let graph = assemble_with_models(unit.as_bytes(), &packages)
         .expect("the unit assembles")
-        .check(CheckingLimits::default())
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .unwrap_or_else(|refusals| panic!("the package checks: {refusals:?}"));
     let emission = emit_checked(&CheckedPackage::link(graph)).expect("the package emits");
     assert_eq!(emission.omitted, []);
@@ -110,7 +111,7 @@ fn emit_without_operation_posts(operations: &[&str], overrides: &[(&str, Value)]
     );
     let graph = assemble_with_models(unit.as_bytes(), &packages)
         .expect("the unit assembles")
-        .check(CheckingLimits::default())
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .unwrap_or_else(|refusals| panic!("the package checks: {refusals:?}"));
     let emission = emit_checked(&CheckedPackage::link(graph)).expect("the package emits");
     assert_eq!(emission.omitted, []);
@@ -459,7 +460,7 @@ fn ledger_operation_effects_read_back_with_selected_type_projection() {
     );
     let graph = assemble_with_models(unit.as_bytes(), &packages)
         .expect("the unit assembles")
-        .check(CheckingLimits::default())
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .unwrap_or_else(|refusals| panic!("the package checks: {refusals:?}"));
     let checked = CheckedPackage::link(graph);
     let emission = emit_checked(&checked).expect("the package emits");
@@ -631,7 +632,7 @@ fn same_operation_name_keeps_its_document_and_declaring_identity() {
     );
     let graph = assemble_with_models(unit.as_bytes(), &packages)
         .expect("both selected packages assemble")
-        .check(CheckingLimits::default())
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .unwrap_or_else(|refusals| panic!("the package checks: {refusals:?}"));
     let emission = emit_checked(&CheckedPackage::link(graph)).expect("the package emits");
     let wire = wire(&emission);
@@ -692,7 +693,7 @@ fn process_and_state_machine_operations_are_carried_without_persistence_rows() {
     );
     let graph = assemble_with_models(unit.as_bytes(), &packages)
         .expect("the unit assembles")
-        .check(CheckingLimits::default())
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .unwrap_or_else(|refusals| panic!("the package checks: {refusals:?}"));
     let emission = emit_checked(&CheckedPackage::link(graph)).expect("the package emits");
     let wire = wire(&emission);
@@ -742,7 +743,7 @@ fn systems_interface_and_inherited_operations_are_not_effect_declarations() {
     );
     let graph = assemble_with_models(unit.as_bytes(), &packages)
         .expect("the unit assembles")
-        .check(CheckingLimits::default())
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .unwrap_or_else(|refusals| panic!("the package checks: {refusals:?}"));
     let emission = emit_checked(&CheckedPackage::link(graph)).expect("the package emits");
     let wire = wire(&emission);
@@ -1199,7 +1200,7 @@ fn constraint_state_clause_reads_back_as_a_distinct_kind() {
         .push_str("constraint Low using v on M::Counter at current { true }\n");
     let graph = assemble_with_models(parts.unit.as_bytes(), &parts.packages)
         .expect("the unit assembles")
-        .check(CheckingLimits::default())
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .unwrap_or_else(|refusals| panic!("the constraint checks: {refusals:?}"));
     let emission = emit_checked(&CheckedPackage::link(graph)).expect("the package emits");
     let wire = wire(&emission);

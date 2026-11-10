@@ -79,11 +79,11 @@ fn a_call_receives_the_same_verdict_from_a_declaration_body_a_clause_and_a_measu
             f(),
             FunctionDeclaration::new("g", vec![], boolean(), None, expression.clone()),
         ])
-        .check(CheckingLimits::default());
+        .check(CheckingLimits::default(), CheckMode::Linked);
 
         // Step 3: as a precondition clause over a package declaring only `f`.
         let graph = package(vec![f()])
-            .check(CheckingLimits::default())
+            .check(CheckingLimits::default(), CheckMode::Linked)
             .expect("the package declaring only f checks cleanly");
         let clause = graph.check_clause_expression(
             Vec::new(),
@@ -131,7 +131,7 @@ fn a_call_receives_the_same_verdict_from_a_declaration_body_a_clause_and_a_measu
                         Expression::boolean(true),
                     ),
                 ])
-                .check(CheckingLimits::default())
+                .check(CheckingLimits::default(), CheckMode::Linked)
                 .expect_err(&format!("{label}: the measure must be refused"));
                 assert!(
                     measure.iter().any(|r| &r.cause == cause),

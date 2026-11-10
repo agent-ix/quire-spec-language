@@ -42,6 +42,7 @@ use crate::litmus::{
 };
 use crate::model_settle::{envelope_at, request};
 use crate::weak_memory::select;
+use quire_semantic_value::checking::CheckMode;
 
 /// `eventually holds(k.r1 = 1)`.
 const SETTLES: &str = "temporal Settles using t0 over (k: M::Core) clock \"model-steps\" \
@@ -851,7 +852,10 @@ fn refusal_of(fairness: &str) -> qsl_semantics::check::CheckRefusal {
         Vec::new(),
     )
     .expect("the unit assembles")
-    .check(quire_semantic_value::checking::CheckingLimits::default())
+    .check(
+        quire_semantic_value::checking::CheckingLimits::default(),
+        CheckMode::Linked,
+    )
     .expect_err("the unit refuses");
     assert_eq!(refusals.len(), 1, "{refusals:?}");
     refusals.remove(0)

@@ -12,6 +12,7 @@ use crate::model_operations::{
     config_version_document, empty_frame, operation, operation_parameter, wire_field,
     PACKAGE_IDENTITY,
 };
+use quire_semantic_value::checking::CheckMode;
 
 fn identity(path: &str) -> String {
     format!("ix://{PACKAGE_IDENTITY}/{path}")
@@ -120,7 +121,7 @@ fn assembled(
         &format!("function keep using v(): Boolean pure {{ true }}\n{clauses}"),
     )
     .unwrap_or_else(|refusal| panic!("assembly admits: {refusal:?}"));
-    declarations.check(CheckingLimits::default())
+    declarations.check(CheckingLimits::default(), CheckMode::Linked)
 }
 
 /// The refusals of `clauses` as (code, cause, owner, member, locus).

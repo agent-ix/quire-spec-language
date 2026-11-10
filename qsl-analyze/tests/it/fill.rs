@@ -32,6 +32,7 @@ use quire_semantic_value::checking::CheckingLimits;
 use serde_json::{json, Value as Json};
 
 use crate::counter::UNLIMITED;
+use quire_semantic_value::checking::CheckMode;
 
 pub(crate) const PACKAGE: &str = "test/fill";
 
@@ -439,7 +440,7 @@ pub(crate) fn package_over(
     )
     .expect("the unit assembles");
     let graph = declarations
-        .check(CheckingLimits::default())
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .unwrap_or_else(|refusals| panic!("{body}: the unit checks: {refusals:?}"));
     CheckedPackage::link(graph)
 }
@@ -488,7 +489,7 @@ pub(crate) fn package_without_protocol_profile_selection(body: &str) -> CheckedP
     declarations.protocol_profile = None;
     let graph = declarations
         .with_unwritten_refinements()
-        .check(CheckingLimits::default())
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .unwrap_or_else(|refusals| panic!("{body}: the unit checks: {refusals:?}"));
     CheckedPackage::link(graph)
 }

@@ -410,7 +410,7 @@ fn package(scenario: &Scenario) -> CheckedPackage {
         declarations.models = vec![scenario.model.clone()];
         declarations
     }
-    .check(CheckingLimits::default())
+    .check(CheckingLimits::default(), CheckMode::Linked)
     .unwrap();
     CheckedPackage::link(graph)
 }
@@ -452,7 +452,7 @@ fn package_with_size_function(scenario: &Scenario, maximum: u64) -> CheckedPacka
         )];
         declarations
     }
-    .check(CheckingLimits::default())
+    .check(CheckingLimits::default(), CheckMode::Linked)
     .unwrap();
     CheckedPackage::link(graph)
 }
@@ -490,7 +490,7 @@ fn package_with_collection_function(scenario: &Scenario) -> CheckedPackage {
         )];
         declarations
     }
-    .check(CheckingLimits::default())
+    .check(CheckingLimits::default(), CheckMode::Linked)
     .unwrap();
     CheckedPackage::link(graph)
 }
@@ -1340,7 +1340,7 @@ fn package_with_unrelated_type(scenario: &Scenario) -> CheckedPackage {
         declarations.models = vec![scenario.model.clone()];
         declarations
     }
-    .check(CheckingLimits::default())
+    .check(CheckingLimits::default(), CheckMode::Linked)
     .unwrap();
     CheckedPackage::link(graph)
 }
@@ -1589,7 +1589,7 @@ fn attribute_world_of(
         declarations.models = vec![scenario.model.clone()];
         declarations
     }
-    .check(CheckingLimits::default())
+    .check(CheckingLimits::default(), CheckMode::Linked)
     .unwrap();
     (CheckedPackage::link(graph), objects)
 }
@@ -2097,7 +2097,7 @@ fn all_instances_expression_target_declared_but_not_in_model_is_type_mismatch() 
         declarations.types = types;
         declarations
     }
-    .check(CheckingLimits::default())
+    .check(CheckingLimits::default(), CheckMode::Linked)
     .unwrap();
     let package = CheckedPackage::link(graph);
     let parameters = [("p", ValueType::Population(Some(3)))];
@@ -3911,7 +3911,7 @@ fn a_refused_lookup_builds_a_record_at_the_lookup_expression() {
             declarations.functions = vec![function];
             declarations
         }
-        .check(CheckingLimits::default())
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .expect("the unit checks"),
     );
     let world = objects(&scenario)
@@ -4189,7 +4189,7 @@ fn empty_admitted_member_faults_through_public_call_and_evaluate_with_exact_pref
             )];
             declarations
         }
-        .check(CheckingLimits::default())
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .unwrap();
         let package = CheckedPackage::link(graph);
         let expression = check(&package, &[("p", ValueType::Population(Some(1)))], &query);

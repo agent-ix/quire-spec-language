@@ -20,6 +20,7 @@ use qsl_semantics::check::{CheckedGraph, PackageDeclarations};
 use quire_semantic_value::checking::CheckingLimits;
 
 use crate::support::config_version_spine::{cases::CASES, spine};
+use quire_semantic_value::checking::CheckMode;
 
 /// FR-304-AC-1's relation over the ConfigVersion package: an object binding
 /// with a field, the `config_history` population and `attemptUpdate`.
@@ -54,7 +55,7 @@ fn graph_of(text: &str) -> CheckedGraph {
     .expect("the model is admitted");
     PackageDeclarations::assemble(raw, "fixture".to_string(), unit, models, Vec::new())
         .expect("the unit assembles")
-        .check(CheckingLimits::default())
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .unwrap_or_else(|refusals| panic!("{refusals:?}"))
 }
 

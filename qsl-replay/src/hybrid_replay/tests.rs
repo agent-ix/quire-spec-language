@@ -16,6 +16,7 @@ use super::expand::Expander;
 use super::interval::{IValue, Interval, IntervalEvaluator};
 use super::poly::Poly;
 use super::*;
+use quire_semantic_value::checking::CheckMode;
 
 const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
      profile v = \"quire.value.complete/v1\";\n\
@@ -107,7 +108,7 @@ fn check(declarations: &str) -> Unit {
         Vec::new(),
     )
     .unwrap_or_else(|refusal| panic!("{text}: the unit assembles: {refusal:?}"))
-    .check(CheckingLimits::default())
+    .check(CheckingLimits::default(), CheckMode::Linked)
     .unwrap_or_else(|refusals| panic!("{text}: the unit checks: {refusals:?}"));
     let claims = text
         .lines()

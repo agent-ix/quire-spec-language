@@ -182,7 +182,7 @@ fn orders_package(shape: Shape) -> CheckedPackage {
     .expect("the model assembles");
     CheckedPackage::link(
         declarations
-            .check(CheckingLimits::default())
+            .check(CheckingLimits::default(), CheckMode::Linked)
             .expect("the orders model checks"),
     )
 }

@@ -3,12 +3,14 @@
 //! through S1 to S4, tagged with the TC and AC ids they back.
 
 mod arena;
+mod call_targets;
 mod clause;
 mod collections;
 mod common;
 mod coverage;
 mod differential;
 mod handle;
+mod kernel_mode;
 mod lifecycle;
 mod native;
 mod parity;

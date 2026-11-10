@@ -14,6 +14,7 @@ use qsl_semantics::check::{
 use quire_semantic_value::fairness::{FairnessGranularity, FairnessKind, PropertyForm};
 
 use super::*;
+use quire_semantic_value::checking::CheckMode;
 
 #[path = "../../../../qsl-semantics/tests/support/guarantee.rs"]
 #[allow(
@@ -94,7 +95,7 @@ fn compile_with(unit: &str, documents: &[Value]) -> Result<CheckedPackage, Failu
     let assembled = PackageDeclarations::assemble(raw, "pkg".to_owned(), built, models, Vec::new())
         .map_err(Failure::Assembly)?;
     assembled
-        .check(CheckingLimits::default())
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .map(CheckedPackage::link)
         .map_err(Failure::Check)
 }

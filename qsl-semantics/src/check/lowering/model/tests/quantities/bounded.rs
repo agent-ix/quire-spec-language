@@ -2,6 +2,7 @@
 //! Bounded nominal quantities retain their exact magnitude interval.
 use super::*;
 use quire_exact::{BoundedQuantityType, PathSegment, Quantity, Rational};
+use quire_semantic_value::checking::CheckMode;
 
 fn rational(numerator: i64, denominator: i64) -> Rational {
     Rational::new(Integer::from(numerator), Integer::from(denominator))
@@ -240,7 +241,7 @@ fn bounded_quantity_ordering_keeps_dimension_and_unit_refusals() {
         )
     };
     let refusals = declarations
-        .check(CheckingLimits::default())
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .expect_err("distinct dimensions refuse");
     assert!(
         refusals.iter().any(|refusal| refusal.cause
@@ -278,7 +279,7 @@ fn bounded_quantity_negation_is_operator_ineligible() {
         )
     };
     let refusals = declarations
-        .check(CheckingLimits::default())
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .expect_err("a bounded operand refuses");
     assert_eq!(refusals.len(), 1, "{refusals:?}");
     assert_eq!(

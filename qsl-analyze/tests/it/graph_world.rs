@@ -36,6 +36,7 @@ use quire_semantic_value::checking::CheckingLimits;
 use serde_json::{json, Value as Json};
 
 use crate::counter::UNLIMITED;
+use quire_semantic_value::checking::CheckMode;
 
 /// An integer field `name`: `Int[low, high]`, or the unbounded native
 /// `Integer` for `None`.
@@ -281,7 +282,7 @@ impl World {
             .expect("the division profile admits"),
         );
         let graph = declarations
-            .check(CheckingLimits::default())
+            .check(CheckingLimits::default(), CheckMode::Linked)
             .unwrap_or_else(|refusals| panic!("{body}: the unit checks: {refusals:?}"));
         let package = CheckedPackage::link(graph);
         let mut world = Self {

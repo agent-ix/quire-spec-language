@@ -849,7 +849,7 @@ mod checked {
             declarations.functions = functions;
             declarations
         }
-        .check(CheckingLimits::default())
+        .check(CheckingLimits::default(), CheckMode::Linked)
         // ADR-013 T-1 (FR-087): the S4 link step, over an
         // empty dependency closure -- this fixture declares no import.
         .map(CheckedPackage::link)

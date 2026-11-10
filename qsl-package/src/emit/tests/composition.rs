@@ -19,6 +19,7 @@ use qsl_semantics::library::LibraryName;
 use quire_semantic_value::fairness::{FairnessGranularity, FairnessKind};
 
 use super::*;
+use quire_semantic_value::checking::CheckMode;
 
 #[path = "../../../../qsl-semantics/tests/support/composition.rs"]
 #[allow(
@@ -99,7 +100,7 @@ fn dependency(identity: &str, clauses: &str) -> Dependency {
             .expect("the dependency assembles");
     let package = Arc::new(CheckedPackage::link(
         declarations
-            .check(CheckingLimits::default())
+            .check(CheckingLimits::default(), CheckMode::Linked)
             .expect("the dependency checks"),
     ));
     let emission = emit_checked(&package).expect("the dependency emits");
@@ -171,7 +172,7 @@ fn compile_with(
         assembled = assembled.with_composition_lattice(profile);
     }
     let graph = assembled
-        .check(CheckingLimits::default())
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .map_err(Failure::Check)?;
     Ok(CheckedPackage::link_with(
         graph,

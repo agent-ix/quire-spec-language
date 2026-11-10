@@ -28,6 +28,7 @@ use qsl_semantics::model::observation::{AdmissionFailure, DocumentRef, Observati
 use qsl_semantics::model::state::{ModelState, StateObject};
 use quire_checked::key::DeclarationKey;
 use quire_exact::{Integer, ScalarLimits, Value};
+use quire_semantic_value::checking::CheckMode;
 use quire_semantic_value::checking::CheckingLimits;
 use serde_json::{json, Value as Json};
 
@@ -606,7 +607,7 @@ pub fn check_with_internals(
         None => declarations.with_unwritten_refinements(),
     };
     declarations
-        .check(CheckingLimits::default())
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .map_err(|refusals| format!("{refusals:?}"))
 }
 

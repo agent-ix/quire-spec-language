@@ -13,6 +13,7 @@ use super::*;
 use crate::checked_v2::{
     clause_roots, hyper_roots, resolve_clause_root, resolve_hyper_root, HyperRootUnresolved,
 };
+use quire_semantic_value::checking::CheckMode;
 
 const INFINITE: &str = "quire.temporal.infinite-trace/v1";
 const EVENT: &str = "quire.temporal.event-position.false-extension/v1";
@@ -65,7 +66,7 @@ fn compile(unit: &str) -> Compiled {
     let packages = qsl_semantics::model::intake::package_input([document()]).unwrap();
     let graph = assemble_with_models(unit.as_bytes(), &packages)
         .expect("the unit assembles")
-        .check(CheckingLimits::default())
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .unwrap_or_else(|refusals| panic!("the package checks: {refusals:?}"));
     let graph_clauses = graph.hyper_clauses().to_vec();
     let emission = emit_checked(&CheckedPackage::link(graph)).expect("the package emits");
@@ -83,7 +84,7 @@ fn refusals(unit: &str) -> Vec<qsl_semantics::check::CheckRefusal> {
     let packages = qsl_semantics::model::intake::package_input([document()]).unwrap();
     assemble_with_models(unit.as_bytes(), &packages)
         .expect("the unit assembles")
-        .check(CheckingLimits::default())
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .expect_err("the unit is refused")
 }
 
@@ -648,7 +649,7 @@ fn build(profile: &str, aliases: &[&str], declarations: &str) -> Built {
     let (text, documents) = world_unit(profile, aliases, declarations);
     let graph = assemble_with_models(text.as_bytes(), &packages_of(&documents))
         .expect("the unit assembles")
-        .check(CheckingLimits::default())
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .unwrap_or_else(|refusals| panic!("the package checks: {refusals:?}\n{text}"));
     let mut selections = graph
         .temporal_clauses()
@@ -707,7 +708,7 @@ fn refused(profile: &str, aliases: &[&str], declarations: &str) -> (String, Vec<
     let (text, documents) = world_unit(profile, aliases, declarations);
     let refusals = assemble_with_models(text.as_bytes(), &packages_of(&documents))
         .expect("the unit assembles")
-        .check(CheckingLimits::default())
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .expect_err("the unit is refused");
     (text, refusals)
 }
@@ -1001,7 +1002,7 @@ fn a_substituted_hyper_clause_definition_identity_refuses_at_the_definition_fiel
     let (text, documents) = world_unit(EVENT, &["V"], &declarations);
     let graph = assemble_with_models(text.as_bytes(), &packages_of(&documents))
         .expect("the unit assembles")
-        .check(CheckingLimits::default())
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .unwrap_or_else(|refusals| panic!("the package checks: {refusals:?}\n{text}"));
     assert_eq!(graph.hyper_clauses().len(), 1);
     let span = graph.hyper_clauses()[0].span();
@@ -1069,7 +1070,10 @@ fn the_emitted_nodes_count_against_the_node_ceiling_exactly() {
     let check = |nodes: u64| {
         assemble_with_models(text.as_bytes(), &packages)
             .expect("the unit assembles")
-            .check(CheckingLimits::default().with_nodes(nodes))
+            .check(
+                CheckingLimits::default().with_nodes(nodes),
+                CheckMode::Linked,
+            )
     };
     let needed = (1..200)
         .find(|nodes| check(*nodes).is_ok())

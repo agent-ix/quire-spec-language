@@ -26,6 +26,7 @@ mod attempt_fixture {
     include!("../../../tests/fixtures/protocol_attempt.rs");
 }
 use attempt_fixture::{m_actor_model, HEADER};
+use quire_semantic_value::checking::CheckMode;
 
 fn attempt(name: &str) -> String {
     format!(
@@ -79,7 +80,7 @@ fn assemble(declarations: &str) -> (String, PackageDeclarations) {
 fn checks(declarations: &str) -> CheckedGraph {
     let (_, assembled) = assemble(declarations);
     assembled
-        .check(CheckingLimits::default())
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .unwrap_or_else(|refusals| panic!("{declarations}: {refusals:?}"))
 }
 
@@ -87,10 +88,11 @@ fn checks(declarations: &str) -> CheckedGraph {
 /// and tag.
 fn only_refusal(declarations: &str) -> (String, ProtocolAnchorCause, &'static str, String) {
     let (text, assembled) = assemble(declarations);
-    let found: Vec<CheckRefusal> = match assembled.check(CheckingLimits::default()) {
-        Err(refusals) => refusals,
-        Ok(_) => panic!("{declarations}: checking refuses"),
-    };
+    let found: Vec<CheckRefusal> =
+        match assembled.check(CheckingLimits::default(), CheckMode::Linked) {
+            Err(refusals) => refusals,
+            Ok(_) => panic!("{declarations}: checking refuses"),
+        };
     let [refusal] = &found[..] else {
         panic!("{declarations}: one refusal, got {found:?}");
     };
@@ -464,7 +466,7 @@ fn litmus(
 fn classes(source: &str) -> Vec<(String, Option<AccessClass>, Option<AccessOrdering>)> {
     let (_, assembled) = assemble_model(source, store_buffering_model());
     let graph = assembled
-        .check(CheckingLimits::default())
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .unwrap_or_else(|refusals| panic!("{source}: {refusals:?}"));
     let checked = graph.protocol("Flow").expect("the checked protocol");
     checked
@@ -502,7 +504,7 @@ fn assemble_model(declarations: &str, model: SelectedModel) -> (String, PackageD
 
 fn refused(source: &str) -> (String, Vec<ProtocolAnchorCause>) {
     let (text, assembled) = assemble_model(source, store_buffering_model());
-    let Err(found) = assembled.check(CheckingLimits::default()) else {
+    let Err(found) = assembled.check(CheckingLimits::default(), CheckMode::Linked) else {
         panic!("{source}: checking refuses");
     };
     let causes = found
@@ -579,7 +581,9 @@ fn store_buffering_checks_under_every_memory_model() {
             "{memory}"
         );
         let (_, assembled) = assemble_model(&source, store_buffering_model());
-        let graph = assembled.check(CheckingLimits::default()).expect("checks");
+        let graph = assembled
+            .check(CheckingLimits::default(), CheckMode::Linked)
+            .expect("checks");
         assert!(
             graph
                 .protocol("Flow")
@@ -772,7 +776,7 @@ fn atomicity_follows_the_written_ordering() {
     let atomic = |source: &str| -> Vec<(String, bool, Option<AccessClass>)> {
         let (_, assembled) = assemble_model(source, store_buffering_model());
         let graph = assembled
-            .check(CheckingLimits::default())
+            .check(CheckingLimits::default(), CheckMode::Linked)
             .unwrap_or_else(|refusals| panic!("{source}: {refusals:?}"));
         let checked = graph.protocol("Flow").expect("the checked protocol");
         checked

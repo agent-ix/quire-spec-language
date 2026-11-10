@@ -29,6 +29,7 @@ use quire_checked::key::DeclarationKey;
 use quire_exact::Cancel;
 use quire_exact::{ObjectId, ObjectReference, ScalarLimits, Value};
 use quire_semantic_value::catalog::CatalogCode;
+use quire_semantic_value::checking::CheckMode;
 use quire_semantic_value::checking::CheckingLimits;
 use serde_json::{json, Value as Json};
 
@@ -364,7 +365,7 @@ fn build_world_document(
         Vec::new(),
     )
     .expect("the unit assembles");
-    let graph = declarations.check(CheckingLimits::default())?;
+    let graph = declarations.check(CheckingLimits::default(), CheckMode::Linked)?;
     Ok(World {
         extras,
         enum_mode,

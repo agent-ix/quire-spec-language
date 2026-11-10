@@ -5,6 +5,7 @@ use ix_trace_rs::trace;
 use qsl_forms::{BuiltinType, Expression, FunctionDeclaration, TypeForm};
 use qsl_foundation::{Code, IdentityLimits, Span};
 use qsl_semantics::check::{fixture_source, CheckCause, PackageDeclarations};
+use quire_semantic_value::checking::CheckMode;
 use quire_semantic_value::checking::CheckingLimits;
 
 #[test]
@@ -29,7 +30,7 @@ fn an_absent_enum_type_name_is_a_typed_missing_name() {
     };
 
     let refusals = declarations
-        .check(CheckingLimits::default())
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .expect_err("an undeclared enum type name must be refused");
     assert_eq!(refusals.len(), 1, "{refusals:?}");
     assert!(matches!(

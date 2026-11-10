@@ -25,6 +25,7 @@ fn fixture_node(fill: u8) -> NodeKey {
 use crate::vault_world::{
     non_interference, World, EQUAL_INPUTS, FORALL_EXISTS, LIVENESS, SAVES_POWER, UNLIMITED,
 };
+use quire_semantic_value::checking::CheckMode;
 
 fn instance(key: &str) -> Vec<(String, String)> {
     vec![("v".to_owned(), key.to_owned())]
@@ -210,7 +211,7 @@ fn a_package_with_no_emission_names_product_identity() {
         "fixture",
         qsl_foundation::IdentityLimits::default(),
     )
-    .check(CheckingLimits::default())
+    .check(CheckingLimits::default(), CheckMode::Linked)
     .expect("an empty package checks");
     let empty = CheckedPackage::link(graph);
     let subjects = [world.subject_over(&empty, Vec::new())];

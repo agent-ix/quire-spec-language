@@ -36,6 +36,7 @@ use quire_exact::{CollectionType, QuantityCarrier, Value, ValueType};
 use quire_exact::{
     DecimalType, Integer, IntegerInterval, NonZeroInteger, Rational, RationalDomain,
 };
+use quire_semantic_value::checking::CheckMode;
 use quire_semantic_value::declaration::{EqualityOperator, FieldRef};
 use quire_semantic_value::location::ExpressionLocation as Location;
 
@@ -532,6 +533,12 @@ pub(crate) struct Definedness<'a> {
     /// body, so one table serves every path of the walk and no `let` copies
     /// the facts of the paths above it.
     aliases: BTreeMap<Slot, StablePath>,
+    /// `CheckMode::Kernel` (FR-495): a range, nonzero or presence obligation
+    /// is a run-time obligation of the kernel evaluation, so an unproved one
+    /// is not a refusal. Every other refusal (a dispatch declaration, a
+    /// Rational operand shape) is unchanged. The walk still records the call
+    /// sites.
+    kernel: bool,
 }
 
 impl<'a> Definedness<'a> {
@@ -548,6 +555,49 @@ impl<'a> Definedness<'a> {
             observations: None,
             components: None,
             aliases: BTreeMap::new(),
+            kernel: false,
+        }
+    }
+
+    /// Check under `mode` (FR-495): under [`CheckMode::Kernel`] an unproved
+    /// obligation is left to the kernel evaluation instead of refused.
+    pub(crate) fn with_mode(mut self, mode: CheckMode) -> Self {
+        self.kernel = mode == CheckMode::Kernel;
+        self
+    }
+
+    /// Discharge `node`'s obligation as the mode requires. Under Kernel an
+    /// unproved obligation is left to the kernel evaluation; a malformed
+    /// Rational operand shape is a structural fault and still refuses.
+    fn discharge_in_mode(
+        &mut self,
+        node: CheckedNode<'_>,
+        facts: &Facts,
+    ) -> Result<(), CheckRefusal> {
+        if self.kernel && Self::rational_shape_invalid(node) {
+            return Err(Self::refuse(node, Obligation::RationalRange));
+        }
+        match self.discharge(node, facts) {
+            Err(CheckRefusal {
+                cause: CheckCause::Unproved(_),
+                ..
+            }) if self.kernel => Ok(()),
+            outcome => outcome,
+        }
+    }
+
+    /// Whether a Rational operation's operand is not a Rational type, which
+    /// no checked node can be and so is never left to the kernel.
+    fn rational_shape_invalid(node: CheckedNode<'_>) -> bool {
+        match node.kind() {
+            NodeKind::Rational { left, right, .. } => !matches!(
+                (node.at(*left).value_type(), node.at(*right).value_type()),
+                (ValueType::Rational(_), ValueType::Rational(_))
+            ),
+            NodeKind::RationalNegate(operand, _) => {
+                !matches!(node.at(*operand).value_type(), ValueType::Rational(_))
+            }
+            _ => false,
         }
     }
 
@@ -1541,10 +1591,12 @@ impl<'n> quire_walk::Walk for DefinednessWalk<'_, '_, 'n> {
                 self.definedness.branch(node, &facts, children);
                 ControlFlow::Continue(DefinedFrame::Done)
             }
-            DefinedNode::Discharge(node, facts) => match self.definedness.discharge(node, &facts) {
-                Ok(()) => ControlFlow::Continue(DefinedFrame::Done),
-                Err(refusal) => ControlFlow::Break(refusal),
-            },
+            DefinedNode::Discharge(node, facts) => {
+                match self.definedness.discharge_in_mode(node, &facts) {
+                    Ok(()) => ControlFlow::Continue(DefinedFrame::Done),
+                    Err(refusal) => ControlFlow::Break(refusal),
+                }
+            }
             DefinedNode::Walk(node, facts) => match node.kind() {
                 NodeKind::If {
                     condition: first, ..
@@ -1587,7 +1639,7 @@ impl<'n> quire_walk::Walk for DefinednessWalk<'_, '_, 'n> {
         match frame {
             DefinedFrame::Done => ControlFlow::Continue(()),
             DefinedFrame::Discharge(node, facts) => {
-                match self.definedness.discharge(node, &facts) {
+                match self.definedness.discharge_in_mode(node, &facts) {
                     Ok(()) => ControlFlow::Continue(()),
                     Err(refusal) => ControlFlow::Break(refusal),
                 }

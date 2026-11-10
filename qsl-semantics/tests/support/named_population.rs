@@ -16,6 +16,7 @@ use qsl_semantics::check::{CheckRefusal, CheckedGraph, PackageDeclarations};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
 use quire_checked::key::DeclarationKey;
+use quire_semantic_value::checking::CheckMode;
 use quire_semantic_value::checking::CheckingLimits;
 use serde_json::{json, Value as Json};
 
@@ -236,7 +237,7 @@ pub fn check(archive: bool, declarations: &str) -> Result<Checked, Vec<Refused>>
         }
     };
     let regions = declarations.regions();
-    match declarations.check(CheckingLimits::default()) {
+    match declarations.check(CheckingLimits::default(), CheckMode::Linked) {
         Ok(graph) => Ok(Checked { graph, packages }),
         Err(refusals) => Err(refusals
             .into_iter()

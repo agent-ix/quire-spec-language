@@ -15,6 +15,7 @@ use super::variant_types::{emitted_enums, UNIT};
 use super::*;
 use crate::emit::monitor_plan::carry_rows;
 use crate::emit::{EqualityFactWitness, OmissionCause, OmittedNode};
+use quire_semantic_value::checking::CheckMode;
 
 /// The id the writer renames `id` to in these tests: a different package.
 fn renamed(id: &CheckedNodeId) -> CheckedNodeId {
@@ -555,7 +556,7 @@ fn the_writers_renames_reach_the_rows_it_carries() {
     );
     let graph = assemble_with_models(unit.as_bytes(), &packages)
         .expect("the unit assembles")
-        .check(CheckingLimits::default())
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .unwrap_or_else(|refusals| panic!("the unit checks: {refusals:?}"));
     let package = CheckedPackage::link(graph);
     let mut emission = emit_checked(&package).expect("the package emits");

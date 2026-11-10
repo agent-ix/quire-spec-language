@@ -25,6 +25,7 @@ use quire_exact::{
     IntegerInterval, Meter, Outcome, Rational, ScalarLimits, TextPayload, TextProfile, TextType,
     Value, ValueType,
 };
+use quire_semantic_value::checking::CheckMode;
 use quire_semantic_value::checking::CheckingLimits;
 
 /// The gate's default seed: the ASCII bytes `QSL-JIT1` read big-endian.
@@ -745,6 +746,7 @@ pub fn compile_whole(text: &str) -> Option<CheckedPackage> {
                 .with_nodes(1 << 30)
                 .with_input_bytes(1 << 30)
                 .with_work_budget(1 << 40),
+            CheckMode::Linked,
         )
         .ok()?;
     Some(CheckedPackage::link(checked))

@@ -19,6 +19,7 @@ use crate::model_operations::{
     config_version_document_with_operations, empty_frame, operation, operation_parameter,
     parse_and_build,
 };
+use quire_semantic_value::checking::CheckMode;
 
 /// A structural node key for a fixture, distinct per `tag`.
 fn fixture_key(tag: u8) -> quire_exact::NodeKey {
@@ -131,7 +132,10 @@ fn quantity_types_check_in_every_position_over_the_one_unit_node() {
     let document = document();
     let graph = admit_and_assemble_with_body(&document, &body)
         .expect("every position assembles")
-        .check(quire_semantic_value::checking::CheckingLimits::default())
+        .check(
+            quire_semantic_value::checking::CheckingLimits::default(),
+            CheckMode::Linked,
+        )
         .expect("every position checks");
     let semantic = graph.semantic_graph();
     let named = |name: &str| {
@@ -227,7 +231,10 @@ fn quantity_types_check_in_every_position_over_the_one_unit_node() {
     let regions = declarations.regions();
     let (text, _) = config_unit_with_profiles(&document, "", &mismatched);
     let refusals = declarations
-        .check(quire_semantic_value::checking::CheckingLimits::default())
+        .check(
+            quire_semantic_value::checking::CheckingLimits::default(),
+            CheckMode::Linked,
+        )
         .expect_err("3 s is not a Quantity<ms>");
     let [refusal] = refusals.as_slice() else {
         panic!("one refusal: {refusals:?}");
@@ -339,7 +346,10 @@ fn source_model_alias_names_preserve_nominal_units_and_member_bounds() {
         &format!("{UNITS}function keep using v(d: Config::D): Config::D pure {{ d }}\n"),
     )
     .expect("the admitted model alias resolves in both type positions")
-    .check(quire_semantic_value::checking::CheckingLimits::default())
+    .check(
+        quire_semantic_value::checking::CheckingLimits::default(),
+        CheckMode::Linked,
+    )
     .expect("the function checks with the alias's admitted target");
     let semantic = graph.semantic_graph();
     let named = |name: &str| {
@@ -433,7 +443,10 @@ fn unit_bounds_bound_the_members_of_their_unit_or_alias() {
     .unwrap_or_else(|refusal| panic!("the bounds admit: {refusal:?}"));
     let graph = admit_and_assemble_with_body(&admitted, UNITS)
         .expect("assembles")
-        .check(quire_semantic_value::checking::CheckingLimits::default())
+        .check(
+            quire_semantic_value::checking::CheckingLimits::default(),
+            CheckMode::Linked,
+        )
         .expect("checks");
     let model = StateModel::new(
         graph.model_selections(),
@@ -632,7 +645,10 @@ fn unit_bounds_reach_records_aliases_of_aliases_and_every_node() {
         let packages = admitted(document).unwrap_or_else(|refusal| panic!("admits: {refusal}"));
         let graph = admit_and_assemble_with_body(document, UNITS)
             .expect("assembles")
-            .check(quire_semantic_value::checking::CheckingLimits::default())
+            .check(
+                quire_semantic_value::checking::CheckingLimits::default(),
+                CheckMode::Linked,
+            )
             .expect("checks");
         let model = StateModel::new(
             graph.model_selections(),

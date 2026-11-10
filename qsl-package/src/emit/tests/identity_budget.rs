@@ -4,6 +4,7 @@
 use super::*;
 use crate::{IdentityFileRefusal, NativeRowError, NativeRowErrorCode, ReadIdentityRows};
 use quire_contract_model::{NativeJoinBudget, NativeJoinChargeKind, SelectedExactIdentities};
+use quire_semantic_value::checking::CheckMode;
 
 fn fixture() -> (Emission, Arc<quire_contract_model::CheckedPackageV2>) {
     let text = format!(
@@ -374,7 +375,7 @@ function fromRush using v(e: M::RushOrderPlaced): Integer pure {{ occurredAt(e) 
     );
     let graph = assemble_with_models(source.as_bytes(), &packages)
         .expect("author unit")
-        .check(CheckingLimits::default())
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .expect("checked unit");
     let checked = CheckedPackage::link(graph);
     let base = emit_checked(&checked).expect("original emission");

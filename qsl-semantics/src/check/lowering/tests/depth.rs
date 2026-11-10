@@ -8,6 +8,7 @@
 use std::collections::BTreeSet;
 
 use super::*;
+use quire_semantic_value::checking::CheckMode;
 
 /// The stack each check runs on.
 const STACK: usize = 512 * 1024;
@@ -105,7 +106,7 @@ pub(super) fn check_on_small_stack(
                     qsl_foundation::IdentityLimits::default(),
                 )
             }
-            .check(limits)
+            .check(limits, CheckMode::Linked)
         })
         .expect("the check thread spawns")
         .join()

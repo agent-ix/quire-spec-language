@@ -11,6 +11,7 @@ use qsl_semantics::check::PackageDeclarations;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use quire_eval::FamilyOutcome;
 use quire_exact::{Integer, Meter, Outcome, ScalarLimits, Value};
+use quire_semantic_value::checking::CheckMode;
 use quire_semantic_value::checking::CheckingLimits;
 
 const UNLIMITED: ScalarLimits = ScalarLimits {
@@ -68,7 +69,7 @@ fn package_of(declarations: &str) -> CheckedPackage {
     .expect("the assembler builds the package declarations");
     CheckedPackage::link(
         declarations
-            .check(CheckingLimits::default())
+            .check(CheckingLimits::default(), CheckMode::Linked)
             .expect("the package checks"),
     )
 }

@@ -54,7 +54,7 @@ fn package_from(document: &serde_json::Value, declarations: &str) -> CheckedPack
 fn package_over(document: &serde_json::Value, alias: &str, declarations: &str) -> CheckedPackage {
     CheckedPackage::link(
         declarations_over(document, alias, declarations)
-            .check(CheckingLimits::default())
+            .check(CheckingLimits::default(), CheckMode::Linked)
             .unwrap_or_else(|refusals| panic!("the unit checks: {refusals:?}")),
     )
 }
@@ -251,7 +251,7 @@ fn linked_ledger_clause(trace: &str) -> (CheckedPackage, qsl_semantics::check::C
         "M",
         "function noop using v(): Boolean pure { true }\n",
     )
-    .check(CheckingLimits::default())
+    .check(CheckingLimits::default(), CheckMode::Linked)
     .unwrap_or_else(|refusals| panic!("the linked-reference unit checks: {refusals:?}"));
     let package = CheckedPackage::link(graph);
     let [Ok(CheckedHyper::Behaviours(clause))] = checked.as_slice() else {
@@ -1015,6 +1015,7 @@ use qsl_semantics::model::observation::{
     admit_observations, AdmissionFailure, AdmittedObservations, ClauseFacts, ClauseSelection,
     ClauseSelectionInput, DocumentRef, ObservationLimits, OperationFacts, PathStep, Provisions,
 };
+use quire_semantic_value::checking::CheckMode;
 use serde_json::json;
 
 const OPERATION_CLAUSES: &str = "\

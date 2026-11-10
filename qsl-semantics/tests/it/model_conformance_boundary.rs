@@ -21,6 +21,7 @@ use serde_json::{json, Value};
 use crate::model_operations::{
     config_unit_with_body, config_version_document, empty_frame, operation, parse_and_build,
 };
+use quire_semantic_value::checking::CheckMode;
 
 const PACKAGE: &str = "example/config-version";
 const NOOP: &str = "function noop using v(): Boolean pure { true }";
@@ -262,7 +263,7 @@ fn run_unit(
         Vec::new(),
     )
     .unwrap_or_else(|refusal| panic!("assembly succeeds: {:?}", refusal.errors))
-    .check(CheckingLimits::default())
+    .check(CheckingLimits::default(), CheckMode::Linked)
     .map(|_| ());
     Run { n, outcome }
 }

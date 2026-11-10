@@ -5,6 +5,7 @@
 //! checked-package/v2 reader admits the package.
 
 use super::*;
+use quire_semantic_value::checking::CheckMode;
 
 const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
                       profile v = \"quire.value.complete/v1\";\n";
@@ -30,7 +31,7 @@ pub(super) fn checked_graph(declarations: &str) -> qsl_semantics::check::Checked
     let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
     PackageDeclarations::assemble(raw, "pkg".to_owned(), unit, Vec::new(), Vec::new())
         .expect("the unit assembles")
-        .check(CheckingLimits::default())
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .unwrap_or_else(|refusals| panic!("the package checks: {refusals:?}"))
 }
 
@@ -1492,7 +1493,7 @@ fn a_converted_quantity_equality_converts_the_quantity_operand() {
         ];
         declarations.functions = vec![declared];
         let graph = declarations
-            .check(CheckingLimits::default())
+            .check(CheckingLimits::default(), CheckMode::Linked)
             .expect("the package checks");
         let emission = emit(&CheckedPackage::link(graph));
         assert_reader_outcome_for_equality_sidecar(&emission);
@@ -1564,7 +1565,7 @@ fn a_guard_over_an_integer_conversion_bounds_only_what_it_states() {
         let refused =
             PackageDeclarations::assemble(raw, "pkg".to_owned(), unit, Vec::new(), Vec::new())
                 .expect("the unit assembles")
-                .check(CheckingLimits::default());
+                .check(CheckingLimits::default(), CheckMode::Linked);
         assert!(refused.is_err(), "{body}: the body is not in [0, 3]");
     }
 }

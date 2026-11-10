@@ -34,6 +34,7 @@ use serde_json::{json, Value as Json};
 use crate::ring_world::ring_queue::{
     self, bounded, document, node, object_type, operation, population, single,
 };
+use quire_semantic_value::checking::CheckMode;
 
 const BOOLEAN: &str = "ix://quire/native/Boolean";
 
@@ -549,7 +550,7 @@ impl Unit {
         .with_unwritten_refinements();
         let regions = declarations.regions();
         declarations
-            .check(CheckingLimits::default())
+            .check(CheckingLimits::default(), CheckMode::Linked)
             .map_err(|refusals| {
                 refusals
                     .into_iter()

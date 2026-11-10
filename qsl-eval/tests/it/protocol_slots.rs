@@ -11,6 +11,7 @@ use qsl_semantics::check::{NodeTag, PackageDeclarations};
 use quire_eval::{CallAdmissionFailure, CallAdmissionLocus, CallFailure, FamilyOutcome};
 use quire_exact::{Meter, ScalarLimits, Value};
 use quire_semantic_value::catalog::CatalogCode;
+use quire_semantic_value::checking::CheckMode;
 use quire_semantic_value::checking::CheckingLimits;
 
 const MODEL: &[u8] = include_bytes!("../../../tests/fixtures/spine-model.semantic-ir.json");
@@ -83,7 +84,7 @@ fn package_from_source(source: &str) -> CheckedPackage {
             Vec::new(),
         )
         .expect("the unit assembles")
-        .check(CheckingLimits::default())
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .expect("the package checks"),
     )
 }
@@ -145,7 +146,7 @@ fn compensation_package() -> CheckedPackage {
             Vec::new(),
         )
         .expect("the compensation unit assembles")
-        .check(CheckingLimits::default())
+        .check(CheckingLimits::default(), CheckMode::Linked)
         .expect("the compensation unit checks"),
     )
 }

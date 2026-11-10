@@ -10,6 +10,7 @@ use qsl_package::CheckedPackage;
 use qsl_semantics::check::PackageDeclarations;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use quire_exact::{Meter, ScalarLimits, Value};
+use quire_semantic_value::checking::CheckMode;
 use quire_semantic_value::checking::CheckingLimits;
 
 const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
@@ -64,7 +65,7 @@ fn run(source: &str, entry: &str, argument: i64, work_units: u64) -> (String, us
     .expect("the assembler builds the package declarations");
     let package = CheckedPackage::link(
         declarations
-            .check(CheckingLimits::default())
+            .check(CheckingLimits::default(), CheckMode::Linked)
             .expect("the package checks"),
     );
     let mut meter = Meter::new(limits(work_units));

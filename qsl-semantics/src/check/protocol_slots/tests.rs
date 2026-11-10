@@ -18,6 +18,7 @@ mod fixture {
     include!("../../../tests/fixtures/protocol_obligations.rs");
 }
 use fixture::{obligation_model_with, HEADER};
+use quire_semantic_value::checking::CheckMode;
 
 /// ADR-027 §7's `Fill` over `k: M::Node`, activated `activation`, with
 /// `members` written before `run`.
@@ -93,7 +94,7 @@ fn assembled(text: &str) -> PackageDeclarations {
 }
 
 fn check(text: &str) -> Result<CheckedGraph, Vec<CheckRefusal>> {
-    assembled(text).check(CheckingLimits::default())
+    assembled(text).check(CheckingLimits::default(), CheckMode::Linked)
 }
 
 /// The checked graph of `text`, which must raise no refusal other than an
@@ -101,7 +102,7 @@ fn check(text: &str) -> Result<CheckedGraph, Vec<CheckRefusal>> {
 /// protocol's slots, and what the lowering stage emits is its own contract.
 fn checks(text: &str) -> CheckedGraph {
     let graph = assembled(text)
-        .check_with_protocol_results(CheckingLimits::default())
+        .check_with_protocol_results(CheckingLimits::default(), CheckMode::Linked)
         .unwrap_or_else(|refusals| panic!("{text}: {refusals:?}"));
     let refusals: Vec<&CheckRefusal> = graph
         .protocol_refusals()
