@@ -221,3 +221,38 @@ scope:
 ## Limits
 
 Code/Rust runtime gates, gap-analysis implementation qualification, and Jev criterion-strength analysis were not run: no production diff or executable new profile exists, and no Jev client was selected. Normative scoped validation passed; runtime trace/matrix completeness remains future work.
+
+## New findings (postmerge review 1)
+
+The historical PASS above and its original clean comment record the completed premerge review. Runtime-fixture admission work after PR2646 merged exposed two defects that review missed; the findings below are new records, not retrospective edits to that history.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-002 | high | AC-27 requires a checker ThresholdMissed outcome for an authored AtLeast 1 threshold, but existing S3 rejects the endpoint as QualitativeThreshold before the checker can run. Use an admitted strict-interior adverse bound such as 1801/1802 without changing the threshold policy. | spec/functional/FR-201-check-a-probability-certificate.md:673 |
+| FND-003 | high | AC-30 and the new profile describe direct EN-5 zero-instance handling as an existing vacuous settlement, but claim_binding returns UnsupportedBinding and the existing EN-5 integration control requires Disposed(Unsupported), no terminal, certificate or counterexample. Preserve this direct-entry contract and distinguish any separately grounded planner behavior. | spec/functional/FR-201-check-a-probability-certificate.md:676 |
+
+## Postmerge source evidence
+
+At main dd627eb4ef539a6bee158f2f8ea3302439e98054, qsl-semantics/src/check/probabilistic.rs:880–905 routes LongRunFraction thresholds through qualitative magnitude admission and rejects NonPositive/AtLeastOne as QualitativeThreshold. qsl-replay/src/probability_certificate.rs:934–957 requires exactly one actual over instance; zero yields UnsupportedBinding. qsl-analyze/tests/it/exact_probabilistic_zero_binding.rs explicitly requires the checker refusal and an EN-5 Disposed Unsupported record with no terminal/exact certificate/counterexample. No new build was needed to inspect those current contracts.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-002 | still-open | Correction PR is being authored; admitted adverse source threshold and its differential fixture remain to verify. |
+| FND-003 | still-open | Correction PR is being authored; direct-entry zero-binding semantics and any planner distinction remain to verify. |
+
+## Current postmerge verdict
+
+**FAIL / correction required** — both high findings remain open. The earlier mathematical proof-equation review remains historical; it did not validate these source-admission boundaries. Custody of this appended record belongs in the correction PR, followed by verified dispositions.
+
+## Dispositions (correction PR2647)
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-002 | fixed | Frozen e8e67c5b0fbb9fdd7ff6e2dfeda045bade6c4543 replaces authored threshold 1 with 1801/1802 in FR201AC27 and TC1401. It lies strictly inside (0,1) and exceeds 1800/1801 by exactly 1/(1801*1802), while 999/1000 is strictly smaller. Existing S3 admission policy is unchanged. |
+| FND-003 | fixed | The same correction changes profile admission, AC30 and TC1401 to direct UnsupportedBinding and an unsupported EN-5 disposition without terminal, certificate or counterexample. Higher-level planner behavior is explicitly outside this contract. |
+
+## Current correction verdict
+
+**PASS for corrected specification only** at PR2647 e8e67c5b0fbb9fdd7ff6e2dfeda045bade6c4543. The original finding text and earlier still-open rows remain intact. Current S3/claim_binding source and existing zero-binding assertions substantiate these corrections. The differential endpoint fixture at cc2293568 failed during S3 admission in long-run-tests3.log as predicted. Its working-tree correction uses rational(1801,1802); the corrected runtime rerun is pending and no runtime qualification is claimed here.
