@@ -170,17 +170,17 @@ pub enum CyclicMdpProbabilityPhase {
     Ranks,
 }
 
-struct Context<'a> {
+struct Context<'a, 'control> {
     limits: ProbabilityDocumentLimits,
     cancel: &'a Cancel,
     meter: quire_exact::Meter,
     storage: u64,
     reward: bool,
-    reward_control: Option<&'a super::super::reward::RewardControl<'a>>,
+    reward_control: Option<&'a super::super::reward::RewardControl<'control>>,
     identity: qsl_foundation::IdentityLimits,
     observe: Option<&'a mut dyn FnMut(CyclicMdpProbabilityPhase)>,
 }
-impl<'a> Context<'a> {
+impl<'a, 'control> Context<'a, 'control> {
     fn new(
         limits: ProbabilityDocumentLimits,
         cancel: &'a Cancel,
@@ -360,7 +360,7 @@ fn subject(
     system: &ModelSystem<'_>,
     claims: &[CheckedProbabilisticClaim],
     item: &ObligationIdentity,
-    cx: &mut Context<'_>,
+    cx: &mut Context<'_, '_>,
 ) -> Result<
     (
         CheckerGraph,
@@ -380,18 +380,12 @@ fn subject(
     let claim = bind_claim(claims, item, cx.cancel)?;
     if cx.reward {
         cx.tick(CyclicMdpProbabilityPhase::OriginalAdmission)?;
-        return reward_subject(
-            system,
-            claims,
-            item,
-            cx.limits,
-            cx.cancel,
-            cx.identity,
-            &mut cx.meter,
-            &mut cx.storage,
-            cx.reward_control
-                .unwrap_or(&super::super::reward::RewardControl::new(cx.cancel)),
-        );
+        if let Some(control) = cx.reward_control {
+            return reward_subject(system, claims, item, cx.limits, cx.cancel, cx.identity,
+                &mut cx.meter, &mut cx.storage, control);
+        }
+        return reward_subject(system, claims, item, cx.limits, cx.cancel, cx.identity,
+            &mut cx.meter, &mut cx.storage, &super::super::reward::RewardControl::new(cx.cancel));
     }
     let ProbForm::Reach {
         bound,
@@ -481,7 +475,7 @@ type Sums = BTreeMap<ProbabilityProductKey, Vec<Rational>>;
 fn rows(
     graph: &CheckerGraph,
     certificate: &ExactProbabilityCertificate,
-    cx: &mut Context<'_>,
+    cx: &mut Context<'_, '_>,
 ) -> Result<CertificateValues, ProbabilityDocumentError> {
     for row in &certificate.values {
         cx.tick(CyclicMdpProbabilityPhase::Rows)?;
@@ -511,7 +505,7 @@ fn sums(
     graph: &CheckerGraph,
     values: &Values,
     reward: Option<&super::super::reward::RewardGraph>,
-    cx: &mut Context<'_>,
+    cx: &mut Context<'_, '_>,
 ) -> Result<Sums, ProbabilityDocumentError> {
     let mut sums = BTreeMap::new();
     for (key, state) in &graph.states {
@@ -573,7 +567,7 @@ fn equality_failure(
     values: &Values,
     sums: &Sums,
     objective: ProbabilityObjective,
-    cx: &mut Context<'_>,
+    cx: &mut Context<'_, '_>,
 ) -> Result<Option<ProbabilityProductKey>, ProbabilityDocumentError> {
     for (key, state) in &graph.states {
         cx.tick(CyclicMdpProbabilityPhase::ActionSums)?;
@@ -613,7 +607,7 @@ fn progress_failure(
     sums: &Sums,
     ranks: &BTreeMap<ProbabilityProductKey, u64>,
     objective: ProbabilityObjective,
-    cx: &mut Context<'_>,
+    cx: &mut Context<'_, '_>,
 ) -> Result<Option<(ProbabilityCertificateRule, ProbabilityProductKey)>, ProbabilityDocumentError> {
     for (key, state) in &graph.states {
         let value = values.get(key).ok_or(ProbabilityDocumentError::Malformed)?;
@@ -699,7 +693,7 @@ fn derive_ranks(
     values: &Values,
     sums: &Sums,
     objective: ProbabilityObjective,
-    cx: &mut Context<'_>,
+    cx: &mut Context<'_, '_>,
 ) -> Result<BTreeMap<ProbabilityProductKey, u64>, ProbabilityDocumentError> {
     let mut ranks = BTreeMap::new();
     for (key, state) in &graph.states {
@@ -784,7 +778,7 @@ fn derive_ranks(
 
 fn admitted_vector<T>(
     count: usize,
-    cx: &mut Context<'_>,
+    cx: &mut Context<'_, '_>,
 ) -> Result<Vec<T>, ProbabilityDocumentError> {
     let requested = count
         .checked_mul(std::mem::size_of::<T>())
@@ -804,7 +798,7 @@ fn construct(
     claims: &[CheckedProbabilisticClaim],
     item: &ObligationIdentity,
     certificate: &ExactProbabilityCertificate,
-    cx: &mut Context<'_>,
+    cx: &mut Context<'_, '_>,
 ) -> Result<ProbabilityProofDocument, ProbabilityDocumentError> {
     cx.reward = matches!(
         bind_claim(claims, item, cx.cancel)?.form,
@@ -876,14 +870,14 @@ pub(super) fn check<'a>(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(super) fn check_with_reward_control<'a>(
+pub(super) fn check_with_reward_control<'a, 'control>(
     system: &ModelSystem<'_>,
     claims: &[CheckedProbabilisticClaim],
     item: &ObligationIdentity,
     bytes: &[u8],
     limits: ProbabilityDocumentLimits,
     cancel: &'a Cancel,
-    control: &'a super::super::reward::RewardControl<'a>,
+    control: &'a super::super::reward::RewardControl<'control>,
 ) -> Result<ExactProbabilityCertificateCheck, ProbabilityDocumentError> {
     let mut cx = Context::new(limits, cancel, None);
     cx.reward_control = Some(control);
@@ -895,7 +889,7 @@ fn check_with_context(
     claims: &[CheckedProbabilisticClaim],
     item: &ObligationIdentity,
     bytes: &[u8],
-    mut cx: Context<'_>,
+    mut cx: Context<'_, '_>,
 ) -> Result<ExactProbabilityCertificateCheck, ProbabilityDocumentError> {
     let limits = cx.limits;
     let cancel = cx.cancel;
