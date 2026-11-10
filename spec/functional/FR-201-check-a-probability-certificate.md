@@ -644,6 +644,109 @@ not from that set, values, component rows or a producer's graph.
   admission and verdicts. No upstream budget API is claimed delivered by
   this specification.
 
+### Closed weighted DTMC long-run document profile
+
+For a checked `long-run fraction holds(P) weighted by R` claim under an
+authored workload, the codec SHALL admit the separate objective profile
+`"quire.probability-objective/dtmc-weighted-long-run/v1"`. Its objective
+SHALL have exactly `profile`, `predicate_states`, `weight`, `unit`,
+`optimization` and `fairness`. `optimization` SHALL be `"workload"` and
+`fairness` SHALL be empty. `predicate_states` retains the unweighted
+profile's independently rederived complete original-graph key set.
+`weight` SHALL be FR-196's actual `[model_node,identifier]` for checked R;
+`unit` SHALL be its actual null, declared or compound UnitId descriptor.
+The checker SHALL resolve both under the checked model and compare them
+with the objective before accepting evidence. A display-name alias or
+another same-dimension UnitId SHALL NOT substitute for that identity.
+
+- This profile SHALL retain the unweighted profile's untimed, finite,
+  one-initial/at-most-one-binding DTMC admission, fully resolving workload,
+  complete original graph, positive-support BSCC partition, canonical
+  component ordering, bias normalization, strict transport and independent
+  threshold checks. Predicate-true states SHALL NOT absorb their outgoing
+  transitions. Zero direct `over` instances retain `UnsupportedBinding`
+  and the unsupported EN-5 disposition with no invented evidence. General
+  MDP/every-scheduler, fairness, timed, multi-post, interval and refutation
+  forms, including shared FR-413 wire, remain outside this profile.
+- The checker SHALL independently evaluate the named checked reward on
+  every reachable semantic transition and typed draw, using FR-196's
+  operation/receiver/non-random-argument identity and the checked expression.
+  An operation without R contributes zero. Admitted weights SHALL be
+  defined, finite, nonnegative integers or quantities of R's checked type;
+  quantities use the checked weight's unit and existing exact conversion
+  graph. The threshold and fraction remain dimensionless, not quantities
+  in that unit. Integer representation SHALL use the existing representation
+  limit; numeric weight and weighted-row arithmetic SHALL still obey the
+  existing scalar/rational arithmetic limits. Negative or unsupported reward types SHALL preserve
+  explicit unsupported outcomes; undefined predicate, reward or workload
+  evaluation SHALL preserve its typed nonacceptance, even in transient
+  states. No invalid weight SHALL be coerced to zero. Complete actual
+  draws SHALL be evaluated before any coalescing that could erase their
+  different reward values.
+- Write `p(e)` for the independently rederived normalized probability of
+  an outgoing draw e from s and `r(e)` for its independently rederived
+  magnitude in the checked weight unit. The checker SHALL compute
+  `w(s) = sum_{e from s} p(e) * r(e)`. FR-199 weights the position by the
+  step that leaves it: the centered immediate reward is
+  `w(s) * ([P(s)] - rho_C)`, using the CURRENT state's predicate. It is
+  neither `[P(to(e))]` nor an unweighted indicator. Implicit terminal
+  stutter retains the original key and P label, contributes named reward
+  zero and invents no reward-bearing operation.
+- Before checking component evidence, the checker SHALL establish that
+  every independently rederived reachable BSCC has at least one state
+  with `w(s) > 0`. For a finite positive-support irreducible chain with
+  nonnegative weights this is exactly positive stationary denominator;
+  every state has positive stationary mass. A BSCC with all w zero has
+  no defined weighted fraction and SHALL retain the existing
+  `Unsupported(ZeroWeightComponent)` outcome, identifying that component
+  under the existing diagnostic contract. This includes a reachable
+  terminal stutter, even when P holds there, and any reachable zero-weight
+  BSCC alongside a positive-weight one. No component is discarded, assigned
+  value zero, or accepted through otherwise satisfiable zero equations.
+  Zero-weight transient states alone SHALL NOT trigger this outcome.
+- The document SHALL retain exactly `identity`, `objective`, `kind`,
+  `values` and `components`, with kind `"long-run"` and unchanged
+  `{value,gain,bias}` component and `{state,value}` bias-row shapes. Values
+  and component values SHALL be exact rationals in [0,1]. Transported
+  `gain_C` SHALL equal `rho_C`, FR-199's weighted-ratio result, not the
+  numerator payoff `pi_C(R*[P])` or the centered reward's zero mean.
+  Bias magnitudes SHALL be signed exact rationals in the selected weight
+  unit, with zero at C's first complete key. At EVERY s in C the checker
+  SHALL check
+  `h(s) = w(s) * ([P(s)] - rho_C) + sum_t p(s,t) * h(t)`.
+  Stationary averaging therefore gives
+  `rho_C = pi_C(w*[P]) / pi_C(w)`: the checked denominator is positive.
+  The checker SHALL compute no stationary distribution, solve no equation
+  and reuse no producer partition, cost table, linear algebra or iteration.
+  For weights multiplied by a positive scalar, rho stays the same while
+  bias magnitudes scale; they SHALL NOT be copied unchanged from the
+  unweighted profile.
+- Every state in C SHALL have V equal to rho_C. Transient V rows SHALL
+  satisfy the unweighted ORIGINAL transition harmonic equation
+  `V(s) = sum_t p(s,t)*V(t)`, giving FR-199's expected component fraction,
+  not a ratio of globally combined numerators and denominators. All BSCCs
+  are independently matched before that check, so this extension is unique.
+  Finite transient weights do not enter its recurrence. Inclusive AtLeast
+  and AtMost proof checks SHALL use the checked dimensionless threshold
+  and existing S3 admission and exact arithmetic; no endpoint-admission
+  policy is changed. A document that misses its threshold rejects
+  `ThresholdMissed` at the initial complete key and is not a refutation.
+- Conflicting identity SHALL refuse before enumeration. Changed weight,
+  unit, predicate set, optimization or profile SHALL refuse as objective
+  mismatch. Structural member, coverage and ordering errors SHALL retain
+  `Malformed` at `values` or `components`; mismatched BSCC membership,
+  gain, normalization, equation or V SHALL retain the unweighted profile's
+  first-complete-key `InequalityFails` rule. Model-only or foreign-binding
+  keys are not aliases. Equivalent independently rederived draw costs may
+  accept under a matching identity/objective; source changes alone are not
+  a staleness rule. Source/document/key, graph, reward/unit evaluation,
+  SCC, membership, value/bias storage and exact arithmetic SHALL retain
+  actual caller byte/state/edge/work/storage/representation controls and
+  cancellation with typed causes and no accepted truth value on a stop.
+  Earlier profile bytes, meanings and verdicts SHALL remain unchanged.
+  This contract is not a claim of completed implementation or whole-runtime
+  allocation qualification.
+
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
@@ -678,6 +781,10 @@ not from that set, values, component rows or a producer's graph.
 | FR-201-AC-28 | A transient self-cycling s goes to s with 1/2, P-terminal g with 1/6 and not-P-terminal f with 1/3. Independent terminal stutter gives BSCCs {g} and {f}, respective component value/gain 1 and 0 and bias 0; values s=1/3,g=1,f=0 accept both workload bounds at 1/3. A two-state deterministic cycle alternates P and not-P and accepts rho=gain=1/2 with normalized biases 0,-1/2 in that key order, despite periodicity. Merging/splitting/omitting a BSCC, adding a transient bias member or changing transient V rejects; harmonic values alone cannot certify a wrong recurrent value. | Test |
 | FR-201-AC-29 | AC-27/28 documents round-trip canonically through a fresh checker process with no analyzer/provider dependency. Noncanonical rational/JSON/key encodings, duplicate or incomplete rows/components, foreign bindings, model-only keys, wrong normalization or missing components prevent acceptance. Identity conflict refuses before enumeration; a changed derived predicate set/optimization refuses objective mismatch. Equivalent source changes that preserve every checked condition may accept. Earlier profile bytes and verdicts remain unchanged. | Test |
 | FR-201-AC-30 | Pre-cancellation and exhaustion/cancellation during admission, full-key creation, workload/predicate evaluation, SCC/membership passes and exact sums retain typed nonacceptance without truth values under the actual caller control. Reachable undefined P/workload evaluation is never relabelled false/zero. Weighted claims emit no document of this profile; the separate existing FR-199 weighted zero-weight control retains Unsupported(ZeroWeightComponent). Unresolved workload, every-scheduler/MDP, fairness, clocks, multi-post, multiple initials/bindings and unsupported kind/profile remain explicitly unsupported. Zero over instances retain UnsupportedBinding at direct claim binding and an unsupported disposition at the direct EN-5 item, with no terminal verdict, certificate, counterexample or fabricated binding. | Test |
+| FR-201-AC-31 | FR-199-AC-3's Steady availability graph, with up-to-up 1999/2000, down-to-up 9/10, outgoing duration 1 at up and 3 at down, accepts the weighted profile with component value/gain 600/601, both state values 600/601, bias 0 at up and -2000/601 at down in that canonical key order. Both bound sides accept at 600/601; AtMost 999/1000 accepts and AtLeast 999/1000 rejects ThresholdMissed, while AtMost 599/600 rejects. Unweighted value/gain 1800/1801 or bias -2000/1801 fails. | Test |
+| FR-201-AC-32 | A periodic chain alternates P state a and not-P state b; at a two equally probable draws to b have R magnitudes 1 and 3, and b's step to a has R 1. The weighted component accepts rho=gain=2/3 and biases (a,b)=(0,-2/3). Swapping the two a draw weights preserves acceptance; changing 3 to 5 falsifies that certificate. A zero-weight transient s entering this component and an all-P state c with probabilities 1/4 and 3/4, where c has an explicit probability-one self-step of R 1, accepts V(s)=11/12; a globally pooled numerator/denominator substitute 8/9 rejects. A reachable all-zero-weight BSCC, alone or beside a positive-weight BSCC, and any reachable terminal stutter settle Unsupported(ZeroWeightComponent), with no certificate. | Test |
+| FR-201-AC-33 | AC-31/32 documents round-trip canonical bytes through a fresh independent checker without analyzer/provider linkage. Wrong checked weight name/model or actual unit, changed predicate set/optimization/profile, foreign binding/model-only keys, malformed rational/JSON/key data and duplicate/missing/out-of-order component/value/bias members prevent acceptance with their specified typed rule/locus. Independently checked equivalent quantity expressions normalize through the actual weight UnitId; another same-dimension descriptor cannot replace it. Gain 0, a numerator payoff in gain, unscaled unweighted bias, false BSCC coverage or changed transient values reject. Older unweighted/reward/eventual profiles keep their bytes/verdicts. | Test |
+| FR-201-AC-34 | Pre-cancellation and exhaustion/cancellation during actual admission, key construction, graph/draw expansion, predicate/weight/unit evaluation, SCC/membership and exact weighted sums retain the actual typed limit/cancellation cause with no acceptance. Undefined or negative reachable weights, undefined predicates/workload and unsupported reward types preserve typed nonacceptance rather than zero. Unsupported shape/kind/fairness/every-scheduler cases issue no weighted proof. Zero direct over instances preserve UnsupportedBinding/unsupported with no invented evidence. Integer representation and exact weight arithmetic retain their respective existing limits, without imposing a probability-value range on weights. No weighted claim is relabelled as an unweighted profile or an FR-202 refutation. | Test |
 
 ## Dependencies
 

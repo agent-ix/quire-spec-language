@@ -54,6 +54,14 @@ retains that gain. Its checker subtracts the component value to obtain
 ADR-028 CE-3's centered reward and zero gain; it SHALL NOT serialize zero
 in place of the result's gain or require a second solver result format.
 
+For a weighted workload result, the same transported `gain` is the
+dimensionless ratio `rho = pi(R*[P])/pi(R)`, as retained by the existing
+`LongRunResult`, rather than the numerator payoff `pi(R*[P])`. Its bias
+uses the checked weight unit and the centered immediate reward
+`E[R | s] * ([P(s)]-rho)`, with zero stationary mean. FR-201's separate
+weighted document checks those equations and positive component weight;
+the zero centered mean does not replace the transported ratio by zero.
+
 ## Behavior
 
 - Under a workload, EN-5 SHALL decompose the DTMC into BSCCs and give each
