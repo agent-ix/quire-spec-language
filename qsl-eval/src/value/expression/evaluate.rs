@@ -54,9 +54,10 @@ use quire_exact::{
 };
 use quire_exact::{
     compare_keys, form, form_grouped, member_equal, retain_composite, CollectionValue,
-    CompositeValue, FieldValue, ObjectReference, OptionValue, Quantity, UnionValue, Value,
-    ValueType,
+    CompositeValue, FieldValue, ObjectId, ObjectReference, OptionValue, Quantity, UnionValue,
+    Value, ValueType,
 };
+use quire_exact::{EffectiveId, NodeKey};
 use quire_exact::{
     evaluate_boolean, evaluate_integer_arithmetic, evaluate_rational_arithmetic, order_numbers,
     retain_boolean, ArithmeticOperator, BooleanConnective, IntegerArithmetic, OrderedOperands,
@@ -308,6 +309,38 @@ fn bounded_result_interval(bounded: &BoundedQuantityType) -> Result<QuantityResu
 /// A QSL-owned invariant at its detecting producer (FR-090).
 fn invariant(identifier: &'static str) -> Halt {
     Halt::Fault(InternalFault::new("S6a", identifier))
+}
+
+/// Build the FR-230 identity for a clock place selected from an owner.
+fn clock_place_reference(
+    owner: ObjectReference,
+    clock_type: EffectiveId,
+    place: &NodeKey,
+    selectors: Vec<Value>,
+) -> Result<ObjectReference, Halt> {
+    let place_text = qsl_foundation::node_wire::node_key_to_text(place)
+        .map_err(|_| invariant("clock-place-reference-key-encoding-failed"))?;
+    let owner_identity = render_identity(owner.object().as_str().as_bytes());
+    let place_identity = render_identity(place_text.as_bytes());
+    let slot_indices = selectors
+        .into_iter()
+        .map(|selector| match selector {
+            Value::Integer(index) => Ok(index.to_string()),
+            _ => Err(invariant("clock-place-reference-slot-index-expected")),
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let slots = if slot_indices.is_empty() {
+        "-".to_owned()
+    } else {
+        slot_indices.join(".")
+    };
+    let object = ObjectId::new(format!("place/v1/{owner_identity}/{place_identity}/{slots}"))
+        .map_err(|_| invariant("clock-place-reference-identity-empty"))?;
+    Ok(ObjectReference::new(
+        owner.universe().clone(),
+        clock_type,
+        object,
+    ))
 }
 
 /// The one target of a single-valued navigation end `[lower, upper]` (FR-364
@@ -2906,6 +2939,27 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                     .ok_or_else(|| invariant("place-presence-unrecorded"))?;
                 Value::Boolean(present)
             }
+            // FR-230: a place reference identifies the selected clock
+            // location, without reading the clock value.
+            NodeKind::PlaceReference { place, slots, .. } => {
+                let count = slots
+                    .len()
+                    .checked_add(1)
+                    .ok_or_else(|| invariant("place-reference-child-count-overflow"))?;
+                let mut children = self.pop_many(count)?.into_iter();
+                let Some(Value::Reference(owner)) = children.next() else {
+                    return Err(invariant("place-reference-owner-expected"));
+                };
+                let ValueType::Reference(clock_type) = node.value_type() else {
+                    return Err(invariant("place-reference-result-type-expected"));
+                };
+                Value::Reference(clock_place_reference(
+                    owner,
+                    clock_type.clone(),
+                    place,
+                    children.collect(),
+                )?)
+            }
             NodeKind::Value(_) => {
                 let Value::Option(option) = self.pop()? else {
                     return Err(invariant("option-value-expected"));
@@ -4995,6 +5049,42 @@ mod tests {
 
     // `TypeForm`'s span carries no identity (ADR-011 §2.2 row E2).
     const SPAN: qsl_foundation::Span = qsl_foundation::Span { start: 0, end: 0 };
+
+    /// FR-230-AC-43: a reference identifies its owner, canonical place key,
+    /// and concrete slot path without carrying a clock value.
+    #[trace("FR-230-AC-43")]
+    #[test]
+    fn clock_place_references_encode_the_place_and_ordered_slots() {
+        let owner = ObjectReference::new(
+            crate::test_ids::universe_id([1]),
+            crate::test_ids::effective_id([2]),
+            ObjectId::new("call").expect("fixture object id is non-empty"),
+        );
+        let clock_type = crate::test_ids::effective_id([3]);
+        let place = crate::test_ids::node_key([4]);
+        let expected_prefix = "place/v1/63616c6c/7b226f7264696e616c223a302c227061636b616765223a2266697874757265222c2270617468223a5b225b345d225d7d";
+
+        let unindexed = clock_place_reference(
+            owner.clone(),
+            clock_type.clone(),
+            &place,
+            Vec::new(),
+        )
+        .expect("an unindexed place reference is well formed");
+        assert_eq!(unindexed.object().as_str(), format!("{expected_prefix}/-"));
+        assert_eq!(unindexed.universe(), owner.universe());
+        assert_eq!(unindexed.object_type(), &clock_type);
+
+        let indexed = clock_place_reference(
+            owner,
+            clock_type,
+            &place,
+            vec![Value::Integer(Integer::from(0_i64)), Value::Integer(Integer::from(1_i64))],
+        )
+        .expect("an indexed place reference is well formed");
+        assert_eq!(indexed.object().as_str(), format!("{expected_prefix}/0.1"));
+        assert_ne!(indexed, unindexed);
+    }
 
     #[trace("QSpec-TC-235", "QSpec-FR-208-AC-11", "QSpec-FR-207-AC-8")]
     #[test]
