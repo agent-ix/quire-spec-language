@@ -246,15 +246,19 @@ impl Encode for Events<'_> {
         writer.name("objective")?;
         writer.begin_object()?;
         writer.name("profile")?;
-        writer.string(if self.document.cyclic_dtmc {
-            CYCLIC_PROFILE
-        } else if self.document.reward.is_some() {
-            REWARD_PROFILE
-        } else if self.document.event.is_some() {
-            STATE_PROFILE
-        } else {
-            PROFILE
-        })?;
+        writer.string(
+            if self.document.cyclic_dtmc && self.document.reward.is_some() {
+                CYCLIC_REWARD_PROFILE
+            } else if self.document.cyclic_dtmc {
+                CYCLIC_PROFILE
+            } else if self.document.reward.is_some() {
+                REWARD_PROFILE
+            } else if self.document.event.is_some() {
+                STATE_PROFILE
+            } else {
+                PROFILE
+            },
+        )?;
         if let Some(reward) = &self.document.reward {
             writer.name("reward")?;
             writer.begin_array()?;
@@ -340,7 +344,7 @@ fn encode(
     if document.reward.is_some() && document.event.is_some() {
         return Err(ProbabilityDocumentError::Malformed);
     }
-    if document.cyclic_dtmc && (document.reward.is_some() || document.event.is_some()) {
+    if document.cyclic_dtmc && document.event.is_some() {
         return Err(ProbabilityDocumentError::Malformed);
     }
     let rows = document
