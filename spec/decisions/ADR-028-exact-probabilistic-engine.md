@@ -274,6 +274,37 @@ bytes and verdicts. This proof-only slice does not admit MDP choices,
 fairness, timed, multi-post, infinity documents or refutations, nor claim
 whole-expansion allocation qualification.
 
+#### Closed cyclic MDP expected-reward proof profile
+
+FR-201's distinct `quire.probability-objective/cyclic-mdp-expected-reward/v1`
+reuses exact reward values/ranks with source Every AtLeast selecting minimum
+and Every AtMost selecting maximum. Checked reward/comparison-unit identity,
+actual per-action draw costs and full original admission remain authoritative.
+The query stops at first B; only B has the boundary value/rank zero.
+
+Bellman equality alone is insufficient: WAIT at zero cost versus GO to B
+at cost 1 has bogus minimum fixed points below 1 and a bogus finite maximum
+fixed point at 1. Minimum therefore requires a TIGHT minimizing action
+with positive-probability lower-rank progress at every non-B state;
+maximum requires progress for EVERY actual action. Both require a nonempty
+action set, positive ranks even at value zero, and no positive-value
+successor restriction. These conditions select a proper tight minimum
+policy or establish all-policy properness for maximum. Finite-state
+properness and Bellman equalities certify the optimal finite first-hit
+reward without a checker solve or new scheduler semantics. Improper
+policies retain FR-198 infinity even with zero accumulated cost.
+
+The finite body requires finite selected values at every all-action
+first-B-stopped reachable state. Initial minimum 1 via a safe exit does
+not suffice if another action enters an infinite-minimum trap. Native
+mixed-infinite coverage remains unsupported with no finite document;
+fraudulent finite rows still reject by coverage/properness. No omitted
+infinite rows, infinity-as-zero, internal-fault substitution or infinity
+wire is introduced. Existing acyclic/DTMC profiles remain preferred where
+eligible and retain their bytes. This adds no fairness, workload,
+multi-post, timed, refutation or FR-413 policy transport, and claims no
+whole-expansion allocation qualification.
+
 #### Closed unweighted DTMC long-run proof profile
 
 FR-201's `quire.probability-objective/dtmc-long-run/v1` closes the
