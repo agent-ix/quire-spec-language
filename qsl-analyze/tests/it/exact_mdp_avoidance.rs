@@ -5,7 +5,7 @@ use ix_trace_rs::trace;
 use qsl_analyze::exact_probabilistic::{
     build_product, decide_expected_reward, decide_reachability, decide_reachability_threshold,
     ExactProbLimits, ExtRational, MonitorVerdict, ProbBuild, ProbEdge, ProbKey, ProbProduct,
-    ProbStateId, ProductAction, ProductKind, UnboundedError, UnboundedObjective, UnboundedOutcome,
+    ProductAction, ProductKind, UnboundedError, UnboundedObjective, UnboundedOutcome,
 };
 use quire_exact::{Cancel, Identifier, Integer, Rational, Value};
 
@@ -23,33 +23,49 @@ fn key(id: u8) -> ProbKey {
     }
 }
 
-fn edge(from: usize, to: usize, n: i64, d: i64, action: u8) -> ProbEdge {
-    ProbEdge {
-        from: ProbStateId(from),
-        choice: ProductAction::PostState(Box::new(key(action))),
-        action: None,
-        draw: None,
-        to: ProbStateId(to),
-        probability: ratio(n, d),
-        rewards: vec![(
-            Identifier::new("cost").expect("identifier"),
-            Value::Integer(Integer::zero()),
-        )],
-    }
+fn edge(from: usize, to: usize, n: i64, d: i64, action: u8) -> (usize, usize, i64, i64, u8) {
+    (from, to, n, d, action)
 }
 
-fn product(mut edges: Vec<ProbEdge>) -> ProbProduct {
-    edges.sort_by_key(|edge| edge.from);
-    ProbProduct {
-        states: (0..3).map(key).collect(),
+fn product(mut edges: Vec<(usize, usize, i64, i64, u8)>) -> ProbProduct {
+    edges.sort_by_key(|edge| edge.0);
+    let state_count = edges
+        .iter()
+        .map(|edge| edge.0.max(edge.1) + 1)
+        .max()
+        .expect("edges")
+        .max(3);
+    let mut product = ProbProduct {
+        states: (0..state_count)
+            .map(|id| key(u8::try_from(id).expect("small fixture")))
+            .collect(),
         kind: ProductKind::Mdp,
-        edges,
-        initial: vec![(0, None, ProbStateId(0))],
-        decided: vec![(ProbStateId(2), MonitorVerdict::Reject)],
+        edges: Vec::new(),
+        initial: Vec::new(),
+        decided: Vec::new(),
         labels: Vec::new(),
         fairness_operations: Vec::new(),
         fairness: Vec::new(),
-    }
+    };
+    let ids = product.ids().collect::<Vec<_>>();
+    product.initial.push((0, None, ids[0]));
+    product.decided.push((ids[2], MonitorVerdict::Reject));
+    product.edges = edges
+        .into_iter()
+        .map(|(from, to, n, d, action)| ProbEdge {
+            from: ids[from],
+            choice: ProductAction::PostState(Box::new(key(action))),
+            action: None,
+            draw: None,
+            to: ids[to],
+            probability: ratio(n, d),
+            rewards: vec![(
+                Identifier::new("cost").expect("identifier"),
+                Value::Integer(Integer::zero()),
+            )],
+        })
+        .collect();
+    product
 }
 
 fn two_actions() -> ProbProduct {
@@ -80,7 +96,12 @@ fn value(product: &ProbProduct, objective: UnboundedObjective) -> ExtRational {
 #[test]
 fn two_actions_with_cyclic_positive_failure_keep_fractional_extrema() {
     let product = two_actions();
-    assert_ne!(product.edges[0].choice, product.edges[3].choice);
+    let (ProductAction::PostState(first), ProductAction::PostState(second)) =
+        (&product.edges[0].choice, &product.edges[3].choice)
+    else {
+        panic!("distinct action keys")
+    };
+    assert_ne!(first, second);
     assert_eq!(
         value(&product, UnboundedObjective::Min),
         ExtRational::Finite(ratio(1, 2))
@@ -192,13 +213,12 @@ fn avoidance_controls_preserve_target_absorption_and_scheduler_choices() {
 #[trace("TC-633", "FR-198-AC-3")]
 #[test]
 fn acyclic_failure_sibling_does_not_require_other_successors_to_be_targets() {
-    let mut product = product(vec![
+    let product = product(vec![
         edge(0, 2, 1, 3, 10),
         edge(0, 3, 2, 3, 10),
         edge(3, 1, 1, 1, 11),
         edge(1, 1, 1, 1, 12),
     ]);
-    product.states.push(key(3));
     let result = decide_reachability(
         &product,
         &[false, true, false, false],
@@ -229,7 +249,10 @@ fn positive_nonreach_has_infinite_expected_until_even_with_zero_costs() {
         assert_eq!(result.values[0], ExtRational::PlusInfinity);
         assert_eq!(result.values[1], ExtRational::Finite(ratio(0, 1)));
     }
-    product.edges.push(edge(0, 1, 1, 1, 13));
+    let mut proper = product.edges[1].clone();
+    proper.probability = ratio(1, 1);
+    proper.choice = ProductAction::PostState(Box::new(key(13)));
+    product.edges.push(proper);
     product.edges.sort_by_key(|edge| edge.from);
     let result = decide_expected_reward(
         &product,
@@ -262,7 +285,7 @@ fn target_leak_without_failure_keeps_expected_reward_finite() {
     for edge in product
         .edges
         .iter_mut()
-        .filter(|edge| edge.from == ProbStateId(0))
+        .filter(|edge| edge.from.index() == 0)
     {
         edge.rewards[0].1 = Value::Integer(Integer::one());
     }
@@ -306,7 +329,12 @@ fn pending_post_state_resolutions_remain_scheduler_choices_after_the_draw() {
     };
     assert!(matches!(first.choice, ProductAction::PostState(_)));
     assert!(matches!(second.choice, ProductAction::PostState(_)));
-    assert_ne!(first.choice, second.choice);
+    let (ProductAction::PostState(first_key), ProductAction::PostState(second_key)) =
+        (&first.choice, &second.choice)
+    else {
+        panic!("post-state action keys")
+    };
+    assert_ne!(first_key, second_key);
     assert_eq!(first.probability, ratio(1, 1));
     assert_eq!(second.probability, ratio(1, 1));
     let mut target = vec![false; product.states.len()];
