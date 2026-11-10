@@ -240,7 +240,7 @@ equal inputs.
 | `source_unions` | every final emission's `SelectedSourceUnionRow`, in producer order: `{ "structural_node", "source_authority", "source_identity", "qualified_declaration", "type_handle", "settled_key", "members" }`; each ordered member is `{ "declaration", "identifier", "payload_nodes", "payload" }` |
 | `source_operations` | every final emission's source-operation identity row (FR-390 "Source-declared operation calls from the reader"), in producer order: `{ "structural_node", "source_authority", "source_identity", "anchor_id" }`, with `structural_node` the wire node id string of the source-declared `state`/`operation_anchor` node, `source_authority` the source authority of the declaring source unit, `source_identity` the original source operation identity (the operation name as the source declares it, qualified by its declaring source type) and `anchor_id` the full anchor id of that node |
 
-All six members are required. The reader SHALL reject `/1`, `/2`, `/3`, an absent member,
+A document whose `format` is `quire.checked-handoff.identities/3` is refused as the old format, with no read of its rows and no fallback to an empty `source_operations`. All six members are required. The reader SHALL reject `/1`, `/2`, `/3`, an absent member,
 an unknown or repeated member and a malformed row; it SHALL NOT supply an empty
 default, read a legacy variant or silently omit a row that cannot be represented.
 The writer SHALL emit an empty `source_records` array only when the admitted

@@ -256,7 +256,7 @@ claim sites, whatever their extents, result bounds or path conditions.
 result bound, for every assignment of its extent roots under which its
 path condition holds. `check` proves definedness and narrow ranges under
 those same guards (FR-093's definedness walk, `check::facts`), so a body `check` admits never
-yields a claim that fails on an assignment `check` excluded. Under `CheckMode::Kernel` the checker records no range or nonzero obligation for an integer `div`, `rem` or `mod` (FR-495), so a Kernel-checked package can hold a claim that a candidate refutes (QSpec TC-973 VV-05 and VV-08); under `CheckMode::Linked` it cannot, and a narrowing operand that leaves its range is refused at admission.
+yields a claim that fails on an assignment `check` excluded. Under `CheckMode::Linked` a package holds no such failing claim, and a narrowing operand that leaves its range is refused at admission. `CheckMode::Kernel` leaves obligations to the kernel (FR-495 for integer `div`, `rem` and `mod`, which record no range or nonzero obligation; FR-562-AC-6), so a Kernel-checked package can hold a claim that a candidate refutes (QSpec TC-973 VV-05 and VV-08).
 
 A narrow wraps exactly one expression. A narrow whose operand is not a
 scalar operation application (a literal, a parameter or binder read, a
