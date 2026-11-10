@@ -456,7 +456,7 @@ fn cancellation_inside_qualified_reward_evaluation_stops_and_old_actions_still_w
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::{Arc, OnceLock};
     let source = claim(
-        &draws("if lost then 2 else 6"),
+        &draws("2 * (if lost then 1 else 3)"),
         "every scheduler",
         ">=",
         "4",
