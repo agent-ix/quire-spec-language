@@ -17,6 +17,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-198
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-199
+    type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-126
     type: depends_on
 ---
@@ -531,6 +533,113 @@ change the bytes or interpretation of either existing probability profile.
   extensions, including native FR-202 reward witnesses and FR-413 wire,
   remain outside this profile.
 
+### Closed unweighted DTMC long-run document profile
+
+For a checked unweighted `long-run fraction holds(P)` claim under an
+authored workload in the untimed infinite-trace profile, the codec SHALL
+admit the separate objective profile
+`"quire.probability-objective/dtmc-long-run/v1"`. The objective SHALL have
+exactly `profile`, `predicate_states`, `optimization` and `fairness`;
+`optimization` SHALL be `"workload"` and `fairness` SHALL be the empty
+array. `predicate_states` SHALL be the complete ascending set of reachable
+complete product keys where the checked state predicate P holds. It is
+extensional evidence, not a target boundary: the checker SHALL evaluate P
+independently on the entire original reachable graph and compare the set.
+It SHALL rederive the workload from the checked claim and admitted subject,
+not from that set, values, component rows or a producer's graph.
+
+- Admission SHALL require one initial state, at most one actual S3
+  binding, no clocks or authored fairness, and FR-196's existing Markov
+  single-post successor restrictions. The finite original graph MAY
+  cycle. At every live state the authored workload SHALL fully resolve
+  semantic operation/receiver/non-random-argument choices and typed draws
+  to one normalized distribution, without residual scheduler or post-state
+  choice. A terminal SHALL use the existing infinite-trace stutter
+  semantics: its same complete key has a probability-one self-loop and
+  its P label is retained. No synthetic state/key or operation identity
+  SHALL be invented for that implicit continuation. P states SHALL NOT
+  absorb an enabled outgoing transition. The producer and checker SHALL
+  preserve actual binding admission; zero instances use the existing
+  vacuous settlement without a fabricated state or document.
+- The document SHALL have exactly `identity`, `objective`, `kind`,
+  `values` and `components`, with `kind` equal to `"long-run"`; `ranking`
+  and `policy` SHALL be absent. Identity, exact rationals, full six-part
+  binding-bearing model keys with null absent monitor/accumulator/pending,
+  strict canonical JSON and unpadded base64url retain the existing owner
+  contracts. `values` SHALL cover exactly the entire independently rebuilt
+  original reachable graph, ordered by decoded complete key octets, with
+  values in [0,1]. Reachability ranks or target labels SHALL NOT be used
+  to substitute for long-run evidence.
+- Each component SHALL use QSpec FR-331's existing exact
+  `{value, gain, bias}` shape. `value` is `rho_C` in [0,1]; `gain` SHALL
+  equal `rho_C`, the average original unweighted indicator reward in
+  FR-199's result. `bias` SHALL have exactly the existing `{state, value}`
+  rows: every member of that component once, sorted by decoded complete
+  key, with signed exact rational bias values. Components SHALL be sorted
+  by their first bias key. Bias keys identify the claimed membership;
+  no component id, producer SCC number, trusted partition or additional
+  top-level field is introduced. Empty components, duplicate/out-of-order
+  rows, duplicate components, missing members and unknown members SHALL
+  be rejected rather than normalized.
+- The checker SHALL independently derive every positive-support SCC and
+  closed bottom SCC (BSCC) of the original graph with its own bounded
+  graph algorithms. The component list's bias-key sets SHALL match
+  exactly those BSCCs, disjointly and completely; transient states SHALL
+  occur in no component. This comparison SHALL NOT trust a producer's
+  partition, even when its per-row equalities hold. There SHALL be at
+  least one BSCC in the complete finite graph. In each BSCC C the checker
+  SHALL require bias zero at C's first complete key and check, at every
+  s in C, `gain_C = rho_C` and
+  `h(s) = [P(s)] - rho_C + sum_t p(s,t) * h(t)`.
+  Thus the centered reward `[P]-rho_C` has gain `gain_C-rho_C = 0`,
+  exactly CE-3's condition. The transported gain remains FR-199's
+  original-reward gain, not a second independently chosen component
+  value. A different additive bias normalization SHALL NOT be silently
+  rewritten into canonical evidence. The checker SHALL solve no equation,
+  compute no stationary distribution and run no numerical iteration.
+- Every state in C SHALL have `V(s) = rho_C`. At each transient state the
+  checker SHALL check `V(s) = sum_t p(s,t) * V(t)` using the original
+  workload distribution. These are the exact expected-component-value
+  conditions: after all independently derived BSCCs are fixed, the
+  remaining finite states are transient and the harmonic extension is
+  unique. No reachability positive-value rank is required for this
+  `long-run` kind; neither a nested certificate nor a new transport member
+  is introduced. Exact `AtLeast` and `AtMost` proofs SHALL compare the
+  initial V against the checked threshold inclusively, and SHALL be
+  emitted only after independent acceptance. Thresholds and S3 constant
+  evaluation SHALL use the existing exact checked conversion and caller
+  limits. A valid document does not by itself become an FR-202 refutation.
+- Conflicting identity SHALL refuse before enumeration. A changed
+  predicate-state set, optimization or profile for an otherwise admitted
+  claim SHALL refuse as objective mismatch before acceptance. Structural
+  coverage/ordering/member failures SHALL reject `Malformed` at member
+  `values` or `components` as appropriate. A component partition mismatch
+  SHALL reject `InequalityFails` at the smallest complete key whose
+  claimed component membership differs from its independently rederived
+  BSCC membership, treating a transient state's membership as absent.
+  An entirely missing component therefore uses its first key. A wrong
+  component gain, normalization or
+  state equation SHALL reject `InequalityFails` at the first failing key
+  in complete-key order; a component-wide gain failure uses its first key.
+  A wrong initial threshold SHALL reject `ThresholdMissed` at the initial
+  complete key. No altered model-only key or foreign binding is an alias.
+- Source/document admission, exact key construction, complete graph
+  expansion, predicate/workload evaluation, SCC and membership passes,
+  bias/value storage and exact arithmetic SHALL obey actual caller byte,
+  state/edge, work/storage and scalar/rational limits and cancellation.
+  Exhaustion or cancellation SHALL retain its typed stop and actual
+  control/consumption, without acceptance or truth values. Undefined
+  reachable predicate/workload evaluation SHALL preserve the existing
+  typed undefined/refusal path and SHALL NOT be coerced to false, zero
+  or a missing component. Weighted forms are outside this profile;
+  the existing `Unsupported(ZeroWeightComponent)` obligation for those
+  forms remains in FR-199 and is not converted into an unweighted proof.
+  General MDP/every-scheduler, fairness, timed, multi-post, weighted,
+  interval and refutation profiles, including shared FR-413 wire, remain
+  explicitly unsupported here. All earlier profiles retain their bytes,
+  admission and verdicts. No upstream budget API is claimed delivered by
+  this specification.
+
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
@@ -561,6 +670,10 @@ change the bytes or interpretation of either existing probability profile.
 | FR-201-AC-24 | In a transient SCC, a goes to b with probability 1, b to a with 1/2, target g with 1/4 and closed failure f with 1/4. Values a=b=1/2, g=1, f=0 and ranks a=2,b=1,g=f=0 accept; both SCC members having condensation rank 1 rejects RankBroken. A fully authored workload at s choosing equally between deterministic return-to-s and a distribution g:1/3,f:2/3 resolves to s:1/2,g:1/6,f:1/3 and accepts exact value 1/3, rank 1 on either workload bound at equality; 2/5 AtLeast and 1/4 AtMost reject. | Test |
 | FR-201-AC-25 | AC-23/24 documents round-trip canonically; wrong values, distances, missing/extra coverage, foreign binding, altered complete model key, model-only key, changed derived targets/optimization or mismatched identity prevent acceptance. Changed source probabilities that falsify equations reject; equivalent source changes may accept. A live state with stay and exit scheduler choices refuses as unsupported even if a producer supplies a policy or equal values, including when that state lies beyond an early target. Unresolved workload, fairness, clocks, rewards, other formulas, multi-post and multiple bindings/initials remain unsupported. Existing profile bytes and verdicts are unchanged. | Test |
 | FR-201-AC-26 | AC-23/24 independently check with no solver dependency. Source/document/key byte, state/edge, graph work/storage and scalar/rational budgets are exercised at exhaustion, including SCC, reverse reachability and distance construction; actual typed limit and consumption are retained. Pre-cancellation and cancellation during each pass or exact sum stop without acceptance or truth values; no fabricated upstream key-budget API or cyclic refutation is claimed. | Test |
+| FR-201-AC-27 | Under Steady, the original up/down chain with up-to-up 1999/2000 and down-to-up 9/10 accepts a long-run document with one component value and gain 1800/1801, bias 0 at up and -2000/1801 at down (choose the fixture's canonical key order up before down), and both state values 1800/1801. Both workload bound sides accept at equality; AtLeast 1 and AtMost 999/1000 reject ThresholdMissed. Changing the bias, setting transported gain to 0, or replacing long-run evidence by reachability values prevents acceptance. No P state absorbs its original transitions. | Test |
+| FR-201-AC-28 | A transient self-cycling s goes to s with 1/2, P-terminal g with 1/6 and not-P-terminal f with 1/3. Independent terminal stutter gives BSCCs {g} and {f}, respective component value/gain 1 and 0 and bias 0; values s=1/3,g=1,f=0 accept both workload bounds at 1/3. A two-state deterministic cycle alternates P and not-P and accepts rho=gain=1/2 with normalized biases 0,-1/2 in that key order, despite periodicity. Merging/splitting/omitting a BSCC, adding a transient bias member or changing transient V rejects; harmonic values alone cannot certify a wrong recurrent value. | Test |
+| FR-201-AC-29 | AC-27/28 documents round-trip canonically through a fresh checker process with no analyzer/provider dependency. Noncanonical rational/JSON/key encodings, duplicate or incomplete rows/components, foreign bindings, model-only keys, wrong normalization or missing components prevent acceptance. Identity conflict refuses before enumeration; a changed derived predicate set/optimization refuses objective mismatch. Equivalent source changes that preserve every checked condition may accept. Earlier profile bytes and verdicts remain unchanged. | Test |
+| FR-201-AC-30 | Pre-cancellation and exhaustion/cancellation during admission, full-key creation, workload/predicate evaluation, SCC/membership passes and exact sums retain typed nonacceptance without truth values under the actual caller control. Reachable undefined P/workload evaluation is never relabelled false/zero. Weighted claims emit no document of this profile; the separate existing FR-199 weighted zero-weight control retains Unsupported(ZeroWeightComponent). Unresolved workload, every-scheduler/MDP, fairness, clocks, multi-post, multiple initials/bindings and unsupported kind/profile remain explicitly unsupported. Zero instances settle vacuously without a fabricated binding or document. | Test |
 
 ## Dependencies
 
