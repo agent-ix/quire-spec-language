@@ -751,6 +751,8 @@ pub(crate) struct Typing<'t> {
     clock_bits: &'t [(DeclarationKey, StateField)],
     /// The run's map-key names, when the caller keeps them.
     names: Option<&'t KeyNames>,
+    /// Effective fields retained by the model system, including clock shells.
+    state_fields: Option<&'t BTreeMap<DeclarationKey, Vec<StateField>>>,
 }
 
 /// The names a run's state keys write as map keys, each with the RFC 8785
@@ -818,7 +820,7 @@ impl KeyNames {
 
 /// The map key a population's objects are written under.
 fn population_name(population: &DeclarationKey) -> Enc {
-    Enc::tagged("text", vec![("value", declaration_enc_text(population))])
+    projection::population_name(population)
 }
 
 impl<'t> Typing<'t> {
@@ -830,6 +832,7 @@ impl<'t> Typing<'t> {
             clock_counts: &[],
             clock_bits: &[],
             names: None,
+            state_fields: None,
         }
     }
 
@@ -845,6 +848,7 @@ impl<'t> Typing<'t> {
             clock_counts: &[],
             clock_bits: &[],
             names: None,
+            state_fields: None,
         }
     }
 
@@ -866,6 +870,18 @@ impl<'t> Typing<'t> {
     pub(crate) fn with_names(self, names: &'t KeyNames) -> Self {
         Self {
             names: Some(names),
+            ..self
+        }
+    }
+
+    /// Borrow the model system's effective fields rather than constructing
+    /// them again for each object's key.
+    pub(crate) fn with_state_fields(
+        self,
+        fields: &'t BTreeMap<DeclarationKey, Vec<StateField>>,
+    ) -> Self {
+        Self {
+            state_fields: Some(fields),
             ..self
         }
     }
@@ -1027,28 +1043,11 @@ pub(crate) fn map_enc(entries: Vec<(Enc, Enc)>) -> Enc {
     Enc::Map(entries)
 }
 
-/// A map entry with the bytes [`map_enc`] orders it by.
-fn keyed_entry(key: Enc, value: Enc) -> (Vec<u8>, Enc, Enc) {
-    let (bytes, key) = keyed_name(key);
-    (bytes, key, value)
-}
-
 /// [`map_enc`] of entries that carry their key's RFC 8785 bytes, so a caller
 /// that writes one key in many maps encodes it once.
 pub(crate) fn sorted_map_enc(mut keyed: Vec<(Vec<u8>, Enc, Enc)>) -> Enc {
     keyed.sort_by(|left, right| left.0.cmp(&right.0));
-    Enc::tagged(
-        "map",
-        vec![(
-            "entries",
-            Enc::Array(
-                keyed
-                    .into_iter()
-                    .map(|(_, key, value)| Enc::Object(vec![("key", key), ("value", value)]))
-                    .collect(),
-            ),
-        )],
-    )
+    projection::sorted_map(keyed)
 }
 
 /// The `semantic` member of a model state's key (FR-120 "State, state key
@@ -1060,72 +1059,7 @@ pub(crate) fn sorted_map_enc(mut keyed: Vec<(Vec<u8>, Enc, Enc)>) -> Enc {
 /// its completeness and its instance pairs in ascending canonical order, so
 /// two states differing only in their extents have different keys.
 pub(crate) fn semantic_enc(model: &StateModel, state: &ModelState, typing: Typing<'_>) -> Enc {
-    let fresh = KeyNames::default();
-    let names = typing.names.unwrap_or(&fresh);
-    let mut populations = Vec::new();
-    for (population, objects) in &state.populations {
-        let mut entries = Vec::new();
-        for (key, object) in objects {
-            let Some((bytes, reference)) = names.reference(model, &object.type_identity, key)
-            else {
-                return Enc::Unencodable("an object whose reference does not resolve");
-            };
-            let record = object_enc(model, object, typing, &|_| None);
-            entries.push((bytes, reference, record));
-        }
-        let (bytes, name) = names.population(population);
-        populations.push((bytes, name, sorted_map_enc(entries)));
-    }
-    if !state.extents.is_empty() {
-        populations.push(keyed_entry(
-            Enc::tagged("text", vec![("value", Enc::text("relationships"))]),
-            extents_enc(state),
-        ));
-    }
-    sorted_map_enc(populations)
-}
-
-/// The listed relationship extents of `state`: relationship identity text to
-/// `{complete, instances}`, the instances as `{source, target}` pairs
-/// ascending by canonical bytes, repeats kept (admission keeps a repeated
-/// pair when neither end is unique).
-fn extents_enc(state: &ModelState) -> Enc {
-    let limits = Limits::new(u64::MAX);
-    let entries = state
-        .extents
-        .iter()
-        .map(|extent| {
-            let mut pairs: Vec<(Vec<u8>, Enc)> = extent
-                .instances
-                .iter()
-                .map(|(source, target)| {
-                    let pair = Enc::Object(vec![
-                        ("source", reference_enc(source)),
-                        ("target", reference_enc(target)),
-                    ]);
-                    (
-                        quire_canonical::to_vec(&pair, limits).unwrap_or_default(),
-                        pair,
-                    )
-                })
-                .collect();
-            pairs.sort_by(|left, right| left.0.cmp(&right.0));
-            (
-                Enc::tagged(
-                    "text",
-                    vec![("value", declaration_enc_text(&extent.relationship))],
-                ),
-                Enc::Object(vec![
-                    ("complete", Enc::Bool(extent.complete)),
-                    (
-                        "instances",
-                        Enc::Array(pairs.into_iter().map(|(_, pair)| pair).collect()),
-                    ),
-                ]),
-            )
-        })
-        .collect();
-    map_enc(entries)
+    projection::semantic(model, state, typing)
 }
 
 /// One object's `record` in a state key (FR-120): its type name and its
@@ -1137,124 +1071,19 @@ pub(super) fn object_enc(
     typing: Typing<'_>,
     placeholder: &Placeholder<'_>,
 ) -> Enc {
-    let Ok(Some(fields)) = model.fields(&object.type_identity) else {
-        return Enc::Unencodable("an object of an undeclared type");
-    };
-    let mut fields: Vec<Enc> = fields
-        .iter()
-        .map(|field| {
-            // QSpec FR-181: a field declared `Option<T>` holds an option
-            // value; an absent presence-optional field is a plain `null`
-            // entry; a record, tuple, union or enum value takes its declared
-            // form from `typing`.
-            let value = object.fields.get(&field.key).map_or(Enc::Null, |value| {
-                value_enc_with(value, typing, placeholder)
-            });
-            Enc::Object(vec![
-                ("name", Enc::text(field.name.clone())),
-                ("value", value),
-            ])
-        })
-        .collect();
-    // A collection of bare clocks holds one `Clock` tuple per element, the
-    // shell FR-230 gives a present clock place, so two states that differ
-    // in its element count have different keys.
-    for (type_key, field, _, _) in typing.clock_counts {
-        if *type_key != object.type_identity {
-            continue;
-        }
-        let elements = match object.fields.get(&field.key) {
-            Some(Value::Integer(count)) => (0..count.to_u64().unwrap_or(0))
-                .map(|_| clock_shell_enc())
-                .collect(),
-            // FR-230-AC-42: a `Sequence<Option<Clock>>` writes each element's
-            // option shell, `null` when absent and a `Clock` shell when
-            // present.
-            Some(Value::Collection(bits)) => bits
-                .elements()
-                .iter()
-                .map(|bit| {
-                    let shell = if matches!(bit, Value::Boolean(true)) {
-                        clock_shell_enc()
-                    } else {
-                        Enc::Null
-                    };
-                    Enc::tagged("option", vec![("value", shell)])
-                })
-                .collect(),
-            _ => continue,
-        };
-        fields.push(Enc::Object(vec![
-            ("name", Enc::text(field.name.clone())),
-            (
-                "value",
-                Enc::tagged("sequence", vec![("elements", Enc::Array(elements))]),
-            ),
-        ]));
-    }
-    // FR-230 "Presence bit": an `Option<Clock>` field writes its option
-    // shell, `null` when absent and a `Clock` shell when present.
-    for (type_key, field) in typing.clock_bits {
-        if *type_key != object.type_identity {
-            continue;
-        }
-        let present = matches!(object.fields.get(&field.key), Some(Value::Boolean(true)));
-        let shell = if present {
-            clock_shell_enc()
-        } else {
-            Enc::Null
-        };
-        fields.push(Enc::Object(vec![
-            ("name", Enc::text(field.name.clone())),
-            ("value", Enc::tagged("option", vec![("value", shell)])),
-        ]));
-    }
-    Enc::tagged(
-        "record",
-        vec![
-            ("name", declaration_enc_text(&object.type_identity)),
-            ("fields", Enc::Array(fields)),
-        ],
-    )
+    projection::object(model, object, typing, placeholder)
 }
 
 /// A present clock place's shell, FR-230's
 /// `{"type":"tuple","name":"Clock","components":[]}`.
 pub(crate) fn clock_shell_enc() -> Enc {
-    Enc::tagged(
-        "tuple",
-        vec![
-            ("name", Enc::text("Clock")),
-            ("components", Enc::Array(Vec::new())),
-        ],
-    )
-}
-
-/// A declaration's identity text as a string value.
-fn declaration_enc_text(key: &DeclarationKey) -> Enc {
-    Enc::Declaration(key.clone())
-}
-
-/// The empty `map`.
-fn empty_map() -> Enc {
-    map_enc(Vec::new())
+    projection::clock_shell()
 }
 
 /// FR-181's state key for a model state (FR-120 "State, state key and
-/// anchor"): the five members a model state does not use are empty maps.
+/// anchor"): the unused members are empty maps.
 pub(super) fn model_key(model: &StateModel, state: &ModelState, typing: Typing<'_>) -> ModelKey {
-    ModelKey(Enc::tagged(
-        "simulation-state",
-        vec![
-            ("semantic", semantic_enc(model, state, typing)),
-            ("control", empty_map()),
-            ("queues", empty_map()),
-            ("roles", empty_map()),
-            ("observations", empty_map()),
-            ("bounds", empty_map()),
-            ("memory", empty_map()),
-        ],
-    ))
+    ModelKey(projection::model_state(model, state, typing))
 }
 
 #[cfg(test)]

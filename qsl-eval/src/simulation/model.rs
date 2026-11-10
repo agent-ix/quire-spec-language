@@ -582,6 +582,7 @@ impl<'a> ModelSystem<'a> {
         self.value_typing()
             .with_clock_members(&self.clock_counts, &self.clock_bits)
             .with_names(&self.key_names)
+            .with_state_fields(&self.fields)
     }
 
     /// [`Self::typing`] for values alone, which hold no element-count
