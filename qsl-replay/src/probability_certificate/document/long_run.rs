@@ -133,9 +133,7 @@ fn read(
     cx.work(bytes.len() as u64)?;
     let parsed = quire_canonical::read_bounded(bytes, cx.limits.bytes, cx.limits.storage_bytes)
         .map_err(|_| ProbabilityDocumentError::Malformed)?;
-    if parsed.root().get("components").is_none() {
-        return Err(ProbabilityDocumentError::MissingMember("components"));
-    }
+    admit_members(parsed.root(), cx)?;
     drop(parsed);
     let wire: Document =
         serde_json::from_slice(bytes).map_err(|_| ProbabilityDocumentError::Malformed)?;
@@ -214,6 +212,44 @@ fn read(
         values,
         components,
     })
+}
+
+// Keep structural rejection loci separate from JSON and scalar syntax errors.
+fn admit_members(
+    root: quire_canonical::NodeRef<'_>,
+    cx: &mut Context<'_>,
+) -> Result<(), ProbabilityDocumentError> {
+    fn rows(
+        node: Option<quire_canonical::NodeRef<'_>>,
+        member: &'static str,
+        cx: &mut Context<'_>,
+    ) -> Result<(), ProbabilityDocumentError> {
+        let Some(quire_canonical::Node::Array(rows)) = node.map(|node| node.node()) else {
+            return Err(ProbabilityDocumentError::MalformedMember(member));
+        };
+        for row in rows {
+            cx.work(1)?;
+            if row.get("state").is_none() || row.get("value").is_none() {
+                return Err(ProbabilityDocumentError::MalformedMember(member));
+            }
+        }
+        Ok(())
+    }
+    rows(root.get("values"), "values", cx)?;
+    let components = root
+        .get("components")
+        .ok_or(ProbabilityDocumentError::MissingMember("components"))?;
+    let quire_canonical::Node::Array(components) = components.node() else {
+        return Err(ProbabilityDocumentError::MalformedMember("components"));
+    };
+    for component in components {
+        cx.work(1)?;
+        if component.get("value").is_none() || component.get("gain").is_none() {
+            return Err(ProbabilityDocumentError::MalformedMember("components"));
+        }
+        rows(component.get("bias"), "components", cx)?;
+    }
+    Ok(())
 }
 
 fn read_rows(

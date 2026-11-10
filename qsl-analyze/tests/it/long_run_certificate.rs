@@ -394,3 +394,166 @@ fn changed_optimization_refuses_the_checked_objective() {
         Err(ProbabilityDocumentError::ObjectiveMismatch)
     );
 }
+
+#[trace("TC-1401", "FR-201-AC-29")]
+#[test]
+fn missing_long_run_evidence_members_reject_at_their_public_member_locus() {
+    use qsl_replay::{
+        ProbabilityCertificateLocus, ProbabilityCertificateRejection, ProbabilityCertificateRule,
+    };
+    let world = availability();
+    let bytes = produce(&world, "Lower");
+    let original: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    for member in ["values", "bias", "gain", "value"] {
+        let mut document = original.clone();
+        let locus = if member == "values" {
+            document.as_object_mut().unwrap().remove(member);
+            "values"
+        } else {
+            document["components"][0]
+                .as_object_mut()
+                .unwrap()
+                .remove(member);
+            "components"
+        };
+        let bytes = serde_json::to_vec(&document).unwrap();
+        assert_eq!(
+            check(&world, "Lower", &bytes, &Cancel::new(), limits()),
+            Ok(ExactProbabilityCertificateCheck::Rejected(
+                ProbabilityCertificateRejection {
+                    rule: ProbabilityCertificateRule::Malformed,
+                    at: ProbabilityCertificateLocus::Member(locus)
+                }
+            )),
+            "missing {member}"
+        );
+    }
+    assert!(matches!(
+        check(&world, "Lower", &bytes, &Cancel::new(), limits()).unwrap(),
+        ExactProbabilityCertificateCheck::Accepted(_)
+    ));
+}
+
+#[trace("TC-1401", "FR-201-AC-29")]
+#[test]
+fn conflicting_long_run_identity_refuses_before_key_enumeration() {
+    use qsl_replay::{
+        check_long_run_probability_certificate_observing, LongRunProbabilityPhase as Phase,
+    };
+    let world = availability();
+    let bytes = produce(&world, "Lower");
+    let mut document =
+        read_long_run_probability_certificate(&bytes, limits(), &Cancel::new()).unwrap();
+    document.identity = qsl_replay::probabilistic_claim_identity(world.claim("Upper")).unwrap();
+    let foreign =
+        write_long_run_probability_certificate(&document, limits(), &Cancel::new()).unwrap();
+    let system = ModelSystem::new(world.subject().simulation).unwrap();
+    let item = qsl_replay::probabilistic_claim_identity(world.claim("Lower")).unwrap();
+    let mut entered = false;
+    assert_eq!(
+        check_long_run_probability_certificate_observing(
+            &system,
+            world.package.graph().probabilistic_model().claims(),
+            &item,
+            &foreign,
+            limits(),
+            &Cancel::new(),
+            &mut |phase| {
+                if phase == Phase::Key {
+                    entered = true;
+                }
+            }
+        ),
+        Err(ProbabilityDocumentError::IdentityMismatch)
+    );
+    assert!(
+        !entered,
+        "foreign identity must stop before the first key is enumerated"
+    );
+    let mut entered = false;
+    let control = check_long_run_probability_certificate_observing(
+        &system,
+        world.package.graph().probabilistic_model().claims(),
+        &item,
+        &bytes,
+        limits(),
+        &Cancel::new(),
+        &mut |phase| {
+            if phase == Phase::Key {
+                entered = true;
+            }
+        },
+    )
+    .unwrap();
+    assert!(entered);
+    assert!(matches!(
+        control,
+        ExactProbabilityCertificateCheck::Accepted(_)
+    ));
+}
+
+#[trace("TC-1401", "FR-201-AC-29")]
+#[test]
+fn conflicting_identity_precedes_source_provision_and_compilation() {
+    use qsl_replay::{
+        check_probability_certificate_source, ByteProvision, DefinitionSourceRef,
+        ProbabilitySourceError, ProbabilitySourceLimits, ProbabilitySourceRequest,
+    };
+    let world = availability();
+    let bytes = produce(&world, "Lower");
+    let mut document =
+        read_long_run_probability_certificate(&bytes, limits(), &Cancel::new()).unwrap();
+    document.identity = qsl_replay::probabilistic_claim_identity(world.claim("Upper")).unwrap();
+    let foreign =
+        write_long_run_probability_certificate(&document, limits(), &Cancel::new()).unwrap();
+    let item = qsl_replay::probabilistic_claim_identity(world.claim("Lower")).unwrap();
+    let source = DefinitionSourceRef::from_wire(("test".to_owned(), "unprovided".to_owned()));
+    let provision = ByteProvision::admit(
+        vec![],
+        vec![],
+        std::iter::empty::<(String, &DefinitionSourceRef)>(),
+    )
+    .unwrap();
+    let expected = qsl_replay::spine::SourceComponent {
+        authority: "test".to_owned(),
+        identity: "unprovided".to_owned(),
+        content: "invalid source".to_owned(),
+    };
+    let check = |certificate: &[u8]| {
+        check_probability_certificate_source(
+            ProbabilitySourceRequest {
+                source: &source,
+                expected_source: &expected,
+                package_name: "never-compiled",
+                provision: &provision,
+                item: &item,
+                initial: vec![qsl_semantics::model::observation::DocumentRef {
+                    authority: "test".to_owned(),
+                    identity: "absent-state".to_owned(),
+                }],
+                universes: vec![],
+                certificate,
+            },
+            ProbabilitySourceLimits {
+                spine: qsl_replay::spine::SpineLimits::default(),
+                observation: qsl_semantics::model::observation::ObservationLimits::default(),
+                expansion: qsl_eval::simulation::model::ExpansionLimits {
+                    max_candidates: 100_000,
+                },
+                scalar: qsl_replay::AccountingLimits::default().0,
+                document: limits(),
+            },
+            &Cancel::new(),
+        )
+    };
+    assert!(matches!(
+        check(&foreign),
+        Err(ProbabilitySourceError::Document(
+            ProbabilityDocumentError::IdentityMismatch
+        ))
+    ));
+    assert!(
+        matches!(check(&bytes), Err(ProbabilitySourceError::SourceMismatch)),
+        "matching identity must reach the missing provision control"
+    );
+}
