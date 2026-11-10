@@ -27,6 +27,7 @@ use crate::hybrid::{BoundDimension, SolverHorizon};
 use qsl_cst::format::FormatRefusal;
 use qsl_foundation::diagnostic::{Code, Locus, StageFailure, Staged};
 use qsl_foundation::source::provenance::{OccurrenceKey, RawSourceRef};
+use qsl_foundation::source::{SourceLabel, SourceReadCause};
 use qsl_foundation::{LocatedSpan, RequestIndex};
 use qsl_semantics::model::observation::AdmissionFailure;
 use quire_exact::{CancelCause, NodeKey};
@@ -69,15 +70,7 @@ impl From<&FormatRefusal> for FormatOutcomeRefusal {
         let diagnostic = refusal.diagnostic();
         Self {
             category: diagnostic.code.category(),
-            diagnostic: OutcomeDiagnostic::new(
-                Some(diagnostic.cause.as_str()),
-                diagnostic.code.as_str(),
-                diagnostic
-                    .region
-                    .as_ref()
-                    .map(|region| OutcomeLocus::from(&Locus::Region(region.clone()))),
-                diagnostic.message.clone(),
-            ),
+            diagnostic: OutcomeDiagnostic::from_source_diagnostic(diagnostic),
         }
     }
 }
@@ -1321,6 +1314,15 @@ pub struct OutcomeDiagnostic {
     code: String,
     locus: Option<OutcomeLocus>,
     message: String,
+    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "serialize_source_label")]
+    label: Option<SourceLabel>,
+}
+
+fn serialize_source_label<S>(label: &Option<SourceLabel>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    label.map(SourceLabel::as_str).serialize(serializer)
 }
 
 impl OutcomeDiagnostic {
@@ -1337,12 +1339,37 @@ impl OutcomeDiagnostic {
             code: code.into(),
             locus,
             message: message.into(),
+            label: None,
         }
+    }
+
+    /// Project a source diagnostic without bytes or an admitted source.
+    ///
+    /// Retains the typed cause, optional region and human message. A blank
+    /// label retains the source owner's exact label; other causes omit it.
+    pub fn from_source_diagnostic(diagnostic: &qsl_cst::diagnostic::CompleteDiagnostic) -> Self {
+        let mut projected = Self::new(
+            Some(diagnostic.cause.as_str()),
+            diagnostic.code.as_str(),
+            diagnostic
+                .region
+                .as_ref()
+                .map(|region| OutcomeLocus::from(&Locus::Region(region.clone()))),
+            diagnostic.message.clone(),
+        );
+        projected.label = match diagnostic.cause.identity_cause() {
+            Some(SourceReadCause::BlankLabel { label }) => Some(label),
+            _ => None,
+        };
+        projected
     }
 
     /// The diagnostic of a spine compile refusal: its catalog code, cause,
     /// region and message.
     pub fn from_compile_refusal(refusal: &CompileRefusal) -> Self {
+        if let CompileRefusal::Source(diagnostic) = refusal {
+            return Self::from_source_diagnostic(diagnostic);
+        }
         Self::new(
             refusal.cause(),
             refusal.code().as_str(),

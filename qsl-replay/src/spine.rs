@@ -410,6 +410,7 @@ impl CompileRefusal {
     pub fn cause(&self) -> Option<&'static str> {
         match self {
             Self::UnitList(refusal) => refusal.cause(),
+            Self::Source(diagnostic) => Some(diagnostic.cause.as_str()),
             Self::Check { refusals, .. } => refusals.first()?.cause.cause(),
             Self::Assembly { refusal, .. } => refusal
                 .errors
@@ -423,8 +424,7 @@ impl CompileRefusal {
             Self::Link(refusal) => refusal.cause(),
             Self::Limit(limit) => Some(limit.kind().catalog_cause()),
             Self::Intake { refusal, .. } => refusal.cause.cause(),
-            Self::Source(_)
-            | Self::Forms { .. }
+            Self::Forms { .. }
             | Self::OperationClause { .. }
             | Self::TypeInvariant { .. }
             | Self::Emit(_)

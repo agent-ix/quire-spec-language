@@ -36,6 +36,7 @@ mod refinement_unmapped;
 mod ring_world;
 mod script_search;
 mod static_subject;
+mod source_diagnostic_outcome;
 mod tool_failure;
 mod value_family_end_to_end;
 mod vault_world;
