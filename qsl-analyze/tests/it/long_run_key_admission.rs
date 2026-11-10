@@ -170,13 +170,20 @@ fn producer_cancellation_observes_real_larger_candidate_representation() {
             budget.reached,
             "the owner must consult the caller for a larger frame candidate"
         );
-        let Err(BudgetedProductError::Key(error)) = result else {
-            panic!("candidate cancellation must stop, got {result:?}")
-        };
-        assert_eq!(
-            budget.inner.refusal(error),
-            ProbabilityDocumentError::Cancelled(cause)
-        );
+        match result {
+            Err(BudgetedProductError::Key(error)) => assert_eq!(
+                budget.inner.refusal(error),
+                ProbabilityDocumentError::Cancelled(cause)
+            ),
+            Err(BudgetedProductError::Product(
+                qsl_analyze::exact_probabilistic::ProductRefusal::Stopped(
+                    qsl_analyze::exact_probabilistic::ProductStop::Cancelled(actual),
+                ),
+            )) => assert_eq!(actual, cause),
+            other => {
+                panic!("candidate cancellation must retain the actual caller cause, got {other:?}")
+            }
+        }
     }
 }
 
