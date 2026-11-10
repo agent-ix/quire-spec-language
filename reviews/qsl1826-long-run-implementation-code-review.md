@@ -125,3 +125,70 @@ dispositions:
     ));\n        }\n        rows(component.get(\"bias\"), \"components\", cx)?;\n\
     \    }"
 ```
+
+## New findings (disposition pass 2)
+
+Frozen adoption head b0d6d4d1b181ce21b464db4bfd9e28238d5fa163, actual merged owner base 632caf8cebf0ec21f897a1b6e870c5e79e75b531.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | medium | The new admission and full-product wrappers inspect Cancel::tripped without polling the token, so cancellation requested during reserve-only parse/staging/output can remain unobserved through construction completion. | qsl-replay/src/probability_certificate/key_admission.rs; qsl-replay/src/probability_certificate/document/key.rs:78-83;92-96 |
+
+At exact dependency quire-exact4fe7df6, Cancel::cancel sets cause while Cancel::tripped only reports a cause previously observed by poll. Reading tripped is therefore not a polling boundary. The helper has one work charge before parsing, followed by reservation-only parsing/staging/output. The callback may request cancellation after that charge, without latching it for either wrapper. Fix both wrappers and use actual reservation-phase controls, rather than poll-count offsets. No numerical proof error was identified.
+
+## Dispositions — round 2
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | still-open | Raw owner API adoption is present, but complete requalification of FND-001 remains pending the actual full-product cancellation fix and final frozen-head review; no merge authorization is granted. |
+| FND-004 | still-open | Both new poll wrappers still need to call Cancel::poll before inspecting the recorded cause and pass phase-driven full-product Requested/Deadline controls. |
+
+```yaml
+dispositions:
+- fnd: FND-001
+  outcome: still-open
+  reason: Raw owner API adoption is present, but complete requalification of FND-001
+    remains pending the actual full-product cancellation fix and final frozen-head
+    review; no merge authorization is granted.
+- fnd: FND-004
+  outcome: still-open
+  reason: Both new poll wrappers still need to call Cancel::poll before inspecting
+    the recorded cause and pass phase-driven full-product Requested/Deadline controls.
+```
+
+## Final adoption disposition — round 3
+
+Verified frozen 4129789466f2749ceddf00f8795b99b547e34d4c on merged owner base 632caf8cebf0ec21f897a1b6e870c5e79e75b531. Original findings and all prior disposition rows are preserved above.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Merged owner state_key_bytes_with_budget and weighted_steps_with_budget now feed the original shared ProbabilityKeyAdmission in checker subject enumeration and the private optional producer build bridge. The same mutable meter/storage counter continues through current, undecided frame-candidate, post-state, full-product parse/canonical staging/output, values and component keys; identity.input_bytes is separate from certificate byte limits and model integer representation uses IntegerBits. No legacy raw state-key fallback remains on the qualified long-run path. |
+| FND-004 | fixed | Both admission and full-product wrappers call the original Cancel::poll before inspecting tripped. The public full-product reservation callback test reaches a real parse/staging/output reservation, then issues Requested/Deadline with both the real admission adapter and a reservation-only provider. Denied retains the exact adapter cause, or the wrapper returns the exact direct owner cause; uncancelled controls equal the legacy complete key. No fixed callback/poll offset is used. |
+
+Latest verdict: **PASS for the scoped long-run implementation**. No remaining PR finding or newly observed concrete regression. FND002/003 remain fixed from round1. Mergeable within the explicit implementation boundary; no full AC30/all-expansion qualification.
+
+Independently reviewed all adoption/new caller code at final frozen 4129789466f2749ceddf00f8795b99b547e34d4c against actual merged owner base 632caf8cebf0ec21f897a1b6e870c5e79e75b531 and the original b08cda324 fix source. The complete PR now changes 20 files including two historical review-custody files; all new producer/checker/private-builder/key-adapter/full-key writer and test changes were inspected. Owner PR2654 was independently reviewed separately; its existing contract usage and final original-SR dispositions were read here, without claiming to replace that owner review. No dependency override/pin, new claim profile, policy, CI or manifest change is introduced in this caller delta. Old ProductRequest literals and legacy builder wrappers remain valid; the optional KeyPolicy borrows one budget, and absence retains the old path. The legacy readings cache changes from a pair key to binding-indexed inner maps without changing semantics.
+
+Owner/adoption: ProbabilityKeyAdmission borrows the same Meter, storage count and original Cancel; recreating a view does not reset counters. Checked addition and reserve-before-growth retain storage/representation/work causes. Exact raw/full identity byte limits and allocator/overflow failures remain distinct from document transport/storage and probability scalar limits. Full-product construction admits the canonical reader, raw canonical re-encoding, complete-key staging and destination copy through the same Reservation. Source and real binding identity remain independently checked. The private producer bridge retains typed product, key, cancellation and undefined failures, and the qualified workload path calls the actual owner budgeted expansion API for internal current, undecided-candidate and post-state identity work. Its large-candidate test uses a genuine undecided postcondition (value10..98, actual acceptedpost99), not a synthetic external key callback or count offset. Both Requested and Deadline retain original causes.
+
+Actual merged-owner evidence inspected: 22 selected long_run cases and four fresh-process cases passed at bb577de1f; final b0d6d4d1 differs only by an unused test import. Thirteen existing finite-builder controls passed; touched three-package all-target Clippy and fmt passed on actual merged owner. Following FND004, final23 selected cases at 412978946 pass in /tmp/qsl1826-long-run-fnd004-tests2.log, with touched three-package all-target Clippy and fmt passing in the same prefix logs. Evidence manifest /tmp/qsl1826-long-run-merged-owner-validation.json gives chronology. No reviewer heavy rerun or full workspace/aggregate qualification. Exact/one-short cumulative raw/full-key storage, repeated-call work/storage, larger-post identity bytes, actual internal undecided candidate cancellation, representation IntegerBits versus rational scalar caps, and full-product reserve-phase cancellation have discriminating public assertions plus uncancelled controls. ModelCheckLimit::IdentityInputBytes exposes the real identity.input_bytes setting; constructor/helper controls inspect actual typed owner limits, and the outcome wire control verifies that spelling. Earlier numerical/malformed/coverage fixes remain byte-preserved in source and passing regressions.
+
+Scope boundary independently classified: ModelKeyBudget explicitly covers raw STATE identity work and excludes ordinary model interpretation and the separate transition-identity encoder. Existing ModelTransition::new/embed private reader allocations (frames.rs:77,441), model/interpreter construction and unrelated transition payloads predate this adoption and are not newly claimed bounded here. They remain a prerequisite to full FR201AC30/all-expansion working-storage assurance. The original FND001 names raw model-state and transitive candidate/post STATE keys; those paths now use the required owner scope and are fixed. This is a scoped implementation PASS, not a waiver of complete expansion budgets and not a declaration that all AC30 obligations or QSL1826 are finished. Full repository computed matrix remains unavailable from the recorded attempted run; no matrix coverage figure, whole-repository assurance PASS, or new full semantic campaign is claimed. Plan completion: not assessed.
+
+```yaml
+dispositions:
+- fnd: FND-001
+  outcome: fixed
+  after_excerpt: "let bytes = system\n                    .state_key_bytes_with_budget(state,\
+    \ identity, budget, cancel)\n                    .map_err(Error::Key)?;\n    \
+    \            ProbabilityProductKey::for_model_state_with_budget(\n           \
+    \         reference, &bytes, identity, budget, cancel,\n                )\n  \
+    \              .map_err(Error::Key)"
+- fnd: FND-004
+  outcome: fixed
+  after_excerpt: "fn poll(&mut self) -> Result<(), ReservationDenied> {\n        self.cancel.poll();\n\
+    \        if let Some(cause) = self.cancel.tripped() {\n            return Err(self.deny(ProbabilityDocumentError::Cancelled(cause)));\n\
+    \        }\n        Ok(())\n    }\nlet poll = || {\n        cancel.poll();\n \
+    \       match cancel.tripped() {\n            Some(cause) => Err(ModelKeyError::Cancelled(cause)),\n\
+    \            None => Ok(()),\n        }\n    };"
+```
