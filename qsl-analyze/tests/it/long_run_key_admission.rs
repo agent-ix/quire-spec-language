@@ -133,7 +133,9 @@ impl IntegerDecimalBudget for CancelLarge<'_> {
 }
 impl ModelKeyBudget for CancelLarge<'_> {
     fn integer(&mut self, value: &Integer) -> Result<(), ReservationDenied> {
-        if value >= &Integer::from(10_i64) {
+        // The admitted post is 99. Values 10 through 98 occur only while
+        // the frame enumerates candidates, before the external post-key call.
+        if value >= &Integer::from(10_i64) && value < &Integer::from(99_i64) {
             self.reached = true;
             self.cancel.cancel(self.cause);
         }

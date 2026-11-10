@@ -346,7 +346,7 @@ impl ModelCheckLimit {
 
     /// The request setting name that raises this limit: `model_check.*`,
     /// `expansion.max_candidates`, solver/encoding settings, `accounting.*`,
-    /// `hybrid.max_solver_steps`, `statistical.*`, or `exact_prob.*`.
+    /// `hybrid.max_solver_steps`, `statistical.*`, `exact_prob.*`, or `identity.input_bytes`.
     pub fn setting(self) -> &'static str {
         match self {
             Self::MaxStates => "model_check.max_states",
