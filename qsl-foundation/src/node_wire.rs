@@ -465,7 +465,7 @@ pub fn node_key_from_text(text: &str) -> Result<NodeKey, NodeWireError> {
 ///
 /// # Errors
 /// [`NodeWireError::Denied`] for caller denial; the other variants retain the
-/// legacy parser's shape, construction and native allocation distinctions.
+/// distinctions between invalid shape, invalid identities and native allocation.
 #[ix_trace_rs::string_edge]
 pub fn node_key_from_text_with_budget(
     text: &str,

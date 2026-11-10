@@ -592,6 +592,9 @@ impl StateModel {
 
     /// Resolve an admitted effective type to its actual declaring model node.
     /// Every owner-chain comparison is charged through the caller's work hook.
+    ///
+    /// # Errors
+    /// Returns the work hook's first refusal unchanged.
     pub fn declaration_key_with_work<E>(
         &self,
         effective: &EffectiveId,

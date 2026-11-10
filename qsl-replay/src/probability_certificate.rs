@@ -126,6 +126,10 @@ impl ProbabilityProductKey {
 
     /// Construct the complete formula key using the raw identity policy and
     /// the caller's cumulative work and storage admission.
+    ///
+    /// # Errors
+    /// Returns the owner's identity/encoding refusal or caller denial. A denied
+    /// budget retains the precise caller work/storage/cancellation cause.
     pub fn for_formula_state_with_budget(
         binding: Option<&ObjectReference>,
         model_bytes: &[u8],

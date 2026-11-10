@@ -528,6 +528,9 @@ impl<'a> ModelSystem<'a> {
 
     /// Resolve a checked operation's declaring type without substituting the
     /// receiver's inheriting type. Owner-chain lookup work belongs to the caller.
+    ///
+    /// # Errors
+    /// Returns the work hook's first refusal unchanged.
     pub fn declaration_key_with_work<E>(
         &self,
         effective: &EffectiveId,
