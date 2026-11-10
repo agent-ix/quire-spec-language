@@ -644,6 +644,63 @@ charge exists. Every operation identity QSL emits for a slot expression SHALL
 project, and an unsupported result for one of them is an unmet dependency under
 AC-11 and AC-15.
 
+### Source-declared operation calls from the reader
+
+A slot expression MAY call an operation. An operation is model-owned when a
+selected domain package document declares it (FR-056, FR-094: its anchor's
+context is the package's `model` node) and source-declared when the unit's own
+source declares the type and the operation (FR-105: the `state`/`operation_anchor`
+node's context is a source-declared type). Source-declared operation calls are
+supported on the reader route and on the bytes route (FR-533) exactly as they
+are on the source route: a slot that calls one gives the value and the charge
+log the source route gives. They are not a typed refusal, and they are not
+outside the reader view.
+
+**Source-operation identity row.** The reader view cannot recover a
+source-declared operation from the wire alone, because a source-declared
+operation anchor names no model operation member, and FR-400's operation
+vocabulary resolves a call only through a model operation member. QSL therefore
+SHALL produce, at the model-selection identity stage with the QSL-1377 rows
+(FR-390 above), one source-operation identity row for each source-declared
+`state`/`operation_anchor` node of the emission, distinct from the
+selected-declaration, selected-field, source-record and source-union rows. A row
+carries four fields: the `structural_node` of the anchor, the `source_authority`
+of the declaring source unit, the `source_identity` (the original source
+operation identity: the operation name as the source declares it, qualified by
+its declaring source type), and the `anchor_id`, the full anchor id of the node,
+never a prefix, a display name or a span. The row's key is the pair
+(`source_authority`, `source_identity`); a source-declared operation never shares
+a key with a model-owned operation, whose identity the selected-declaration rows
+carry. The rows are retained from the emission to the checked package and are
+written to, and read from, the `source_operations` member of the identity file
+(FR-531 "The identity file", FR-517). No row is derived from package bytes,
+decoded nodes, display names or source text.
+
+**View creation.** After I2 admits the package, view creation SHALL join each
+source-operation row to its anchor node in the admitted package by `anchor_id`
+and `structural_node`, and SHALL project a call of that anchor to the same
+callable and dispatch closure the source route reaches. A row naming a node the
+package does not hold, naming a node that is not a `state`/`operation_anchor`, or
+whose `source_authority` or `source_identity` disagrees with the anchor's body
+is `UnknownIdentityWitness`; a row of another package or emission is
+`ForeignIdentityWitness`; a source-declared operation anchor that a slot
+reaches and that has no row is `MissingIdentityWitness`. Each is at the
+`Package` locus before any node is projected, with no partial view and no meter
+charge. The reader variant of `read_node` then evaluates the call by the one
+`Machine`, using the same operation execution, function and dispatch lookup as
+the source route.
+
+**Dependency on IR.** IR owns the FR-352 witness kind and the strict-reader
+read of it; this requirement edits neither. Until IR supplies a witness kind
+that accepts a source-declared operation anchor alongside a model-owned one,
+and the `ReadIdentityRows` leg that carries the QSL row to it, a slot that
+calls a source-declared operation reports the typed
+`ViewFailure::Unsupported` with `MissingSelectedJoin` at the `Node` locus of the
+call, which is an unmet dependency (QSL-1398, IR-1213) and not a ruling that
+the call is outside the view. Slot expressions that name only model-owned
+operations, field reads, arithmetic, comparisons, boolean operators and literals
+(QSL-852, TC-142 and TC-1070 to TC-1073) do not depend on this row.
+
 ### Charge points and their order
 
 Within one call the evaluator charges, in this order: the nodes of the slot's
@@ -897,6 +954,10 @@ value; check 6 does not apply to it.
 | FR-390-AC-67 | View creation reports the first unsupported projection by package identity, then locus (`Package` before `Node`), then node key, then reason. A package with a `MissingTypeRepresentation` at a `Node` locus and a `ForeignIdentityWitness` reports `ForeignIdentityWitness`; with `MissingLiteralProjection` at a `Node` locus and `MissingEqualityWitness` reports `MissingEqualityWitness`; with `ForeignIdentityWitness` and `MissingEqualityWitness` (both `Package`) reports `ForeignIdentityWitness`, the reason order breaking the tie; with `MissingIdentityWitness` and `MissingEqualityWitness` reports `MissingIdentityWitness`. The three equality-witness reasons never co-occur over one supply: over a slot that reaches an equality application, a supply with no equality rows reports `MissingEqualityWitness` alone; rows of another package report `ForeignEqualityWitness` alone, also when those rows hold no row of the application; and the package's own rows with the row of the reached application removed report `UnknownEqualityWitness` alone. The equality-witness reasons are at the `Package` locus and charge nothing. | Test (TC-1070) |
 | FR-390-AC-68 | Over recipe **R**'s `Full` recovery predicate (`sum(receipt in recovered.receipts: receipt) = target and not activated`), the slot lists the sources `target`, `activated` and `recovered` and not `receipt`, on the bare route; the same holds with the `sum` replaced by a `let` binder bound to it, with two nested collection queries of distinct names, with each of `forall`, `exists`, `filter` and `map`, and with a binder the body never reads (alone and nested), none of those binders being a source. The genuine `case Shape::Circle(sum<M::Total>(receipt in recoveredFull.receipts: receipt)) { Empty: targetFull; Circle(r): r; }` form in `Full`'s recovery predicate is admitted by the strict reader, its arm binder `r` is not a source on either route, and source and bare routes return equal Boolean outcomes and ordered charge logs for matching, mismatching, empty and activated supplies. A supply that adds a key for the introduced binder refuses `invalid_runtime_input`/`unknown-member` before any charge, and the predicate evaluates to the value its text states over a supply of the three sources. A query binder named as a readable source is refused by the checker as `AmbiguousName`. | Test (TC-1071, TC-1333) |
 | FR-390-AC-69 | Over the emitted-and-admitted package of TC-1070 fixture E, a supplier that returns no identities gives `MissingIdentityWitness`; a supplier that returns the identities of a different admitted package, whether a second read of the same bytes or another fixture's package, gives `ForeignIdentityWitness`; a supplier that returns the package's own identities with a field row removed gives `UnknownIdentityWitness`; each at the `Package` locus of `UnsupportedView`. | Test (TC-1070) |
+| FR-390-AC-70 | Source-operation identity rows. Over fixture E-S of TC-1407 (TC-1070's fixture E with `Node` and its operation `step` declared by the unit's own source instead of a domain package document), the emission carries one source-operation row for the `step` anchor: `source_authority` the unit's, `source_identity` `Node::step`, `anchor_id` the full id of the `state`/`operation_anchor` node, and `structural_node` that node; fixture E, whose `step` is model-owned, carries none, and the `step` row is not in the selected-declaration rows. The row is written to `identities.json` `source_operations` and read back equal (FR-531-AC-8). | Test (TC-1407) |
+| FR-390-AC-71 | Reader evaluation of a source-declared call. With a witness kind from IR for the anchor (the dependency below), a slot of E-S that calls `step` gives, on the in-process reader route and on the bytes route, the value and charge log the source route gives, for the three supplies of TC-1407 vectors S1 to S3; a model-owned call in fixture E gives the same result as before. | Test (TC-1407) |
+| FR-390-AC-72 | Witness refusals for source-operation rows. In E-S, a supplier that omits the `step` row gives `MissingIdentityWitness`; one whose row names a node that is not an `operation_anchor`, or whose `source_identity` is `Node::halt`, gives `UnknownIdentityWitness`; one returning the row of a second emission of E-S under another source authority gives `ForeignIdentityWitness`; each at the `Package` locus, with no partial view and no meter charge. | Test (TC-1407) |
+| FR-390-AC-73 | Until the IR witness kind exists, a slot of E-S that calls `step` reports `ViewFailure::Unsupported` with `MissingSelectedJoin` at the `Node` locus of the call, and no other slot of E-S or of fixture E is affected; the result names QSL-1398 and IR-1213 as the unmet dependency, and the test is replaced by AC-71's when IR lands the kind. | Test (TC-1407) |
 
 ## Dependencies
 
@@ -920,3 +981,13 @@ value; check 6 does not apply to it.
 - QSpec FR-464, FR-465, FR-466 (the protocol node bodies, the stages and the
   slots that bar model state), FR-322 (the checked package), FR-056, FR-057,
   FR-058 (compensation registration, commit, retry and recovery).
+- IR FR-352 (Contract IR; IR-1213, QSL-1398): the capability kind that
+  witnesses an operation anchor for the reader. IR owns it and today witnesses
+  only model-owned operation anchors. Source-declared operation calls
+  (FR-390 "Source-declared operation calls from the reader", QSL-1400) require
+  IR to add a witness kind that accepts the QSL source-operation identity row
+  (`source_authority`, `source_identity`, `anchor_id`) and its strict-reader
+  join; QSL edits no IR file. QSL-852 AC-11 does not depend on it.
+- [FR-531](FR-531-evaluate-from-a-checked-package-read-from-its-bytes-alone.md)
+  and [FR-517](FR-517-write-a-checked-package-handoff-directory-from-source-in-process.md):
+  the `source_operations` member of `identities.json` (`identities/4`).
