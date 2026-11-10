@@ -3504,3 +3504,15 @@ mod tests {
         );
     }
 }
+
+impl crate::outcome::OutcomeDiagnostic {
+    /// Project a source diagnostic without bytes or an admitted source.
+    ///
+    /// Retains the typed cause, optional region and human message. A blank
+    /// label retains the source owner's exact label; other causes omit it.
+    /// The projection lives in the spine because it takes the pre-check
+    /// diagnostic of S1 (FR-270 CK-1 keeps that out of stage entries).
+    pub fn from_source_diagnostic(diagnostic: &CompleteDiagnostic) -> Self {
+        Self::project_source_diagnostic(diagnostic)
+    }
+}

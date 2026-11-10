@@ -70,7 +70,7 @@ impl From<&FormatRefusal> for FormatOutcomeRefusal {
         let diagnostic = refusal.diagnostic();
         Self {
             category: diagnostic.code.category(),
-            diagnostic: OutcomeDiagnostic::from_source_diagnostic(diagnostic),
+            diagnostic: OutcomeDiagnostic::project_source_diagnostic(diagnostic),
         }
     }
 }
@@ -1402,7 +1402,9 @@ impl OutcomeDiagnostic {
     ///
     /// Retains the typed cause, optional region and human message. A blank
     /// label retains the source owner's exact label; other causes omit it.
-    pub fn from_source_diagnostic(diagnostic: &qsl_cst::diagnostic::CompleteDiagnostic) -> Self {
+    pub(crate) fn project_source_diagnostic(
+        diagnostic: &qsl_cst::diagnostic::CompleteDiagnostic,
+    ) -> Self {
         let mut projected = Self::new(
             Some(diagnostic.cause.as_str()),
             diagnostic.code.as_str(),
@@ -1423,7 +1425,7 @@ impl OutcomeDiagnostic {
     /// region and message.
     pub fn from_compile_refusal(refusal: &CompileRefusal) -> Self {
         if let CompileRefusal::Source(diagnostic) = refusal {
-            return Self::from_source_diagnostic(diagnostic);
+            return Self::project_source_diagnostic(diagnostic);
         }
         Self::new(
             refusal.cause(),
