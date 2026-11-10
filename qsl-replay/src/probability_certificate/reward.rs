@@ -28,6 +28,7 @@ pub(super) fn enumerate(
     ),
     ProbabilityDocumentError,
 > {
+    poll_cancel(cancel)?;
     let declarations = system.package().graph().probabilistic_model();
     let declared = declarations
         .rewards()
