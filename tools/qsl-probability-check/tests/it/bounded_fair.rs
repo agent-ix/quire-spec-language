@@ -121,7 +121,7 @@ fn checked_set_normalizes_authored_order_and_duplicates_but_wire_set_is_strict()
     );
     assert_eq!(run(&request).0, 0);
     for change in [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] {
-        let malformed = matches!(change, 0 | 1 | 2 | 3 | 4);
+        let malformed = matches!(change, 0..=4);
         let changed = mutate(&request, |doc| {
             let set = doc["objective"]["fairness"].as_array_mut().unwrap();
             match change {
