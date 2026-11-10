@@ -524,7 +524,7 @@ mod tests {
                         .unwrap();
                 let records = read(&[raw], limits(), &cancel, &mut meter, &mut storage).unwrap();
                 assert!(same(
-                    &[record.clone()],
+                    std::slice::from_ref(&record),
                     &records,
                     limits(),
                     &cancel,
