@@ -208,6 +208,14 @@ fn checked_comparison_unit_converts_exactly_and_rejects_foreign_unit_identity() 
     let bad = mutate(&request, |d| d["objective"]["unit"] = Value::Null);
     let (_, out) = run(&bad);
     assert_eq!(out["status"], "refused");
+    let foreign_source = source(false, "1 other", "2 other", "<= 4 other", "m.delivered")
+        .replace("reward cost on Msg::send_c = 100;", "reward cost on Msg::send_c = 100 other;")
+        + "\ndimension Time;\nunit ms : Time = rational(1,1);\nunit s : Time = rational(1000,1) * ms;\nunit other : Time = rational(1,1);\n";
+    let foreign = proof(&foreign_source);
+    let foreign_unit = document(&foreign)["objective"]["unit"].clone();
+    assert_ne!(foreign_unit, d["objective"]["unit"]);
+    let changed = mutate(&request, |doc| doc["objective"]["unit"] = foreign_unit.clone());
+    assert_eq!(run(&changed).1["reason"], "invalid_runtime_input: probability certificate objective mismatch");
     let compound = source(false, "1 ms * 1 ms", "2 ms * 1 ms", "<= 4 ms * 1 ms", "m.delivered")
          .replace("reward cost on Msg::send_c = 100;", "reward cost on Msg::send_c = 100 ms * 1 ms;")
         + "\ndimension Time;\nunit ms : Time = rational(1,1);\n";

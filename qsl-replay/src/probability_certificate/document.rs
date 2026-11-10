@@ -1043,8 +1043,8 @@ fn target_keys(graph: &CheckerGraph) -> Vec<ProbabilityProductKey> {
 }
 
 /// Admit an expected-reward subject before an engine invokes its general
-/// solver. This independently checks the eligible acyclic or cyclic DTMC
-/// profile, actual costs, units and targets under caller controls. It grants no
+/// solver. This independently checks the eligible acyclic, cyclic DTMC or
+/// cyclic MDP profile, actual costs, units and targets under caller controls. It grants no
 /// certificate acceptance and computes no expected value.
 pub fn admit_expected_reward_certificate_subject(
     system: &ModelSystem<'_>,
