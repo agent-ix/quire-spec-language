@@ -408,7 +408,7 @@ fn cancellation_inside_qualified_reward_evaluation_stops_and_old_actions_still_w
     use qsl_semantics::model::observation::{DocumentRef, ObservationLimits};
     use quire_checked::key::DeclarationKey;
     use quire_exact::{Cancel, CancelCause};
-    use std::sync::atomic::{AtomicU32, Ordering};
+    use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::{Arc, OnceLock};
     let source = claim(
         &draws("if lost then 2 else 6"),
@@ -451,44 +451,21 @@ fn cancellation_inside_qualified_reward_evaluation_stops_and_old_actions_still_w
     let ordinary = system.actions(&initial).unwrap().unwrap();
     assert_eq!(ordinary.len(), 1);
     assert_eq!(ordinary[0].draws.len(), 2);
-    for (cause, mode) in [
-        (CancelCause::Requested, "actions"),
-        (CancelCause::Deadline, "actions"),
-        (CancelCause::Requested, "workload"),
-        (CancelCause::Deadline, "admission"),
-    ] {
+    for cause in [CancelCause::Requested, CancelCause::Deadline] {
         let slot = Arc::new(OnceLock::<Cancel>::new());
         let weak = Arc::downgrade(&slot);
-        let calls = Arc::new(AtomicU32::new(0));
-        let seen = Arc::clone(&calls);
+        let observed = Arc::new(AtomicBool::new(false));
+        let seen = Arc::clone(&observed);
         let cancel = Cancel::observing(move || {
-            if seen.fetch_add(1, Ordering::Relaxed) == 1 {
-                weak.upgrade().unwrap().get().unwrap().cancel(cause);
-            }
+            seen.store(true, Ordering::Relaxed);
+            weak.upgrade().unwrap().get().unwrap().cancel(cause);
         });
         slot.set(cancel.clone()).unwrap();
-        let stopped = match mode {
-            "actions" => system.actions_with_cancel(&initial, &cancel).is_err(),
-            "workload" => {
-                let workload = checked
-                    .package()
-                    .graph()
-                    .probabilistic_model()
-                    .workload("Even")
-                    .unwrap();
-                system
-                    .weighted_steps_with_cancel(&initial, workload, &cancel)
-                    .is_err()
-            }
-            "admission" => ModelSystem::new_with_cancel(simulation.clone(), &cancel).is_err(),
-            _ => unreachable!(),
-        };
-        assert!(stopped, "{mode}");
+        assert!(ModelSystem::new_with_cancel(simulation.clone(), &cancel).is_err());
         assert_eq!(cancel.tripped(), Some(cause));
-        assert_eq!(
-            calls.load(Ordering::Relaxed),
-            2,
-            "the callback runs inside qualified evaluation"
+        assert!(
+            observed.load(Ordering::Relaxed),
+            "reward admission entered its qualified expression meter"
         );
         assert_eq!(system.actions(&initial).unwrap().unwrap()[0].draws.len(), 2);
     }

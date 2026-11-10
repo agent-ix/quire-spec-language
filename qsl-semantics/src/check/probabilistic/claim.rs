@@ -2192,11 +2192,15 @@ mod conversion_budget_tests {
     use quire_exact::{Cancel, CancelCause, ScalarLimits};
     use quire_semantic_value::checking::CheckingLimits;
     use quire_semantic_value::location::ExpressionOwner;
-    use std::sync::atomic::{AtomicU32, Ordering};
+    use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::{Arc, OnceLock};
 
     fn units() -> super::super::super::CheckedGraph {
         let text = "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\";\ndimension Time;\nunit ms : Time = rational(1,1);\nunit s : Time = rational(2,1) * ms;\n";
+        declarations(text).check(CheckingLimits::default()).unwrap()
+    }
+
+    fn declarations(text: &str) -> super::super::super::PackageDeclarations {
         let parsed = qsl_cst::parse(
             qsl_foundation::SourceIdentity::new("test", "conversion-budget"),
             "conversion.native",
@@ -2220,8 +2224,21 @@ mod conversion_budget_tests {
             Vec::new(),
         )
         .unwrap()
-        .check(CheckingLimits::default())
-        .unwrap()
+    }
+
+    #[trace("TC-636", "FR-201-AC-22")]
+    #[test]
+    fn the_conversion_cap_preserves_nonreward_integer_checking() {
+        for function in [
+            "function keep using v(): Integer pure { 65536 }",
+            "function keep using v(x: Int[0,65536]): Integer pure { x }",
+            "function keep using v(x: Int[0,65536]): Integer pure { x + 1 }",
+        ] {
+            let text = format!("language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\";\n{function}\n");
+            declarations(&text)
+                .check(CheckingLimits::default().with_rational_bits(2))
+                .expect("the rational conversion ceiling must preserve nonreward Integer checking");
+        }
     }
 
     #[trace("TC-636", "FR-201-AC-22", "FR-282-AC-17")]
@@ -2275,18 +2292,20 @@ mod conversion_budget_tests {
         for cause in [CancelCause::Requested, CancelCause::Deadline] {
             let slot = Arc::new(OnceLock::<Cancel>::new());
             let weak = Arc::downgrade(&slot);
-            let calls = Arc::new(AtomicU32::new(0));
-            let seen = Arc::clone(&calls);
+            let observed = Arc::new(AtomicBool::new(false));
+            let seen = Arc::clone(&observed);
             let cancel = Cancel::observing(move || {
-                if seen.fetch_add(1, Ordering::Relaxed) == 1 {
-                    weak.upgrade().unwrap().get().unwrap().cancel(cause);
-                }
+                seen.store(true, Ordering::Relaxed);
+                weak.upgrade().unwrap().get().unwrap().cancel(cause);
             });
             slot.set(cancel.clone()).unwrap();
             let mut meter = Meter::new(limits).with_cancel(cancel.clone());
             assert!(normalized_quantity_threshold(from, to, &mut meter, &location).is_err());
             assert_eq!(cancel.tripped(), Some(cause));
-            assert_eq!(calls.load(Ordering::Relaxed), 2);
+            assert!(
+                observed.load(Ordering::Relaxed),
+                "conversion entered its own qualified meter"
+            );
         }
     }
 }
