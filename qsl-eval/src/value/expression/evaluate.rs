@@ -5068,7 +5068,7 @@ mod tests {
 
         let unindexed =
             clock_place_reference(owner.clone(), clock_type.clone(), &place, Vec::new())
-                .expect("an unindexed place reference is well formed");
+                .unwrap_or_else(|_| panic!("an unindexed place reference is well formed"));
         assert_eq!(unindexed.object().as_str(), format!("{expected_prefix}/-"));
         assert_eq!(unindexed.universe(), owner.universe());
         assert_eq!(unindexed.object_type(), &clock_type);
@@ -5082,7 +5082,7 @@ mod tests {
                 Value::Integer(Integer::from(1_i64)),
             ],
         )
-        .expect("an indexed place reference is well formed");
+        .unwrap_or_else(|_| panic!("an indexed place reference is well formed"));
         assert_eq!(indexed.object().as_str(), format!("{expected_prefix}/0.1"));
         assert_ne!(indexed, unindexed);
     }
