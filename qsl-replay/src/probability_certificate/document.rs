@@ -117,7 +117,8 @@ pub struct ProbabilityCertificateDocument {
     pub optimization: ProbabilityObjective,
     /// Exact values, covering every reachable product state.
     pub values: Vec<ExactProbabilityValue>,
-    /// Required positive-value progress ranks, covering every reachable state.
+    /// Progress ranks for every reachable state. Cyclic reward requires progress
+    /// for every non-target state, including states whose reward value is zero.
     pub ranking: Vec<(ProbabilityProductKey, u64)>,
 }
 
@@ -972,6 +973,7 @@ fn legacy_reward_may_retry(error: &ProbabilityDocumentError) -> bool {
     matches!(
         error,
         ProbabilityDocumentError::Unsupported
+            | ProbabilityDocumentError::UndefinedPredicate(_)
             | ProbabilityDocumentError::Graph(ExactProbabilityGraphError::Cycle)
     ) || matches!(error, ProbabilityDocumentError::Build(issue)
             if matches!(issue.as_ref(), crate::ExactProbBuildIssue::Predicate(_)))
@@ -1308,11 +1310,17 @@ fn check_document_with_control(
             let progress = if state.terminal == Some(true) {
                 *rank == 0
             } else {
-                *rank > 0
-                    && state.choices.iter().flatten().any(|edge| {
-                        edge.probability > rational(0)
-                            && ranks.get(&edge.target).is_some_and(|next| next < rank)
-                    })
+                let mut lower = false;
+                for edge in state.choices.iter().flatten() {
+                    super::reward::visit(cancel, &mut meter)?;
+                    if edge.probability > rational(0)
+                        && ranks.get(&edge.target).is_some_and(|next| next < rank)
+                    {
+                        lower = true;
+                        break;
+                    }
+                }
+                *rank > 0 && lower
             };
             if !progress {
                 return Ok(rejected(

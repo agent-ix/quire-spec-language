@@ -610,6 +610,7 @@ fn enumerate_model_graph_with_distributions<P: StatePredicate>(
         distributions,
         ModelVisitPhase::BeforeTarget,
         &mut |key, state, _| visit(key, state),
+        &mut |_| {},
         failure,
     )
 }
@@ -644,6 +645,7 @@ fn enumerate_model_graph_visiting<P: StatePredicate>(
         &ModelSimState,
         Option<bool>,
     ) -> Result<(), ExactProbabilityGraphError>,
+    undefined: &mut impl FnMut(qsl_eval::temporal::UndefinedCause),
     failure: &mut impl FnMut(crate::ExactProbBuildIssue),
 ) -> Result<CheckerGraph, ExactProbabilityGraphError> {
     poll_cancel(cancel)?;
@@ -698,7 +700,10 @@ fn enumerate_model_graph_visiting<P: StatePredicate>(
                     failure(crate::ExactProbBuildIssue::Predicate(outcome));
                     return Err(ExactProbabilityGraphError::ExpansionRefused);
                 }
-                _ => return Err(ExactProbabilityGraphError::ExpansionRefused),
+                qsl_eval::simulation::model::PredicateReading::Undefined { cause, .. } => {
+                    undefined(cause);
+                    return Err(ExactProbabilityGraphError::ExpansionRefused);
+                }
             }
         } else {
             None

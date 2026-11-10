@@ -301,6 +301,9 @@ pub(super) fn enumerate(
                     }
                 }
             },
+            &mut |cause| {
+                *failure.borrow_mut() = Some(ProbabilityDocumentError::UndefinedPredicate(cause))
+            },
             &mut |failure| *issue.borrow_mut() = Some(failure),
         )
     };
@@ -538,7 +541,10 @@ fn progress_ranks(
     Ok(ranks)
 }
 
-fn visit(cancel: &Cancel, meter: &mut quire_exact::Meter) -> Result<(), ProbabilityDocumentError> {
+pub(super) fn visit(
+    cancel: &Cancel,
+    meter: &mut quire_exact::Meter,
+) -> Result<(), ProbabilityDocumentError> {
     poll_cancel(cancel)?;
     meter
         .charge(quire_exact::Charge::new(

@@ -184,24 +184,59 @@ fn predicate_undefined_only_after_target_is_not_evaluated() {
         "<= 2",
         true,
     ));
+    let system = ModelSystem::new(world.subject().simulation).unwrap();
+    let item = qsl_replay::probabilistic_claim_identity(world.claim("Cost")).unwrap();
+    assert_eq!(
+        qsl_replay::admit_expected_reward_certificate_subject(
+            &system,
+            world.package.graph().probabilistic_model().claims(),
+            &item,
+            limits(),
+            &Cancel::new()
+        ),
+        Ok(())
+    );
     let (_, document) = doc(&world);
     assert_eq!(document.values.len(), 2);
     assert!(accepted(&world, &document));
+    let relevant = World::new(&model(
+        "1",
+        0,
+        "if x.phase = 0 then (1 mod 0 = 0) else (x.phase = 1)",
+        "<= 2",
+        true,
+    ));
+    let bytes = write_probability_certificate(&document, limits(), &Cancel::new()).unwrap();
+    assert!(matches!(
+        check(&relevant, &bytes, &Cancel::new(), limits()),
+        Err(ProbabilityDocumentError::UndefinedPredicate(_))
+    ));
+    let relevant_system = ModelSystem::new(relevant.subject().simulation).unwrap();
+    assert!(matches!(
+        qsl_replay::admit_expected_reward_certificate_subject(
+            &relevant_system,
+            relevant.package.graph().probabilistic_model().claims(),
+            &item,
+            limits(),
+            &Cancel::new()
+        ),
+        Err(ProbabilityDocumentError::UndefinedPredicate(_))
+    ));
 }
 #[trace("TC-1403", "FR-201-AC-35", "FR-201-AC-37")]
 #[test]
 fn cyclic_reward_units_normalize_to_selected_comparison_unit() {
     let mut source = model(
-        "if done then 6 [ms] else 2 [ms]",
+        "if done then 6 ms else 2 ms",
         0,
         "x.phase = 1",
-        "<= 0.008 [s]",
+        "<= 0.008 s",
         true,
     );
     source.body=format!("dimension Time;\nunit ms : Time = rational(1,1);\nunit s : Time = rational(1000,1) * ms;\n{}",source.body);
     source.body = source.body.replace(
         "reward cost on Item::after = 100;",
-        "reward cost on Item::after = 100 [ms];",
+        "reward cost on Item::after = 100 ms;",
     );
     let world = World::new(&source);
     let (_, document) = doc(&world);
@@ -303,4 +338,62 @@ fn phase_observed_stops_use_original_token_in_every_cyclic_reward_pass() {
             );
         }
     }
+}
+
+#[trace("TC-1403", "FR-201-AC-38")]
+#[test]
+fn fallback_retains_the_same_cumulative_storage_quota() {
+    let world = World::new(&model("1", 0, "x.phase = 1", "<= 2", true));
+    let system = ModelSystem::new(world.subject().simulation).unwrap();
+    let item = qsl_replay::probabilistic_claim_identity(world.claim("Cost")).unwrap();
+    let claims = world.package.graph().probabilistic_model().claims();
+    let direct = |bytes| {
+        let mut cap = limits();
+        cap.storage_bytes = bytes;
+        qsl_replay::admit_cyclic_eventual_certificate_subject_with_identity(
+            &system,
+            claims,
+            &item,
+            cap,
+            &Cancel::new(),
+            qsl_foundation::IdentityLimits::default(),
+        )
+    };
+    let (mut low, mut high) = (0, limits().storage_bytes);
+    assert!(direct(high).is_ok());
+    while low < high {
+        let mid = low + (high - low) / 2;
+        if direct(mid).is_ok() {
+            high = mid;
+        } else {
+            low = mid + 1;
+        }
+    }
+    assert!(direct(low).is_ok());
+    let mut cap = limits();
+    cap.storage_bytes = low;
+    assert!(
+        matches!(
+            qsl_replay::admit_expected_reward_certificate_subject(
+                &system,
+                claims,
+                &item,
+                cap,
+                &Cancel::new(),
+            ),
+            Err(ProbabilityDocumentError::Limit {
+                limit: qsl_replay::ProbabilityDocumentLimit::StorageBytes,
+                ..
+            })
+        ),
+        "failed legacy attempt must consume the same quota as the stopped fallback"
+    );
+    assert!(qsl_replay::admit_expected_reward_certificate_subject(
+        &system,
+        claims,
+        &item,
+        limits(),
+        &Cancel::new(),
+    )
+    .is_ok());
 }
