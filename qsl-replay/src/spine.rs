@@ -2485,6 +2485,16 @@ impl Default for DependencyLimits {
     }
 }
 
+impl crate::outcome::OutcomeDiagnostic {
+    /// The public entry to the source-diagnostic projection in
+    /// [`OutcomeDiagnostic::project_source_diagnostic`]. It lives in the
+    /// spine because it takes S1's pre-check diagnostic, which ADR-032 CK-3
+    /// keeps out of stage-entry parameters.
+    pub fn from_source_diagnostic(diagnostic: &CompleteDiagnostic) -> Self {
+        Self::project_source_diagnostic(diagnostic)
+    }
+}
+
 #[cfg(test)]
 mod dependency_tests;
 
@@ -3502,17 +3512,5 @@ mod tests {
             super::signature_source(&[ValueType::Boolean, ValueType::String]),
             "(Boolean, String)"
         );
-    }
-}
-
-impl crate::outcome::OutcomeDiagnostic {
-    /// Project a source diagnostic without bytes or an admitted source.
-    ///
-    /// Retains the typed cause, optional region and human message. A blank
-    /// label retains the source owner's exact label; other causes omit it.
-    /// The projection lives in the spine because it takes the pre-check
-    /// diagnostic of S1 (FR-270 CK-1 keeps that out of stage entries).
-    pub fn from_source_diagnostic(diagnostic: &CompleteDiagnostic) -> Self {
-        Self::project_source_diagnostic(diagnostic)
     }
 }

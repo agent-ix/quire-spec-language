@@ -51,3 +51,11 @@ Run in `/Users/peter/dev/qsl-1825-stack` at 1630cac58:
 - `cargo test -p xtask checked_input`: 5 passed (TC-745 checked-input tests).
 
 The full `make ci` aggregate was not run.
+
+## Dispositions
+
+| FND | Disposition |
+| --- | --- |
+| FND-001 | Fixed: the impl block moved above the test modules; clippy -D warnings is clean. |
+| FND-002 | Fixed: the doc cites ADR-032 CK-3. |
+| FND-003 | Fixed: the wrapper doc points at the projection instead of repeating it. |
