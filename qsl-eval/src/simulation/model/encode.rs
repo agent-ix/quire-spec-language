@@ -1130,7 +1130,7 @@ fn value_enc_with_decimal_mode(
                 declared
                     .cases()
                     .iter()
-                    .find(|case| case.variant() == *member.variant())
+                    .find(|case| case.variant_ref() == member.variant())
                     .map(|case| (declared, case))
             })
             .map_or(

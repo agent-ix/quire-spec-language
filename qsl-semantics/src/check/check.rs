@@ -345,6 +345,11 @@ impl VariantCaseDeclaration {
     pub fn variant(&self) -> VariantId {
         self.variant.clone()
     }
+
+    /// Borrow the same validated checked member key as [`Self::variant`].
+    pub fn variant_ref(&self) -> &VariantId {
+        &self.variant
+    }
 }
 
 /// The staged model type admission, held until the conformance stage has
