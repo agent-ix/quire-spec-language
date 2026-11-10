@@ -276,8 +276,6 @@ const LINK_SUBJECT: SubjectInput = SubjectInput {
 
 const TWO: EngineItem = EngineItem::Statistical { claim: "Two" };
 const EN1_ITEM: EngineItem = EngineItem::Clause;
-/// A clause item with the `unsupported` disposition (FR-281-AC-3).
-const UNSUPPORTED_CLAUSE: EngineItem = EngineItem::UnsupportedClause;
 const EN5_ITEM: EngineItem = EngineItem::Exact { claim: "Likely" };
 
 const fn service_subject(population: PopulationInput) -> SubjectInput {
@@ -567,8 +565,8 @@ static MATRIX: &[MatrixCell] = &[
         Verb::Analyze,
         OutcomeKind::Unsupported,
         CaseInput::Analyze(AnalyzeInput::Engine {
-            subject: COUNTER_STEP_SUBJECT,
-            item: UNSUPPORTED_CLAUSE,
+            subject: COUNTER_UNBOUNDED_SUBJECT,
+            item: EN1_ITEM,
             deadline: DeadlineSupply::Unbounded,
         }),
         Cancellation::None,

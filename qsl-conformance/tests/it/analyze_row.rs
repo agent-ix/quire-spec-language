@@ -3,6 +3,9 @@
 
 use ix_trace_rs::trace;
 use qsl_conformance::{OutcomeKind, Verb};
+use qsl_foundation::RequestIndex;
+use qsl_replay::{TerminalValue, UnavailabilityCause};
+use quire_semantic_value::catalog::CatalogCode;
 
 use crate::support::{diagnostic, outcome_of, written};
 
@@ -19,7 +22,7 @@ fn backend_of(outcome: &qsl_conformance::CaseOutcome) -> String {
 
 /// Each of `analyze`'s applicable cells returns its kind: the EN-5 item
 /// `proved`, the EN-1 item `refuted` and `incomplete` under `max_states` 1,
-/// the binding refusal, the unsupported clause item, and the cancelled EN-4
+/// the binding refusal, EN-1's `RequiresBound` refusal, and the cancelled EN-4
 /// item. FR-564-AC-4 is not tagged here: its `ItemCounterexample` for the
 /// `refuted` cell is not produced yet, so the AC stays open.
 #[trace("TC-1391")]
@@ -57,20 +60,36 @@ fn analyze_returns_each_reachable_kind() {
 
     let unsupported = outcome_of(Verb::Analyze, OutcomeKind::Unsupported);
     assert_eq!(unsupported.exit_code(), 21);
-    assert_eq!(written(&unsupported)["items"][0]["result"], "unsupported");
-    // FR-281-AC-3 and FR-286: the item carries the disposition's diagnostic
-    // naming the claim kind, and no cause.
+    let [record] = unsupported.records() else {
+        panic!("one EN-1 refusal record: {:?}", unsupported.records());
+    };
+    assert_eq!(record.request_index(), RequestIndex::new(0));
+    assert_eq!(backend_of(&unsupported), "en-1");
+    assert_eq!(
+        record.value(),
+        &TerminalValue::Unsupported(UnavailabilityCause::Disposition)
+    );
+    assert_eq!(
+        record.diagnostic(),
+        Some(CatalogCode::new(
+            "unsupported_projection",
+            "unbounded-extent"
+        ))
+    );
+    let detail = serde_json::json!({
+        "kind": "temporal-satisfaction",
+        "candidate": "en-1",
+        "modes": ["bounded", "unbounded"],
+    });
+    assert_eq!(record.disposition_detail(), detail.as_object());
+    // FR-281-AC-11 and FR-286: the engine refusal preserves its diagnostic
+    // payload in the item and writes no cause member.
     let item = &written(&unsupported)["items"][0];
+    assert_eq!(item["result"], "unsupported");
     assert!(item.get("cause").is_none(), "{item}");
     assert_eq!(item["diagnostic"]["code"], "unsupported_projection");
-    assert_eq!(
-        item["diagnostic"]["cause"],
-        "unsupported-requested-capability"
-    );
-    assert_eq!(
-        item["diagnostic"]["detail"]["kind"],
-        "temporal-satisfaction"
-    );
+    assert_eq!(item["diagnostic"]["cause"], "unbounded-extent");
+    assert_eq!(item["diagnostic"]["detail"], detail);
     assert!(written(&unsupported)["diagnostics"]
         .as_array()
         .is_none_or(Vec::is_empty));
