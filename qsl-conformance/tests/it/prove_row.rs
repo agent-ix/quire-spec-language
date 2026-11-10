@@ -28,7 +28,10 @@ fn prove_yields_an_item_of_each_reachable_kind() {
     }
     let unsupported_outcome = outcome_of(Verb::Prove, OutcomeKind::Unsupported);
     let [record] = unsupported_outcome.records() else {
-        panic!("one EN-1 refusal record: {:?}", unsupported_outcome.records());
+        panic!(
+            "one EN-1 refusal record: {:?}",
+            unsupported_outcome.records()
+        );
     };
     assert_eq!(record.request_index(), RequestIndex::new(0));
     assert_eq!(
