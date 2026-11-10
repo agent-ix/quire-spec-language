@@ -16,8 +16,8 @@ use qsl_eval::simulation::TransitionSystem;
 use qsl_foundation::{BackendId, RequestIndex};
 use qsl_replay::statistical::SubjectLimits;
 use qsl_replay::{
-    check_probability_certificate_document, claim_binding, probability_certificate_document,
-    write_probability_certificate, ExactBinding, ExactProbBuildIssue, ExactProbBuildRecord,
+    check_probability_certificate_document, claim_binding, probability_proof_document,
+    write_probability_proof_document, ExactBinding, ExactProbBuildIssue, ExactProbBuildRecord,
     ExactProbabilityCertificate, ExactProbabilityCertificateCheck, ExactProbabilityGraphError,
     ExactProbabilityValue, Extremum, ModelCheckLimit, ProbabilityBoundSide,
     ProbabilityDocumentError, ProbabilityDocumentLimits, ProbabilityProductKey, TerminalRecord,
@@ -593,7 +593,7 @@ fn run(
     }
     let checked = (|| {
         let claims = package.graph().probabilistic_model().claims();
-        let document = probability_certificate_document(
+        let document = probability_proof_document(
             &system,
             claims,
             &item,
@@ -601,8 +601,8 @@ fn run(
             document_limits,
             cancel,
         )?;
-        certificate.values = document.values.clone();
-        let bytes = write_probability_certificate(&document, document_limits, cancel)?;
+        certificate.values = document.document().values.clone();
+        let bytes = write_probability_proof_document(&document, document_limits, cancel)?;
         let check = check_probability_certificate_document(
             &system,
             claims,

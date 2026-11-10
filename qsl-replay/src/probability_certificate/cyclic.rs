@@ -130,7 +130,7 @@ pub(super) fn enumerate_graph<P: StatePredicate>(
             ExactProbabilityGraphError::ExpansionRefused
         })
     };
-    let result = enumerate_model_graph_with_distributions(
+    let result = enumerate_model_graph_visiting(
         system,
         target,
         binding,
@@ -168,11 +168,15 @@ pub(super) fn enumerate_graph<P: StatePredicate>(
                 ExactProbabilityGraphError::ExpansionRefused
             })
         },
-        &mut |_, _| {
+        ModelVisitPhase::BeforeTarget,
+        &mut |_, _, _| {
             visit(cancel, scope.borrow_mut().0).map_err(|error| {
                 *stopped.borrow_mut() = Some(error);
                 ExactProbabilityGraphError::ExpansionRefused
             })
+        },
+        &mut |cause| {
+            *stopped.borrow_mut() = Some(ProbabilityDocumentError::UndefinedPredicate(cause));
         },
         &mut |failure| issue = Some(failure),
     );
@@ -224,9 +228,10 @@ pub(super) fn enumerate<P: StatePredicate>(
     cancel: &Cancel,
     identity: qsl_foundation::IdentityLimits,
     meter: &mut quire_exact::Meter,
+    storage: &mut u64,
 ) -> Result<(CheckerGraph, BTreeMap<ProbabilityProductKey, u64>), ProbabilityDocumentError> {
     let meter = std::cell::RefCell::new(meter);
-    let used = std::cell::RefCell::new(0_u64);
+    let used = std::cell::RefCell::new(storage);
     let mut graph = enumerate_graph(
         system,
         Some(target),

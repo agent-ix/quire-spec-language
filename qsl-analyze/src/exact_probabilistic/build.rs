@@ -191,6 +191,17 @@ fn build_configured(
                 qsl_semantics::check::ProbForm::ExpectedReward { .. }
             ) {
             CandidateTargetMode::FirstRewardTarget
+        } else if key_policy.is_some()
+            && matches!(claim.scheduler, qsl_semantics::check::ProbScheduler::Every)
+            && matches!(
+                claim.form,
+                qsl_semantics::check::ProbForm::Reach {
+                    target: qsl_semantics::check::ReachTarget::Eventually(_),
+                    ..
+                }
+            )
+        {
+            CandidateTargetMode::FirstMdpTarget
         } else {
             CandidateTargetMode::Continue
         },
@@ -363,12 +374,14 @@ struct TraceStep {
 enum CandidateTargetMode {
     Continue,
     FirstRewardTarget,
+    FirstMdpTarget,
 }
 
 struct Builder<'r, 'c, 'p, 'k> {
     system: &'r ModelSystem<'r>,
     key_policy: Option<&'p KeyPolicy<'k>>,
-    // The proof candidate needs only the first-target stopped reward graph.
+    // Qualified reward and eventual-MDP candidates stop at their first target.
+    // Independent replay still admits the complete original source model.
     target_mode: CandidateTargetMode,
     workload: Option<&'r Workload>,
     kind: ProductKind,
@@ -466,7 +479,7 @@ impl Builder<'_, '_, '_, '_> {
                 Some(MonitorState::Formula(FormulaState::Decided(verdict))) => {
                     Some((ProbStateId(index), verdict))
                 }
-                _ if self.target_mode == CandidateTargetMode::FirstRewardTarget
+                _ if self.target_mode != CandidateTargetMode::Continue
                     && node.truths.first() == Some(&true) =>
                 {
                     Some((ProbStateId(index), super::MonitorVerdict::Accept))
@@ -656,7 +669,7 @@ impl Builder<'_, '_, '_, '_> {
             .map(|parent| self.nodes[parent].initial)
             .unwrap_or(initial);
         let decided = target.key.monitor.is_some_and(MonitorState::is_decided)
-            || (self.target_mode == CandidateTargetMode::FirstRewardTarget
+            || (self.target_mode != CandidateTargetMode::Continue
                 && target.truths.first() == Some(&true));
         self.reserve_key(
             target

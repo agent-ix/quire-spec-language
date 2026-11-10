@@ -8,6 +8,16 @@ use serde::{Deserialize, Serialize};
 use super::*;
 
 mod key;
+mod mdp;
+#[cfg(feature = "test-support")]
+pub use mdp::{
+    check_cyclic_mdp_probability_certificate_observing,
+    check_cyclic_mdp_probability_certificate_with_identity, CyclicMdpProbabilityPhase,
+};
+pub use mdp::{
+    cyclic_mdp_probability_certificate_document, probability_proof_document,
+    read_probability_proof_document, write_probability_proof_document, ProbabilityProofDocument,
+};
 mod long_run;
 #[cfg(feature = "test-support")]
 pub use long_run::{
@@ -30,6 +40,7 @@ const STATE_PROFILE: &str = "quire.probability-objective/state-predicate/v1";
 const REWARD_PROFILE: &str = "quire.probability-objective/expected-reward/v1";
 const CYCLIC_REWARD_PROFILE: &str = "quire.probability-objective/dtmc-expected-reward/v1";
 const CYCLIC_PROFILE: &str = "quire.probability-objective/cyclic-dtmc-eventual/v1";
+const CYCLIC_MDP_PROFILE: &str = "quire.probability-objective/cyclic-mdp-eventual/v1";
 const MAX_COUNT: u64 = 9_007_199_254_740_991;
 
 /// Caller-owned byte and working-storage ceilings for certificate transport.
@@ -305,6 +316,52 @@ fn poll(cancel: &Cancel) -> Result<(), ProbabilityDocumentError> {
     poll_cancel(cancel).map_err(Into::into)
 }
 
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum ProfileDispatch {
+    Exact,
+    LongRun,
+    CyclicMdp,
+}
+
+fn profile_dispatch(
+    bytes: &[u8],
+    limits: ProbabilityDocumentLimits,
+    cancel: &Cancel,
+) -> Result<ProfileDispatch, ProbabilityDocumentError> {
+    poll(cancel)?;
+    if u64::try_from(bytes.len()).unwrap_or(u64::MAX) > limits.bytes {
+        return Err(exceeded(
+            ProbabilityDocumentLimit::Bytes,
+            limits.bytes,
+            u64::try_from(bytes.len()).unwrap_or(u64::MAX),
+        ));
+    }
+    let parsed = quire_canonical::read_bounded(bytes, limits.bytes, limits.storage_bytes).map_err(
+        |error| match error {
+            quire_canonical::ReadError::Limit(limit) => exceeded(
+                ProbabilityDocumentLimit::StorageBytes,
+                limit.bound,
+                limit.required,
+            ),
+            _ => ProbabilityDocumentError::Malformed,
+        },
+    )?;
+    Ok(
+        match parsed
+            .root()
+            .get("objective")
+            .and_then(|node| node.get("profile"))
+            .map(|node| node.node())
+        {
+            Some(quire_canonical::Node::String(profile)) if long_run::is_profile(profile) => {
+                ProfileDispatch::LongRun
+            }
+            Some(quire_canonical::Node::String(CYCLIC_MDP_PROFILE)) => ProfileDispatch::CyclicMdp,
+            _ => ProfileDispatch::Exact,
+        },
+    )
+}
+
 fn canonical<T: Serialize>(value: &T, bytes: u64) -> Result<Vec<u8>, ProbabilityDocumentError> {
     let mut counter = EncodedSize {
         used: 0,
@@ -533,6 +590,16 @@ fn read_document(
     cancel: &Cancel,
     meter: &mut quire_exact::Meter,
 ) -> Result<ProbabilityCertificateDocument, ProbabilityDocumentError> {
+    read_document_profile(bytes, limits, cancel, meter, false)
+}
+
+fn read_document_profile(
+    bytes: &[u8],
+    limits: ProbabilityDocumentLimits,
+    cancel: &Cancel,
+    meter: &mut quire_exact::Meter,
+    cyclic_mdp: bool,
+) -> Result<ProbabilityCertificateDocument, ProbabilityDocumentError> {
     poll(cancel)?;
     if u64::try_from(bytes.len()).unwrap_or(u64::MAX) > limits.bytes {
         return Err(exceeded(
@@ -554,7 +621,7 @@ fn read_document(
     let root = parsed.root();
     let objective = root.get("objective");
     let outside_profile = matches!(root.get("kind").map(|node| node.node()), Some(quire_canonical::Node::String(kind)) if kind != "exact")
-        || matches!(objective.and_then(|node| node.get("profile")).map(|node| node.node()), Some(quire_canonical::Node::String(profile)) if profile != PROFILE && profile != STATE_PROFILE && profile != REWARD_PROFILE && profile != CYCLIC_PROFILE && profile != CYCLIC_REWARD_PROFILE)
+        || matches!(objective.and_then(|node| node.get("profile")).map(|node| node.node()), Some(quire_canonical::Node::String(profile)) if if cyclic_mdp { profile != CYCLIC_MDP_PROFILE } else { profile != PROFILE && profile != STATE_PROFILE && profile != REWARD_PROFILE && profile != CYCLIC_PROFILE && profile != CYCLIC_REWARD_PROFILE })
         || matches!(objective.and_then(|node| node.get("event")).map(|node| node.node()), Some(quire_canonical::Node::String(event)) if !matches!(event, "until" | "always"))
         || matches!(objective.and_then(|node| node.get("optimization")).map(|node| node.node()), Some(quire_canonical::Node::String(operator)) if !matches!(operator, "minimum" | "maximum" | "workload"))
         || match objective
@@ -576,6 +643,9 @@ fn read_document(
     }
     if parsed.root().get("ranking").is_none() {
         return Err(ProbabilityDocumentError::MissingMember("ranking"));
+    }
+    if cyclic_mdp {
+        mdp::member_shapes(&parsed, cancel, meter)?;
     }
     let root = parsed.root();
     let rows = [
@@ -607,10 +677,14 @@ fn read_document(
         return Err(ProbabilityDocumentError::Noncanonical);
     }
     if wire.kind != "exact"
-        || !matches!(
-            wire.objective.profile.as_str(),
-            PROFILE | STATE_PROFILE | REWARD_PROFILE | CYCLIC_PROFILE | CYCLIC_REWARD_PROFILE
-        )
+        || if cyclic_mdp {
+            wire.objective.profile != CYCLIC_MDP_PROFILE
+        } else {
+            !matches!(
+                wire.objective.profile.as_str(),
+                PROFILE | STATE_PROFILE | REWARD_PROFILE | CYCLIC_PROFILE | CYCLIC_REWARD_PROFILE
+            )
+        }
         || !wire.objective.fairness.is_empty()
     {
         return Err(ProbabilityDocumentError::Unsupported);
@@ -647,6 +721,9 @@ fn read_document(
             .map(|key| decode_key(key, limits))
             .collect::<Result<Vec<_>, _>>()?,
     )?;
+    if cyclic_mdp && wire.objective.optimization == "workload" {
+        return Err(ProbabilityDocumentError::Unsupported);
+    }
     let optimization = match wire.objective.optimization.as_str() {
         "minimum" => ProbabilityObjective::Minimum,
         "maximum" => ProbabilityObjective::Maximum,
@@ -681,7 +758,13 @@ fn read_document(
             value: reward_ratio(row.value, limits.scalar_bits, reward_profile, meter, cancel)?,
         });
     }
-    ordered(values.iter().map(|row| row.state.clone()))?;
+    ordered(values.iter().map(|row| row.state.clone())).map_err(|error| {
+        if cyclic_mdp {
+            ProbabilityDocumentError::MalformedMember("values")
+        } else {
+            error
+        }
+    })?;
     let mut ranking = Vec::new();
     for row in wire.ranking {
         poll(cancel)?;
@@ -690,7 +773,13 @@ fn read_document(
         }
         ranking.push((decode_key(&row.state, limits)?, row.rank));
     }
-    ordered(ranking.iter().map(|(state, _)| state.clone()))?;
+    ordered(ranking.iter().map(|(state, _)| state.clone())).map_err(|error| {
+        if cyclic_mdp {
+            ProbabilityDocumentError::MalformedMember("ranking")
+        } else {
+            error
+        }
+    })?;
     poll(cancel)?;
     Ok(ProbabilityCertificateDocument {
         cyclic_dtmc: matches!(
@@ -844,7 +933,7 @@ fn subject_graph_with_identity(
         } if cyclic_dtmc => (
             bound,
             super::cyclic::enumerate(
-                system, predicate, reference, workload, limits, cancel, identity, meter,
+                system, predicate, reference, workload, limits, cancel, identity, meter, storage,
             )
             .map(|(graph, ranks)| (graph, Some(ranks))),
         ),
@@ -852,7 +941,6 @@ fn subject_graph_with_identity(
             bound,
             target: ReachTarget::Eventually(predicate),
         } => (bound, {
-            let mut storage = 0;
             super::cyclic::enumerate_graph(
                 system,
                 Some(predicate),
@@ -862,7 +950,7 @@ fn subject_graph_with_identity(
                 cancel,
                 identity,
                 meter,
-                &mut storage,
+                storage,
                 true,
                 true,
             )
@@ -1079,6 +1167,29 @@ pub fn probability_certificate_document(
 ) -> Result<ProbabilityCertificateDocument, ProbabilityDocumentError> {
     let mut meter = quire_exact::Meter::new(limits.accounting).with_cancel(cancel.clone());
     let mut storage = 0;
+    construct_document(
+        system,
+        claims,
+        item,
+        certificate,
+        limits,
+        cancel,
+        &mut meter,
+        &mut storage,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn construct_document(
+    system: &ModelSystem<'_>,
+    claims: &[CheckedProbabilisticClaim],
+    item: &ObligationIdentity,
+    certificate: &ExactProbabilityCertificate,
+    limits: ProbabilityDocumentLimits,
+    cancel: &Cancel,
+    meter: &mut quire_exact::Meter,
+    storage: &mut u64,
+) -> Result<ProbabilityCertificateDocument, ProbabilityDocumentError> {
     let identity = qsl_foundation::IdentityLimits::default();
     let original = subject_graph_with_identity(
         system,
@@ -1088,8 +1199,8 @@ pub fn probability_certificate_document(
         cancel,
         identity,
         false,
-        &mut meter,
-        &mut storage,
+        meter,
+        storage,
         &super::reward::RewardControl::new(cancel),
     );
     let cyclic_dtmc = match &original {
@@ -1114,8 +1225,8 @@ pub fn probability_certificate_document(
             cancel,
             identity,
             true,
-            &mut meter,
-            &mut storage,
+            meter,
+            storage,
             &super::reward::RewardControl::new(cancel),
         )?
     } else {
@@ -1232,8 +1343,14 @@ fn check_document_with_control(
     cancel: &Cancel,
     control: &super::reward::RewardControl<'_>,
 ) -> Result<ExactProbabilityCertificateCheck, ProbabilityDocumentError> {
-    if long_run::has_profile(bytes, limits, cancel)? {
-        return long_run::check(system, claims, item, bytes, limits, cancel);
+    match profile_dispatch(bytes, limits, cancel)? {
+        ProfileDispatch::LongRun => {
+            return long_run::check(system, claims, item, bytes, limits, cancel)
+        }
+        ProfileDispatch::CyclicMdp => {
+            return mdp::check(system, claims, item, bytes, limits, cancel, None)
+        }
+        ProfileDispatch::Exact => {}
     }
     let mut meter = quire_exact::Meter::new(limits.accounting).with_cancel(cancel.clone());
     let document = match read_document(bytes, limits, cancel, &mut meter) {
@@ -1420,6 +1537,71 @@ pub(super) fn check_scalar(
 }
 
 #[allow(clippy::too_many_arguments)]
+fn action_sum(
+    key: &ProbabilityProductKey,
+    choice_index: usize,
+    choice: &ProbabilityChoice,
+    values: &BTreeMap<ProbabilityProductKey, Rational>,
+    reward: Option<&super::reward::RewardGraph>,
+    limits: ProbabilityDocumentLimits,
+    cancel: &Cancel,
+    meter: &mut quire_exact::Meter,
+    control: &super::reward::RewardControl<'_>,
+) -> Result<Rational, ProbabilityDocumentError> {
+    let mut sum = rational(0);
+    let mut mass = rational(0);
+    for (edge_index, edge) in choice.iter().enumerate() {
+        control.phase(super::reward::RewardProbabilityPhase::Arithmetic)?;
+        if edge.probability < rational(0) {
+            return Err(ProbabilityDocumentError::Malformed);
+        }
+        check_scalar(&edge.probability, limits)?;
+        let next = values
+            .get(&edge.target)
+            .ok_or(ProbabilityDocumentError::Malformed)?;
+        let next = if let Some(reward) = reward {
+            let cost = reward
+                .costs
+                .get(key)
+                .and_then(|choices| choices.get(choice_index))
+                .and_then(|costs| costs.get(edge_index))
+                .ok_or(ProbabilityDocumentError::Malformed)?;
+            check_scalar(cost, limits)?;
+            arithmetic(
+                quire_exact::RationalArithmetic::Add(cost, next),
+                meter,
+                cancel,
+            )?
+        } else {
+            next.clone()
+        };
+        check_scalar(&next, limits)?;
+        let product = arithmetic(
+            quire_exact::RationalArithmetic::Multiply(&edge.probability, &next),
+            meter,
+            cancel,
+        )?;
+        check_scalar(&product, limits)?;
+        mass = arithmetic(
+            quire_exact::RationalArithmetic::Add(&mass, &edge.probability),
+            meter,
+            cancel,
+        )?;
+        sum = arithmetic(
+            quire_exact::RationalArithmetic::Add(&sum, &product),
+            meter,
+            cancel,
+        )?;
+        check_scalar(&mass, limits)?;
+        check_scalar(&sum, limits)?;
+    }
+    if mass != rational(1) {
+        return Err(ProbabilityDocumentError::Malformed);
+    }
+    Ok(sum)
+}
+
+#[allow(clippy::too_many_arguments)]
 fn check_document_equalities(
     graph: &CheckerGraph,
     values: &BTreeMap<ProbabilityProductKey, Rational>,
@@ -1445,56 +1627,17 @@ fn check_document_equalities(
                 }
                 let mut expected: Option<Rational> = None;
                 for (choice_index, choice) in state.choices.iter().enumerate() {
-                    let mut sum = rational(0);
-                    let mut mass = rational(0);
-                    for (edge_index, edge) in choice.iter().enumerate() {
-                        control.phase(super::reward::RewardProbabilityPhase::Arithmetic)?;
-                        if edge.probability < rational(0) {
-                            return Err(ProbabilityDocumentError::Malformed);
-                        }
-                        check_scalar(&edge.probability, limits)?;
-                        let next = values
-                            .get(&edge.target)
-                            .ok_or(ProbabilityDocumentError::Malformed)?;
-                        let next = if let Some(reward) = reward {
-                            let cost = reward
-                                .costs
-                                .get(key)
-                                .and_then(|choices| choices.get(choice_index))
-                                .and_then(|costs| costs.get(edge_index))
-                                .ok_or(ProbabilityDocumentError::Malformed)?;
-                            check_scalar(cost, limits)?;
-                            arithmetic(
-                                quire_exact::RationalArithmetic::Add(cost, next),
-                                meter,
-                                cancel,
-                            )?
-                        } else {
-                            next.clone()
-                        };
-                        check_scalar(&next, limits)?;
-                        let product = arithmetic(
-                            quire_exact::RationalArithmetic::Multiply(&edge.probability, &next),
-                            meter,
-                            cancel,
-                        )?;
-                        check_scalar(&product, limits)?;
-                        mass = arithmetic(
-                            quire_exact::RationalArithmetic::Add(&mass, &edge.probability),
-                            meter,
-                            cancel,
-                        )?;
-                        sum = arithmetic(
-                            quire_exact::RationalArithmetic::Add(&sum, &product),
-                            meter,
-                            cancel,
-                        )?;
-                        check_scalar(&mass, limits)?;
-                        check_scalar(&sum, limits)?;
-                    }
-                    if mass != rational(1) {
-                        return Err(ProbabilityDocumentError::Malformed);
-                    }
+                    let sum = action_sum(
+                        key,
+                        choice_index,
+                        choice,
+                        values,
+                        reward,
+                        limits,
+                        cancel,
+                        meter,
+                        control,
+                    )?;
                     expected = Some(match expected {
                         None => sum,
                         Some(previous) => match objective {
@@ -1516,6 +1659,16 @@ fn check_document_equalities(
             ));
         }
     }
+    check_threshold(graph, values, bound, limits, cancel)
+}
+
+fn check_threshold(
+    graph: &CheckerGraph,
+    values: &BTreeMap<ProbabilityProductKey, Rational>,
+    bound: &Bound,
+    limits: ProbabilityDocumentLimits,
+    cancel: &Cancel,
+) -> Result<ExactProbabilityCertificateCheck, ProbabilityDocumentError> {
     let initial = values
         .get(&graph.initial)
         .ok_or(ProbabilityDocumentError::Malformed)?;
@@ -1579,10 +1732,13 @@ pub(super) fn certificate_identity(
     limits: ProbabilityDocumentLimits,
     cancel: &Cancel,
 ) -> Result<ObligationIdentity, ProbabilityDocumentError> {
-    if long_run::has_profile(bytes, limits, cancel)? {
+    if profile_dispatch(bytes, limits, cancel)? == ProfileDispatch::LongRun {
         return long_run::certificate_identity(bytes, limits, cancel);
     }
-    Ok(read_probability_certificate(bytes, limits, cancel)?.identity)
+    Ok(read_probability_proof_document(bytes, limits, cancel)?
+        .document()
+        .identity
+        .clone())
 }
 
 #[cfg(test)]

@@ -7,3 +7,5 @@ mod roundtrip;
 mod state_predicate;
 
 mod cyclic_reward;
+
+mod cyclic_mdp;
