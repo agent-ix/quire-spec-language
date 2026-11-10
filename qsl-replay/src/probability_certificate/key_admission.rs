@@ -76,6 +76,7 @@ impl<'a> ProbabilityKeyAdmission<'a> {
     }
 
     fn poll(&mut self) -> Result<(), ReservationDenied> {
+        self.cancel.poll();
         if let Some(cause) = self.cancel.tripped() {
             return Err(self.deny(ProbabilityDocumentError::Cancelled(cause)));
         }

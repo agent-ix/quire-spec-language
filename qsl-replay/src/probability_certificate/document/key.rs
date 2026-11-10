@@ -89,9 +89,12 @@ pub(crate) fn model_product_key_with_budget(
             self.0.reserve(bytes).map_err(|_| ReservationDenied)
         }
     }
-    let poll = || match cancel.tripped() {
-        Some(cause) => Err(ModelKeyError::Cancelled(cause)),
-        None => Ok(()),
+    let poll = || {
+        cancel.poll();
+        match cancel.tripped() {
+            Some(cause) => Err(ModelKeyError::Cancelled(cause)),
+            None => Ok(()),
+        }
     };
     poll()?;
     budget

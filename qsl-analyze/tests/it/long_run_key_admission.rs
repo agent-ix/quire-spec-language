@@ -352,3 +352,110 @@ fn full_product_parse_staging_and_output_share_the_raw_key_storage_scope() {
         "the denied reservation must not be performed"
     );
 }
+
+struct CancelProductReservation<'a> {
+    cancel: &'a Cancel,
+    cause: Option<CancelCause>,
+    admission: Option<ProbabilityKeyAdmission<'a>>,
+    reserved: usize,
+}
+impl Reservation for CancelProductReservation<'_> {
+    fn reserve(&mut self, bytes: usize) -> Result<(), ReservationDenied> {
+        self.reserved += bytes;
+        if let Some(cause) = self.cause {
+            self.cancel.cancel(cause);
+        }
+        match &mut self.admission {
+            Some(admission) => admission.reserve(bytes),
+            None => Ok(()),
+        }
+    }
+}
+impl IntegerDecimalBudget for CancelProductReservation<'_> {
+    fn work(&mut self, units: u64) -> Result<(), ReservationDenied> {
+        match &mut self.admission {
+            Some(admission) => admission.work(units),
+            None => Ok(()),
+        }
+    }
+}
+impl ModelKeyBudget for CancelProductReservation<'_> {
+    fn integer(&mut self, value: &Integer) -> Result<(), ReservationDenied> {
+        match &mut self.admission {
+            Some(admission) => admission.integer(value),
+            None => Ok(()),
+        }
+    }
+}
+
+#[trace("TC-1401", "FR-201-AC-30")]
+#[test]
+fn full_product_reservation_phase_polls_actual_requested_and_deadline_causes() {
+    let world = availability();
+    let system = ModelSystem::new(world.subject().simulation).unwrap();
+    let initial = system.initial().pop().unwrap();
+    let raw = system.state_key(&initial).unwrap().0;
+    let binding = qsl_replay::claim_binding(&system, world.claim("Lower")).unwrap();
+    let reference = binding.as_ref().map(|b| &b.reference);
+    let expected = qsl_replay::ProbabilityProductKey::for_model_state(reference, &raw).unwrap();
+    // Exercise both the real caller admission and a reservation provider that
+    // leaves cancellation polling to the product wrapper. The trigger is an
+    // actual parse/staging/output reservation, after the initial work charge.
+    for caller_admission in [true, false] {
+        for cause in [
+            None,
+            Some(CancelCause::Requested),
+            Some(CancelCause::Deadline),
+        ] {
+            let cancel = Cancel::new();
+            let mut meter = Meter::new(limits().accounting).with_cancel(cancel.clone());
+            let mut storage = 0;
+            let admission = caller_admission.then(|| {
+                ProbabilityKeyAdmission::new(
+                    &mut meter,
+                    &mut storage,
+                    limits().storage_bytes,
+                    &cancel,
+                )
+            });
+            let mut budget = CancelProductReservation {
+                cancel: &cancel,
+                cause,
+                admission,
+                reserved: 0,
+            };
+            let result = qsl_replay::ProbabilityProductKey::for_model_state_with_budget(
+                reference,
+                &raw,
+                IdentityLimits::default(),
+                &mut budget,
+                &cancel,
+            );
+            assert!(
+                budget.reserved > 0,
+                "actual full-product reservation must be reached"
+            );
+            match cause {
+                None => assert_eq!(result.unwrap(), expected),
+                Some(cause) => {
+                    let error =
+                        result.expect_err("reservation-phase cancellation must stop the key");
+                    if let Some(admission) = &mut budget.admission {
+                        assert!(matches!(
+                            error,
+                            qsl_eval::simulation::model::ModelKeyError::Denied
+                        ));
+                        assert!(
+                            matches!(admission.refusal(error), ProbabilityDocumentError::Cancelled(actual) if actual == cause)
+                        );
+                    } else {
+                        assert!(
+                            matches!(error, qsl_eval::simulation::model::ModelKeyError::Cancelled(actual) if actual == cause)
+                        );
+                    }
+                    assert_eq!(cancel.tripped(), Some(cause));
+                }
+            }
+        }
+    }
+}
