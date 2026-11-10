@@ -251,6 +251,34 @@ fn positive_nonreach_has_infinite_expected_until_even_with_zero_costs() {
     assert_eq!(result.values[0], ExtRational::PlusInfinity);
 }
 
+#[trace("TC-633", "FR-198-AC-2")]
+#[test]
+fn target_leak_without_failure_keeps_expected_reward_finite() {
+    let mut product = product(vec![
+        edge(0, 0, 1, 2, 10),
+        edge(0, 1, 1, 2, 10),
+        edge(1, 1, 1, 1, 11),
+    ]);
+    for edge in product
+        .edges
+        .iter_mut()
+        .filter(|edge| edge.from == ProbStateId(0))
+    {
+        edge.rewards[0].1 = Value::Integer(Integer::one());
+    }
+    for objective in [UnboundedObjective::Min, UnboundedObjective::Max] {
+        let result = decide_expected_reward(
+            &product,
+            &[false, true, false],
+            "cost",
+            objective,
+            &ExactProbLimits::default(),
+        )
+        .expect("the target is reached almost surely with geometric mean time two");
+        assert_eq!(result.values[0], ExtRational::Finite(ratio(2, 1)));
+    }
+}
+
 #[trace("TC-631", "FR-196-AC-4")]
 #[trace("TC-633", "FR-198-AC-1")]
 #[test]
