@@ -211,7 +211,7 @@ fn quantity_reward_uses_checked_exact_conversion_and_retains_unit_identity() {
         &model,
         "every scheduler",
         ">=",
-        "rational(4,1000) s",
+        "0.004 s",
         "m.attempts = 1",
     ));
     accepted(&request, "4", "1");

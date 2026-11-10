@@ -47,8 +47,9 @@ infinite-trace `holds(A) until holds(B)` and `always holds(P)` over checked
 state predicates. The latter uses the separate state-predicate/v1 objective:
 its event, success keys and absorbing failure keys are independently derived.
 The checker establishes original model acyclicity before stopping at boundaries;
-terminal stutter preserves the last state predicates. These additions admit
-proof documents only; native until/always refutations remain unsupported. The
+terminal stutter preserves the last state predicates. These documents carry
+proofs; admitted native until/always refutations use the separate typed replay
+path, while witness JSON transport remains unsupported. The
 checker independently derives the target keys and the checked claim's
 minimum, maximum or resolved-workload operator, verifies complete key/value/rank
 coverage, positive-value rank progress, Bellman equality and the threshold.
