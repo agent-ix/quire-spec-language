@@ -1,5 +1,5 @@
 ---
-id: SR-20261109172912000057
+id: SR-20261110034547820001
 title: "Code review of acyclic until and always certificates"
 type: SpecReview
 analysis: code-review
@@ -88,3 +88,7 @@ scope:
     role: context_only
     excerpt: 'Temporal properties over every behaviour'
 ```
+
+## Identifier correction
+
+ID collision correction: SR-20261109172912000057 → SR-20261110034547820001. The original identifier also appeared on peer qsl-1818-nodekey review records. Only this review identifier and its references were reassigned; findings, dispositions, verdict, excerpts and review scope are unchanged. Peer records were not modified.

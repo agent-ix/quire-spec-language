@@ -1,5 +1,5 @@
 ---
-id: SR-20261109172912000058
+id: SR-20261110034547820002
 title: "Gap analysis of acyclic until and always certificates"
 type: SpecReview
 analysis: gap-analysis
@@ -37,7 +37,7 @@ FR-201-AC-18 and FR-282-AC-15 have original_cycles_remain_unsupported_even_behin
 
 Owner solver regressions until_minimum_retains_absorbing_failure_in_qualitative_analysis and until_avoidance_cannot_cross_an_already_reached_target carry TC-633/FR-201-AC-15 tags and assert actual rational outcomes. Reviewed changed tests in bounded_closure.rs, bounded.rs and roundtrip.rs for preserved bounded and reachability paths. No source stub, ignored new test, test-only semantic bypass or unowned capability was found. New event/profile ownership is FR-201, source facade ownership FR-282, reductions FR-198, product identity FR-196, and infinite-terminal semantics FR-126/ADR-018/ADR-028.
 
-Accepted focused logs are the six logs enumerated in SR-20261109172912000057; 25 fresh-process, 39 engine, 13 adapter and 17 core tests passed. No full matrix completion percentage is inferred from trace tags or those passing suites.
+Accepted focused logs are the six logs enumerated in SR-20261110034547820001; 25 fresh-process, 39 engine, 13 adapter and 17 core tests passed. No full matrix completion percentage is inferred from trace tags or those passing suites.
 
 ## Examined units
 
@@ -94,3 +94,7 @@ scope:
     role: context_only
     excerpt: 'Temporal properties over every behaviour'
 ```
+
+## Identifier correction
+
+ID collision correction: SR-20261109172912000058 → SR-20261110034547820002. The original identifier also appeared on peer qsl-1818-nodekey review records. Only this review identifier and its references were reassigned; findings, dispositions, verdict, excerpts and review scope are unchanged. Peer records were not modified.
