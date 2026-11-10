@@ -65,6 +65,12 @@ original cycles remain unsupported even beyond a target. Exact values may
 exceed one. Checked quantity bounds use the existing exact conversion graph;
 no reward-cost table or action encoding is transported in the document.
 
+Reward production and independent checking share each caller scope's meter,
+working-storage usage and cancellation through raw state keys, internal
+candidate/post keys and the full FR-196 product key. The owner operation's
+`identity.input_bytes` ceiling retains its separate 16 MiB default; certificate
+transport bytes and graph working storage retain their own limits and causes.
+
 The analyzer's additive `ExactProbLimits.document` API carries independent
 `bytes` and `storage_bytes` ceilings, each defaulting to 1073741824 bytes.
 The former stops as `certificate_check.max_certificate_bytes`; canonical-reader
