@@ -138,6 +138,20 @@ schedulers that meet it with probability 1 (Baier and Kwiatkowska).
 | FS-8 | **Long-run fractions.** Under a fair scheduler a behaviour ends in a fair end component with probability 1 (FS-3). EN-5 decomposes the product into maximal fair end components and gives each component `C` LR-2's optimum over its actions: a fair scheduler approaches it by taking the actions the optimum leaves out with vanishing frequency, so the value is an infimum or supremum that need not be attained. LR-3 combines the component values with every end component that holds no fair end component collapsed as in UR-2, so no scheduler in the range stays outside the fair end components. |
 | FS-9 | **Evidence.** A certificate's objective names the fairness set, and the checker recomputes the maximal fair end components by FS-4's refinement with its own graph code, as it recomputes `Prob0` and `Prob1` (CE-2); a certificate carries no qualitative sets. A witness scheduler for a claim with a fairness set is memoryless and randomized on the product: each entry may give a distribution over identities with exact rational probabilities (WS-1). Replay checks that the witness is fair: every bottom strongly connected component of the chain it induces on the evidence's states meets FS-3's condition. For a long-run refutation, where the infimum need not be attained, EN-5 mixes the actions the optimum leaves out with probability `2^-k`, raising `k` until the induced chain's exact value is past the threshold, and the evidence is that chain's `LongRun` certificate (CE-3). |
 
+The first closed bounded-fair proof document is FR-201's
+`bounded-fair-eventual/v1`: origin-activated event-position eventual state
+predicates, finite horizon, Every minimum/AtLeast or maximum/AtMost and a
+nonempty checked operation-fairness set. FS-5 justifies reusing the ordinary
+bounded operator and remaining-horizon ranking; FS-9's fair-end-component
+reconstruction applies to forms whose value needs it, not this finite-prefix
+proof. No witness policy or new no-fair-continuation verdict is needed.
+The certificate retains exact weak/strong whole/each constraints through
+QSpec FR-322-AC-293's closed structural operation target. They remain part
+of checked claim identity and objective, not an added product-key component.
+The existing checked monitor-context constructor remains authoritative.
+Unfair documents and their bytes are unchanged. TC-1406 specifies the
+independent reconstruction, mutation and bounded resource checks.
+
 ### 4. The forms EN-5 decides
 
 EN-5 decides every ADR-024 form with exact evidence, under a workload and
