@@ -240,6 +240,16 @@ const WORKSPACE_EMPTY: &[EmptySuite] = &[
         reason: NO_DOC_EXAMPLE,
     },
     EmptySuite {
+        source: "qsl-command/src/lib.rs",
+        kind: SuiteKind::Doctests,
+        reason: NO_DOC_EXAMPLE,
+    },
+    EmptySuite {
+        source: "tools/qsl-probability-check/src/main.rs",
+        kind: SuiteKind::Tests,
+        reason: "the command entry point; its tests are the tests/it target that runs the binary",
+    },
+    EmptySuite {
         source: "qsl-inspect/src/lib.rs",
         kind: SuiteKind::Doctests,
         reason: NO_DOC_EXAMPLE,
