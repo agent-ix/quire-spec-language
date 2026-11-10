@@ -15,8 +15,8 @@ use std::sync::{Arc, Mutex, RwLock};
 use qsl_foundation::node_wire::node_key_from_json;
 use quire_canonical::{Encode, Error, Limits, Sink, Writer};
 use quire_exact::{
-    CollectionKind, EffectiveId, FieldValue, IeeeWidth, NodeKey, ObjectReference,
-    OriginalDeclarationKey, PathSegmentView, UniverseId, Value,
+    EffectiveId, FieldValue, NodeKey, ObjectReference, OriginalDeclarationKey, PathSegmentView,
+    UniverseId, Value,
 };
 use quire_semantic_value::declaration::{CompositeDeclaration, CompositeShape, TypeEnvironment};
 use serde_json::Value as Json;
@@ -24,6 +24,8 @@ use serde_json::Value as Json;
 use qsl_semantics::check::VariantTypeDeclaration;
 use qsl_semantics::model::state::{ModelState, StateField, StateModel};
 use quire_checked::key::DeclarationKey;
+
+mod projection;
 
 /// One JSON value in FR-181's typed canonical form, before it is written.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -568,20 +570,7 @@ pub(super) fn declaration_text(key: &DeclarationKey, limits: Limits) -> Result<S
 
 /// FR-181's reference triple.
 pub(crate) fn reference_enc(reference: &ObjectReference) -> Enc {
-    Enc::tagged(
-        "reference",
-        vec![
-            (
-                "universe",
-                Enc::Node(reference.universe().root_type().clone()),
-            ),
-            (
-                "object_type",
-                Enc::Effective(reference.object_type().clone()),
-            ),
-            ("identity", Enc::text(reference.object().as_str())),
-        ],
-    )
+    projection::reference(reference)
 }
 
 /// FR-181's reference triple as RFC 8785 text: the encoding FR-196 names for
@@ -604,16 +593,7 @@ pub fn encode_reference<S: Sink + ?Sized>(
     reference: &ObjectReference,
     writer: &mut Writer<'_, S>,
 ) -> Result<(), Error> {
-    writer.begin_object()?;
-    writer.name("type")?;
-    writer.string("reference")?;
-    writer.name("universe")?;
-    qsl_foundation::node_wire::encode_node_key(reference.universe().root_type(), writer)?;
-    writer.name("object_type")?;
-    write_effective(writer, reference.object_type())?;
-    writer.name("identity")?;
-    writer.string(reference.object().as_str())?;
-    writer.end_object()
+    projection::write_reference(reference, writer)
 }
 
 /// The UnitId text: the RFC 8785 text of its structural identity record.
@@ -630,29 +610,13 @@ fn identity_text(value: Enc, what: &'static str) -> Enc {
 /// FR-088's UnitId identity record: `{declared: <NodeId>}` or the ordered
 /// compound terms.
 fn unit_identity_enc(unit: &quire_exact::UnitId) -> Enc {
-    if let Some(node) = unit.declared_key() {
-        return Enc::Object(vec![("declared", Enc::Node(node.clone()))]);
-    }
-    let terms = unit.compound_terms().unwrap_or_default();
-    Enc::Object(vec![(
-        "terms",
-        Enc::Array(
-            terms
-                .iter()
-                .map(|(node, exponent)| {
-                    Enc::Object(vec![
-                        ("unit", Enc::Node(node.clone())),
-                        ("exponent", Enc::text(exponent.to_string())),
-                    ])
-                })
-                .collect(),
-        ),
-    )])
+    projection::unit_identity(unit)
 }
 
 /// A checked type node's producer declaration identity, `{package, node}`.
 /// Type-environment keys are minted with the declaration's opaque producer
 /// node as the final segment of their structural path.
+#[cfg(test)]
 fn declaration_name(key: &NodeKey) -> Enc {
     DeclarationRecord::of_node(key)
         .and_then(|record| {
@@ -950,55 +914,6 @@ pub(crate) fn typed_value_enc(
     value_enc(value, Typing::with_variants(types, variants))
 }
 
-/// FR-181's `record` or `tuple` form of `composite`, its declaration read
-/// from `types`: `{"type":"record","name":…,"fields":[{name, value}…]}`
-/// with `name` the declaration identity text, one entry per declared
-/// field in declaration order and an absent field `null`, or
-/// `{"type":"tuple","name":…,"components":[…]}` in declaration order; each
-/// slot written by `slot_enc`.
-fn composite_enc(
-    composite: &quire_exact::CompositeValue,
-    types: &TypeEnvironment,
-    slot_enc: &dyn Fn(&FieldValue) -> Enc,
-) -> Enc {
-    let name = declaration_name(composite.declaration());
-    match types
-        .composite(composite.declaration().clone())
-        .map(CompositeDeclaration::shape)
-    {
-        Some(CompositeShape::Record(fields)) if fields.len() == composite.slots().len() => {
-            let entries = fields
-                .iter()
-                .zip(composite.slots())
-                .map(|(field, slot)| {
-                    Enc::Object(vec![
-                        ("name", Enc::text(field.name())),
-                        ("value", slot_enc(slot)),
-                    ])
-                })
-                .collect();
-            Enc::tagged(
-                "record",
-                vec![("name", name), ("fields", Enc::Array(entries))],
-            )
-        }
-        Some(CompositeShape::Tuple(_)) => Enc::tagged(
-            "tuple",
-            vec![
-                ("name", name),
-                (
-                    "components",
-                    Enc::Array(composite.slots().iter().map(slot_enc).collect()),
-                ),
-            ],
-        ),
-        Some(CompositeShape::Record(_)) => {
-            Enc::Unencodable("a record whose slots are not its declared fields")
-        }
-        Some(CompositeShape::Union(_)) | None => Enc::Unencodable("an undeclared record"),
-    }
-}
-
 /// A reference's replacement in a key-free encoding (FR-152): `Some` for a
 /// reference the encoding names by a placeholder, `None` to encode it.
 pub(super) type Placeholder<'p> = dyn Fn(&ObjectReference) -> Option<Enc> + 'p;
@@ -1017,169 +932,10 @@ pub(super) fn value_enc_with(
 fn value_enc_with_decimal_mode(
     value: &Value,
     typing: Typing<'_>,
-    placeholder: &dyn Fn(&ObjectReference) -> Option<Enc>,
+    placeholder: &Placeholder<'_>,
     normalize_decimal: bool,
 ) -> Enc {
-    match value {
-        Value::Boolean(flag) => Enc::tagged("boolean", vec![("value", Enc::Bool(*flag))]),
-        Value::Integer(integer) => {
-            Enc::tagged("integer", vec![("value", Enc::text(integer.to_string()))])
-        }
-        Value::Rational(rational) => Enc::tagged(
-            "rational",
-            vec![
-                ("numerator", Enc::text(rational.numerator().to_string())),
-                ("denominator", Enc::text(rational.denominator().to_string())),
-            ],
-        ),
-        Value::Quantity(quantity) => {
-            let magnitude = quantity.magnitude();
-            Enc::tagged(
-                "rational",
-                vec![
-                    ("numerator", Enc::text(magnitude.numerator().to_string())),
-                    (
-                        "denominator",
-                        Enc::text(magnitude.denominator().to_string()),
-                    ),
-                    ("unit", unit_enc(quantity.unit())),
-                ],
-            )
-        }
-        Value::Float(float) => {
-            let (tag, digits) = match float.width() {
-                IeeeWidth::Binary32 => ("float32", 8),
-                IeeeWidth::Binary64 => ("float64", 16),
-            };
-            Enc::tagged(
-                tag,
-                vec![("bits", Enc::text(format!("{:0digits$x}", float.bits())))],
-            )
-        }
-        Value::Text(text) => Enc::tagged("text", vec![("value", Enc::text(text.retained()))]),
-        Value::String(text) => Enc::tagged("text", vec![("value", Enc::text(text.as_str()))]),
-        Value::Option(option) => Enc::tagged(
-            "option",
-            vec![(
-                "value",
-                option.payload().map_or(Enc::Null, |payload| {
-                    value_enc_with_decimal_mode(payload, typing, placeholder, normalize_decimal)
-                }),
-            )],
-        ),
-        Value::Collection(collection) => {
-            let tag = match collection.collection_type().kind() {
-                CollectionKind::Sequence => "sequence",
-                CollectionKind::Set => "set",
-                CollectionKind::Bag => "bag",
-                CollectionKind::OrderedSet => "ordered-set",
-            };
-            let normalize_elements = normalize_decimal
-                || matches!(
-                    collection.collection_type().kind(),
-                    CollectionKind::Set | CollectionKind::Bag
-                );
-            let mut elements: Vec<Enc> = collection
-                .elements()
-                .iter()
-                .map(|element| {
-                    value_enc_with_decimal_mode(element, typing, placeholder, normalize_elements)
-                })
-                .collect();
-            if matches!(
-                collection.collection_type().kind(),
-                CollectionKind::Set | CollectionKind::Bag
-            ) {
-                // Sorted by each element's JCS bytes, ascending (FR-181).
-                let limits = Limits::new(u64::MAX);
-                elements.sort_by_cached_key(|element| {
-                    quire_canonical::to_vec(element, limits).unwrap_or_default()
-                });
-            }
-            Enc::tagged(tag, vec![("elements", Enc::Array(elements))])
-        }
-        Value::Reference(reference) => {
-            placeholder(reference).unwrap_or_else(|| reference_enc(reference))
-        }
-        Value::Decimal(decimal) => {
-            let representation = if normalize_decimal {
-                decimal.normalized()
-            } else {
-                decimal.representation()
-            };
-            Enc::tagged(
-                "decimal",
-                vec![
-                    (
-                        "coefficient",
-                        Enc::text(representation.coefficient().to_string()),
-                    ),
-                    ("scale", Enc::text(representation.scale().to_string())),
-                ],
-            )
-        }
-        Value::Uuid(value) => Enc::tagged("uuid", vec![("value", Enc::text(value.to_string()))]),
-        Value::Timestamp(value) => Enc::tagged(
-            "timestamp",
-            vec![("nanoseconds", Enc::text(value.to_string()))],
-        ),
-        Value::Enum(member) => typing
-            .variants
-            .iter()
-            .find_map(|declared| {
-                declared
-                    .cases()
-                    .iter()
-                    .find(|case| case.variant_ref() == member.variant())
-                    .map(|case| (declared, case))
-            })
-            .map_or(
-                Enc::Unencodable("an undeclared enum value"),
-                |(declared, case)| {
-                    Enc::tagged(
-                        "enum",
-                        vec![
-                            ("name", declaration_name(declared.node_ref())),
-                            ("member", Enc::text(case.name())),
-                        ],
-                    )
-                },
-            ),
-        Value::Population(_) => Enc::Unencodable("a population value"),
-        Value::Composite(composite) => match typing.types {
-            Some(types) => composite_enc(composite, types, &|slot| match slot {
-                FieldValue::Present(inner) => {
-                    value_enc_with_decimal_mode(inner, typing, placeholder, normalize_decimal)
-                }
-                FieldValue::Absent | FieldValue::Null => Enc::Null,
-            }),
-            None => Enc::Unencodable("a record or tuple value"),
-        },
-        Value::Union(union) => Enc::tagged(
-            "union",
-            vec![
-                ("name", declaration_name(union.declaration())),
-                ("member", Enc::text(union.member().identifier())),
-                (
-                    "components",
-                    Enc::Array(
-                        union
-                            .payload()
-                            .iter()
-                            .map(|inner| {
-                                value_enc_with_decimal_mode(
-                                    inner,
-                                    typing,
-                                    placeholder,
-                                    normalize_decimal,
-                                )
-                            })
-                            .collect(),
-                    ),
-                ),
-            ],
-        ),
-    }
+    projection::value(value, typing, placeholder, normalize_decimal)
 }
 
 /// Whether two values have the same typed canonical form. A value with no
