@@ -11,6 +11,7 @@
 //! crate.
 
 mod expression;
+pub(crate) use expression::evaluate_clause_set_with_cancel;
 
 // `CheckedPackageEvaluation` is the trait that carries `call` and `evaluate`
 // over the foreign-to-`value` `CheckedPackage` typestate, since an inherent

@@ -36,12 +36,17 @@ pub(super) const fn exhausted(limit: ExpansionLimit) -> ExpansionStop {
 pub(crate) struct Budget {
     used: u64,
     max: u64,
+    cancel: Option<quire_exact::Cancel>,
 }
 
 impl Budget {
     /// A budget of `max` candidates, none used.
     pub(super) const fn new(max: u64) -> Self {
-        Self { used: 0, max }
+        Self {
+            used: 0,
+            max,
+            cancel: None,
+        }
     }
 
     /// Count one candidate or (candidate, result) pair.
@@ -51,6 +56,7 @@ impl Budget {
     /// `resource_exhausted`/`insufficient-next-charge` when the count would
     /// exceed the bound.
     pub(crate) fn charge(&mut self) -> Result<(), ExpansionStop> {
+        self.poll_cancel()?;
         self.used = self.used.saturating_add(1);
         if self.used > self.max {
             Err(exhausted(ExpansionLimit::MaxCandidates))
@@ -69,11 +75,22 @@ impl Budget {
     ///
     /// As [`Self::charge`].
     pub(super) fn charge_many(&mut self, count: usize) -> Result<(), ExpansionStop> {
+        self.poll_cancel()?;
         self.used = self
             .used
             .saturating_add(u64::try_from(count).unwrap_or(u64::MAX));
         if self.used > self.max {
             Err(exhausted(ExpansionLimit::MaxCandidates))
+        } else {
+            Ok(())
+        }
+    }
+
+    fn poll_cancel(&self) -> Result<(), ExpansionStop> {
+        if self.cancel.as_ref().is_some_and(quire_exact::Cancel::poll) {
+            Err(exhausted(ExpansionLimit::EvaluationMeter(
+                quire_exact::LimitKind::WorkUnits,
+            )))
         } else {
             Ok(())
         }
@@ -97,6 +114,7 @@ impl Row {
 /// What an expansion reads: the system, the expanded state, its observation
 /// and its objects in ascending (population, key) order.
 pub(super) struct Walk<'s, 'a> {
+    pub(super) cancel: Option<quire_exact::Cancel>,
     pub(super) system: &'s ModelSystem<'a>,
     pub(super) state: &'s ModelSimState,
     pub(super) observation: Observation,
@@ -116,6 +134,13 @@ pub(super) struct Walk<'s, 'a> {
 pub(super) type PostPresence<'s> = &'s dyn Fn(&ModelState) -> PlacePresences;
 
 impl Walk<'_, '_> {
+    pub(super) fn meter(&self) -> quire_exact::Meter {
+        let meter = quire_exact::Meter::new(self.system.meter);
+        match &self.cancel {
+            Some(cancel) => meter.with_cancel(cancel.clone()),
+            None => meter,
+        }
+    }
     /// The references of every object of the state, in row order.
     pub(super) fn references(&self) -> Vec<ObjectReference> {
         self.rows.iter().map(|row| row.reference.clone()).collect()
@@ -252,6 +277,7 @@ pub(super) fn walk_of<'s, 'a>(
         .observation(&state.state, state_document())
         .map_err(|_| stop(BROKEN))?;
     Ok(Walk {
+        cancel: None,
         system,
         state,
         observation,
@@ -276,7 +302,7 @@ pub(super) fn expand_state(
     state: &ModelSimState,
     enforcement: Option<&Enforcement<'_>>,
 ) -> Result<Expansion<ModelTransition, ModelSimState, ModelFinding>, ExpansionStop> {
-    expand(system, state, enforcement, None, None)
+    expand(system, state, enforcement, None, None, None)
 }
 
 /// [`expand_state`] with no footprint enforcement, also returning every
@@ -290,7 +316,17 @@ pub(super) fn expand_enabled<'s>(
     post_presence: Option<PostPresence<'s>>,
 ) -> Result<(ModelExpansion, Vec<frames::EnabledVector>), ExpansionStop> {
     let mut enabled = Vec::new();
-    let expansion = expand(system, state, None, Some(&mut enabled), post_presence)?;
+    let expansion = expand(system, state, None, Some(&mut enabled), post_presence, None)?;
+    Ok((expansion, enabled))
+}
+
+pub(super) fn expand_enabled_with_cancel<'s>(
+    system: &'s ModelSystem<'_>,
+    state: &'s ModelSimState,
+    cancel: &quire_exact::Cancel,
+) -> Result<(ModelExpansion, Vec<frames::EnabledVector>), ExpansionStop> {
+    let mut enabled = Vec::new();
+    let expansion = expand(system, state, None, Some(&mut enabled), None, Some(cancel))?;
     Ok((expansion, enabled))
 }
 
@@ -300,6 +336,7 @@ fn expand<'s>(
     enforcement: Option<&'s Enforcement<'s>>,
     mut enabled: Option<&mut Vec<frames::EnabledVector>>,
     post_presence: Option<PostPresence<'s>>,
+    cancel: Option<&quire_exact::Cancel>,
 ) -> Result<Expansion<ModelTransition, ModelSimState, ModelFinding>, ExpansionStop> {
     // FR-120: every expansion entry point runs the bound check first, so an
     // expansion never meets a granted field with no finite domain.
@@ -308,8 +345,10 @@ fn expand<'s>(
         "FR-120: a system the requires-bound check refuses is never expanded"
     );
     let mut walk = walk_of(system, state, enforcement)?;
+    walk.cancel = cancel.cloned();
     walk.post_presence = post_presence;
     let mut budget = system.budget();
+    budget.cancel = cancel.cloned();
 
     let mut findings = contracts::invariants(&walk)?;
     let mut contract = Vec::new();
@@ -376,6 +415,7 @@ pub(super) fn identities_of(
     let mut budget = Budget {
         used: 0,
         max: system.limits.max_candidates,
+        cancel: None,
     };
     let mut found = Vec::new();
     for row in &walk.rows {

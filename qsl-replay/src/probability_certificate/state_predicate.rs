@@ -21,9 +21,9 @@ pub(super) fn enumerate(
     ),
     ProbabilityDocumentError,
 > {
-    let (event, predicate, from) = match target {
-        ReachTarget::Until(from, target) => (ProbabilityStateEvent::Until, target, Some(from)),
-        ReachTarget::Always(predicate) => (ProbabilityStateEvent::Always, predicate, None),
+    let event = match target {
+        ReachTarget::Until(..) => ProbabilityStateEvent::Until,
+        ReachTarget::Always(_) => ProbabilityStateEvent::Always,
         ReachTarget::Eventually(_) => return Err(ProbabilityDocumentError::Unsupported),
     };
     let mut model_states = BTreeMap::new();
@@ -97,39 +97,17 @@ pub(super) fn enumerate(
         let model = model_states
             .remove(&key)
             .ok_or(ProbabilityDocumentError::Malformed)?;
-        let read = |predicate| -> Result<bool, ProbabilityDocumentError> {
-            let readings = system
-                .state_predicates(&model, &[(predicate, binding)])
-                .map_err(|error| {
-                    ProbabilityDocumentError::Build(Box::new(
-                        crate::ExactProbBuildIssue::Expansion(error),
-                    ))
-                })?;
-            match readings.into_iter().next() {
-                Some(PredicateReading::True) => Ok(true),
-                Some(PredicateReading::False) => Ok(false),
-                Some(PredicateReading::Refused(outcome)) => Err(ProbabilityDocumentError::Build(
-                    Box::new(crate::ExactProbBuildIssue::Predicate(outcome)),
-                )),
-                _ => Err(ExactProbabilityGraphError::ExpansionRefused.into()),
-            }
-        };
-        let predicate = read(predicate)?;
-        let terminal = state.choices.is_empty();
-        let (success, failure) = match event {
-            ProbabilityStateEvent::Until => (
-                predicate,
-                !predicate && !read(from.ok_or(ProbabilityDocumentError::Malformed)?)?,
-            ),
-            ProbabilityStateEvent::Always => (predicate && terminal, !predicate),
-        };
-        state.terminal = if success {
-            Some(true)
-        } else if failure || terminal {
-            Some(false)
-        } else {
-            None
-        };
+        let (verdict, failure) = outcome(
+            system,
+            target,
+            binding,
+            &model,
+            state.choices.is_empty(),
+            cancel,
+            #[cfg(feature = "test-support")]
+            &mut |_| {},
+        )?;
+        state.terminal = verdict;
         if failure {
             failures.push(key.clone());
         }
@@ -145,4 +123,61 @@ pub(super) fn enumerate(
     failures.sort();
     graph.states = stopped;
     Ok((event, graph, failures))
+}
+
+/// Direct infinite-trace first-state outcome and explicit predicate-failure label.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn outcome(
+    system: &ModelSystem<'_>,
+    target: &ReachTarget,
+    binding: Option<&ObjectReference>,
+    model: &ModelSimState,
+    terminal: bool,
+    cancel: &Cancel,
+    #[cfg(feature = "test-support")] observe: &mut dyn FnMut(ProbabilityWitnessSemanticPhase),
+) -> Result<(Option<bool>, bool), ProbabilityDocumentError> {
+    // The test-only observer makes this closure mutable in that build.
+    #[allow(unused_mut)]
+    let mut read = |predicate| -> Result<bool, ProbabilityDocumentError> {
+        #[cfg(feature = "test-support")]
+        observe(ProbabilityWitnessSemanticPhase::PredicateEntered);
+        let readings = system.state_predicates_with_cancel(model, &[(predicate, binding)], cancel);
+        #[cfg(feature = "test-support")]
+        if cancel.tripped().is_none() {
+            observe(ProbabilityWitnessSemanticPhase::PredicateReturned);
+        }
+        poll_cancel(cancel)?;
+        let readings = readings.map_err(|error| {
+            ProbabilityDocumentError::Build(Box::new(crate::ExactProbBuildIssue::Expansion(error)))
+        })?;
+        match readings.into_iter().next() {
+            Some(PredicateReading::True) => Ok(true),
+            Some(PredicateReading::False) => Ok(false),
+            Some(PredicateReading::Refused(outcome)) => Err(ProbabilityDocumentError::Build(
+                Box::new(crate::ExactProbBuildIssue::Predicate(outcome)),
+            )),
+            _ => Err(ExactProbabilityGraphError::ExpansionRefused.into()),
+        }
+    };
+    let (success, failure) = match target {
+        ReachTarget::Until(from, target) => {
+            let target = read(target)?;
+            (target, !target && !read(from)?)
+        }
+        ReachTarget::Always(predicate) => {
+            let predicate = read(predicate)?;
+            (predicate && terminal, !predicate)
+        }
+        ReachTarget::Eventually(_) => return Err(ProbabilityDocumentError::Unsupported),
+    };
+    Ok((
+        if success {
+            Some(true)
+        } else if failure || terminal {
+            Some(false)
+        } else {
+            None
+        },
+        failure,
+    ))
 }

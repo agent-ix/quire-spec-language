@@ -542,6 +542,7 @@ impl<'a> ModelSystem<'a> {
     ) -> Result<Walk<'s, 'a>, ExpansionStop> {
         match self.remembered_observation(observed) {
             Some(observation) => Ok(Walk {
+                cancel: None,
                 system: self,
                 state: observed.state(),
                 observation: Observation::clone(observation),

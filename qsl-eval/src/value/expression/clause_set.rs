@@ -85,9 +85,14 @@ fn run_group(
     short_circuit: bool,
     results: &mut Vec<ClauseSetEntry>,
     seen: &mut Vec<Verdict>,
+    cancel: Option<&quire_exact::Cancel>,
 ) -> Result<bool, CallFailure> {
     for (name, observations) in group {
-        let evaluation = package.evaluate_clause(name, observations, &mut Meter::new(limits))?;
+        let mut meter = Meter::new(limits);
+        if let Some(cancel) = cancel {
+            meter = meter.with_cancel(cancel.clone());
+        }
+        let evaluation = package.evaluate_clause(name, observations, &mut meter)?;
         let verdict = verdict(&evaluation);
         results.push(ClauseSetEntry {
             name: (*name).clone(),
@@ -118,6 +123,15 @@ pub(super) fn evaluate(
     package: &CheckedPackage,
     clauses: &[(QualifiedName, &AdmittedObservations)],
     limits: ScalarLimits,
+) -> Result<ClauseSetEvaluation, CallFailure> {
+    evaluate_with_cancel(package, clauses, limits, None)
+}
+
+pub(crate) fn evaluate_with_cancel(
+    package: &CheckedPackage,
+    clauses: &[(QualifiedName, &AdmittedObservations)],
+    limits: ScalarLimits,
+    cancel: Option<&quire_exact::Cancel>,
 ) -> Result<ClauseSetEvaluation, CallFailure> {
     // Refuse a bad set whole, before any clause is evaluated.
     let mut named = BTreeSet::new();
@@ -151,6 +165,7 @@ pub(super) fn evaluate(
             short_circuit,
             &mut results,
             &mut seen,
+            cancel,
         )
     };
     // Invariants never skip the clauses after them. Preconditions are a

@@ -483,6 +483,43 @@ fn enumerate_model_graph_with_keys<P: StatePredicate>(
     ) -> Result<(), ExactProbabilityGraphError>,
     failure: &mut impl FnMut(crate::ExactProbBuildIssue),
 ) -> Result<CheckerGraph, ExactProbabilityGraphError> {
+    enumerate_model_graph_with_keys_and_reservation(
+        system,
+        target,
+        binding,
+        workload,
+        max_states,
+        max_edges,
+        cancel,
+        stop_at_target,
+        key_of,
+        &mut |_| Ok(()),
+        #[cfg(feature = "test-support")]
+        &mut |_| {},
+        visit,
+        failure,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn enumerate_model_graph_with_keys_and_reservation<P: StatePredicate>(
+    system: &ModelSystem<'_>,
+    target: Option<&P>,
+    binding: Option<&ObjectReference>,
+    workload: Option<&Workload>,
+    max_states: usize,
+    max_edges: usize,
+    cancel: &Cancel,
+    stop_at_target: bool,
+    key_of: &impl Fn(&ModelSimState) -> Result<ProbabilityProductKey, ExactProbabilityGraphError>,
+    reserve: &mut impl FnMut(usize) -> Result<(), ExactProbabilityGraphError>,
+    #[cfg(feature = "test-support")] observe: &mut dyn FnMut(ProbabilityWitnessSemanticPhase),
+    visit: &mut impl FnMut(
+        &ProbabilityProductKey,
+        &ModelSimState,
+    ) -> Result<(), ExactProbabilityGraphError>,
+    failure: &mut impl FnMut(crate::ExactProbBuildIssue),
+) -> Result<CheckerGraph, ExactProbabilityGraphError> {
     poll_cancel(cancel)?;
     let initial = system.initial();
     if initial.len() != 1 {
@@ -496,6 +533,16 @@ fn enumerate_model_graph_with_keys<P: StatePredicate>(
         .next()
         .ok_or(ExactProbabilityGraphError::UnsupportedInitial)?;
     let root = key_of(&first)?;
+    let bytes = root
+        .as_bytes()
+        .len()
+        .checked_mul(2)
+        .and_then(|bytes| {
+            bytes.checked_add(std::mem::size_of::<(ProbabilityProductKey, ModelSimState)>())
+        })
+        .and_then(|bytes| bytes.checked_add(std::mem::size_of::<ProbabilityProductKey>()))
+        .ok_or(ExactProbabilityGraphError::TooManyEdges)?;
+    reserve(bytes)?;
     let mut pending = VecDeque::from([(root.clone(), first)]);
     let mut states = BTreeMap::new();
     let mut seen = BTreeSet::from([root.clone()]);
@@ -505,8 +552,11 @@ fn enumerate_model_graph_with_keys<P: StatePredicate>(
         visit(&key, &state)?;
         let terminal = if let Some(target) = target {
             let reading = system
-                .state_predicates(&state, &[(target, binding)])
+                .state_predicates_with_cancel(&state, &[(target, binding)], cancel)
                 .map_err(|stop| {
+                    if let Err(error) = poll_cancel(cancel) {
+                        return error;
+                    }
                     failure(crate::ExactProbBuildIssue::Expansion(stop));
                     ExactProbabilityGraphError::ExpansionRefused
                 })?
@@ -528,8 +578,17 @@ fn enumerate_model_graph_with_keys<P: StatePredicate>(
         let choices = if terminal.is_some() && stop_at_target {
             Vec::new()
         } else {
-            let distributions = model_distributions(system, &state, workload, cancel, failure)?;
+            let distributions = model_distributions_observing(
+                system,
+                &state,
+                workload,
+                cancel,
+                #[cfg(feature = "test-support")]
+                observe,
+                failure,
+            )?;
             if distributions.is_empty() {
+                reserve(std::mem::size_of::<(ProbabilityProductKey, CheckerState)>())?;
                 states.insert(
                     key,
                     CheckerState {
@@ -539,6 +598,12 @@ fn enumerate_model_graph_with_keys<P: StatePredicate>(
                 );
                 continue;
             }
+            reserve(
+                distributions
+                    .len()
+                    .checked_mul(std::mem::size_of::<Vec<ProbabilityEdge>>())
+                    .ok_or(ExactProbabilityGraphError::TooManyEdges)?,
+            )?;
             let mut choices = Vec::with_capacity(distributions.len());
             for distribution in distributions {
                 poll_cancel(cancel)?;
@@ -555,6 +620,13 @@ fn enumerate_model_graph_with_keys<P: StatePredicate>(
                     if edge_count > max_edges {
                         return Err(ExactProbabilityGraphError::EdgeLimitReached);
                     }
+                    reserve(
+                        target_key
+                            .as_bytes()
+                            .len()
+                            .checked_add(std::mem::size_of::<ProbabilityEdge>())
+                            .ok_or(ExactProbabilityGraphError::TooManyEdges)?,
+                    )?;
                     choice.push(ProbabilityEdge {
                         target: target_key.clone(),
                         probability,
@@ -563,6 +635,19 @@ fn enumerate_model_graph_with_keys<P: StatePredicate>(
                         if seen.len() >= max_states {
                             return Err(ExactProbabilityGraphError::LimitReached);
                         }
+                        reserve(
+                            target_key
+                                .as_bytes()
+                                .len()
+                                .checked_add(std::mem::size_of::<ProbabilityProductKey>())
+                                .and_then(|bytes| {
+                                    bytes.checked_add(std::mem::size_of::<(
+                                        ProbabilityProductKey,
+                                        ModelSimState,
+                                    )>())
+                                })
+                                .ok_or(ExactProbabilityGraphError::TooManyEdges)?,
+                        )?;
                         seen.insert(target_key.clone());
                         pending.push_back((target_key, successor));
                     }
@@ -571,6 +656,7 @@ fn enumerate_model_graph_with_keys<P: StatePredicate>(
             }
             choices
         };
+        reserve(std::mem::size_of::<(ProbabilityProductKey, CheckerState)>())?;
         states.insert(key, CheckerState { terminal, choices });
     }
     Ok(CheckerGraph {
@@ -599,25 +685,51 @@ fn model_distributions(
     cancel: &Cancel,
     failure: &mut impl FnMut(crate::ExactProbBuildIssue),
 ) -> Result<Vec<Vec<(Rational, ModelSimState)>>, ExactProbabilityGraphError> {
+    model_distributions_observing(
+        system,
+        state,
+        workload,
+        cancel,
+        #[cfg(feature = "test-support")]
+        &mut |_| {},
+        failure,
+    )
+}
+
+fn model_distributions_observing(
+    system: &ModelSystem<'_>,
+    state: &ModelSimState,
+    workload: Option<&Workload>,
+    cancel: &Cancel,
+    #[cfg(feature = "test-support")] observe: &mut dyn FnMut(ProbabilityWitnessSemanticPhase),
+    failure: &mut impl FnMut(crate::ExactProbBuildIssue),
+) -> Result<Vec<Vec<(Rational, ModelSimState)>>, ExactProbabilityGraphError> {
     let mut expansion = |stop| {
+        if let Err(error) = poll_cancel(cancel) {
+            return error;
+        }
         failure(crate::ExactProbBuildIssue::Expansion(stop));
         ExactProbabilityGraphError::ExpansionRefused
     };
     if let Some(workload) = workload {
-        let steps = system
-            .weighted_steps(state, workload)
-            .map_err(&mut expansion)?
-            .map_err(|stop| {
-                failure(match stop {
-                    qsl_eval::simulation::model::Unsteppable::NotMarkov(_) => {
-                        crate::ExactProbBuildIssue::NotMarkov
-                    }
-                    qsl_eval::simulation::model::Unsteppable::UndecidedSuccessor(_) => {
-                        crate::ExactProbBuildIssue::UndecidedSuccessor
-                    }
-                });
-                ExactProbabilityGraphError::ExpansionRefused
-            })?;
+        #[cfg(feature = "test-support")]
+        observe(ProbabilityWitnessSemanticPhase::ExpansionEntered);
+        let result = system.weighted_steps_with_cancel(state, workload, cancel);
+        #[cfg(feature = "test-support")]
+        if cancel.tripped().is_none() {
+            observe(ProbabilityWitnessSemanticPhase::ExpansionReturned);
+        }
+        let steps = result.map_err(&mut expansion)?.map_err(|stop| {
+            failure(match stop {
+                qsl_eval::simulation::model::Unsteppable::NotMarkov(_) => {
+                    crate::ExactProbBuildIssue::NotMarkov
+                }
+                qsl_eval::simulation::model::Unsteppable::UndecidedSuccessor(_) => {
+                    crate::ExactProbBuildIssue::UndecidedSuccessor
+                }
+            });
+            ExactProbabilityGraphError::ExpansionRefused
+        })?;
         if steps.iter().any(|step| {
             matches!(
                 step.transition,
@@ -635,13 +747,17 @@ fn model_distributions(
             .map(|step| (step.probability, step.post))
             .collect()]);
     }
-    let actions = system
-        .actions(state)
-        .map_err(&mut expansion)?
-        .map_err(|_| {
-            failure(crate::ExactProbBuildIssue::UndecidedSuccessor);
-            ExactProbabilityGraphError::ExpansionRefused
-        })?;
+    #[cfg(feature = "test-support")]
+    observe(ProbabilityWitnessSemanticPhase::ExpansionEntered);
+    let result = system.actions_with_cancel(state, cancel);
+    #[cfg(feature = "test-support")]
+    if cancel.tripped().is_none() {
+        observe(ProbabilityWitnessSemanticPhase::ExpansionReturned);
+    }
+    let actions = result.map_err(&mut expansion)?.map_err(|_| {
+        failure(crate::ExactProbBuildIssue::UndecidedSuccessor);
+        ExactProbabilityGraphError::ExpansionRefused
+    })?;
     let mut distributions = Vec::with_capacity(actions.len());
     for action in actions {
         poll_cancel(cancel)?;
@@ -1108,6 +1224,9 @@ fn topological_order(
 }
 
 fn poll_cancel(cancel: &Cancel) -> Result<(), ExactProbabilityGraphError> {
+    if let Some(cause) = cancel.tripped() {
+        return Err(ExactProbabilityGraphError::Cancelled(cause));
+    }
     if cancel.poll() {
         if let Some(cause) = cancel.tripped() {
             return Err(ExactProbabilityGraphError::Cancelled(cause));

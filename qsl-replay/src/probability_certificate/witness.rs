@@ -113,10 +113,29 @@ impl From<ExactProbabilityGraphError> for ProbabilityWitnessError {
     }
 }
 
+/// Observation points of actual semantic work, for cancellation regression tests.
+#[cfg(feature = "test-support")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ProbabilityWitnessSemanticPhase {
+    /// The original graph is about to call the semantic operation/workload owner.
+    ExpansionEntered,
+    /// That semantic call returned without observing cancellation.
+    ExpansionReturned,
+    /// A direct state predicate is about to enter its qualified evaluator.
+    PredicateEntered,
+    /// That predicate call returned without observing cancellation.
+    PredicateReturned,
+    /// Independent path replay is entering its actual operation/workload call.
+    StepEntered,
+    /// That path-step call returned without observing cancellation.
+    StepReturned,
+}
+
 /// Replay a typed path set against the exact package and admitted system.
 /// The claim, binding, predicates, probabilities and terminal leaves are all
 /// independently derived. This entry accepts no analyzer graph or wire data.
-/// It admits acyclic unbounded reachability and origin event-position
+/// It admits acyclic unbounded reachability, direct infinite-trace `until`
+/// and `always` state events, and origin event-position
 /// `eventually[0,h] holds(P)`. The latter uses qualified monitor keys and
 /// terminal false extension and permits raw model cycles within its horizon.
 #[allow(clippy::too_many_arguments)]
@@ -127,6 +146,43 @@ pub fn replay_probabilistic_witness(
     witness: &ProbabilisticCounterexample,
     limits: &ExactProbLimits,
     cancel: &Cancel,
+) -> Result<ProbabilityWitnessReplay, ProbabilityWitnessError> {
+    replay_probabilistic_witness_impl(
+        package,
+        system,
+        item,
+        witness,
+        limits,
+        cancel,
+        #[cfg(feature = "test-support")]
+        &mut |_| {},
+    )
+}
+
+/// Replay through the ordinary semantic path with a test-only phase observer.
+#[cfg(feature = "test-support")]
+#[allow(clippy::too_many_arguments)]
+pub fn replay_probabilistic_witness_observing(
+    package: &CheckedPackage,
+    system: &ModelSystem<'_>,
+    item: &ObligationIdentity,
+    witness: &ProbabilisticCounterexample,
+    limits: &ExactProbLimits,
+    cancel: &Cancel,
+    observe: &mut impl FnMut(ProbabilityWitnessSemanticPhase),
+) -> Result<ProbabilityWitnessReplay, ProbabilityWitnessError> {
+    replay_probabilistic_witness_impl(package, system, item, witness, limits, cancel, observe)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn replay_probabilistic_witness_impl(
+    package: &CheckedPackage,
+    system: &ModelSystem<'_>,
+    item: &ObligationIdentity,
+    witness: &ProbabilisticCounterexample,
+    limits: &ExactProbLimits,
+    cancel: &Cancel,
+    #[cfg(feature = "test-support")] observe: &mut dyn FnMut(ProbabilityWitnessSemanticPhase),
 ) -> Result<ProbabilityWitnessReplay, ProbabilityWitnessError> {
     poll_cancel(cancel)?;
     if !std::ptr::eq(package, system.package()) || item != &witness.item {
@@ -141,13 +197,15 @@ pub fn replay_probabilistic_witness(
     if matches!(claim.form, ProbForm::Probability { .. }) {
         return bounded::replay(system, claim, witness, limits, cancel);
     }
-    let ProbForm::Reach {
-        bound,
-        target: ReachTarget::Eventually(predicate),
-    } = &claim.form
-    else {
+    let ProbForm::Reach { bound, target } = &claim.form else {
         return Err(ExactProbabilityGraphError::UnsupportedClaimForm.into());
     };
+    if !matches!(target, ReachTarget::Eventually(_))
+        && qsl_semantics::check::TemporalProfile::from_identity(claim.profile.identity())
+            != Some(qsl_semantics::check::TemporalProfile::InfiniteTrace)
+    {
+        return Err(ExactProbabilityGraphError::UnsupportedClaimForm.into());
+    }
     match bound {
         Bound::AtLeast(threshold) | Bound::AtMost(threshold) => {
             check_bits(threshold, limits.max_rational_bits)?
@@ -167,35 +225,82 @@ pub fn replay_probabilistic_witness(
         return Err(ProbabilityWitnessError::Refused);
     }
     let mut model_states = BTreeMap::new();
+    let graph_storage = std::cell::RefCell::new(0u64);
+    let mut meter = quire_exact::Meter::new(system.meter_limits()).with_cancel(cancel.clone());
+    let key_error = std::cell::RefCell::new(None);
     let mut issue = None;
-    let graph = enumerate_model_graph(
+    let graph = enumerate_model_graph_with_keys_and_reservation(
         system,
-        predicate,
+        None::<&qsl_semantics::check::CheckedPredicate>,
         reference,
         None,
         limits.model.limits.max_states,
         limits.model.limits.max_transitions,
         cancel,
         false,
+        &|state| {
+            key_of(system, reference, state, limits, cancel).map_err(|error| {
+                *key_error.borrow_mut() = Some(error);
+                ExactProbabilityGraphError::ExpansionRefused
+            })
+        },
+        &mut |bytes| {
+            bounded::retain(bytes, &mut graph_storage.borrow_mut(), limits).map_err(|error| {
+                *key_error.borrow_mut() = Some(error);
+                ExactProbabilityGraphError::ExpansionRefused
+            })
+        },
+        #[cfg(feature = "test-support")]
+        observe,
         &mut |key, state| {
+            bounded::visit(&mut meter, cancel).map_err(|error| {
+                *key_error.borrow_mut() = Some(error);
+                ExactProbabilityGraphError::ExpansionRefused
+            })?;
+            bounded::retain(
+                key.as_bytes().len().saturating_mul(2),
+                &mut graph_storage.borrow_mut(),
+                limits,
+            )
+            .map_err(|error| {
+                *key_error.borrow_mut() = Some(error);
+                ExactProbabilityGraphError::ExpansionRefused
+            })?;
             model_states.insert(key.clone(), state.clone());
+            Ok(())
         },
         &mut |failure| {
             issue = Some(failure);
         },
     )
     .map_err(|error| {
+        if let Some(error) = key_error.borrow_mut().take() {
+            return error;
+        }
         issue.map_or(ProbabilityWitnessError::Graph(error), |issue| {
             ProbabilityWitnessError::Build(Box::new(issue))
         })
     })?;
+    let mut storage = graph_storage.into_inner();
+    // Kahn's checker retains an indegree map, ready set, and output keys.
+    for key in graph.states.keys() {
+        poll_cancel(cancel)?;
+        bounded::retain(
+            key.as_bytes()
+                .len()
+                .saturating_mul(3)
+                .saturating_add(std::mem::size_of::<ProbabilityProductKey>().saturating_mul(3)),
+            &mut storage,
+            limits,
+        )?;
+    }
     topological_order(&graph, cancel)?;
     let initials = system.initial();
     let [initial] = initials.as_slice() else {
         return Err(ExactProbabilityGraphError::UnsupportedInitial.into());
     };
-    if key_of(system, reference, initial)? != witness.initial_key
-        || key_of(system, reference, &witness.initial)? != witness.initial_key
+    if key_of(system, reference, initial, limits, cancel)? != witness.initial_key
+        || key_of(system, reference, &witness.initial, limits, cancel)? != witness.initial_key
         || initial.anchor() != witness.initial.anchor()
         || initial.reached_by() != witness.initial.reached_by()
     {
@@ -235,22 +340,30 @@ pub fn replay_probabilistic_witness(
             .get(key)
             .ok_or(ProbabilityWitnessError::Refused)?;
         let enabled = system
-            .actions(state)
-            .map_err(expansion)?
+            .actions_with_cancel(state, cancel)
+            .map_err(|stop| cancelled_expansion(stop, cancel))?
             .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?;
         if !enabled.iter().any(|enabled| &enabled.identity == action) {
             return Err(ProbabilityWitnessError::Refused);
         }
+        let action_bytes = system
+            .scheduled_identity_key(action)
+            .map_err(|stop| cancelled_expansion(stop, cancel))?;
+        bounded::retain(
+            key.as_bytes().len().saturating_add(action_bytes.len()),
+            &mut storage,
+            limits,
+        )?;
         scheduler.insert(key, action);
     }
     let mut transitions = 0usize;
     let mut mass = rational(0);
-    let mut replayed: Vec<Vec<(ModelTransition, ProbabilityProductKey)>> = Vec::new();
+    let mut replayed: Vec<&ProbabilityWitnessPath> = Vec::new();
     for path in &witness.paths {
         poll_cancel(cancel)?;
         let mut state = initial.clone();
         let mut probability = rational(1);
-        let mut signature = Vec::new();
+
         for step in &path.steps {
             poll_cancel(cancel)?;
             transitions = transitions
@@ -259,10 +372,27 @@ pub fn replay_probabilistic_witness(
             if transitions > limits.model.limits.max_transitions {
                 return Err(ExactProbabilityGraphError::EdgeLimitReached.into());
             }
-            if observes(system, predicate, reference, &state)? {
+            let key = key_of(system, reference, &state, limits, cancel)?;
+            let terminal = graph
+                .states
+                .get(&key)
+                .ok_or(ProbabilityWitnessError::Refused)?
+                .choices
+                .is_empty();
+            if outcome(
+                system,
+                target,
+                reference,
+                &state,
+                terminal,
+                cancel,
+                #[cfg(feature = "test-support")]
+                observe,
+            )?
+            .is_some()
+            {
                 return Ok(ProbabilityWitnessReplay::Parity);
             }
-            let key = key_of(system, reference, &state)?;
             if step.elapsed != rational(0)
                 || workload.is_none() && scheduler.get(&key).copied() != Some(&step.action)
             {
@@ -270,25 +400,38 @@ pub fn replay_probabilistic_witness(
             }
             let mut found = None;
             if let Some(workload) = workload {
-                for candidate in system
-                    .weighted_steps(&state, workload)
-                    .map_err(expansion)?
+                #[cfg(feature = "test-support")]
+                observe(ProbabilityWitnessSemanticPhase::StepEntered);
+                let candidates = system.weighted_steps_with_cancel(&state, workload, cancel);
+                #[cfg(feature = "test-support")]
+                if cancel.tripped().is_none() {
+                    observe(ProbabilityWitnessSemanticPhase::StepReturned);
+                }
+                for candidate in candidates
+                    .map_err(|stop| cancelled_expansion(stop, cancel))?
                     .map_err(|_| ExactProbabilityGraphError::UnsupportedDraw)?
                 {
                     poll_cancel(cancel)?;
                     if candidate.identity.as_ref() == Some(&step.action)
                         && candidate.transition == TransitionId::Operation(step.transition.clone())
                         && same_values(&candidate.random, &step.draw)
-                        && key_of(system, reference, &candidate.post)? == step.post_key
+                        && key_of(system, reference, &candidate.post, limits, cancel)?
+                            == step.post_key
                     {
                         found = Some((candidate.probability, candidate.post));
                         break;
                     }
                 }
             } else {
-                for action in system
-                    .actions(&state)
-                    .map_err(expansion)?
+                #[cfg(feature = "test-support")]
+                observe(ProbabilityWitnessSemanticPhase::StepEntered);
+                let actions = system.actions_with_cancel(&state, cancel);
+                #[cfg(feature = "test-support")]
+                if cancel.tripped().is_none() {
+                    observe(ProbabilityWitnessSemanticPhase::StepReturned);
+                }
+                for action in actions
+                    .map_err(|stop| cancelled_expansion(stop, cancel))?
                     .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?
                 {
                     poll_cancel(cancel)?;
@@ -305,7 +448,8 @@ pub fn replay_probabilistic_witness(
                         }
                         for (transition, post) in draw.successors {
                             if transition == step.transition
-                                && key_of(system, reference, &post)? == step.post_key
+                                && key_of(system, reference, &post, limits, cancel)?
+                                    == step.post_key
                             {
                                 found = Some((draw.probability.clone(), post));
                             }
@@ -317,46 +461,93 @@ pub fn replay_probabilistic_witness(
                 return Err(ProbabilityWitnessError::Refused);
             };
             if step_mass <= rational(0)
-                || key_of(system, reference, &step.post)? != step.post_key
+                || key_of(system, reference, &step.post, limits, cancel)? != step.post_key
                 || post.anchor() != step.post.anchor()
                 || post.reached_by() != step.post.reached_by()
             {
                 return Err(ProbabilityWitnessError::Refused);
             }
             check_bits(&step_mass, limits.max_rational_bits)?;
-            probability = probability.mul(&step_mass);
+            probability = bounded::arithmetic(
+                quire_exact::RationalArithmetic::Multiply(&probability, &step_mass),
+                &mut meter,
+                cancel,
+            )?;
             check_bits(&probability, limits.max_rational_bits)?;
-            signature.push((step.transition.clone(), step.post_key.clone()));
+
             state = post;
         }
-        let target = observes(system, predicate, reference, &state)?;
-        let accepting = match bound {
-            Bound::AtMost(_) => target,
-            Bound::AtLeast(_) => {
-                !target
-                    && system
-                        .actions(&state)
-                        .map_err(expansion)?
-                        .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?
-                        .is_empty()
-            }
-        };
+        let key = key_of(system, reference, &state, limits, cancel)?;
+        let terminal = graph
+            .states
+            .get(&key)
+            .ok_or(ProbabilityWitnessError::Refused)?
+            .choices
+            .is_empty();
+        let accepting = matches!(
+            (
+                bound,
+                outcome(
+                    system,
+                    target,
+                    reference,
+                    &state,
+                    terminal,
+                    cancel,
+                    #[cfg(feature = "test-support")]
+                    observe
+                )?
+            ),
+            (Bound::AtMost(_), Some(true)) | (Bound::AtLeast(_), Some(false))
+        );
+
         if !accepting {
             return Ok(ProbabilityWitnessReplay::Parity);
         }
         for previous in &replayed {
             poll_cancel(cancel)?;
-            if previous.iter().zip(&signature).all(|(a, b)| a == b) {
+            let mut prefix = true;
+            for (a, b) in previous.steps.iter().zip(&path.steps) {
+                bounded::visit(&mut meter, cancel)?;
+                if a.action != b.action
+                    || a.transition != b.transition
+                    || a.post_key != b.post_key
+                    || !same_values(&a.draw, &b.draw)
+                {
+                    prefix = false;
+                    break;
+                }
+            }
+            if prefix {
                 return Ok(ProbabilityWitnessReplay::Parity);
             }
         }
-        replayed.push(signature);
-        mass = mass.add(&probability);
+        bounded::retain(
+            std::mem::size_of::<&ProbabilityWitnessPath>(),
+            &mut storage,
+            limits,
+        )?;
+        replayed
+            .try_reserve(1)
+            .map_err(|_| ProbabilityWitnessError::Limit {
+                limit: ModelCheckLimit::CertificateMaxWorkingBytes,
+                value: limits.document.storage_bytes,
+            })?;
+        replayed.push(path);
+        mass = bounded::arithmetic(
+            quire_exact::RationalArithmetic::Add(&mass, &probability),
+            &mut meter,
+            cancel,
+        )?;
         check_bits(&mass, limits.max_rational_bits)?;
     }
     let threshold = match bound {
         Bound::AtMost(threshold) => threshold.clone(),
-        Bound::AtLeast(threshold) => rational(1).sub(threshold),
+        Bound::AtLeast(threshold) => bounded::arithmetic(
+            quire_exact::RationalArithmetic::Subtract(&rational(1), threshold),
+            &mut meter,
+            cancel,
+        )?,
     };
     if mass <= threshold {
         return Ok(ProbabilityWitnessReplay::Parity);
@@ -368,33 +559,76 @@ pub fn replay_probabilistic_witness(
     )))
 }
 
+/// First decisive state under infinite stutter at a genuine terminal state.
+fn outcome(
+    system: &ModelSystem<'_>,
+    target: &ReachTarget,
+    binding: Option<&ObjectReference>,
+    state: &ModelSimState,
+    terminal: bool,
+    cancel: &Cancel,
+    #[cfg(feature = "test-support")] observe: &mut dyn FnMut(ProbabilityWitnessSemanticPhase),
+) -> Result<Option<bool>, ProbabilityWitnessError> {
+    if let ReachTarget::Eventually(predicate) = target {
+        if observes(system, predicate, binding, state, cancel)? {
+            return Ok(Some(true));
+        }
+    }
+    match target {
+        ReachTarget::Eventually(_) => Ok(terminal.then_some(false)),
+        ReachTarget::Until(..) | ReachTarget::Always(_) => state_predicate::outcome(
+            system,
+            target,
+            binding,
+            state,
+            terminal,
+            cancel,
+            #[cfg(feature = "test-support")]
+            observe,
+        )
+        .map(|(verdict, _)| verdict)
+        .map_err(bounded::document_error),
+    }
+}
+
 fn key_of(
     system: &ModelSystem<'_>,
     binding: Option<&ObjectReference>,
     state: &ModelSimState,
-) -> Result<ProbabilityProductKey, ExactProbabilityGraphError> {
+    limits: &ExactProbLimits,
+    cancel: &Cancel,
+) -> Result<ProbabilityProductKey, ProbabilityWitnessError> {
     let (bytes, _) = system
         .state_key(state)
         .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?;
-    product_key(binding, &bytes)
+    ProbabilityProductKey::for_model_state_with_limits(binding, &bytes, limits.document, cancel)
+        .map_err(bounded::document_error)
 }
 fn observes(
     system: &ModelSystem<'_>,
     predicate: &impl StatePredicate,
     binding: Option<&ObjectReference>,
     state: &ModelSimState,
+    cancel: &Cancel,
 ) -> Result<bool, ProbabilityWitnessError> {
-    match system
-        .state_predicates(state, &[(predicate, binding)])
-        .map_err(expansion)?
-        .first()
-    {
+    let readings = system.state_predicates_with_cancel(state, &[(predicate, binding)], cancel);
+    poll_cancel(cancel)?;
+    match readings.map_err(expansion)?.first() {
         Some(PredicateReading::True) => Ok(true),
         Some(PredicateReading::False) => Ok(false),
         Some(PredicateReading::Refused(outcome)) => Err(ProbabilityWitnessError::Build(Box::new(
             crate::ExactProbBuildIssue::Predicate(outcome.clone()),
         ))),
         _ => Err(ExactProbabilityGraphError::ExpansionRefused.into()),
+    }
+}
+fn cancelled_expansion(
+    stop: qsl_eval::simulation::ExpansionStop,
+    cancel: &Cancel,
+) -> ProbabilityWitnessError {
+    match poll_cancel(cancel) {
+        Err(error) => error.into(),
+        Ok(()) => expansion(stop),
     }
 }
 fn expansion(stop: qsl_eval::simulation::ExpansionStop) -> ProbabilityWitnessError {

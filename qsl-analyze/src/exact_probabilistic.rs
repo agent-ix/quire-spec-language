@@ -60,6 +60,7 @@ pub use witness::{
     action_steps, entry_choice, policy_action, produce_witness, witness_scheduler, EntryChoice,
     ProducedPath, ProducedStep, ProducedWitness, WitnessError, WitnessScope,
 };
+pub(crate) use witness::{produce_witness_stopping, WitnessWork};
 
 use qsl_eval::automaton::{AutomatonError, StateId};
 use qsl_eval::model_subject::{ModelInstance, ModelSubject};

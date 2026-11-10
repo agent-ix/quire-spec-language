@@ -15,6 +15,82 @@ use crate::simulation::model::ModelSimState;
 use crate::simulation::sampled::world::{self, field, initial, World};
 use crate::simulation::TransitionSystem;
 
+#[trace("TC-636", "FR-201-AC-22", "FR-202-AC-22", "FR-282-AC-17")]
+#[test]
+fn caller_cancellation_enters_qualified_contract_and_state_predicate_meters() {
+    use super::super::PredicateReading;
+    use qsl_semantics::check::{ProbForm, ReachTarget};
+    use quire_exact::{Cancel, CancelCause};
+    use std::sync::atomic::{AtomicU32, Ordering};
+    use std::sync::{Arc, OnceLock};
+    let mut model = world::link();
+    model.body.push_str("invariant Valid using v on M::Msg at current { self.attempts >= 0 }\nprobabilistic Check using inf on M over (m: M::Msg) under every scheduler on origin { probability >= 0.5 [ eventually holds(m.delivered) ] }\n");
+    let world = World::with_profiles(&model, &[("inf", "quire.temporal.infinite-trace/v1")]);
+    let system = world.system();
+    let start = initial(&system);
+    let claim = world
+        .package
+        .graph()
+        .probabilistic_model()
+        .claim("Check")
+        .unwrap();
+    let ProbForm::Reach {
+        target: ReachTarget::Eventually(predicate),
+        ..
+    } = &claim.form
+    else {
+        panic!("a checked eventually state predicate");
+    };
+    let walk = super::super::walk::walk_of(&system, &start, None).unwrap();
+    let binding = &walk.rows.first().unwrap().reference;
+    assert_eq!(
+        system
+            .state_predicates(&start, &[(predicate, Some(binding))])
+            .unwrap(),
+        vec![PredicateReading::False]
+    );
+    assert_eq!(system.actions(&start).unwrap().unwrap().len(), 2);
+    assert_eq!(
+        system
+            .weighted_steps(&start, world.workload("Even"))
+            .unwrap()
+            .unwrap()
+            .len(),
+        4
+    );
+    // Invariants run before candidate generation: the observer is entered
+    // by a qualified invariant/predicate meter, with no poll offset oracle.
+    for (mode, cause) in [
+        ("actions", CancelCause::Requested),
+        ("workload", CancelCause::Deadline),
+        ("predicate", CancelCause::Requested),
+    ] {
+        let slot = Arc::new(OnceLock::<Cancel>::new());
+        let weak = Arc::downgrade(&slot);
+        let calls = Arc::new(AtomicU32::new(0));
+        let seen = Arc::clone(&calls);
+        let cancel = Cancel::observing(move || {
+            seen.fetch_add(1, Ordering::Relaxed);
+            weak.upgrade().unwrap().get().unwrap().cancel(cause);
+        });
+        slot.set(cancel.clone()).unwrap();
+        let stopped = match mode {
+            "actions" => system.actions_with_cancel(&start, &cancel).is_err(),
+            "workload" => system
+                .weighted_steps_with_cancel(&start, world.workload("Even"), &cancel)
+                .is_err(),
+            "predicate" => system
+                .state_predicates_with_cancel(&start, &[(predicate, Some(binding))], &cancel)
+                .is_err(),
+            _ => unreachable!(),
+        };
+        assert!(stopped, "{mode} must stop inside qualified evaluation");
+        assert_eq!(cancel.tripped(), Some(cause));
+        assert!(calls.load(Ordering::Relaxed) > 0);
+    }
+    assert_eq!(system.actions(&start).unwrap().unwrap().len(), 2);
+}
+
 /// The identity text of `system`'s operation `name`.
 fn operation_text(system: &super::ModelSystem<'_>, name: &str) -> String {
     system

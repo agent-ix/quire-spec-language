@@ -40,7 +40,6 @@ use crate::simulation::footprint::Footprint;
 use crate::simulation::key;
 use crate::value::{CheckedPackageEvaluation, Provenance, WrittenCollection};
 use qsl_semantics::check::CollectionWrite;
-use quire_exact::Meter;
 use quire_semantic_value::catalog::CatalogCode;
 
 /// The most values a result domain may hold and still be put in canonical
@@ -1481,7 +1480,7 @@ impl Run<'_, '_, '_> {
             &observations,
             write.field(),
             write.written(),
-            &mut Meter::new(system.meter),
+            &mut self.walk.meter(),
         ) {
             Ok(Some(WrittenCollection::Computed { value, occurrences })) => {
                 Ok((value, occurrences))

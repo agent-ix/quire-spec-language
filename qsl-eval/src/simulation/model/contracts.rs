@@ -5,7 +5,7 @@
 
 use qsl_semantics::model::observation::{AdmissionUsage, AdmittedObservations, SelfKind};
 use quire_eval::{FamilyOutcome, FamilyResult};
-use quire_exact::{Meter, Outcome, Value};
+use quire_exact::{Outcome, Value};
 
 use super::walk::{exhausted, stop, Walk};
 use super::{ClauseInfo, ClauseOutcome, ModelFinding, BROKEN};
@@ -95,12 +95,17 @@ pub(super) fn invariants(walk: &Walk<'_, '_>) -> Result<Vec<ModelFinding>, Expan
             let observations = invariant_observations(walk, clause, *row);
             let evaluation = system
                 .package
-                .evaluate_clause(
-                    &clause.qualified,
-                    &observations,
-                    &mut Meter::new(system.meter),
-                )
+                .evaluate_clause(&clause.qualified, &observations, &mut walk.meter())
                 .map_err(|_| stop(BROKEN))?;
+            if walk
+                .cancel
+                .as_ref()
+                .is_some_and(|cancel| cancel.tripped().is_some())
+            {
+                return Err(exhausted(ExpansionLimit::EvaluationMeter(
+                    quire_exact::LimitKind::WorkUnits,
+                )));
+            }
             match verdict(&evaluation.evaluation.outcome) {
                 Verdict::True => {}
                 Verdict::False => findings.push(ModelFinding::InvariantViolated {
@@ -178,11 +183,13 @@ pub(super) fn conjunction(
         .zip(&observations)
         .map(|(info, observations)| (info.qualified.clone(), observations))
         .collect();
-    let evaluation = walk
-        .system
-        .package
-        .evaluate_clause_set(&set, walk.system.meter)
-        .map_err(|_| stop(BROKEN))?;
+    let evaluation = crate::value::evaluate_clause_set_with_cancel(
+        walk.system.package,
+        &set,
+        walk.system.meter,
+        walk.cancel.as_ref(),
+    )
+    .map_err(|_| stop(BROKEN))?;
     match evaluation.outcome {
         ClauseSetOutcome::Incomplete => {
             let counter = evaluation
