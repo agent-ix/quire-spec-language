@@ -3,91 +3,11 @@
 
 use super::*;
 use qsl_semantics::check::CheckedPredicate;
-use quire_exact::{Identifier, UnitId, Value as ExactValue, ValueType};
+use quire_exact::{Identifier, Value as ExactValue, ValueType};
 
 pub(super) struct RewardGraph {
     pub(super) objective: ProbabilityRewardObjective,
     pub(super) costs: BTreeMap<ProbabilityProductKey, Vec<Vec<Rational>>>,
-}
-
-pub(super) fn read_unit(
-    value: &Value,
-    bits: u64,
-    cancel: &Cancel,
-) -> Result<Option<UnitId>, ProbabilityDocumentError> {
-    if value.is_null() {
-        return Ok(None);
-    }
-    let parts = value
-        .as_array()
-        .filter(|parts| parts.len() == 2)
-        .ok_or(ProbabilityDocumentError::Malformed)?;
-    let node = |value: &Value| {
-        qsl_foundation::node_wire::node_key_from_json(value)
-            .map_err(|_| ProbabilityDocumentError::Malformed)
-    };
-    match parts.first().and_then(Value::as_str) {
-        Some("declared") => Ok(Some(UnitId::declared(node(&parts[1])?))),
-        Some("compound") => {
-            let mut terms = Vec::new();
-            for term in parts[1]
-                .as_array()
-                .ok_or(ProbabilityDocumentError::Malformed)?
-            {
-                poll_cancel(cancel)?;
-                let members = term
-                    .as_object()
-                    .filter(|members| members.len() == 2)
-                    .ok_or(ProbabilityDocumentError::Malformed)?;
-                let unit = node(
-                    members
-                        .get("unit")
-                        .ok_or(ProbabilityDocumentError::Malformed)?,
-                )?;
-                let text = members
-                    .get("exponent")
-                    .and_then(Value::as_str)
-                    .ok_or(ProbabilityDocumentError::Malformed)?;
-                let digits = text.strip_prefix('-').unwrap_or(text);
-                if digits.is_empty()
-                    || !digits.bytes().all(|byte| byte.is_ascii_digit())
-                    || digits.len() > 1 && digits.starts_with('0')
-                    || text == "-0"
-                {
-                    return Err(ProbabilityDocumentError::Malformed);
-                }
-                let minimum_bits = u64::try_from(digits.len())
-                    .unwrap_or(u64::MAX)
-                    .saturating_sub(1)
-                    .saturating_mul(3)
-                    .saturating_add(1);
-                if minimum_bits > bits && digits.len() > 1 {
-                    return Err(ProbabilityDocumentError::IntegerText {
-                        bit_bound: bits,
-                        decimal_digits: digits.len() as u64,
-                    });
-                }
-                let exponent: Integer = text
-                    .parse()
-                    .map_err(|_| ProbabilityDocumentError::Malformed)?;
-                if exponent.magnitude_bits() > bits {
-                    return Err(ProbabilityDocumentError::Limit {
-                        limit: ProbabilityDocumentLimit::RationalBits,
-                        bound: bits,
-                        actual: exponent.magnitude_bits(),
-                    });
-                }
-                if exponent == Integer::from(0_i64)
-                    || terms.last().is_some_and(|(previous, _)| previous >= &unit)
-                {
-                    return Err(ProbabilityDocumentError::Malformed);
-                }
-                terms.push((unit, exponent));
-            }
-            Ok(Some(UnitId::compound(terms)))
-        }
-        _ => Err(ProbabilityDocumentError::Malformed),
-    }
 }
 
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]

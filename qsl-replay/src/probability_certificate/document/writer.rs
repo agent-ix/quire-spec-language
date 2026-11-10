@@ -25,7 +25,7 @@ impl<'a> Admission<'a> {
     pub(super) fn take_stop(&mut self) -> Option<ProbabilityDocumentError> {
         self.stopped.take()
     }
-    fn reserve(&mut self, bytes: usize) -> Result<(), ReservationDenied> {
+    pub(super) fn reserve(&mut self, bytes: usize) -> Result<(), ReservationDenied> {
         if let Err(error) = poll(self.cancel) {
             self.stopped = Some(error);
             return Err(ReservationDenied);

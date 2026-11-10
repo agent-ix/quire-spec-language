@@ -19,6 +19,7 @@ pub use long_run::{
     write_long_run_probability_certificate, LongRunProbabilityComponent,
     LongRunProbabilityDocument,
 };
+mod unit;
 mod writer;
 pub(super) use key::{model_product_key, model_product_key_with_budget};
 
@@ -248,15 +249,15 @@ struct WireObjective {
         deserialize_with = "present_unit",
         skip_serializing_if = "Option::is_none"
     )]
-    unit: Option<Value>,
+    unit: Option<Box<serde_json::value::RawValue>>,
     optimization: String,
     fairness: Vec<Value>,
 }
 
 fn present_unit<'de, D: serde::Deserializer<'de>>(
     deserializer: D,
-) -> Result<Option<Value>, D::Error> {
-    Value::deserialize(deserializer).map(Some)
+) -> Result<Option<Box<serde_json::value::RawValue>>, D::Error> {
+    Box::<serde_json::value::RawValue>::deserialize(deserializer).map(Some)
 }
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -603,7 +604,7 @@ fn read_document(
                 .map_err(|_| ProbabilityDocumentError::Malformed)?,
             name: quire_exact::Identifier::new(name)
                 .map_err(|_| ProbabilityDocumentError::Malformed)?,
-            unit: super::reward::read_unit(&unit, limits.scalar_bits, cancel)?,
+            unit: unit::read(unit.get().as_bytes(), limits, cancel)?,
         }),
         (None, None) => None,
         _ => return Err(ProbabilityDocumentError::Malformed),
@@ -1343,6 +1344,38 @@ mod tests {
             accounting: crate::AccountingLimits::default().0,
         }
     }
+    #[trace("TC-636", "FR-201-AC-21", "FR-201-AC-22")]
+    #[test]
+    fn reward_unit_descriptors_use_bounded_input_depth_parsing() {
+        let cancel = Cancel::new();
+        let mut reward = document();
+        let mut node = reward.identity.node().clone();
+        for _ in 0..256 {
+            node = quire_exact::NodeKey::try_new(
+                "unit",
+                vec![quire_exact::PathSegment::Node(node)],
+                0,
+            )
+            .unwrap();
+        }
+        for unit in [
+            quire_exact::UnitId::declared(node.clone()),
+            quire_exact::UnitId::compound(vec![(node, Integer::from(-1_i64))]),
+            quire_exact::UnitId::compound(Vec::new()),
+        ] {
+            reward.reward = Some(ProbabilityRewardObjective {
+                model: reward.identity.node().clone(),
+                name: quire_exact::Identifier::new("cost").unwrap(),
+                unit: Some(unit),
+            });
+            let bytes = write_probability_certificate(&reward, limits(), &cancel).unwrap();
+            assert_eq!(
+                read_probability_certificate(&bytes, limits(), &cancel).unwrap(),
+                reward
+            );
+        }
+    }
+
     pub(super) fn document() -> ProbabilityCertificateDocument {
         let key = fixture_key(0);
         ProbabilityCertificateDocument {
