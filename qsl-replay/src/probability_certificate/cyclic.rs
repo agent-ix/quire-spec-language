@@ -107,7 +107,13 @@ pub fn admit_acyclic_probabilistic_refutation_subject(
     }
     match result {
         Ok(()) => Ok(true),
-        Err(ExactProbabilityGraphError::Cycle) => Ok(false),
+        Err(
+            ExactProbabilityGraphError::Cycle
+            | ExactProbabilityGraphError::UnsupportedDraw
+            | ExactProbabilityGraphError::UnsupportedInitial
+            | ExactProbabilityGraphError::UnsupportedBinding
+            | ExactProbabilityGraphError::UnsupportedClaimForm,
+        ) => Ok(false),
         Err(ExactProbabilityGraphError::Cancelled(cause)) => {
             Err(crate::ExactProbBuildIssue::Cancelled(cause))
         }
