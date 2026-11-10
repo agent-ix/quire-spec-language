@@ -18,7 +18,7 @@ with the two observations the requirement states: the check refusal under
 state-core declaration is refused as a declaration before any of its
 expressions is classified; and that an integer division over unbounded
 `Integer` operands settles `requires-bound` against a finite backend without
-narrowing. Scope: FR-495-AC-1 to FR-495-AC-4, FR-495-AC-6, FR-495-AC-7, FR-495-AC-8 and,
+narrowing. Scope: FR-495-AC-1 to FR-495-AC-4, FR-495-AC-6, FR-495-AC-7, FR-495-AC-8, FR-495-AC-9 and,
 through QSpec TC-266, FR-495-AC-5.
 
 ## Test Procedure
@@ -39,7 +39,8 @@ through QSpec TC-266, FR-495-AC-5.
    check the same function bodies under `quire.value.complete/v1` and evaluate
    them.
    Also check `7 / 3 = rational(7, 3)` as a clause body under each profile, with and
-   without a rational type expected (FR-495-AC-6).
+   without a rational type expected (FR-495-AC-6), and the complete-facet
+   function bodies `sl1` and `sl2` of FR-495-AC-9 (QSpec TC-192 DIV-18).
 5. Run QSpec TC-192 DIV-14 through the registered SMT backend, once with a cvc5
    provider in the lock and once without.
 6. Under each division definition, check `q` of FR-495-AC-7 and its `rem` and
@@ -49,7 +50,7 @@ through QSpec TC-266, FR-495-AC-5.
    disposition is `requires-bound`, then in a locked run with that bounded
    descriptor alone and no SMT provider.
 
-Tag the test `#[trace("FR-495-AC-1", "FR-495-AC-2", "FR-495-AC-3", "FR-495-AC-4", "FR-495-AC-6", "TC-1284")]`; step 5 additionally carries `FR-495-AC-5`, `QSpec-FR-147-AC-7` and `QSpec-FR-147-AC-8` and depends on the provider; step 6 carries `FR-495-AC-7`, `QSpec-FR-147-AC-3` and `QSpec-FR-147-AC-8`.
+Tag the test `#[trace("FR-495-AC-1", "FR-495-AC-2", "FR-495-AC-3", "FR-495-AC-4", "FR-495-AC-6", "FR-495-AC-9", "TC-1284")]`; step 5 additionally carries `FR-495-AC-5`, `QSpec-FR-147-AC-7` and `QSpec-FR-147-AC-8` and depends on the provider; step 6 carries `FR-495-AC-7`, `QSpec-FR-147-AC-3` and `QSpec-FR-147-AC-8`.
 Vectors are referenced by QSpec row ID, never copied.
 
 ## Expected Results
@@ -70,7 +71,7 @@ Vectors are referenced by QSpec row ID, never copied.
   `unsupported_construct`/`expression-form` at its operator; under complete
   value the function bodies check and evaluate. The `7 / 3` clause body
   refuses `ill_typed`/`type-mismatch` at the `/` under state core; under complete
-  value it checks only with the rational type expected.
+  value it checks only with the rational type expected. `sl1` checks and gives `7/3`; `sl2` refuses `ill_typed`/`type-mismatch`.
 - Step 5: with a provider, the holding obligation is `proved` and the violated one `refuted`
   with a replayable counterexample; without one the row is reported pending on the provider.
 - Step 6: each record's extent is `Unbounded` over `a` and `b`; each item is
