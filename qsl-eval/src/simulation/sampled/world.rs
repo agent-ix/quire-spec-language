@@ -222,10 +222,19 @@ const UNLIMITED: ScalarLimits = ScalarLimits {
 impl World {
     /// `model`, checked.
     pub(crate) fn new(model: &Model) -> Self {
+        Self::with_profiles(model, &[])
+    }
+
+    /// Add checked fixture profiles in the unit's declaration header.
+    pub(crate) fn with_profiles(model: &Model, profiles: &[(&str, &str)]) -> Self {
+        let profiles = profiles
+            .iter()
+            .map(|(name, identity)| format!("profile {name} = \"{identity}\";\n"))
+            .collect::<String>();
         let document = model.document();
         let packages = package_input([document.as_slice()]).expect("one model");
         let unit = format!(
-            "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.model.complete/v1\";\n\
+            "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.model.complete/v1\";\n{profiles}\
              model M = \"{}\";\n{}\n",
             model.package, model.body
         );

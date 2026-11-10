@@ -24,8 +24,8 @@ fn caller_cancellation_enters_qualified_contract_and_state_predicate_meters() {
     use std::sync::atomic::{AtomicU32, Ordering};
     use std::sync::{Arc, OnceLock};
     let mut model = world::link();
-    model.body.push_str("invariant Valid using v on M::Msg at current { self.attempts >= 0 }\nprofile inf = \"quire.temporal.infinite-trace/v1\";\nprobabilistic Check using inf on M over (m: M::Msg) under every scheduler on origin { probability >= 0.5 [ eventually holds(m.delivered) ] }\n");
-    let world = World::new(&model);
+    model.body.push_str("invariant Valid using v on M::Msg at current { self.attempts >= 0 }\nprobabilistic Check using inf on M over (m: M::Msg) under every scheduler on origin { probability >= 0.5 [ eventually holds(m.delivered) ] }\n");
+    let world = World::with_profiles(&model, &[("inf", "quire.temporal.infinite-trace/v1")]);
     let system = world.system();
     let start = initial(&system);
     let claim = world
