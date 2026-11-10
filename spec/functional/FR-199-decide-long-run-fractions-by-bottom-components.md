@@ -48,6 +48,12 @@ pub struct ComponentValue { pub states: Vec<ProductStateId>, pub rho: Rational }
 pub struct GainBias { pub gain: Rational, pub bias: Vec<(ProductStateId, Rational)> }
 ```
 
+For the unweighted workload result, `gain` is the original indicator
+reward's average `rho`, as in AC-1. FR-201's closed DTMC long-run document
+retains that gain. Its checker subtracts the component value to obtain
+ADR-028 CE-3's centered reward and zero gain; it SHALL NOT serialize zero
+in place of the result's gain or require a second solver result format.
+
 ## Behavior
 
 - Under a workload, EN-5 SHALL decompose the DTMC into BSCCs and give each

@@ -249,6 +249,32 @@ kinds and its own `ProofBasis` members, never with ADR-024's `measured`.
 | CE-6 | **Size and cost.** A certificate holds one value per state it names, plus a rank and a policy choice where CE-3 needs them. The checker's arithmetic pass is linear in the enumerated edges in exact rationals; qualitative component/refinement/admissibility work (§13a where applicable) is additional checker-owned graph work, charged to the same budgets. It runs under the request's B-5 budgets. |
 | CE-7 | **A small trusted base.** The checker lives in the qualified core, as the owner ruled for certificate checkers (ADR-029, References). The checker's arithmetic and its graph algorithms are separate code from EN-5's iterative and linear-algebra methods and are kept small. The product construction is shared with EN-1, whose translations already answer to SM-1 (ADR-018 SM-7). |
 
+#### Closed unweighted DTMC long-run proof profile
+
+FR-201's `quire.probability-objective/dtmc-long-run/v1` closes the
+unweighted untimed workload case only. It retains QSpec's existing
+`long-run` document and `{value,gain,bias}` component transport. FR-199's
+original indicator-reward gain is rho; subtracting the component's rho
+gives CE-3's zero gain for the centered reward `[P]-rho`. The checker
+therefore checks `gain=rho` and `h=[P]-rho+Ph`. The zero gain in §15.3
+describes this centered equation, not a requirement to overwrite the
+transported original-reward gain in FR-199/QSpec FR-412's example.
+
+The checker independently rebuilds the complete original graph, including
+terminal infinite stutter, derives every BSCC, and matches each exactly to
+its complete bias-key rows. Component values fix all recurrent states;
+exact harmonic equalities on the remaining transient states uniquely
+extend those values. This is CE-3's exact expected-component-value check
+without a nested document, a solver or reachability ranks. Bias zero at
+the first complete key makes each component's additive normalization
+canonical. Predicate-true states never become absorbing targets.
+
+The profile introduces no general MDP, weighted, fairness, timed or
+refutation support. Source/key budget ownership and shared FR-413 wire
+remain separate dependencies; specification does not qualify their
+implementation. FR-201 defines exact decoding, objective/identity checks,
+component coverage, failure loci, threshold, limits and cancellation.
+
 #### Closed cyclic DTMC eventual proof profile
 
 FR-201's `quire.probability-objective/cyclic-dtmc-eventual/v1` is a separate
