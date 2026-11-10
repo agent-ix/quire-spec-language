@@ -35,7 +35,7 @@ fn availability() -> World {
     let claims = [
         claim("Lower", "s.phase = 0", ">= rational(1800,1801)"),
         claim("Upper", "s.phase = 0", "<= rational(1800,1801)"),
-        claim("TooHigh", "s.phase = 0", ">= 1"),
+        claim("TooHigh", "s.phase = 0", ">= rational(1801,1802)"),
         claim("TooLow", "s.phase = 0", "<= rational(999,1000)"),
     ]
     .concat();
@@ -315,5 +315,43 @@ fn valid_long_run_equations_still_require_the_checked_initial_threshold() {
             rejection.rule,
             qsl_replay::ProbabilityCertificateRule::ThresholdMissed
         );
+    }
+}
+
+#[trace("TC-1401", "FR-201-AC-30")]
+#[test]
+fn reachable_undefined_predicate_retains_its_family_cause() {
+    use qsl_replay::long_run_probability_certificate_document;
+    let source="probabilistic Dropped using inf on M over (c: M::Coin) under Even on origin { long_run_fraction holds(c.v = 0) >= rational(1,2) }\n";
+    let world = World::new(&prob_world::coin(source));
+    let system = ModelSystem::new(world.subject().simulation).unwrap();
+    let item = qsl_replay::probabilistic_claim_identity(world.claim("Dropped")).unwrap();
+    let result = long_run_probability_certificate_document(
+        &system,
+        world.package.graph().probabilistic_model().claims(),
+        &item,
+        vec![],
+        vec![],
+        limits(),
+        &Cancel::new(),
+    );
+    assert!(
+        matches!(result,Err(ProbabilityDocumentError::UndefinedPredicate(qsl_eval::temporal::UndefinedCause::Family(ref cause))) if cause.reason==quire_semantic_value::catalog::UndefinedReason::AbsentKey)
+    );
+}
+
+#[trace("TC-1401", "FR-201-AC-30")]
+#[test]
+fn weighted_every_scheduler_and_finite_profile_claims_issue_no_long_run_document() {
+    for source in [
+        "probabilistic Unsupported using inf on M over (s: M::Server) under every scheduler on origin { long_run_fraction holds(s.phase = 0) >= rational(1,2) }",
+        "probabilistic Unsupported using inf on M over (s: M::Server) under Steady on origin { long_run_fraction holds(s.phase = 0) weighted by duration >= rational(1,2) }",
+        "probabilistic Unsupported using ev on M over (s: M::Server) under Steady on origin { long_run_fraction holds(s.phase = 0) >= rational(1,2) }",
+    ] {
+        let world=World::new(&prob_world::service(source));
+        let records=analyze_items(&Engines::qsl().unwrap(),vec![exact_probabilistic_item(RequestIndex::new(0),world.request("Unsupported",ModelCheckLimits::default()))],&Cancel::new());
+        let qsl_analyze::analyze::Settlement::Disposed(disposed)=&records[0].settlement else {panic!("expected unsupported disposition: {:?}",records[0]);};
+        assert_eq!(disposed.kind,qsl_analyze::analyze::DispositionKind::Unsupported);
+        assert!(records[0].terminal().is_none());assert!(records[0].exact_probabilistic.is_none());
     }
 }

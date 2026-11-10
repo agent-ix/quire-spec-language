@@ -607,6 +607,16 @@ pub fn long_run_probability_certificate_document(
 ) -> Result<LongRunProbabilityDocument, ProbabilityDocumentError> {
     let mut cx = Context::new(limits, cancel);
     let (graph, _) = subject(system, claims, item, &mut cx)?;
+    let predicate_bytes = graph
+        .states
+        .iter()
+        .filter(|(_, state)| state.terminal == Some(true))
+        .fold(0usize, |bytes, (key, _)| {
+            bytes
+                .saturating_add(key.as_bytes().len())
+                .saturating_add(std::mem::size_of::<ProbabilityProductKey>())
+        });
+    cx.reserve(predicate_bytes)?;
     Ok(LongRunProbabilityDocument {
         identity: item.clone(),
         predicate_states: target_keys(&graph),
@@ -669,7 +679,12 @@ fn check_with_context(
         return Err(ProbabilityDocumentError::IdentityMismatch);
     }
     let (graph, bound) = subject(system, claims, item, cx)?;
-    if document.predicate_states != target_keys(&graph) {
+    if !document.predicate_states.iter().eq(graph
+        .states
+        .iter()
+        .filter(|(_, state)| state.terminal == Some(true))
+        .map(|(key, _)| key))
+    {
         return Err(ProbabilityDocumentError::ObjectiveMismatch);
     }
     check_graph(&graph, &document, &bound, cx).map(|mut check| {
