@@ -770,7 +770,7 @@ impl ItemCause {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(untagged)]
 enum ItemCauseMember {
-    Present { cause: Option<ItemCause> },
+    Present { cause: Option<Box<ItemCause>> },
     Omitted {},
 }
 
@@ -1056,7 +1056,9 @@ impl OutcomeItem {
             ) {
                 ItemCauseMember::Omitted {}
             } else {
-                ItemCauseMember::Present { cause }
+                ItemCauseMember::Present {
+                    cause: cause.map(Box::new),
+                }
             },
             diagnostic,
             basis,
@@ -1114,7 +1116,7 @@ impl OutcomeItem {
             request_index: request_index.get(),
             result: ItemLabel::Refuted,
             cause: ItemCauseMember::Present {
-                cause: Some(ItemCause::undefined_evaluation(at, cause)),
+                cause: Some(Box::new(ItemCause::undefined_evaluation(at, cause))),
             },
             diagnostic: None,
             basis: None,
@@ -1178,7 +1180,7 @@ impl OutcomeItem {
             result,
             diagnostic: None,
             cause: ItemCauseMember::Present {
-                cause: clause_run_cause(report),
+                cause: clause_run_cause(report).map(Box::new),
             },
             position: record.position,
             counterexample: record.counterexample,
@@ -2741,10 +2743,10 @@ mod tests {
                     }),
                 );
                 assert_eq!(item.category(), Category::Inconclusive);
-                assert_eq!(
-                    item.cause.as_ref().unwrap().certificate_at,
-                    Some(at.clone())
-                );
+                let ItemCauseMember::Present { cause: Some(cause) } = &item.cause else {
+                    panic!("certificate rejection carries its cause");
+                };
+                assert_eq!(cause.certificate_at, Some(at.clone()));
                 let document = OutcomeDocument::settled(
                     Operation::Analyze,
                     Some(OutcomeStage::S6c),
@@ -2804,10 +2806,11 @@ mod tests {
                         "result": null,
                     })
                 );
-                assert_eq!(
-                    document.items()[2].cause.as_ref().unwrap().certificate_at,
-                    Some(at)
-                );
+                let ItemCauseMember::Present { cause: Some(cause) } = &document.items()[2].cause
+                else {
+                    panic!("the document retains the certificate rejection cause");
+                };
+                assert_eq!(cause.certificate_at, Some(at));
             }
         }
     }
