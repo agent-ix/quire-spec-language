@@ -155,7 +155,7 @@ fn check(request: Request, cancel: &Cancel) -> Result<Value, String> {
     );
     let result = match result {
         Ok(result) => result,
-        Err(error) => return Ok(source_failure(error)),
+        Err(error) => return source_failure(error),
     };
     Ok(match result {
         ExactProbabilityCertificateCheck::Accepted(accepted) => {
@@ -193,7 +193,7 @@ fn check(request: Request, cancel: &Cancel) -> Result<Value, String> {
     })
 }
 
-fn source_failure(error: ProbabilitySourceError) -> Value {
+fn source_failure(error: ProbabilitySourceError) -> Result<Value, String> {
     use ProbabilityDocumentError as Document;
     let status = match &error {
         ProbabilitySourceError::Document(Document::Build(issue))
@@ -288,7 +288,12 @@ fn source_failure(error: ProbabilitySourceError) -> Value {
         ),
         _ => None,
     };
-    json!({"status": status, "reason": error.to_string(), "limit":limit})
+    let mut result = json!({"status": status, "reason": error.to_string(), "limit":limit});
+    if let ProbabilitySourceError::Document(Document::ZeroWeightComponent { state }) = &error {
+        result["at"] = serde_json::to_value(qsl_replay::CertificateLocus::ProbabilityProductState(state.clone()))
+            .map_err(|error| error.to_string())?;
+    }
+    Ok(result)
 }
 
 fn run() -> Result<Value, String> {

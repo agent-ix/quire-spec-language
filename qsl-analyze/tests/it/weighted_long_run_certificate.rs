@@ -145,8 +145,8 @@ fn periodic_model(initial: i64, a_rewards: &str, b_reward: &str, terminal: bool)
             deletes: false,
         },
     ];
-    World::new(&Model {package,object:"Server",population:"servers",key:"s",
-        integers:vec![("Phase",0,3),("Weight",1,5)],fields:vec![("phase",format!("ix://{package}/Phase"))],operations,
+    Model {package,object:"Server",population:"servers",key:"s",
+        integers:vec![("Phase",0,3),("Weight",1,6)],fields:vec![("phase",format!("ix://{package}/Phase"))],operations,
         body: format!("pre A using v on M::Server::a {{ self.phase = 0 }}\npost NextA using v on M::Server::a {{ self.phase = 1 }}\npre B using v on M::Server::b {{ self.phase = 1 }}\npost NextB using v on M::Server::b {{ self.phase = 0 }}\npre Enter using v on M::Server::enter {{ self.phase = 2 }}\npost Entered using v on M::Server::enter {{ (heads and self.phase = 0) or (not heads and self.phase = 3) }}\npre Stay using v on M::Server::stay {{ self.phase = 3 }}\nrandom Server::a(d) ~ {{ {a_rewards} }};\nrandom Server::enter(heads) ~ {{ true: 1, false: 3 }};\nreward duration on Server::a = d;\nreward duration on Server::b = {b_reward};\nreward duration on Server::stay = 1;\nworkload Steady on M {{ weight Server::a = 1; weight Server::b = 1; weight Server::enter = 1; weight Server::stay = 1; }}\n{}{}",
             if terminal { "terminal End using v on M when { self.phase = 3 };\n" } else {""},
             claim("Fraction","s.phase = 0 or s.phase = 3",if initial == 2 {">= rational(11,12)"} else {">= rational(2,3)"})),
@@ -355,4 +355,36 @@ fn admitted_object_parameter_draws_do_not_coerce_negative_weight_to_zero() {
     let records=analyze_items(&Engines::qsl().unwrap(),vec![exact_probabilistic_item(RequestIndex::new(0),world.request("Fraction",ModelCheckLimits::default()))],&Cancel::new());
     let Settlement::Disposed(disposed)=&records[0].settlement else {panic!("{:?}",records[0]);};
     assert_eq!(disposed.kind,DispositionKind::Unsupported);assert!(records[0].terminal().is_none());assert!(records[0].exact_probabilistic.is_none());
+}
+
+fn quantity_availability(tick: &str, repair: &str) -> World {
+    let extra=format!("dimension Time;\nunit ms : Time = rational(1,1);\nunit s : Time = rational(1000,1) * ms;\ndimension Length;\nunit m : Length = rational(1,1);\nreward duration on Server::tick = {tick};\nreward duration on Server::repair = {repair};\n");
+    availability_with_claims(claim("Lower","s.phase = 0",">= rational(600,601)"),&extra)
+}
+#[trace("TC-1402", "FR-201-AC-31", "FR-201-AC-33")]
+#[test]
+fn checked_weight_units_and_equivalent_expressions_are_not_display_aliases() {
+    let world=quantity_availability("1 ms","3 ms");
+    let bytes=produce(&world,"Lower");
+    let document=read_weighted_long_run_probability_certificate(&bytes,limits(),&Cancel::new()).unwrap();
+    assert!(document.weight.unit.as_ref().unwrap().declared_key().is_some());
+    assert_eq!(document.certificate.components[0].value,ratio(600,601));
+    assert_eq!(document.certificate.components[0].bias[1].value,ratio(-2000,601));
+    let equivalent=quantity_availability("convert<Quantity<ms>>(rational(1,1000) s)","convert<Quantity<ms>>(rational(3,1000) s)");
+    let equivalent_bytes=produce(&equivalent,"Lower");
+    let equivalent_doc=read_weighted_long_run_probability_certificate(&equivalent_bytes,limits(),&Cancel::new()).unwrap();
+    assert_eq!(equivalent_doc.weight,document.weight);
+    assert_eq!(equivalent_doc.certificate.components,document.certificate.components);
+    assert!(accepted(&equivalent,"Lower",&document));
+    let other=quantity_availability("1 s","3 s");
+    let other_doc=read_weighted_long_run_probability_certificate(&produce(&other,"Lower"),limits(),&Cancel::new()).unwrap();
+    assert_ne!(other_doc.weight.unit,document.weight.unit);
+    let mut wrong=document.clone();wrong.weight.unit=other_doc.weight.unit;
+    let bytes=write_weighted_long_run_probability_certificate(&wrong,limits(),&Cancel::new()).unwrap();
+    assert_eq!(check(&world,"Lower",&bytes,&Cancel::new(),limits()),Err(ProbabilityDocumentError::ObjectiveMismatch));
+    let compound=quantity_availability("(1 ms) / (1 m)","(3 ms) / (1 m)");
+    let compound_bytes=produce(&compound,"Lower");
+    let compound_doc=read_weighted_long_run_probability_certificate(&compound_bytes,limits(),&Cancel::new()).unwrap();
+    assert_eq!(compound_doc.weight.unit.as_ref().unwrap().compound_terms().unwrap().len(),2);
+    assert!(accepted(&compound,"Lower",&compound_doc));
 }
