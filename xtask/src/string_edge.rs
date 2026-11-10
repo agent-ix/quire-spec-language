@@ -30,6 +30,8 @@ fn crate_roots() -> Vec<PathBuf> {
         "qsl-walk-grow/src",
         "qsl-foundation/src",
         "qsl-cst/src",
+        "qsl-command/src",
+        "tools/qsl-probability-check/src",
         "qsl-source/src",
         "qsl-forms/src",
         "qsl-semantics/src",
