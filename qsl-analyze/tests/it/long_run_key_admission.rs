@@ -7,7 +7,7 @@ use ix_trace_rs::trace;
 use qsl_analyze::exact_probabilistic::{
     build_product_with_key_budget, BudgetedProductError, ProbBuild,
 };
-use qsl_eval::simulation::model::{ModelKeyBudget, ModelKeyError, ModelSystem};
+use qsl_eval::simulation::model::{ModelKeyBudget, ModelSystem};
 use qsl_eval::simulation::TransitionSystem;
 use qsl_foundation::{BackendId, IdentityLimits, RequestIndex, Setting};
 use qsl_replay::{
