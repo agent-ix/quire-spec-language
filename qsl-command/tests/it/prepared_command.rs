@@ -153,7 +153,7 @@ fn preparation_retains_owned_inputs_and_the_existing_run_outcomes() {
         let quire_exact::Value::Integer(value) = &input.call.arguments[0].value else {
             panic!("the request's integer argument retains its typed value");
         };
-        assert_eq!(value, &quire_exact::Integer::from(2));
+        assert_eq!(value, &quire_exact::Integer::from(2_i64));
         for file in ["program.native", "library.native", "model.json", "run.json"] {
             std::fs::remove_file(directory.path().join(file)).unwrap();
         }
@@ -171,8 +171,23 @@ fn preparation_retains_owned_inputs_and_the_existing_run_outcomes() {
         );
         let outcome = OutcomeDocument::from_run(&result);
         assert_eq!(outcome.category().exit_code(), native.exit_code);
-        assert_eq!(document(&outcome)["category"], expected_category);
+        let machine = document(&outcome);
+        assert_eq!(machine["category"], expected_category);
         assert_eq!(native.value.as_value()["outcome"]["kind"], expected_kind);
+        if expected_kind == "completed" {
+            assert_eq!(
+                machine["result"]["value"],
+                native.value.as_value()["outcome"]["value"]
+            );
+            assert_eq!(
+                machine["result"]["value"],
+                json!({"kind":"boolean","value":true})
+            );
+        } else {
+            assert_eq!(machine["result"]["kind"], "incomplete");
+            assert_eq!(machine["result"]["limit"]["counter"], "0");
+            assert_eq!(machine["result"]["limit"]["setting"], "work_units");
+        }
     }
 }
 
