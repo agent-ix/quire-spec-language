@@ -178,7 +178,9 @@ fn enumerate_controlled(
     let predicate = formula
         .condition(monitor.atom().index())
         .ok_or(ExactProbabilityGraphError::UnsupportedClaimForm)?;
-    let read = |state: &ModelSimState, failure: &mut dyn FnMut(crate::ExactProbBuildIssue)| -> Result<bool, ProbabilityDocumentError> {
+    let read = |state: &ModelSimState,
+                failure: &mut dyn FnMut(crate::ExactProbBuildIssue)|
+     -> Result<bool, ProbabilityDocumentError> {
         poll_cancel(cancel)?;
         let reading = system
             .state_predicates(state, &[(predicate, binding)])
