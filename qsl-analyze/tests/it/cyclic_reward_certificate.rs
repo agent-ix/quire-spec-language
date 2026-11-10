@@ -207,12 +207,13 @@ fn predicate_undefined_only_after_target_is_not_evaluated() {
         true,
     ));
     let bytes = write_probability_certificate(&document, limits(), &Cancel::new()).unwrap();
+    let rejection = check(&relevant, &bytes, &Cancel::new(), limits());
     assert!(matches!(
-        check(&relevant, &bytes, &Cancel::new(), limits()),
+        &rejection,
         Err(ProbabilityDocumentError::UndefinedPredicate(_))
     ));
     let relevant_system = ModelSystem::new(relevant.subject().simulation).unwrap();
-    assert!(matches!(
+    assert_eq!(
         qsl_replay::admit_expected_reward_certificate_subject(
             &relevant_system,
             relevant.package.graph().probabilistic_model().claims(),
@@ -220,8 +221,8 @@ fn predicate_undefined_only_after_target_is_not_evaluated() {
             limits(),
             &Cancel::new()
         ),
-        Err(ProbabilityDocumentError::UndefinedPredicate(_))
-    ));
+        rejection.map(|_| ())
+    );
 }
 #[trace("TC-1403", "FR-201-AC-35", "FR-201-AC-37")]
 #[test]
