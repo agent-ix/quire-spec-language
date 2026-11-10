@@ -265,22 +265,18 @@ fn analyze(
     cancel: &Cancel,
     meter: &mut quire_exact::Meter,
 ) -> Result<BTreeMap<ProbabilityProductKey, u64>, ProbabilityDocumentError> {
-    let keys: Vec<_> = graph.states.keys().cloned().collect();
-    let indexes: BTreeMap<_, _> = keys
-        .iter()
+    let indexes: std::collections::HashMap<_, _> = graph
+        .states
+        .keys()
         .enumerate()
-        .map(|(i, key)| (key.clone(), i))
+        .map(|(i, key)| (key.as_bytes(), i))
         .collect();
-    let n = keys.len();
+    let n = graph.states.len();
     let mut outgoing = vec![Vec::new(); n];
     let mut reverse = vec![Vec::new(); n];
     let mut targets = vec![false; n];
-    for (i, key) in keys.iter().enumerate() {
+    for (i, state) in graph.states.values().enumerate() {
         visit(cancel, meter)?;
-        let state = graph
-            .states
-            .get(key)
-            .ok_or(ProbabilityDocumentError::Malformed)?;
         targets[i] = state.terminal == Some(true);
         if state.choices.is_empty() {
             continue;
@@ -302,7 +298,7 @@ fn analyze(
             )?;
             document::check_scalar(&mass, limits)?;
             let next = *indexes
-                .get(&edge.target)
+                .get(edge.target.as_bytes())
                 .ok_or(ProbabilityDocumentError::Malformed)?;
             outgoing[i].push(next);
             reverse[next].push(i);
@@ -396,19 +392,15 @@ fn analyze(
         }
     }
     let mut ranks = BTreeMap::new();
-    for (node, key) in keys.into_iter().enumerate() {
+    for (node, (key, state)) in graph.states.iter_mut().enumerate() {
         visit(cancel, meter)?;
         if !targets[node]
             && (distance[node].is_none()
                 || (closed[component[node]] && !has_target[component[node]]))
         {
-            graph
-                .states
-                .get_mut(&key)
-                .ok_or(ProbabilityDocumentError::Malformed)?
-                .terminal = Some(false);
+            state.terminal = Some(false);
         }
-        ranks.insert(key, distance[node].unwrap_or(0));
+        ranks.insert(key.clone(), distance[node].unwrap_or(0));
     }
     Ok(ranks)
 }
