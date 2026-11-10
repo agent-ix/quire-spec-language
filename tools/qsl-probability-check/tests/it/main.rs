@@ -5,3 +5,5 @@ mod cyclic;
 mod reward;
 mod roundtrip;
 mod state_predicate;
+
+mod cyclic_reward;

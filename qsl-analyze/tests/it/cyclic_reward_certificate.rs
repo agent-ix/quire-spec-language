@@ -13,8 +13,9 @@ use qsl_replay::{
     check_probability_certificate_document, probability_certificate_document,
     read_probability_certificate, write_probability_certificate, ExactProbabilityCertificate,
     ExactProbabilityCertificateCheck, ExactProbabilityValue, ModelCheckLimits,
-    ProbabilityCertificateDocument, ProbabilityCertificateLocus, ProbabilityCertificateRule,
-    ProbabilityDocumentError, ProbabilityDocumentLimits, ProbabilityProductKey,
+    ProbabilityCertificateDocument, ProbabilityCertificateLocus, ProbabilityCertificateRejection,
+    ProbabilityCertificateRule, ProbabilityDocumentError, ProbabilityDocumentLimits,
+    ProbabilityProductKey,
 };
 use quire_exact::{Cancel, CancelCause, Integer, Rational};
 
