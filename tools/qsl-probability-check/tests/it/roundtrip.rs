@@ -179,11 +179,35 @@ fn proof_source_request(
             .unwrap()
             .exact_certificate_document()
             .unwrap();
-        let document =
-            qsl_replay::read_long_run_probability_certificate(retained, document_limits, &cancel)
-                .unwrap();
-        qsl_replay::write_long_run_probability_certificate(&document, document_limits, &cancel)
+        if matches!(
+            &claim.form,
+            qsl_semantics::check::ProbForm::LongRunFraction {
+                weight: Some(_),
+                ..
+            }
+        ) {
+            let document = qsl_replay::read_weighted_long_run_probability_certificate(
+                retained,
+                document_limits,
+                &cancel,
+            )
+            .unwrap();
+            qsl_replay::write_weighted_long_run_probability_certificate(
+                &document,
+                document_limits,
+                &cancel,
+            )
             .unwrap()
+        } else {
+            let document = qsl_replay::read_long_run_probability_certificate(
+                retained,
+                document_limits,
+                &cancel,
+            )
+            .unwrap();
+            qsl_replay::write_long_run_probability_certificate(&document, document_limits, &cancel)
+                .unwrap()
+        }
     } else {
         let document = probability_certificate_document(
             &system,
@@ -1071,4 +1095,197 @@ fn long_run_foreign_and_model_only_keys_cannot_alias_the_checked_subject() {
     let (code, result) = run(&original, &[]);
     assert_eq!(code, 0, "{result}");
     assert_eq!(result["status"], "accepted");
+}
+
+fn weighted_long_run_request() -> Value {
+    let source = SOURCE
+        .replace("not self.delivered and self.attempts < 2", "true")
+        .replace(
+            "self.attempts - pre(self.attempts) = 1",
+            "self.attempts = 0",
+        )
+        .replace(
+            "terminal Stop using v on M when { self.delivered or self.attempts = 2 };\n",
+            "",
+        )
+        .replace(
+            "reward cost on Msg::send_b = 1;",
+            "reward cost on Msg::send_b = 3;",
+        );
+    proof_source_request(&format!("{source}\nprobabilistic Likely using inf on M over (m: M::Msg) under Even on origin {{ long_run_fraction holds(m.delivered) weighted by cost >= rational(1,2) }}\n"), |_,_,_,_,_| {})
+}
+
+#[trace("TC-1402", "FR-201-AC-31", "FR-201-AC-33")]
+#[test]
+fn weighted_long_run_round_trip_and_members_cross_actual_source_process() {
+    let request = weighted_long_run_request();
+    let (code, result) = run(&request, &[]);
+    assert_eq!(code, 0, "{result}");
+    assert_eq!(result["status"], "accepted");
+    let document: Value = serde_json::from_str(request["certificate"].as_str().unwrap()).unwrap();
+    assert_eq!(
+        document["objective"]["profile"],
+        "quire.probability-objective/dtmc-weighted-long-run/v1"
+    );
+    // The step's reward labels the CURRENT state, not its destination. Weighting
+    // the destination would give33/40, instead of the original-chain17/20.
+    assert_eq!(
+        document["components"][0]["value"],
+        json!({"numerator":"17","denominator":"20"})
+    );
+    for member in ["values", "bias", "gain", "value"] {
+        let mut bad = request.clone();
+        change_certificate(&mut bad, |document| {
+            if member == "values" {
+                document.as_object_mut().unwrap().remove(member);
+            } else {
+                document["components"][0]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove(member);
+            }
+        });
+        let (code, result) = run(&bad, &[]);
+        assert_eq!(code, 1, "{member}: {result}");
+        assert_eq!(result["status"], "rejected");
+        assert_eq!(result["rule"], "malformed");
+        assert_eq!(
+            result["at"],
+            json!({"member":if member=="values" {"values"} else {"components"}})
+        );
+    }
+    for member in ["values", "bias", "components"] {
+        for duplicate in [false, true] {
+            if member == "components" && !duplicate {
+                continue;
+            }
+            let mut bad = request.clone();
+            change_certificate(&mut bad, |document| {
+                let rows = match member {
+                    "values" => document["values"].as_array_mut().unwrap(),
+                    "bias" => document["components"][0]["bias"].as_array_mut().unwrap(),
+                    _ => document["components"].as_array_mut().unwrap(),
+                };
+                if duplicate {
+                    rows.insert(1, rows[0].clone());
+                } else {
+                    assert!(rows.len() > 1);
+                    rows.reverse();
+                }
+            });
+            let (code, result) = run(&bad, &[]);
+            assert_eq!(code, 1, "{member}/{duplicate}: {result}");
+            assert_eq!(result["rule"], "malformed");
+        }
+    }
+}
+
+#[trace("TC-1402", "FR-201-AC-33", "FR-201-AC-34")]
+#[test]
+fn weighted_long_run_strict_scalars_keys_and_objectives_refuse_in_fresh_process() {
+    let request = weighted_long_run_request();
+    for mutation in 0..7 {
+        let mut bad = request.clone();
+        change_certificate(&mut bad, |document| match mutation {
+            0 => {
+                document["components"][0]["value"] = json!({"numerator":"34","denominator":"40"});
+            }
+            1 => {
+                document["values"][0]["state"] = json!(format!(
+                    "{}=",
+                    document["values"][0]["state"].as_str().unwrap()
+                ));
+            }
+            2 => {
+                document["objective"]["weight"][1] = json!("foreign");
+            }
+            3 => {
+                document["objective"]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("unit");
+            }
+            4 => {
+                document["objective"]["predicate_states"] = json!([]);
+            }
+            5 => {
+                document["objective"]["extra"] = json!(true);
+            }
+            _ => {
+                document["identity"]["ordinal"] = json!(99);
+            }
+        });
+        let (code, result) = run(&bad, &[]);
+        assert_ne!(code, 0, "mutation{mutation}: {result}");
+        assert_ne!(result["status"], "accepted");
+        if mutation == 2 || mutation == 4 {
+            assert!(
+                result["reason"]
+                    .as_str()
+                    .unwrap()
+                    .contains("objective mismatch"),
+                "{result}"
+            );
+        }
+        if mutation == 6 {
+            assert!(
+                result["reason"]
+                    .as_str()
+                    .unwrap()
+                    .contains("conflicting_identity"),
+                "{result}"
+            );
+        }
+    }
+    for shape in [0, 1] {
+        let mut bad = request.clone();
+        change_certificate(&mut bad, |document| {
+            alter_long_run_keys(document, |key| {
+                if shape == 0 {
+                    assert!(key[1].get("identity").is_some());
+                    key[1]["identity"] = json!("foreign-instance");
+                } else {
+                    key.as_array_mut().unwrap().remove(1);
+                }
+            })
+        });
+        let (code, result) = run(&bad, &[]);
+        assert_ne!(code, 0, "shape{shape}: {result}");
+        assert_ne!(result["status"], "accepted");
+    }
+    let mut bad = request.clone();
+    bad["certificate"] = json!(format!(" {}", request["certificate"].as_str().unwrap()));
+    let (code, result) = run(&bad, &[]);
+    assert_ne!(code, 0, "{result}");
+    assert_ne!(result["status"], "accepted");
+}
+
+#[trace("TC-1402", "FR-201-AC-32", "FR-201-AC-34")]
+#[test]
+fn weighted_zero_component_retains_existing_product_locus_in_fresh_process() {
+    let mut request = weighted_long_run_request();
+    let document: Value = serde_json::from_str(request["certificate"].as_str().unwrap()).unwrap();
+    let source = request["source"]["content"]
+        .as_str()
+        .unwrap()
+        .replace(
+            "reward cost on Msg::send_a = 1;",
+            "reward cost on Msg::send_a = 0;",
+        )
+        .replace(
+            "reward cost on Msg::send_b = 3;",
+            "reward cost on Msg::send_b = 0;",
+        );
+    replace_checked_source(&mut request, &source);
+    let (code, result) = run(&request, &[]);
+    assert_ne!(code, 0, "{result}");
+    assert_eq!(result["status"], "unsupported");
+    assert!(result["reason"]
+        .as_str()
+        .unwrap()
+        .contains("ZeroWeightComponent"));
+    assert_eq!(
+        result["at"]["product_key"], document["components"][0]["bias"][0]["state"],
+        "{result}"
+    );
 }

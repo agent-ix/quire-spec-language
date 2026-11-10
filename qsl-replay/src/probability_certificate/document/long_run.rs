@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! Independent gain–bias checking of the closed unweighted DTMC profile.
+//! Independent gain–bias checking of the closed DTMC long-run profiles.
 
 use super::*;
 use quire_canonical::{Encode, Error, Sink, Writer};
@@ -17,6 +17,10 @@ pub enum LongRunProbabilityPhase {
     Predicate,
     /// Qualified workload expansion.
     Workload,
+    /// Checked named weight and selected unit resolution.
+    Unit,
+    /// Actual outgoing draw, before reading its checked weight magnitude.
+    Weight,
     /// Positive-support component traversal.
     Components,
     /// Supplied versus independent membership comparison.
@@ -26,13 +30,14 @@ pub enum LongRunProbabilityPhase {
 }
 
 const PROFILE: &str = "quire.probability-objective/dtmc-long-run/v1";
+const WEIGHTED_PROFILE: &str = "quire.probability-objective/dtmc-weighted-long-run/v1";
 
 /// Candidate evidence for one complete recurrent component.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LongRunProbabilityComponent {
     /// Long-run fraction of the checked indicator in this component.
     pub value: Rational,
-    /// Average original indicator reward, equal to `value`.
+    /// Selected long-run ratio marker, equal to `value`.
     pub gain: Rational,
     /// Signed biases in strictly ascending complete-key order, first bias zero.
     pub bias: Vec<ExactProbabilityValue>,
@@ -49,6 +54,31 @@ pub struct LongRunProbabilityDocument {
     pub values: Vec<ExactProbabilityValue>,
     /// Every bottom component, ordered by its first complete bias key.
     pub components: Vec<LongRunProbabilityComponent>,
+}
+
+/// Weighted long-run evidence, retaining the original unweighted row representation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WeightedLongRunProbabilityDocument {
+    /// Common identity, predicate, values and recurrent-component evidence.
+    pub certificate: LongRunProbabilityDocument,
+    /// Actual checked weight identity and selected magnitude unit.
+    pub weight: ProbabilityRewardObjective,
+}
+
+struct Decoded {
+    document: LongRunProbabilityDocument,
+    weight: Option<ProbabilityRewardObjective>,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct WeightedObjective {
+    profile: String,
+    predicate_states: Vec<String>,
+    weight: (Box<serde_json::value::RawValue>, String),
+    unit: Box<serde_json::value::RawValue>,
+    optimization: String,
+    fairness: Vec<Value>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -68,9 +98,9 @@ struct Component {
 }
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Document {
+struct Document<O = Objective> {
     identity: WireIdentity,
-    objective: Objective,
+    objective: O,
     kind: String,
     values: Vec<WireValue>,
     components: Vec<Component>,
@@ -105,8 +135,17 @@ pub(super) fn has_profile(
             .get("objective")
             .and_then(|v| v.get("profile"))
             .map(|v| v.node()),
-        Some(quire_canonical::Node::String(PROFILE))
+        Some(quire_canonical::Node::String(PROFILE | WEIGHTED_PROFILE))
     ))
+}
+
+pub(super) fn certificate_identity(
+    bytes: &[u8],
+    limits: ProbabilityDocumentLimits,
+    cancel: &Cancel,
+) -> Result<ObligationIdentity, ProbabilityDocumentError> {
+    let mut cx = Context::new(limits, cancel);
+    Ok(read(bytes, &mut cx)?.document.identity)
 }
 
 /// Read canonical long-run bytes without trusting their component partition.
@@ -116,13 +155,30 @@ pub fn read_long_run_probability_certificate(
     cancel: &Cancel,
 ) -> Result<LongRunProbabilityDocument, ProbabilityDocumentError> {
     let mut cx = Context::new(limits, cancel);
-    read(bytes, &mut cx)
+    let decoded = read(bytes, &mut cx)?;
+    if decoded.weight.is_some() {
+        return Err(ProbabilityDocumentError::Unsupported);
+    }
+    Ok(decoded.document)
 }
 
-fn read(
+/// Read the strict weighted objective without trusting component evidence.
+pub fn read_weighted_long_run_probability_certificate(
     bytes: &[u8],
-    cx: &mut Context<'_>,
-) -> Result<LongRunProbabilityDocument, ProbabilityDocumentError> {
+    limits: ProbabilityDocumentLimits,
+    cancel: &Cancel,
+) -> Result<WeightedLongRunProbabilityDocument, ProbabilityDocumentError> {
+    let mut cx = Context::new(limits, cancel);
+    let decoded = read(bytes, &mut cx)?;
+    Ok(WeightedLongRunProbabilityDocument {
+        certificate: decoded.document,
+        weight: decoded
+            .weight
+            .ok_or(ProbabilityDocumentError::Unsupported)?,
+    })
+}
+
+fn read(bytes: &[u8], cx: &mut Context<'_>) -> Result<Decoded, ProbabilityDocumentError> {
     #[cfg(feature = "test-support")]
     cx.phase(LongRunProbabilityPhase::Admission)?;
     if !has_profile(bytes, cx.limits, cx.cancel)? {
@@ -134,14 +190,53 @@ fn read(
     let parsed = quire_canonical::read_bounded(bytes, cx.limits.bytes, cx.limits.storage_bytes)
         .map_err(|_| ProbabilityDocumentError::Malformed)?;
     admit_members(parsed.root(), cx)?;
+    let weighted = matches!(
+        parsed
+            .root()
+            .get("objective")
+            .and_then(|o| o.get("profile"))
+            .map(|p| p.node()),
+        Some(quire_canonical::Node::String(WEIGHTED_PROFILE))
+    );
     drop(parsed);
-    let wire: Document =
-        serde_json::from_slice(bytes).map_err(|_| ProbabilityDocumentError::Malformed)?;
-    if canonical(&wire, cx.limits.bytes)? != bytes {
-        return Err(ProbabilityDocumentError::Noncanonical);
-    }
+    let (wire, weight) = if weighted {
+        let wire: Document<WeightedObjective> =
+            serde_json::from_slice(bytes).map_err(|_| ProbabilityDocumentError::Malformed)?;
+        if canonical(&wire, cx.limits.bytes)? != bytes {
+            return Err(ProbabilityDocumentError::Noncanonical);
+        }
+        let weight = ProbabilityRewardObjective {
+            model: qsl_foundation::node_wire::node_key_from_text(wire.objective.weight.0.get())
+                .map_err(|_| ProbabilityDocumentError::Malformed)?,
+            name: quire_exact::Identifier::new(wire.objective.weight.1)
+                .map_err(|_| ProbabilityDocumentError::Malformed)?,
+            unit: unit::read(wire.objective.unit.get().as_bytes(), cx.limits, cx.cancel)?,
+        };
+        (
+            Document {
+                identity: wire.identity,
+                objective: Objective {
+                    profile: wire.objective.profile,
+                    predicate_states: wire.objective.predicate_states,
+                    optimization: wire.objective.optimization,
+                    fairness: wire.objective.fairness,
+                },
+                kind: wire.kind,
+                values: wire.values,
+                components: wire.components,
+            },
+            Some(weight),
+        )
+    } else {
+        let wire: Document =
+            serde_json::from_slice(bytes).map_err(|_| ProbabilityDocumentError::Malformed)?;
+        if canonical(&wire, cx.limits.bytes)? != bytes {
+            return Err(ProbabilityDocumentError::Noncanonical);
+        }
+        (wire, None)
+    };
     if wire.kind != "long-run"
-        || wire.objective.profile != PROFILE
+        || !matches!(wire.objective.profile.as_str(), PROFILE | WEIGHTED_PROFILE)
         || !wire.objective.fairness.is_empty()
     {
         return Err(ProbabilityDocumentError::Unsupported);
@@ -206,11 +301,14 @@ fn read(
         }
         components.push(LongRunProbabilityComponent { value, gain, bias });
     }
-    Ok(LongRunProbabilityDocument {
-        identity,
-        predicate_states,
-        values,
-        components,
+    Ok(Decoded {
+        document: LongRunProbabilityDocument {
+            identity,
+            predicate_states,
+            values,
+            components,
+        },
+        weight,
     })
 }
 
@@ -285,6 +383,7 @@ fn read_rows(
 
 struct Events<'a> {
     document: &'a LongRunProbabilityDocument,
+    weight: Option<&'a ProbabilityRewardObjective>,
     text: writer::Text<'a>,
 }
 impl Events<'_> {
@@ -337,7 +436,20 @@ impl Encode for Events<'_> {
         writer.name("objective")?;
         writer.begin_object()?;
         writer.name("profile")?;
-        writer.string(PROFILE)?;
+        writer.string(if self.weight.is_some() {
+            WEIGHTED_PROFILE
+        } else {
+            PROFILE
+        })?;
+        if let Some(weight) = self.weight {
+            writer.name("weight")?;
+            writer.begin_array()?;
+            qsl_foundation::node_wire::encode_node_key(&weight.model, writer)?;
+            writer.string(weight.name.as_str())?;
+            writer.end_array()?;
+            writer.name("unit")?;
+            self.text.unit(weight.unit.as_ref(), writer)?;
+        }
         writer.name("predicate_states")?;
         writer.begin_array()?;
         for (index, key) in self.document.predicate_states.iter().enumerate() {
@@ -380,6 +492,7 @@ pub fn write_long_run_probability_certificate(
     poll(cancel)?;
     let events = Events {
         document,
+        weight: None,
         text: writer::Text::new(limits, cancel),
     };
     let admission = RefCell::new(writer::Admission::new(limits.storage_bytes, cancel));
@@ -390,6 +503,35 @@ pub fn write_long_run_probability_certificate(
     let bytes = result?;
     read_long_run_probability_certificate(&bytes, limits, cancel)?;
     Ok(bytes)
+}
+
+/// Write a canonical weighted long-run document; construction grants no verdict.
+pub fn write_weighted_long_run_probability_certificate(
+    document: &WeightedLongRunProbabilityDocument,
+    limits: ProbabilityDocumentLimits,
+    cancel: &Cancel,
+) -> Result<Vec<u8>, ProbabilityDocumentError> {
+    poll(cancel)?;
+    let events = Events {
+        document: &document.certificate,
+        weight: Some(&document.weight),
+        text: writer::Text::new(limits, cancel),
+    };
+    let admission = RefCell::new(writer::Admission::new(limits.storage_bytes, cancel));
+    let result = writer::encode_reserved(&events, limits.bytes, &admission);
+    if let Some(error) = events.text.take_stop() {
+        return Err(error);
+    }
+    let bytes = result?;
+    read_weighted_long_run_probability_certificate(&bytes, limits, cancel)?;
+    Ok(bytes)
+}
+
+struct Subject {
+    graph: CheckerGraph,
+    bound: Bound,
+    weight: Option<ProbabilityRewardObjective>,
+    weights: BTreeMap<ProbabilityProductKey, Rational>,
 }
 
 struct Context<'a> {
@@ -488,7 +630,7 @@ fn subject(
     claims: &[CheckedProbabilisticClaim],
     item: &ObligationIdentity,
     cx: &mut Context<'_>,
-) -> Result<(CheckerGraph, Bound), ProbabilityDocumentError> {
+) -> Result<Subject, ProbabilityDocumentError> {
     use qsl_eval::simulation::model::{TimedSubjectRefusal, TimedSystem};
     if !std::ptr::eq(
         system.package().graph().probabilistic_model().claims(),
@@ -500,7 +642,7 @@ fn subject(
     let ProbForm::LongRunFraction {
         bound,
         predicate,
-        weight: None,
+        weight,
     } = &claim.form
     else {
         return Err(ProbabilityDocumentError::Unsupported);
@@ -522,6 +664,24 @@ fn subject(
     let limits = cx.limits;
     let cancel = cx.cancel;
     let identity = cx.identity;
+    let objective = match weight {
+        Some(name) => {
+            #[cfg(feature = "test-support")]
+            cx.phase(LongRunProbabilityPhase::Unit)?;
+            cx.work(1)?;
+            Some(super::super::reward::objective(
+                system,
+                claim,
+                name,
+                limits,
+                cancel,
+                &mut cx.storage,
+            )?)
+        }
+        None => None,
+    };
+    let mut weights = BTreeMap::new();
+    let mut remaining_weight_edges = limits.edges;
     let cx = RefCell::new(cx);
     let stopped = RefCell::new(None);
     let key_of = |state: &ModelSimState| {
@@ -608,43 +768,101 @@ fn subject(
             })
         },
         &mut |key, state| {
-            let evaluated = (|| {
-                #[cfg(feature = "test-support")]
-                cx.borrow_mut().phase(LongRunProbabilityPhase::Predicate)?;
-                cx.borrow_mut().work(1)?;
-                let readings = system
-                    .state_predicates_with_cancel(state, &[(predicate, reference)], cancel)
-                    .map_err(|stop| {
-                        ProbabilityDocumentError::Build(Box::new(
-                            crate::ExactProbBuildIssue::Expansion(stop),
-                        ))
-                    })?;
-                poll(cancel)?;
-                match readings
-                    .into_iter()
-                    .next()
-                    .ok_or(ProbabilityDocumentError::Malformed)?
-                {
-                    qsl_eval::simulation::model::PredicateReading::True => {
-                        cx.borrow_mut().reserve(
-                            key.as_bytes()
-                                .len()
-                                .saturating_add(std::mem::size_of::<ProbabilityProductKey>()),
-                        )?;
-                        predicate_keys.insert(key.clone());
+            let evaluated =
+                (|| {
+                    if let Some(objective) = &objective {
+                        let mut context = cx.borrow_mut();
+                        let steps = context
+                            .model(|budget| {
+                                system.weighted_steps_with_budget(
+                                    state, workload, identity, budget, cancel,
+                                )
+                            })?
+                            .map_err(|stop| {
+                                ProbabilityDocumentError::Build(Box::new(match stop {
+                                qsl_eval::simulation::model::Unsteppable::NotMarkov(_) => {
+                                    crate::ExactProbBuildIssue::NotMarkov
+                                }
+                                qsl_eval::simulation::model::Unsteppable::UndecidedSuccessor(_) => {
+                                    crate::ExactProbBuildIssue::UndecidedSuccessor
+                                }
+                            }))
+                            })?;
+                        let mut total = rational(0);
+                        for step in steps {
+                            context.work(1)?;
+                            if matches!(
+                                step.transition,
+                                qsl_eval::simulation::model::TransitionId::Stutter
+                            ) {
+                                continue;
+                            }
+                            #[cfg(feature = "test-support")]
+                            context.phase(LongRunProbabilityPhase::Weight)?;
+                            let magnitude = {
+                                let context = &mut **context;
+                                super::super::reward::magnitude(
+                                    &step.rewards,
+                                    objective,
+                                    limits,
+                                    cancel,
+                                    &mut context.storage,
+                                    &mut remaining_weight_edges,
+                                    &mut context.meter,
+                                )?
+                            };
+                            if step.probability == rational(0) {
+                                continue;
+                            }
+                            let term =
+                                context.arithmetic(quire_exact::RationalArithmetic::Multiply(
+                                    &step.probability,
+                                    &magnitude,
+                                ))?;
+                            total = context
+                                .arithmetic(quire_exact::RationalArithmetic::Add(&total, &term))?;
+                        }
+                        context.reserve(key.as_bytes().len().saturating_add(
+                            std::mem::size_of::<(ProbabilityProductKey, Rational)>(),
+                        ))?;
+                        weights.insert(key.clone(), total);
                     }
-                    qsl_eval::simulation::model::PredicateReading::False => {}
-                    qsl_eval::simulation::model::PredicateReading::Undefined { cause, .. } => {
-                        return Err(ProbabilityDocumentError::UndefinedPredicate(cause))
+                    #[cfg(feature = "test-support")]
+                    cx.borrow_mut().phase(LongRunProbabilityPhase::Predicate)?;
+                    cx.borrow_mut().work(1)?;
+                    let readings = system
+                        .state_predicates_with_cancel(state, &[(predicate, reference)], cancel)
+                        .map_err(|stop| {
+                            ProbabilityDocumentError::Build(Box::new(
+                                crate::ExactProbBuildIssue::Expansion(stop),
+                            ))
+                        })?;
+                    poll(cancel)?;
+                    match readings
+                        .into_iter()
+                        .next()
+                        .ok_or(ProbabilityDocumentError::Malformed)?
+                    {
+                        qsl_eval::simulation::model::PredicateReading::True => {
+                            cx.borrow_mut().reserve(
+                                key.as_bytes()
+                                    .len()
+                                    .saturating_add(std::mem::size_of::<ProbabilityProductKey>()),
+                            )?;
+                            predicate_keys.insert(key.clone());
+                        }
+                        qsl_eval::simulation::model::PredicateReading::False => {}
+                        qsl_eval::simulation::model::PredicateReading::Undefined {
+                            cause, ..
+                        } => return Err(ProbabilityDocumentError::UndefinedPredicate(cause)),
+                        qsl_eval::simulation::model::PredicateReading::Refused(outcome) => {
+                            return Err(ProbabilityDocumentError::Build(Box::new(
+                                crate::ExactProbBuildIssue::Predicate(outcome),
+                            )))
+                        }
                     }
-                    qsl_eval::simulation::model::PredicateReading::Refused(outcome) => {
-                        return Err(ProbabilityDocumentError::Build(Box::new(
-                            crate::ExactProbBuildIssue::Predicate(outcome),
-                        )))
-                    }
-                }
-                Ok(())
-            })();
+                    Ok(())
+                })();
             evaluated.map_err(|error| {
                 *stopped.borrow_mut() = Some(error);
                 ExactProbabilityGraphError::ExpansionRefused
@@ -677,7 +895,12 @@ fn subject(
             state.terminal = Some(true);
         }
     }
-    Ok((graph, bound.clone()))
+    Ok(Subject {
+        graph,
+        bound: bound.clone(),
+        weight: objective,
+        weights,
+    })
 }
 
 /// Build candidate transport with independently derived predicate keys.
@@ -692,7 +915,11 @@ pub fn long_run_probability_certificate_document(
     cancel: &Cancel,
 ) -> Result<LongRunProbabilityDocument, ProbabilityDocumentError> {
     let mut cx = Context::new(limits, cancel);
-    let (graph, _) = subject(system, claims, item, &mut cx)?;
+    let subject = subject(system, claims, item, &mut cx)?;
+    if subject.weight.is_some() {
+        return Err(ProbabilityDocumentError::Unsupported);
+    }
+    let graph = subject.graph;
     let predicate_bytes = graph
         .states
         .iter()
@@ -708,6 +935,43 @@ pub fn long_run_probability_certificate_document(
         predicate_states: target_keys(&graph),
         values,
         components,
+    })
+}
+
+/// Construct weighted transport from independently admitted checked objectives.
+/// The returned rows still require independent component/equation checking.
+pub fn weighted_long_run_probability_certificate_document(
+    system: &ModelSystem<'_>,
+    claims: &[CheckedProbabilisticClaim],
+    item: &ObligationIdentity,
+    values: Vec<ExactProbabilityValue>,
+    components: Vec<LongRunProbabilityComponent>,
+    limits: ProbabilityDocumentLimits,
+    cancel: &Cancel,
+) -> Result<WeightedLongRunProbabilityDocument, ProbabilityDocumentError> {
+    let mut cx = Context::new(limits, cancel);
+    let subject = subject(system, claims, item, &mut cx)?;
+    let weight = subject
+        .weight
+        .ok_or(ProbabilityDocumentError::Unsupported)?;
+    let predicate_bytes = subject
+        .graph
+        .states
+        .iter()
+        .filter(|(_, s)| s.terminal == Some(true))
+        .fold(0usize, |n, (key, _)| {
+            n.saturating_add(key.as_bytes().len())
+                .saturating_add(std::mem::size_of::<ProbabilityProductKey>())
+        });
+    cx.reserve(predicate_bytes)?;
+    Ok(WeightedLongRunProbabilityDocument {
+        certificate: LongRunProbabilityDocument {
+            identity: item.clone(),
+            predicate_states: target_keys(&subject.graph),
+            values,
+            components,
+        },
+        weight,
     })
 }
 
@@ -769,7 +1033,7 @@ fn check_with_context(
     bytes: &[u8],
     cx: &mut Context<'_>,
 ) -> Result<ExactProbabilityCertificateCheck, ProbabilityDocumentError> {
-    let document = match read(bytes, cx) {
+    let decoded = match read(bytes, cx) {
         Ok(document) => document,
         Err(ProbabilityDocumentError::MissingMember("components")) => {
             return Ok(malformed("components"))
@@ -777,10 +1041,15 @@ fn check_with_context(
         Err(ProbabilityDocumentError::MalformedMember(member)) => return Ok(malformed(member)),
         Err(error) => return Err(error),
     };
+    let document = decoded.document;
     if &document.identity != item {
         return Err(ProbabilityDocumentError::IdentityMismatch);
     }
-    let (graph, bound) = subject(system, claims, item, cx)?;
+    let subject = subject(system, claims, item, cx)?;
+    if decoded.weight != subject.weight {
+        return Err(ProbabilityDocumentError::ObjectiveMismatch);
+    }
+    let graph = subject.graph;
     if !document.predicate_states.iter().eq(graph
         .states
         .iter()
@@ -789,7 +1058,14 @@ fn check_with_context(
     {
         return Err(ProbabilityDocumentError::ObjectiveMismatch);
     }
-    check_graph(&graph, &document, &bound, cx).map(|mut check| {
+    check_graph(
+        &graph,
+        &document,
+        &subject.bound,
+        subject.weight.as_ref().map(|_| &subject.weights),
+        cx,
+    )
+    .map(|mut check| {
         if let ExactProbabilityCertificateCheck::Accepted(accepted) = &mut check {
             accepted.document = Some(bytes.into());
         }
@@ -801,6 +1077,7 @@ fn check_graph(
     graph: &CheckerGraph,
     document: &LongRunProbabilityDocument,
     bound: &Bound,
+    weights: Option<&BTreeMap<ProbabilityProductKey, Rational>>,
     cx: &mut Context<'_>,
 ) -> Result<ExactProbabilityCertificateCheck, ProbabilityDocumentError> {
     cx.reserve(
@@ -920,6 +1197,25 @@ fn check_graph(
                 .iter()
                 .min()
                 .ok_or(ProbabilityDocumentError::Malformed)?;
+            if let Some(weights) = weights {
+                let mut positive = false;
+                for &state in component {
+                    cx.work(1)?;
+                    if weights
+                        .get(keys[state])
+                        .ok_or(ProbabilityDocumentError::Malformed)?
+                        > &rational(0)
+                    {
+                        positive = true;
+                    }
+                }
+                if !positive {
+                    cx.reserve(keys[first].as_bytes().len())?;
+                    return Err(ProbabilityDocumentError::ZeroWeightComponent {
+                        state: keys[first].clone(),
+                    });
+                }
+            }
             for &state in component {
                 expected[state] = Some(first);
             }
@@ -997,6 +1293,14 @@ fn check_graph(
                 &sum,
                 &component.value,
             ))?;
+            if let Some(weights) = weights {
+                sum = cx.arithmetic(quire_exact::RationalArithmetic::Multiply(
+                    &sum,
+                    weights
+                        .get(*key)
+                        .ok_or(ProbabilityDocumentError::Malformed)?,
+                ))?;
+            }
             if current.choices.is_empty() {
                 sum = cx.arithmetic(quire_exact::RationalArithmetic::Add(&sum, &bias.value))?;
             } else {

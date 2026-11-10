@@ -210,6 +210,12 @@ pub fn exact_probabilistic_item_tampered<'a>(
     )
 }
 
+const ZERO_WEIGHT_COMPONENT: quire_semantic_value::catalog::CatalogCode =
+    quire_semantic_value::catalog::CatalogCode::new(
+        "unsupported_construct",
+        "zero-weight-component",
+    );
+
 fn not_yet() -> EngineReport {
     EngineReport::Refused(Refusal::Unsupported(NOT_YET))
 }
@@ -725,6 +731,9 @@ fn document_failure(error: ProbabilityDocumentError, subject: SubjectLimits<'_>)
         )),
         ProbabilityDocumentError::KeyDenied => broken(),
         ProbabilityDocumentError::Build(issue) => settled(&issue, subject),
+        ProbabilityDocumentError::ZeroWeightComponent { .. } => {
+            EngineReport::Refused(Refusal::Unsupported(ZERO_WEIGHT_COMPONENT))
+        }
         ProbabilityDocumentError::Unsupported | ProbabilityDocumentError::UndefinedPredicate(_) => {
             not_yet()
         }

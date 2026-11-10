@@ -31,7 +31,6 @@ fn claim(name: &str, predicate: &str, bound: &str) -> String {
     format!("probabilistic {name} using inf on M over (s: M::Server) under Steady on origin {{ long_run_fraction holds({predicate}) {bound} }}\n")
 }
 pub(super) fn availability() -> World {
-    let package = "test/longrun-availability";
     let claims = [
         claim("Lower", "s.phase = 0", ">= rational(1800,1801)"),
         claim("Upper", "s.phase = 0", "<= rational(1800,1801)"),
@@ -39,10 +38,15 @@ pub(super) fn availability() -> World {
         claim("TooLow", "s.phase = 0", "<= rational(999,1000)"),
     ]
     .concat();
+    availability_with_claims(claims, "")
+}
+
+pub(super) fn availability_with_claims(claims: String, extra: &str) -> World {
+    let package = "test/longrun-availability";
     World::new(&Model {
         package, object: "Server", population: "servers", key: "s", integers: vec![("Phase", 0, 1)], fields: vec![("phase", format!("ix://{package}/Phase"))],
         operations: vec![Operation { name: "tick", parameters: vec![("to_down", prob_world::BOOLEAN.to_owned())], modifies: vec!["phase"], deletes: false }, Operation { name: "repair", parameters: vec![("ok", prob_world::BOOLEAN.to_owned())], modifies: vec!["phase"], deletes: false }],
-        body: "pre Up using v on M::Server::tick { self.phase = 0 }\npost Ticked using v on M::Server::tick { (to_down and self.phase = 1) or (not to_down and self.phase = 0) }\npre Down using v on M::Server::repair { self.phase = 1 }\npost Repaired using v on M::Server::repair { (ok and self.phase = 0) or (not ok and self.phase = 1) }\nrandom Server::tick(to_down) ~ { true: 1, false: 1999 };\nrandom Server::repair(ok) ~ { true: 9, false: 1 };\nworkload Steady on M { weight Server::tick = 1; weight Server::repair = 1; }\n".to_owned() + &claims,
+        body: "pre Up using v on M::Server::tick { self.phase = 0 }\npost Ticked using v on M::Server::tick { (to_down and self.phase = 1) or (not to_down and self.phase = 0) }\npre Down using v on M::Server::repair { self.phase = 1 }\npost Repaired using v on M::Server::repair { (ok and self.phase = 0) or (not ok and self.phase = 1) }\nrandom Server::tick(to_down) ~ { true: 1, false: 1999 };\nrandom Server::repair(ok) ~ { true: 9, false: 1 };\nworkload Steady on M { weight Server::tick = 1; weight Server::repair = 1; }\n".to_owned() + extra + &claims,
         initial: serde_json::json!({"phase": {"integer": "0"}}),
     })
 }
@@ -342,10 +346,9 @@ fn reachable_undefined_predicate_retains_its_family_cause() {
 
 #[trace("TC-1401", "FR-201-AC-30")]
 #[test]
-fn weighted_every_scheduler_and_finite_profile_claims_issue_no_long_run_document() {
+fn every_scheduler_and_finite_profile_claims_issue_no_long_run_document() {
     for source in [
         "probabilistic Unsupported using inf on M over (s: M::Server) under every scheduler on origin { long_run_fraction holds(s.phase = 0) >= rational(1,2) }",
-        "probabilistic Unsupported using inf on M over (s: M::Server) under Steady on origin { long_run_fraction holds(s.phase = 0) weighted by duration >= rational(1,2) }",
         "probabilistic Unsupported using ev on M over (s: M::Server) under Steady on origin { long_run_fraction holds(s.phase = 0) >= rational(1,2) }",
     ] {
         let world=World::new(&prob_world::service(source));

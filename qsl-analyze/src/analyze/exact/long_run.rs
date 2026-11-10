@@ -8,7 +8,8 @@ use crate::exact_probabilistic::{
     LongRunResult, ProductKind,
 };
 use qsl_replay::{
-    long_run_probability_certificate_document, write_long_run_probability_certificate,
+    long_run_probability_certificate_document, weighted_long_run_probability_certificate_document,
+    write_long_run_probability_certificate, write_weighted_long_run_probability_certificate,
     LongRunProbabilityComponent, ProbabilityDocumentIoLimits,
 };
 
@@ -18,12 +19,7 @@ pub(super) fn run(
     tamper: Option<&dyn Fn(&mut ExactProbabilityCertificate)>,
 ) -> EngineReport {
     let claim = request.claim;
-    let ProbForm::LongRunFraction {
-        bound,
-        weight: None,
-        ..
-    } = &claim.form
-    else {
+    let ProbForm::LongRunFraction { bound, weight, .. } = &claim.form else {
         return not_yet();
     };
     if !matches!(claim.scheduler, ProbScheduler::Workload(_))
@@ -42,10 +38,10 @@ pub(super) fn run(
     };
     let system = match ModelSystem::new_with_cancel(simulation.clone(), cancel) {
         Ok(system) => system,
-        Err(_) => {
+        Err(error) => {
             return match cancel.tripped() {
                 Some(cause) => settled(&ExactProbBuildIssue::Cancelled(cause), subject),
-                None => broken(),
+                None => EngineReport::Refused(admission(&error)),
             };
         }
     };
@@ -97,6 +93,11 @@ pub(super) fn run(
     {
         return not_yet();
     }
+    if let Some(weight) = weight {
+        if let Err(error) = admit_weights(&product, weight, document_limits, &mut candidate) {
+            return document_failure(error, subject);
+        }
+    }
     let predicate = product
         .labels
         .iter()
@@ -105,7 +106,12 @@ pub(super) fn run(
     if let Some(cause) = cancel.tripped() {
         return settled(&ExactProbBuildIssue::Cancelled(cause), subject);
     }
-    let solution = match decide_long_run_workload(&product, &predicate, None, &limits) {
+    let solution = match decide_long_run_workload(
+        &product,
+        &predicate,
+        weight.as_ref().map(|name| name.as_str()),
+        &limits,
+    ) {
         Ok(solution) => solution,
         Err(UnboundedError::MaxRationalBits) => {
             return settled(
@@ -125,6 +131,10 @@ pub(super) fn run(
                 subject,
             )
         }
+        Err(UnboundedError::ZeroWeightComponent) => {
+            return EngineReport::Refused(Refusal::Unsupported(ZERO_WEIGHT_COMPONENT))
+        }
+        Err(UnboundedError::MissingReward) => return not_yet(),
         Err(_) => return broken(),
     };
     if let Some(cause) = cancel.tripped() {
@@ -160,30 +170,93 @@ pub(super) fn run(
             return document_failure(error, subject);
         }
     }
-    let document = match long_run_probability_certificate_document(
-        &system,
-        claims,
-        &item,
-        certificate.values.clone(),
-        components,
-        document_limits,
-        cancel,
-    ) {
-        Ok(document) => document,
-        Err(error) => return document_failure(error, subject),
+    let bytes = if weight.is_some() {
+        weighted_long_run_probability_certificate_document(
+            &system,
+            claims,
+            &item,
+            certificate.values.clone(),
+            components,
+            document_limits,
+            cancel,
+        )
+        .and_then(|document| {
+            write_weighted_long_run_probability_certificate(&document, document_limits, cancel)
+        })
+    } else {
+        long_run_probability_certificate_document(
+            &system,
+            claims,
+            &item,
+            certificate.values.clone(),
+            components,
+            document_limits,
+            cancel,
+        )
+        .and_then(|document| {
+            write_long_run_probability_certificate(&document, document_limits, cancel)
+        })
     };
-    let checked = write_long_run_probability_certificate(&document, document_limits, cancel)
-        .and_then(|bytes| {
-            check_probability_certificate_document(
-                &system,
-                claims,
-                &item,
-                &bytes,
-                document_limits,
-                cancel,
-            )
-        });
+    let checked = bytes.and_then(|bytes| {
+        check_probability_certificate_document(
+            &system,
+            claims,
+            &item,
+            &bytes,
+            document_limits,
+            cancel,
+        )
+    });
     checked_report(checked, certificate, binding, None, subject)
+}
+
+fn admit_weights(
+    product: &ProbProduct,
+    name: &quire_exact::Identifier,
+    limits: ProbabilityDocumentLimits,
+    budget: &mut CandidateBudget<'_>,
+) -> Result<(), ProbabilityDocumentError> {
+    use quire_exact::{IntegerDecimalBudget, Value};
+    for edge in &product.edges {
+        let mut admission = budget.admission();
+        for (reward, value) in &edge.rewards {
+            IntegerDecimalBudget::work(&mut admission, reward.as_str().len() as u64 + 1).map_err(
+                |_| admission.refusal(qsl_eval::simulation::model::ModelKeyError::Denied),
+            )?;
+            if reward != name {
+                continue;
+            }
+            let (bits, negative) = match value {
+                Value::Integer(integer) => {
+                    qsl_eval::simulation::model::ModelKeyBudget::integer(&mut admission, integer)
+                        .map_err(|_| {
+                        admission.refusal(qsl_eval::simulation::model::ModelKeyError::Denied)
+                    })?;
+                    (integer.magnitude_bits(), integer.is_negative())
+                }
+                Value::Quantity(quantity) => (
+                    quantity
+                        .magnitude()
+                        .numerator()
+                        .magnitude_bits()
+                        .max(quantity.magnitude().denominator().magnitude_bits()),
+                    quantity.magnitude().numerator().is_negative(),
+                ),
+                _ => return Err(ProbabilityDocumentError::Unsupported),
+            };
+            if negative {
+                return Err(ProbabilityDocumentError::Unsupported);
+            }
+            if bits > limits.scalar_bits {
+                return Err(ProbabilityDocumentError::Limit {
+                    limit: qsl_replay::ProbabilityDocumentLimit::RationalBits,
+                    bound: limits.scalar_bits,
+                    actual: bits,
+                });
+            }
+        }
+    }
+    Ok(())
 }
 
 fn components(

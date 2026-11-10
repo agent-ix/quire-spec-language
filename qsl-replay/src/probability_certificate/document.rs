@@ -16,8 +16,10 @@ pub use long_run::{
 };
 pub use long_run::{
     long_run_probability_certificate_document, read_long_run_probability_certificate,
-    write_long_run_probability_certificate, LongRunProbabilityComponent,
-    LongRunProbabilityDocument,
+    read_weighted_long_run_probability_certificate,
+    weighted_long_run_probability_certificate_document, write_long_run_probability_certificate,
+    write_weighted_long_run_probability_certificate, LongRunProbabilityComponent,
+    LongRunProbabilityDocument, WeightedLongRunProbabilityDocument,
 };
 mod unit;
 mod writer;
@@ -164,6 +166,12 @@ pub enum ProbabilityDocumentError {
     /// The document selects a profile, optimization or kind outside this slice.
     #[error("unsupported probability certificate profile")]
     Unsupported,
+    /// A reachable bottom component has no positive named weight.
+    #[error("unsupported: ZeroWeightComponent")]
+    ZeroWeightComponent {
+        /// First complete key of the independently computed zero-weight component.
+        state: ProbabilityProductKey,
+    },
     /// Structural identity differs from the requested checked claim.
     #[error("conflicting_identity: probability certificate")]
     IdentityMismatch,
@@ -1405,7 +1413,7 @@ pub(super) fn certificate_identity(
     cancel: &Cancel,
 ) -> Result<ObligationIdentity, ProbabilityDocumentError> {
     if long_run::has_profile(bytes, limits, cancel)? {
-        return Ok(read_long_run_probability_certificate(bytes, limits, cancel)?.identity);
+        return long_run::certificate_identity(bytes, limits, cancel);
     }
     Ok(read_probability_certificate(bytes, limits, cancel)?.identity)
 }
