@@ -344,6 +344,7 @@ pub(super) fn magnitude(
     cancel: &Cancel,
     storage: &mut u64,
     remaining: &mut usize,
+    meter: &mut quire_exact::Meter,
 ) -> Result<Rational, ProbabilityDocumentError> {
     poll_cancel(cancel)?;
     if *remaining == 0 {
@@ -362,6 +363,14 @@ pub(super) fn magnitude(
     let Some((_, value)) = rewards.iter().find(|(name, _)| name == &objective.name) else {
         return Ok(rational(0));
     };
+    if let ExactValue::Integer(integer) = value {
+        meter.charge(quire_exact::Charge::new(quire_exact::ChargePoint::GraphResultRetain)
+            .size(quire_exact::LimitKind::IntegerBits, integer.magnitude_bits()))
+            .map_err(|error| match cancel.tripped() {
+                Some(cause) => ProbabilityDocumentError::Cancelled(cause),
+                None => ProbabilityDocumentError::Accounting(Box::new(error)),
+            })?;
+    }
     let (numerator, denominator) = match value {
         ExactValue::Integer(integer) => (integer.magnitude_bits(), 1),
         ExactValue::Quantity(quantity) => (
@@ -418,10 +427,6 @@ fn step_costs(
             Unsteppable::UndecidedSuccessor(_) => crate::ExactProbBuildIssue::UndecidedSuccessor,
         }))
     };
-    let magnitude =
-        |rewards: &[(Identifier, ExactValue)], storage: &mut u64, remaining: &mut usize| {
-            magnitude(rewards, objective, limits, cancel, storage, remaining)
-        };
     if let Some(workload) = workload {
         let mut admission =
             ProbabilityKeyAdmission::new(meter, storage, limits.storage_bytes, cancel);
@@ -448,7 +453,7 @@ fn step_costs(
         for step in steps {
             poll_cancel(cancel)?;
             if step.probability != rational(0) {
-                let value = magnitude(&step.rewards, storage, remaining_edges)?;
+                let value = magnitude(&step.rewards, objective, limits, cancel, storage, remaining_edges, meter)?;
                 costs
                     .try_reserve_exact(1)
                     .map_err(|_| ProbabilityDocumentError::Malformed)?;
@@ -483,7 +488,7 @@ fn step_costs(
             if draw.successors.len() != 1 {
                 return Err(ProbabilityDocumentError::Unsupported);
             }
-            let value = magnitude(&draw.rewards, storage, remaining_edges)?;
+            let value = magnitude(&draw.rewards, objective, limits, cancel, storage, remaining_edges, meter)?;
             costs
                 .try_reserve_exact(1)
                 .map_err(|_| ProbabilityDocumentError::Malformed)?;

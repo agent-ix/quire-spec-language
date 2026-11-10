@@ -93,6 +93,11 @@ pub(super) fn run(
     {
         return not_yet();
     }
+    if let Some(weight) = weight {
+        if let Err(error) = admit_weights(&product, weight, document_limits, &mut candidate) {
+            return document_failure(error, subject);
+        }
+    }
     let predicate = product
         .labels
         .iter()
@@ -203,6 +208,43 @@ pub(super) fn run(
         )
     });
     checked_report(checked, certificate, binding, None, subject)
+}
+
+fn admit_weights(
+    product: &ProbProduct,
+    name: &quire_exact::Identifier,
+    limits: ProbabilityDocumentLimits,
+    budget: &mut CandidateBudget<'_>,
+) -> Result<(), ProbabilityDocumentError> {
+    use quire_exact::{IntegerDecimalBudget, Value};
+    for edge in &product.edges {
+        let mut admission = budget.admission();
+        for (reward, value) in &edge.rewards {
+            IntegerDecimalBudget::work(&mut admission, reward.as_str().len() as u64 + 1)
+                .map_err(|_| admission.refusal(qsl_eval::simulation::model::ModelKeyError::Denied))?;
+            if reward != name { continue; }
+            let (bits, negative) = match value {
+                Value::Integer(integer) => {
+                    qsl_eval::simulation::model::ModelKeyBudget::integer(&mut admission, integer)
+                        .map_err(|_| admission.refusal(qsl_eval::simulation::model::ModelKeyError::Denied))?;
+                    (integer.magnitude_bits(), integer.is_negative())
+                }
+                Value::Quantity(quantity) => (
+                    quantity.magnitude().numerator().magnitude_bits().max(quantity.magnitude().denominator().magnitude_bits()),
+                    quantity.magnitude().numerator().is_negative(),
+                ),
+                _ => return Err(ProbabilityDocumentError::Unsupported),
+            };
+            if negative { return Err(ProbabilityDocumentError::Unsupported); }
+            if bits > limits.scalar_bits {
+                return Err(ProbabilityDocumentError::Limit {
+                    limit: qsl_replay::ProbabilityDocumentLimit::RationalBits,
+                    bound: limits.scalar_bits, actual: bits,
+                });
+            }
+        }
+    }
+    Ok(())
 }
 
 fn components(

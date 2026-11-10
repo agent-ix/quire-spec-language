@@ -757,19 +757,20 @@ fn subject(
             })
         },
         &mut |key, state| {
-            let evaluated = (|| {
-                if let Some(objective) = &objective {
-                    #[cfg(feature = "test-support")]
-                    cx.borrow_mut().phase(LongRunProbabilityPhase::Weight)?;
-                    let mut context = cx.borrow_mut();
-                    let steps = context
-                        .model(|budget| {
-                            system.weighted_steps_with_budget(
-                                state, workload, identity, budget, cancel,
-                            )
-                        })?
-                        .map_err(|stop| {
-                            ProbabilityDocumentError::Build(Box::new(match stop {
+            let evaluated =
+                (|| {
+                    if let Some(objective) = &objective {
+                        #[cfg(feature = "test-support")]
+                        cx.borrow_mut().phase(LongRunProbabilityPhase::Weight)?;
+                        let mut context = cx.borrow_mut();
+                        let steps = context
+                            .model(|budget| {
+                                system.weighted_steps_with_budget(
+                                    state, workload, identity, budget, cancel,
+                                )
+                            })?
+                            .map_err(|stop| {
+                                ProbabilityDocumentError::Build(Box::new(match stop {
                                 qsl_eval::simulation::model::Unsteppable::NotMarkov(_) => {
                                     crate::ExactProbBuildIssue::NotMarkov
                                 }
@@ -777,78 +778,75 @@ fn subject(
                                     crate::ExactProbBuildIssue::UndecidedSuccessor
                                 }
                             }))
+                            })?;
+                        let mut total = rational(0);
+                        for step in steps {
+                            context.work(1)?;
+                            if matches!(
+                                step.transition,
+                                qsl_eval::simulation::model::TransitionId::Stutter
+                            ) {
+                                continue;
+                            }
+                            if step.probability == rational(0) {
+                                continue;
+                            }
+                            let magnitude = {
+                                let context = &mut **context;
+                                super::super::reward::magnitude(
+                                    &step.rewards, objective, limits, cancel,
+                                    &mut context.storage, &mut remaining_weight_edges, &mut context.meter,
+                                )?
+                            };
+                            let term =
+                                context.arithmetic(quire_exact::RationalArithmetic::Multiply(
+                                    &step.probability,
+                                    &magnitude,
+                                ))?;
+                            total = context
+                                .arithmetic(quire_exact::RationalArithmetic::Add(&total, &term))?;
+                        }
+                        context.reserve(key.as_bytes().len().saturating_add(
+                            std::mem::size_of::<(ProbabilityProductKey, Rational)>(),
+                        ))?;
+                        weights.insert(key.clone(), total);
+                    }
+                    #[cfg(feature = "test-support")]
+                    cx.borrow_mut().phase(LongRunProbabilityPhase::Predicate)?;
+                    cx.borrow_mut().work(1)?;
+                    let readings = system
+                        .state_predicates_with_cancel(state, &[(predicate, reference)], cancel)
+                        .map_err(|stop| {
+                            ProbabilityDocumentError::Build(Box::new(
+                                crate::ExactProbBuildIssue::Expansion(stop),
+                            ))
                         })?;
-                    let mut total = rational(0);
-                    for step in steps {
-                        context.work(1)?;
-                        if matches!(
-                            step.transition,
-                            qsl_eval::simulation::model::TransitionId::Stutter
-                        ) {
-                            continue;
+                    poll(cancel)?;
+                    match readings
+                        .into_iter()
+                        .next()
+                        .ok_or(ProbabilityDocumentError::Malformed)?
+                    {
+                        qsl_eval::simulation::model::PredicateReading::True => {
+                            cx.borrow_mut().reserve(
+                                key.as_bytes()
+                                    .len()
+                                    .saturating_add(std::mem::size_of::<ProbabilityProductKey>()),
+                            )?;
+                            predicate_keys.insert(key.clone());
                         }
-                        if step.probability == rational(0) {
-                            continue;
+                        qsl_eval::simulation::model::PredicateReading::False => {}
+                        qsl_eval::simulation::model::PredicateReading::Undefined {
+                            cause, ..
+                        } => return Err(ProbabilityDocumentError::UndefinedPredicate(cause)),
+                        qsl_eval::simulation::model::PredicateReading::Refused(outcome) => {
+                            return Err(ProbabilityDocumentError::Build(Box::new(
+                                crate::ExactProbBuildIssue::Predicate(outcome),
+                            )))
                         }
-                        let magnitude = super::super::reward::magnitude(
-                            &step.rewards,
-                            objective,
-                            limits,
-                            cancel,
-                            &mut context.storage,
-                            &mut remaining_weight_edges,
-                        )?;
-                        let term =
-                            context.arithmetic(quire_exact::RationalArithmetic::Multiply(
-                                &step.probability,
-                                &magnitude,
-                            ))?;
-                        total = context
-                            .arithmetic(quire_exact::RationalArithmetic::Add(&total, &term))?;
                     }
-                    context.reserve(key.as_bytes().len().saturating_add(std::mem::size_of::<(
-                        ProbabilityProductKey,
-                        Rational,
-                    )>(
-                    )))?;
-                    weights.insert(key.clone(), total);
-                }
-                #[cfg(feature = "test-support")]
-                cx.borrow_mut().phase(LongRunProbabilityPhase::Predicate)?;
-                cx.borrow_mut().work(1)?;
-                let readings = system
-                    .state_predicates_with_cancel(state, &[(predicate, reference)], cancel)
-                    .map_err(|stop| {
-                        ProbabilityDocumentError::Build(Box::new(
-                            crate::ExactProbBuildIssue::Expansion(stop),
-                        ))
-                    })?;
-                poll(cancel)?;
-                match readings
-                    .into_iter()
-                    .next()
-                    .ok_or(ProbabilityDocumentError::Malformed)?
-                {
-                    qsl_eval::simulation::model::PredicateReading::True => {
-                        cx.borrow_mut().reserve(
-                            key.as_bytes()
-                                .len()
-                                .saturating_add(std::mem::size_of::<ProbabilityProductKey>()),
-                        )?;
-                        predicate_keys.insert(key.clone());
-                    }
-                    qsl_eval::simulation::model::PredicateReading::False => {}
-                    qsl_eval::simulation::model::PredicateReading::Undefined { cause, .. } => {
-                        return Err(ProbabilityDocumentError::UndefinedPredicate(cause))
-                    }
-                    qsl_eval::simulation::model::PredicateReading::Refused(outcome) => {
-                        return Err(ProbabilityDocumentError::Build(Box::new(
-                            crate::ExactProbBuildIssue::Predicate(outcome),
-                        )))
-                    }
-                }
-                Ok(())
-            })();
+                    Ok(())
+                })();
             evaluated.map_err(|error| {
                 *stopped.borrow_mut() = Some(error);
                 ExactProbabilityGraphError::ExpansionRefused
