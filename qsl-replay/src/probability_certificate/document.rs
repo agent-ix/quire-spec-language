@@ -1133,6 +1133,18 @@ fn arithmetic(
     }
 }
 
+// Admission is shared by the source facade, before compilation or enumeration.
+pub(super) fn certificate_identity(
+    bytes: &[u8],
+    limits: ProbabilityDocumentLimits,
+    cancel: &Cancel,
+) -> Result<ObligationIdentity, ProbabilityDocumentError> {
+    if long_run::has_profile(bytes, limits, cancel)? {
+        return Ok(read_long_run_probability_certificate(bytes, limits, cancel)?.identity);
+    }
+    Ok(read_probability_certificate(bytes, limits, cancel)?.identity)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1544,16 +1556,4 @@ mod tests {
             );
         }
     }
-}
-
-// Admission is shared by the source facade, before compilation or enumeration.
-pub(super) fn certificate_identity(
-    bytes: &[u8],
-    limits: ProbabilityDocumentLimits,
-    cancel: &Cancel,
-) -> Result<ObligationIdentity, ProbabilityDocumentError> {
-    if long_run::has_profile(bytes, limits, cancel)? {
-        return Ok(read_long_run_probability_certificate(bytes, limits, cancel)?.identity);
-    }
-    Ok(read_probability_certificate(bytes, limits, cancel)?.identity)
 }
