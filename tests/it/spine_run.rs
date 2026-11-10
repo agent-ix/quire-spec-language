@@ -708,9 +708,8 @@ fn command_library_outcomes_carry_the_exit_function_codes() {
 
         println!("{BEGIN}");
         eprintln!("{BEGIN}");
-        let compiled =
-            quire_spec_language::command::compile(&directory.path().join("compile.json"));
-        let ran = quire_spec_language::command::run(&directory.path().join("request.json"));
+        let compiled = qsl_command::command::compile(&directory.path().join("compile.json"));
+        let ran = qsl_command::command::run(&directory.path().join("request.json"));
         println!("{END}");
         eprintln!("{END}");
 

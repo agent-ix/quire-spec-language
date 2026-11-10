@@ -220,7 +220,7 @@ fn the_zero_draft_front_end_is_absent() {
     let src = workspace.join("src");
 
     // Positive control: the same directory scan finds the retained modules.
-    for retained in ["command", "complete", "formal_source"] {
+    for retained in ["complete", "emit_checked_v2"] {
         assert!(
             !entries_named(&src, retained).is_empty(),
             "the scan finds no retained src/{retained}: the by-absence check is vacuous"
@@ -228,7 +228,7 @@ fn the_zero_draft_front_end_is_absent() {
     }
     let lib = std::fs::read_to_string(src.join("lib.rs")).expect("read src/lib.rs");
     assert!(
-        mentions_symbol(&lib, "formal_source"),
+        mentions_symbol(&lib, "complete"),
         "the symbol scan misses a name that src/lib.rs declares"
     );
 

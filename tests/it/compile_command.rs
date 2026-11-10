@@ -6,10 +6,8 @@ use ix_trace_rs::trace;
 use serde_json::{json, Value};
 use std::path::Path;
 
-fn compile_in_process(
-    directory: &Path,
-) -> Result<Vec<u8>, Box<quire_spec_language::command::RunError>> {
-    quire_spec_language::command::compile(&directory.join("compile.json"))
+fn compile_in_process(directory: &Path) -> Result<Vec<u8>, Box<qsl_command::command::RunError>> {
+    qsl_command::command::compile(&directory.join("compile.json"))
 }
 
 /// The complete-V1 compile fixture (FR-027-AC-5).
@@ -133,7 +131,7 @@ fn compile_refuses_extraction_before_reading_selected_files() {
                 "extraction":extraction}}});
         let request_path = directory.path().join("compile.json");
         std::fs::write(&request_path, serde_json::to_vec(&request).unwrap()).unwrap();
-        let error = quire_spec_language::command::compile(&request_path).unwrap_err();
+        let error = qsl_command::command::compile(&request_path).unwrap_err();
         let value = error.value().unwrap();
         assert_eq!(error.category().exit_code(), 20);
         assert_eq!(value["code"], "extraction-requires-run", "{value}");
@@ -455,7 +453,7 @@ fn compile_program_array_file_count_refusal_names_the_programs_group() {
     let path = directory.path().join("compile.json");
     std::fs::write(&path, serde_json::to_vec(&request).unwrap()).unwrap();
 
-    let error = quire_spec_language::command::compile(&path).unwrap_err();
+    let error = qsl_command::command::compile(&path).unwrap_err();
     let value = error.value().unwrap();
     assert_eq!(error.category().exit_code(), 22);
     assert_eq!(value["code"], "resource_exhausted", "{value}");

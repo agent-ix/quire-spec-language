@@ -113,6 +113,10 @@ pub(super) fn error(error: &RunError, artifact: bool) -> Result<Value, serde_jso
             types::Stage::Native(error.phase),
             types::Details::Native(diagnostic(error)),
         ),
+        RunCause::Source(error) => (
+            types::Stage::Native(error.native.phase),
+            types::Details::Native(diagnostic(&error.native)),
+        ),
         RunCause::CompleteSelection(_)
         | RunCause::Libraries(_)
         | RunCause::CompleteRunSelection(_)
@@ -462,7 +466,7 @@ mod tests {
     /// Assert `spine_run_result`'s whole stdout document and exit code for
     /// an `Undefined` outcome carrying `reason`, isolated from any specific
     /// kernel or family origin (FR-100-AC-9, FND-006). The renderer
-    /// (`src/command/output.rs`) does not distinguish where a `reason`
+    /// (`qsl-command/src/command/output.rs`) does not distinguish where a `reason`
     /// string came from; `qsl_replay::spine::call::convert_outcome`'s own
     /// tests cover that distinction.
     fn assert_undefined_renders(reason: &'static str) {
@@ -618,7 +622,9 @@ mod tests {
         use qsl_semantics::model::refusal::OfferedSelection;
         use quire_checked::key::DeclarationKey;
 
-        let expected = qsl_semantics::model::domain_package::DomainPackageRef::fixture("expected");
+        let expected = qsl_semantics::model::domain_package::DomainPackageRef {
+            identity: "test/orders".to_owned(),
+        };
         let model = RunError {
             cause: RunCause::SpineRun(Box::new(RunRefusal::Admission {
                 position: 2,

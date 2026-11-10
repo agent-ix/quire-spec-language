@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "xtask", "tools/arch-lint", "tools/qsl-probability-check", "qsl-walk-grow", "qsl-foundation", "qsl-cst", "qsl-replay", "qsl-source", "qsl-forms", "qsl-semantics", "qsl-package", "qsl-route", "qsl-eval", "qsl-analyze", "qsl-inspect", "qsl-bench", "qsl-string-edge", "tests/fixtures/checked-closure-consumer", "tests/fixtures/hyper-query-consumer"]
+members = [".", "xtask", "tools/arch-lint", "tools/qsl-probability-check", "qsl-walk-grow", "qsl-foundation", "qsl-cst", "qsl-command", "qsl-replay", "qsl-source", "qsl-forms", "qsl-semantics", "qsl-package", "qsl-route", "qsl-eval", "qsl-analyze", "qsl-inspect", "qsl-bench", "qsl-string-edge", "tests/fixtures/checked-closure-consumer", "tests/fixtures/hyper-query-consumer"]
 resolver = "2"
 # A cargo-fuzz crate with its own workspace; fuzz/Cargo.toml says why.
 exclude = ["fuzz"]
@@ -95,6 +95,8 @@ unicode-normalization = "0.1.25"
 ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }
 
 [dev-dependencies]
+# Non-core request-file intake exercised by the root acceptance tests.
+qsl-command = { path = "qsl-command" }
 # The integration tests drive the checked-package temporal evidence call. No
 # shipped module of this crate uses it.
 qsl-eval = { path = "qsl-eval" }

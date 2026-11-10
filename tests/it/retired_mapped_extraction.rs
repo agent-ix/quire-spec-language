@@ -43,7 +43,7 @@ fn package<'a>(metadata: &'a Value, name: &str) -> &'a Value {
 
 /// FR-490-AC-1: downstream imports of the deleted public modules and their
 /// output adapter fail during Rust name resolution.
-#[trace("TC-484", "FR-490-AC-1")]
+#[trace("TC-484", "FR-490-AC-1", "TC-771", "FR-287-AC-10")]
 #[test]
 fn retired_mapped_and_extraction_imports_fail_in_a_downstream_crate() {
     let metadata = metadata();
@@ -71,13 +71,30 @@ fn retired_mapped_and_extraction_imports_fail_in_a_downstream_crate() {
         })
         .expect("the root library is built as an rlib for this integration test");
     let temporary = tempfile::tempdir().expect("temporary downstream crate directory");
+    let command_library = std::fs::read_dir(&dependencies)
+        .expect("the downstream test build has dependencies")
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.starts_with("libqsl_command-") && name.ends_with(".rlib"))
+        })
+        .max_by_key(|path| {
+            std::fs::metadata(path)
+                .and_then(|metadata| metadata.modified())
+                .unwrap_or(std::time::UNIX_EPOCH)
+        })
+        .expect("the command library is built for this integration test");
     let source = temporary.path().join("lib.rs");
     std::fs::write(
         &source,
         "use quire_spec_language::mapped;\n\
-         use quire_spec_language::command::extraction as legacy_extraction;\n\
-         use quire_spec_language::command::output::extraction as legacy_output;\n\
-         use quire_spec_language::command::RunCause;\n\
+         use quire_spec_language::command as retired_command;\n\
+         use quire_spec_language::formal_source as retired_formal_source;\n\
+         use qsl_command::command::extraction as legacy_extraction;\n\
+         use qsl_command::command::output::extraction as legacy_output;\n\
+         use qsl_command::command::RunCause;\n\
          fn removed_cause() { let _ = RunCause::Extraction; }\n",
     )
     .expect("downstream probe source writes");
@@ -91,6 +108,8 @@ fn retired_mapped_and_extraction_imports_fail_in_a_downstream_crate() {
         ])
         .arg("--extern")
         .arg(format!("quire_spec_language={}", library.display()))
+        .arg("--extern")
+        .arg(format!("qsl_command={}", command_library.display()))
         .arg("-L")
         .arg(format!("dependency={}", dependencies.display()))
         .arg(&source)
@@ -105,6 +124,8 @@ fn retired_mapped_and_extraction_imports_fail_in_a_downstream_crate() {
     );
     for diagnostic in [
         "no `mapped` in the root",
+        "no `command` in the root",
+        "no `formal_source` in the root",
         "no `extraction` in `command`",
         "no `extraction` in `command::output`",
         "module `output` is private",

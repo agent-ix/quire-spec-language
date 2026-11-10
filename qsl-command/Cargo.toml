@@ -1,0 +1,36 @@
+[package]
+name = "qsl-command"
+version = "0.1.0"
+publish = false
+edition = "2021"
+rust-version = "1.98"
+license = "AGPL-3.0-or-later"
+description = "Non-core bounded request-file intake and typed command orchestration"
+
+[dependencies]
+ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }
+qsl-foundation = { path = "../qsl-foundation" }
+qsl-cst = { path = "../qsl-cst" }
+qsl-replay = { path = "../qsl-replay" }
+qsl-semantics = { path = "../qsl-semantics" }
+quire-contract-model = { workspace = true }
+quire-exact = { workspace = true }
+quire-semantic-value = { workspace = true }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = { version = "1.0.151", features = ["raw_value", "unbounded_depth"] }
+thiserror = "2.0.20"
+
+[dev-dependencies]
+tempfile = "3.27.0"
+quire-checked = { workspace = true, features = ["test-support"] }
+
+[[test]]
+name = "it"
+path = "tests/it/main.rs"
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+
+[lints.clippy]
+all = "deny"

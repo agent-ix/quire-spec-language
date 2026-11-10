@@ -99,7 +99,8 @@ for the driver's verbs.
 `prepare_run(path: &std::path::Path, limits: RunLimits)` returns
 `Result<PreparedRun, Box<RunError>>` from the same module. Its variants are
 `PreparedRun::Function(PreparedFunctionRun)` and
-`PreparedRun::Clause(qsl_replay::spine::ClauseRunRequest)`.
+`PreparedRun::Clause(Box<qsl_replay::spine::ClauseRunRequest>)`; the owned
+indirection bounds the enum's stack size without changing the clause request.
 `PreparedFunctionRun::into_input(self) -> FunctionRunInput` exposes these
 owned typed members:
 

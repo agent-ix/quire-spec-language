@@ -235,7 +235,7 @@ that every diagnostic carries.
 case, holding the unit from [A first rule](#a-first-rule), its domain model and
 a snapshot of `ConfigVersion` objects. `requests.sh` writes a `run.json`
 `native-run/1` request that checks one rule for the object keyed `child`, and
-`quire_spec_language::command::run` executes it:
+The non-core `qsl_command::command::run` library entry executes it:
 
 ```sh
 cargo run --locked --example config_version_fixtures -- /tmp/config-version
@@ -243,7 +243,7 @@ examples/config-version/requests.sh /tmp/config-version/healthy-parent ParentOrd
 ```
 
 ```rust
-use quire_spec_language::command;
+use qsl_command::command;
 
 let result = command::run(std::path::Path::new("/tmp/config-version/healthy-parent/run.json"))?;
 // `result.value` is the JSON result document; `result.exit_code` is the code

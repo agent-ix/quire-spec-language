@@ -15,6 +15,18 @@ use ix_trace_rs::trace;
 
 const CORE_TYPES: [&str; 3] = ["FamilyOutcome", "FamilyResult", "EvalOutcome"];
 
+const QUALIFIED_CORE_CRATES: [&str; 9] = [
+    "qsl-foundation",
+    "qsl-cst",
+    "qsl-source",
+    "qsl-forms",
+    "qsl-semantics",
+    "qsl-package",
+    "qsl-route",
+    "qsl-eval",
+    "qsl-replay",
+];
+
 /// The family cause types, which the `check` core holds only through
 /// `CatalogCoded`/`UndefinedCoded`.
 const CAUSE_TYPES: [&str; 4] = [
@@ -713,18 +725,7 @@ fn no_core_crate_depends_on_qsl_analyze() {
         packages.iter().any(|package| package.name == "qsl-analyze"),
         "cargo metadata lists no qsl-analyze"
     );
-    for core in [
-        "qsl-foundation",
-        "qsl-cst",
-        "qsl-source",
-        "qsl-forms",
-        "qsl-semantics",
-        "qsl-package",
-        "qsl-route",
-        "qsl-eval",
-        "qsl-replay",
-        "arch-lint",
-    ] {
+    for core in QUALIFIED_CORE_CRATES.into_iter().chain(["arch-lint"]) {
         let package = packages
             .iter()
             .find(|package| package.name == core)
@@ -922,4 +923,46 @@ fn a_crate_other_than_qsl_semantics_enabling_construct_is_named() {
             "qsl-eval in [dev-dependencies]"
         ]
     );
+}
+
+/// The filesystem request owner sits above the core; core dependency edges
+/// must never import its ambient reads into a qualified binary.
+#[trace("TC-771", "FR-287-AC-10")]
+#[test]
+fn command_intake_is_a_non_core_leaf_consumer() {
+    let packages = workspace_dependencies();
+    let command = packages
+        .iter()
+        .find(|package| package.name == "qsl-command")
+        .expect("the command owner is a workspace package");
+    assert!(command.normal.iter().any(|name| name == "qsl-replay"));
+    assert!(!command
+        .normal
+        .iter()
+        .any(|name| name == "quire-spec-language"));
+    for core in QUALIFIED_CORE_CRATES {
+        let package = packages
+            .iter()
+            .find(|package| package.name == core)
+            .unwrap_or_else(|| panic!("cargo metadata lists no {core}"));
+        for (kind, dependencies) in [("normal", &package.normal), ("build", &package.build)] {
+            assert!(
+                !dependencies.iter().any(|name| name == "qsl-command"),
+                "{core} has a {kind} dependency on non-core filesystem intake"
+            );
+        }
+    }
+    let root = std::fs::read_to_string(workspace_root().join("src/lib.rs")).unwrap();
+    let parsed = syn::parse_file(&root).unwrap();
+    for item in parsed.items {
+        if let syn::Item::Mod(module) = item {
+            assert!(
+                !["command", "formal_source"]
+                    .iter()
+                    .any(|name| module.ident == *name),
+                "root defines the moved {} module",
+                module.ident
+            );
+        }
+    }
 }
