@@ -279,7 +279,10 @@ fn run(
     {
         return not_yet();
     }
-    if !claim.fairness.is_empty() {
+    let bounded_fair = !claim.fairness.is_empty()
+        && bounded_formula.is_some()
+        && matches!(claim.scheduler, ProbScheduler::Every);
+    if !claim.fairness.is_empty() && !bounded_fair {
         return not_yet();
     }
     let document_limits = ProbabilityDocumentLimits {
@@ -338,7 +341,7 @@ fn run(
             ..
         }
     );
-    let mut candidate_budget = (expected_reward || eventual)
+    let mut candidate_budget = (expected_reward || eventual || bounded_fair)
         .then(|| candidate::CandidateBudget::new(document_limits, cancel));
     let built = if let Some(budget) = candidate_budget.as_mut() {
         use crate::exact_probabilistic::{
@@ -386,7 +389,13 @@ fn run(
         .map(|labels| labels.first().copied().unwrap_or(false))
         .collect();
     let (values, policy) = if bounded_formula.is_some() {
-        match decide_bounded_event(&product, bound, &limits) {
+        let outcome = if bounded_fair {
+            crate::exact_probabilistic::decide_fair_bounded_event(&product, bound, &limits)
+                .map(|result| result.outcome)
+        } else {
+            decide_bounded_event(&product, bound, &limits)
+        };
+        match outcome {
             Ok(FhResult::Exact { values, policy }) => (
                 values.into_iter().map(ExtRational::Finite).collect(),
                 policy,
@@ -483,7 +492,7 @@ fn run(
     };
     let reference = binding.as_ref().map(|bound| &bound.reference);
     if !holds {
-        if expected_reward {
+        if expected_reward || bounded_fair {
             return not_yet();
         }
         if matches!(
@@ -565,6 +574,7 @@ fn run(
                     storage_bytes: document_limits.storage_bytes,
                 },
                 cancel,
+                candidate_budget.as_mut(),
             )
         }
         (None, _) if candidate_budget.is_some() => candidate::values(
@@ -767,9 +777,18 @@ fn bounded_certificate_of(
     monitor: &qsl_eval::automaton::QualifiedBoundedMonitor,
     io: qsl_replay::ProbabilityDocumentIoLimits,
     cancel: &Cancel,
+    mut budget: Option<&mut candidate::CandidateBudget<'_>>,
 ) -> Result<ExactProbabilityCertificate, ProbabilityDocumentError> {
     if values.len() != product.states.len() {
         return Err(ExactProbabilityGraphError::MissingSuccessor.into());
+    }
+    if let Some(budget) = budget.as_mut() {
+        budget.reserve(
+            product
+                .states
+                .len()
+                .saturating_mul(std::mem::size_of::<ExactProbabilityValue>()),
+        )?;
     }
     let mut entries = Vec::with_capacity(product.states.len());
     for (state, value) in product.states.iter().zip(values) {
@@ -779,12 +798,36 @@ fn bounded_certificate_of(
         let ExtRational::Finite(value) = value else {
             return Err(ExactProbabilityGraphError::ExpansionRefused.into());
         };
+        let key = match budget.as_mut() {
+            Some(budget) => {
+                let key = bounded_monitor_key(state, monitor)?;
+                let identity = budget.identity;
+                let mut admission = budget.admission();
+                ProbabilityProductKey::for_formula_state_with_budget(
+                    binding,
+                    &state.model,
+                    &key,
+                    identity,
+                    &mut admission,
+                    cancel,
+                )
+                .map_err(|error| admission.refusal(error))?
+            }
+            None => bounded_product_key(state, binding, monitor, io, cancel)?,
+        };
+        if let Some(budget) = budget.as_mut() {
+            budget.reserve(candidate::rational_bytes(value))?;
+        }
         entries.push(ExactProbabilityValue {
-            state: bounded_product_key(state, binding, monitor, io, cancel)?,
+            state: key,
             value: value.clone(),
         });
     }
-    entries.sort_by(|left, right| left.state.cmp(&right.state));
+    if let Some(budget) = budget {
+        candidate::sort(&mut entries, |row| &row.state, &mut budget.meter, cancel)?;
+    } else {
+        entries.sort_by(|left, right| left.state.cmp(&right.state));
+    }
     if entries
         .windows(2)
         .any(|pair| pair[0].state == pair[1].state)
@@ -801,6 +844,14 @@ fn bounded_product_key(
     io: qsl_replay::ProbabilityDocumentIoLimits,
     cancel: &Cancel,
 ) -> Result<ProbabilityProductKey, ProbabilityDocumentError> {
+    let key = bounded_monitor_key(state, monitor)?;
+    ProbabilityProductKey::for_formula_state(binding, &state.model, &key, io, cancel)
+}
+
+fn bounded_monitor_key(
+    state: &crate::exact_probabilistic::ProbKey,
+    monitor: &qsl_eval::automaton::QualifiedBoundedMonitor,
+) -> Result<qsl_eval::automaton::AutomatonStateKey, ProbabilityDocumentError> {
     use crate::exact_probabilistic::{FormulaState, MonitorState, MonitorVerdict};
     let key = match state.monitor {
         Some(MonitorState::Formula(FormulaState::Running(state))) => monitor.key(state),
@@ -810,7 +861,7 @@ fn bounded_product_key(
         _ => return Err(ExactProbabilityGraphError::UnsupportedClaimForm.into()),
     }
     .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?;
-    ProbabilityProductKey::for_formula_state(binding, &state.model, &key, io, cancel)
+    Ok(key)
 }
 
 fn build_refusal(refusal: ProductRefusal, subject: SubjectLimits<'_>) -> EngineReport {

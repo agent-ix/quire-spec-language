@@ -63,6 +63,7 @@ impl Reservation for Reserve<'_, '_> {
 struct Events<'a> {
     document: &'a ProbabilityCertificateDocument,
     cyclic_mdp: bool,
+    fairness: &'a [super::fairness::Record],
     text: Text<'a>,
 }
 
@@ -247,7 +248,9 @@ impl Encode for Events<'_> {
         writer.name("objective")?;
         writer.begin_object()?;
         writer.name("profile")?;
-        writer.string(if self.cyclic_mdp && self.document.reward.is_some() {
+        writer.string(if !self.fairness.is_empty() {
+            BOUNDED_FAIR_PROFILE
+        } else if self.cyclic_mdp && self.document.reward.is_some() {
             CYCLIC_MDP_REWARD_PROFILE
         } else if self.cyclic_mdp {
             CYCLIC_MDP_PROFILE
@@ -298,6 +301,10 @@ impl Encode for Events<'_> {
         })?;
         writer.name("fairness")?;
         writer.begin_array()?;
+        for constraint in self.fairness {
+            self.text.poll()?;
+            constraint.encode_into(writer)?;
+        }
         writer.end_array()?;
         writer.end_object()?;
         writer.name("kind")?;
@@ -349,6 +356,16 @@ pub(super) fn encode_profile(
     cancel: &Cancel,
     cyclic_mdp: bool,
 ) -> Result<Vec<u8>, ProbabilityDocumentError> {
+    encode_fair_profile(document, limits, cancel, cyclic_mdp, &[])
+}
+
+pub(super) fn encode_fair_profile(
+    document: &ProbabilityCertificateDocument,
+    limits: ProbabilityDocumentLimits,
+    cancel: &Cancel,
+    cyclic_mdp: bool,
+    fairness: &[super::fairness::Record],
+) -> Result<Vec<u8>, ProbabilityDocumentError> {
     poll(cancel)?;
     if document.event.is_none() && !document.failures.is_empty() {
         return Err(ProbabilityDocumentError::Malformed);
@@ -375,6 +392,7 @@ pub(super) fn encode_profile(
     let events = Events {
         document,
         cyclic_mdp,
+        fairness,
         text: Text {
             limits,
             cancel,
@@ -492,6 +510,7 @@ mod tests {
             let events = Events {
                 document: &document,
                 cyclic_mdp: false,
+                fairness: &[],
                 text: Text {
                     limits: ProbabilityDocumentLimits {
                         bytes,
@@ -557,6 +576,7 @@ mod tests {
         let events = Events {
             document: &document,
             cyclic_mdp: false,
+            fairness: &[],
             text: Text {
                 limits: ProbabilityDocumentLimits {
                     bytes: cap,
@@ -596,6 +616,7 @@ mod tests {
             let events = Events {
                 document: &document,
                 cyclic_mdp: false,
+                fairness: &[],
                 text: Text {
                     limits: ProbabilityDocumentLimits {
                         bytes,

@@ -92,6 +92,77 @@ pub(super) fn enumerate(
     cancel: &Cancel,
     failure: &mut impl FnMut(crate::ExactProbBuildIssue),
 ) -> Result<(CheckerGraph, BTreeMap<ProbabilityProductKey, u64>), ProbabilityDocumentError> {
+    enumerate_controlled(
+        system, formula, context, binding, workload, limits, cancel, failure, None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn enumerate_with_budget(
+    system: &ModelSystem<'_>,
+    formula: &CheckedTemporalFormula,
+    context: &StateContext,
+    binding: Option<&ObjectReference>,
+    workload: Option<&Workload>,
+    limits: ProbabilityDocumentLimits,
+    cancel: &Cancel,
+    failure: &mut impl FnMut(crate::ExactProbBuildIssue),
+    meter: &mut quire_exact::Meter,
+    storage: &mut u64,
+) -> Result<(CheckerGraph, BTreeMap<ProbabilityProductKey, u64>), ProbabilityDocumentError> {
+    enumerate_controlled(
+        system,
+        formula,
+        context,
+        binding,
+        workload,
+        limits,
+        cancel,
+        failure,
+        Some((meter, storage)),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn enumerate_controlled(
+    system: &ModelSystem<'_>,
+    formula: &CheckedTemporalFormula,
+    context: &StateContext,
+    binding: Option<&ObjectReference>,
+    workload: Option<&Workload>,
+    limits: ProbabilityDocumentLimits,
+    cancel: &Cancel,
+    failure: &mut impl FnMut(crate::ExactProbBuildIssue),
+    scope: Option<(&mut quire_exact::Meter, &mut u64)>,
+) -> Result<(CheckerGraph, BTreeMap<ProbabilityProductKey, u64>), ProbabilityDocumentError> {
+    let budgeted = scope.is_some();
+    let scope = std::cell::RefCell::new(scope);
+    fn grow<T>(
+        rows: &mut Vec<T>,
+        reserve: &impl Fn(usize) -> Result<(), ProbabilityDocumentError>,
+    ) -> Result<(), ProbabilityDocumentError> {
+        if rows.len() == rows.capacity() {
+            let capacity = rows.capacity().saturating_mul(2).max(4);
+            reserve(
+                capacity
+                    .checked_mul(std::mem::size_of::<T>())
+                    .ok_or(ProbabilityDocumentError::KeySizeOverflow)?,
+            )?;
+            rows.try_reserve_exact(capacity - rows.len())
+                .map_err(|_| ProbabilityDocumentError::KeySizeOverflow)?;
+        }
+        Ok(())
+    }
+    let reserve = |bytes: usize| -> Result<(), ProbabilityDocumentError> {
+        if let Some((meter, storage)) = scope.borrow_mut().as_mut() {
+            let mut admission =
+                ProbabilityKeyAdmission::new(meter, storage, limits.storage_bytes, cancel);
+            quire_exact::Reservation::reserve(&mut admission, bytes).map_err(|_| {
+                admission.refusal(qsl_eval::simulation::model::ModelKeyError::Denied)
+            })?;
+        }
+        Ok(())
+    };
     poll_cancel(cancel)?;
     if limits.states == 0 {
         return Err(state_limit(0, 1));
@@ -107,7 +178,9 @@ pub(super) fn enumerate(
     let predicate = formula
         .condition(monitor.atom().index())
         .ok_or(ExactProbabilityGraphError::UnsupportedClaimForm)?;
-    let read = |state: &ModelSimState, failure: &mut dyn FnMut(crate::ExactProbBuildIssue)| {
+    let read = |state: &ModelSimState,
+                failure: &mut dyn FnMut(crate::ExactProbBuildIssue)|
+     -> Result<bool, ProbabilityDocumentError> {
         poll_cancel(cancel)?;
         let reading = system
             .state_predicates(state, &[(predicate, binding)])
@@ -123,9 +196,15 @@ pub(super) fn enumerate(
             PredicateReading::False => Ok(false),
             PredicateReading::Refused(outcome) => {
                 failure(crate::ExactProbBuildIssue::Predicate(outcome));
-                Err(ExactProbabilityGraphError::ExpansionRefused)
+                Err(ExactProbabilityGraphError::ExpansionRefused.into())
             }
-            _ => Err(ExactProbabilityGraphError::ExpansionRefused),
+            PredicateReading::Undefined { cause, .. } => {
+                if budgeted {
+                    Err(ProbabilityDocumentError::UndefinedPredicate(cause))
+                } else {
+                    Err(ExactProbabilityGraphError::ExpansionRefused.into())
+                }
+            }
         }
     };
     let initial = system.initial();
@@ -137,6 +216,29 @@ pub(super) fn enumerate(
         .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?;
     let first_control = Control::read(&monitor, first_control)?;
     let key_of = |model: &ModelSimState, control: Control, monitor: &QualifiedBoundedMonitor| {
+        if let Some((meter, storage)) = scope.borrow_mut().as_mut() {
+            let mut admission =
+                ProbabilityKeyAdmission::new(meter, storage, limits.storage_bytes, cancel);
+            let identity = qsl_foundation::IdentityLimits::default();
+            let encoded = (|| {
+                let bytes =
+                    system.state_key_bytes_with_budget(model, identity, &mut admission, cancel)?;
+                let monitor = control.key(monitor).map_err(|_| {
+                    qsl_eval::simulation::model::ModelKeyError::Unsupported(
+                        "formula control identity",
+                    )
+                })?;
+                ProbabilityProductKey::for_formula_state_with_budget(
+                    binding,
+                    &bytes,
+                    &monitor,
+                    identity,
+                    &mut admission,
+                    cancel,
+                )
+            })();
+            return encoded.map_err(|error| admission.refusal(error));
+        }
         let (bytes, _) = system
             .state_key(model)
             .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?;
@@ -152,6 +254,16 @@ pub(super) fn enumerate(
         )
     };
     let root = key_of(first, first_control, &monitor)?;
+    reserve(
+        root.as_bytes()
+            .len()
+            .saturating_mul(3)
+            .saturating_add(std::mem::size_of::<(
+                ProbabilityProductKey,
+                ModelSimState,
+                Control,
+            )>()),
+    )?;
     let mut queue = VecDeque::from([(root.clone(), first.clone(), first_control)]);
     let mut seen = BTreeSet::from([root.clone()]);
     let mut states = BTreeMap::new();
@@ -159,6 +271,12 @@ pub(super) fn enumerate(
     let mut edge_count = 0usize;
     while let Some((key, model, control)) = queue.pop_front() {
         poll_cancel(cancel)?;
+        reserve(
+            key.as_bytes()
+                .len()
+                .saturating_add(std::mem::size_of::<(ProbabilityProductKey, u64)>())
+                .saturating_add(std::mem::size_of::<CheckerState>()),
+        )?;
         ranks.insert(key.clone(), control.rank(&monitor)?);
         if let Control::Decided(accepted) = control {
             states.insert(
@@ -173,7 +291,20 @@ pub(super) fn enumerate(
         let Control::Running(running) = control else {
             return Err(ExactProbabilityGraphError::ExpansionRefused.into());
         };
-        let distributions = model_distributions(system, &model, workload, cancel, failure)?;
+        let distributions = if let Some((meter, storage)) = scope.borrow_mut().as_mut() {
+            let mut admission =
+                ProbabilityKeyAdmission::new(meter, storage, limits.storage_bytes, cancel);
+            model_distributions_with_budget(
+                system,
+                &model,
+                workload,
+                qsl_foundation::IdentityLimits::default(),
+                &mut admission,
+                cancel,
+            )?
+        } else {
+            model_distributions(system, &model, workload, cancel, failure)?
+        };
         let mut choices = Vec::new();
         let mut successors = Vec::new();
         if distributions.is_empty() {
@@ -223,13 +354,22 @@ pub(super) fn enumerate(
                     if seen.len() >= limits.states {
                         return Err(state_limit(limits.states, seen.len().saturating_add(1)));
                     }
+                    reserve(target.as_bytes().len().saturating_mul(2).saturating_add(
+                        std::mem::size_of::<(ProbabilityProductKey, ModelSimState, Control)>(),
+                    ))?;
                     seen.insert(target.clone());
                     queue.push_back((target.clone(), post, control));
+                }
+                if budgeted {
+                    grow(&mut choice, &reserve)?;
                 }
                 choice.push(ProbabilityEdge {
                     target,
                     probability,
                 });
+            }
+            if budgeted {
+                grow(&mut choices, &reserve)?;
             }
             choices.push(choice);
         }

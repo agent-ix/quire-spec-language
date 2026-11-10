@@ -9,6 +9,7 @@ use super::*;
 pub struct ProbabilityProofDocument {
     document: ProbabilityCertificateDocument,
     cyclic_mdp: bool,
+    fairness: Vec<super::fairness::Record>,
 }
 
 impl ProbabilityProofDocument {
@@ -26,6 +27,11 @@ impl ProbabilityProofDocument {
     pub fn is_cyclic_mdp_reward(&self) -> bool {
         self.cyclic_mdp && self.document.reward.is_some()
     }
+
+    /// Whether this unchecked document selects the bounded fair profile.
+    pub fn is_bounded_fair(&self) -> bool {
+        !self.fairness.is_empty()
+    }
 }
 
 /// Read a strict exact profile without discarding its wire discriminator.
@@ -39,10 +45,20 @@ pub fn read_probability_proof_document(
         ProfileDispatch::CyclicMdp | ProfileDispatch::CyclicMdpReward
     );
     let mut meter = quire_exact::Meter::new(limits.accounting).with_cancel(cancel.clone());
-    let document = read_document_profile(bytes, limits, cancel, &mut meter, cyclic_mdp)?;
+    let mut fairness = Vec::new();
+    let document = read_document_profile(
+        bytes,
+        limits,
+        cancel,
+        &mut meter,
+        cyclic_mdp,
+        Some(&mut fairness),
+        &mut 0,
+    )?;
     Ok(ProbabilityProofDocument {
         document,
         cyclic_mdp,
+        fairness,
     })
 }
 
@@ -53,7 +69,16 @@ pub fn write_probability_proof_document(
     limits: ProbabilityDocumentLimits,
     cancel: &Cancel,
 ) -> Result<Vec<u8>, ProbabilityDocumentError> {
-    let bytes = writer::encode_profile(&document.document, limits, cancel, document.cyclic_mdp)?;
+    if !document.fairness.is_empty() {
+        super::fairness::admit_encoding(&document.fairness, limits, cancel)?;
+    }
+    let bytes = writer::encode_fair_profile(
+        &document.document,
+        limits,
+        cancel,
+        document.cyclic_mdp,
+        &document.fairness,
+    )?;
     read_probability_proof_document(&bytes, limits, cancel)?;
     Ok(bytes)
 }
@@ -69,6 +94,34 @@ pub fn probability_proof_document(
     cancel: &Cancel,
 ) -> Result<ProbabilityProofDocument, ProbabilityDocumentError> {
     let mut cx = Context::new(limits, cancel, None);
+    let claim = bind_claim(claims, item, cancel)?;
+    if !claim.fairness.is_empty() {
+        super::fairness::admit(claim)?;
+        let fairness = super::fairness::checked(
+            system,
+            claim,
+            limits,
+            cancel,
+            &mut cx.meter,
+            &mut cx.storage,
+        )?;
+        let document = construct_document(
+            system,
+            claims,
+            item,
+            certificate,
+            limits,
+            cancel,
+            &mut cx.meter,
+            &mut cx.storage,
+            true,
+        )?;
+        return Ok(ProbabilityProofDocument {
+            document,
+            cyclic_mdp: false,
+            fairness,
+        });
+    }
     match construct_document(
         system,
         claims,
@@ -78,10 +131,12 @@ pub fn probability_proof_document(
         cancel,
         &mut cx.meter,
         &mut cx.storage,
+        false,
     ) {
         Ok(document) => Ok(ProbabilityProofDocument {
             document,
             cyclic_mdp: false,
+            fairness: Vec::new(),
         }),
         Err(error) if may_retry(&error) => construct(system, claims, item, certificate, &mut cx),
         Err(error) => Err(error),
@@ -854,6 +909,7 @@ fn construct(
     }
     Ok(ProbabilityProofDocument {
         cyclic_mdp: true,
+        fairness: Vec::new(),
         document: ProbabilityCertificateDocument {
             cyclic_dtmc: false,
             identity: item.clone(),
@@ -911,7 +967,15 @@ fn check_with_context(
 ) -> Result<ExactProbabilityCertificateCheck, ProbabilityDocumentError> {
     let limits = cx.limits;
     let cancel = cx.cancel;
-    let document = match read_document_profile(bytes, limits, cancel, &mut cx.meter, true) {
+    let document = match read_document_profile(
+        bytes,
+        limits,
+        cancel,
+        &mut cx.meter,
+        true,
+        None,
+        &mut cx.storage,
+    ) {
         Ok(document) => document,
         Err(error) => return document_admission_error(error),
     };
@@ -1039,6 +1103,7 @@ mod tests {
         let proof = ProbabilityProofDocument {
             document,
             cyclic_mdp: true,
+            fairness: Vec::new(),
         };
         let cancel = Cancel::new();
         let bytes = write_probability_proof_document(&proof, limits, &cancel).unwrap();

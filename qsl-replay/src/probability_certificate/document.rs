@@ -7,6 +7,9 @@ use serde::{Deserialize, Serialize};
 
 use super::*;
 
+mod fairness;
+#[cfg(feature = "test-support")]
+pub use fairness::BoundedFairProbabilityPhase;
 mod key;
 mod mdp;
 #[cfg(feature = "test-support")]
@@ -34,7 +37,9 @@ pub use long_run::{
 };
 mod unit;
 mod writer;
-pub(super) use key::{model_product_key, model_product_key_with_budget};
+pub(super) use key::{
+    formula_product_key_with_budget, model_product_key, model_product_key_with_budget,
+};
 
 const PROFILE: &str = "quire.probability-objective/reachability/v1";
 const STATE_PROFILE: &str = "quire.probability-objective/state-predicate/v1";
@@ -43,6 +48,7 @@ const CYCLIC_REWARD_PROFILE: &str = "quire.probability-objective/dtmc-expected-r
 const CYCLIC_PROFILE: &str = "quire.probability-objective/cyclic-dtmc-eventual/v1";
 const CYCLIC_MDP_PROFILE: &str = "quire.probability-objective/cyclic-mdp-eventual/v1";
 const CYCLIC_MDP_REWARD_PROFILE: &str = "quire.probability-objective/cyclic-mdp-expected-reward/v1";
+const BOUNDED_FAIR_PROFILE: &str = "quire.probability-objective/bounded-fair-eventual/v1";
 const MAX_COUNT: u64 = 9_007_199_254_740_991;
 
 /// Caller-owned byte and working-storage ceilings for certificate transport.
@@ -281,7 +287,7 @@ struct WireObjective {
     )]
     unit: Option<Box<serde_json::value::RawValue>>,
     optimization: String,
-    fairness: Vec<Value>,
+    fairness: Vec<Box<serde_json::value::RawValue>>,
 }
 
 fn present_unit<'de, D: serde::Deserializer<'de>>(
@@ -327,6 +333,7 @@ enum ProfileDispatch {
     LongRun,
     CyclicMdp,
     CyclicMdpReward,
+    BoundedFair,
 }
 
 fn profile_dispatch(
@@ -365,6 +372,9 @@ fn profile_dispatch(
             Some(quire_canonical::Node::String(CYCLIC_MDP_PROFILE)) => ProfileDispatch::CyclicMdp,
             Some(quire_canonical::Node::String(CYCLIC_MDP_REWARD_PROFILE)) => {
                 ProfileDispatch::CyclicMdpReward
+            }
+            Some(quire_canonical::Node::String(BOUNDED_FAIR_PROFILE)) => {
+                ProfileDispatch::BoundedFair
             }
             _ => ProfileDispatch::Exact,
         },
@@ -599,16 +609,20 @@ fn read_document(
     cancel: &Cancel,
     meter: &mut quire_exact::Meter,
 ) -> Result<ProbabilityCertificateDocument, ProbabilityDocumentError> {
-    read_document_profile(bytes, limits, cancel, meter, false)
+    read_document_profile(bytes, limits, cancel, meter, false, None, &mut 0)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn read_document_profile(
     bytes: &[u8],
     limits: ProbabilityDocumentLimits,
     cancel: &Cancel,
     meter: &mut quire_exact::Meter,
     cyclic_mdp: bool,
+    fairness: Option<&mut Vec<fairness::Record>>,
+    storage: &mut u64,
 ) -> Result<ProbabilityCertificateDocument, ProbabilityDocumentError> {
+    let allow_fair = fairness.is_some();
     poll(cancel)?;
     if u64::try_from(bytes.len()).unwrap_or(u64::MAX) > limits.bytes {
         return Err(exceeded(
@@ -630,14 +644,23 @@ fn read_document_profile(
     let root = parsed.root();
     let objective = root.get("objective");
     let outside_profile = matches!(root.get("kind").map(|node| node.node()), Some(quire_canonical::Node::String(kind)) if kind != "exact")
-        || matches!(objective.and_then(|node| node.get("profile")).map(|node| node.node()), Some(quire_canonical::Node::String(profile)) if if cyclic_mdp { !matches!(profile, CYCLIC_MDP_PROFILE | CYCLIC_MDP_REWARD_PROFILE) } else { profile != PROFILE && profile != STATE_PROFILE && profile != REWARD_PROFILE && profile != CYCLIC_PROFILE && profile != CYCLIC_REWARD_PROFILE })
+        || matches!(objective.and_then(|node| node.get("profile")).map(|node| node.node()), Some(quire_canonical::Node::String(profile)) if if cyclic_mdp { !matches!(profile, CYCLIC_MDP_PROFILE | CYCLIC_MDP_REWARD_PROFILE) } else { !(allow_fair && profile == BOUNDED_FAIR_PROFILE) && profile != PROFILE && profile != STATE_PROFILE && profile != REWARD_PROFILE && profile != CYCLIC_PROFILE && profile != CYCLIC_REWARD_PROFILE })
         || matches!(objective.and_then(|node| node.get("event")).map(|node| node.node()), Some(quire_canonical::Node::String(event)) if !matches!(event, "until" | "always"))
         || matches!(objective.and_then(|node| node.get("optimization")).map(|node| node.node()), Some(quire_canonical::Node::String(operator)) if !matches!(operator, "minimum" | "maximum" | "workload"))
         || match objective
             .and_then(|node| node.get("fairness"))
             .map(|node| node.node())
         {
-            Some(quire_canonical::Node::Array(mut items)) => items.next().is_some(),
+            Some(quire_canonical::Node::Array(mut items)) => {
+                items.next().is_some()
+                    && !(allow_fair
+                        && matches!(
+                            objective
+                                .and_then(|node| node.get("profile"))
+                                .map(|node| node.node()),
+                            Some(quire_canonical::Node::String(BOUNDED_FAIR_PROFILE))
+                        ))
+            }
             _ => false,
         };
     if outside_profile {
@@ -679,10 +702,35 @@ fn read_document_profile(
             u64::try_from(rows).unwrap_or(u64::MAX),
         ));
     }
+    let bounded_fair = matches!(
+        objective
+            .and_then(|node| node.get("profile"))
+            .map(|node| node.node()),
+        Some(quire_canonical::Node::String(BOUNDED_FAIR_PROFILE))
+    );
+    if bounded_fair {
+        let mut admission =
+            ProbabilityKeyAdmission::new(meter, storage, limits.storage_bytes, cancel);
+        quire_exact::IntegerDecimalBudget::work(
+            &mut admission,
+            u64::try_from(bytes.len()).unwrap_or(u64::MAX),
+        )
+        .map_err(|_| admission.refusal(qsl_eval::simulation::model::ModelKeyError::Denied))?;
+        let shared = std::cell::RefCell::new(writer::Admission::with_used(
+            limits.storage_bytes,
+            cancel,
+            *storage,
+        ));
+        let canonical = writer::encode_reserved(&parsed, limits.bytes, &shared)?;
+        *storage = shared.borrow().used();
+        if canonical != bytes {
+            return Err(ProbabilityDocumentError::Noncanonical);
+        }
+    }
     drop(parsed);
     let wire: WireDocument =
         serde_json::from_slice(bytes).map_err(|_| ProbabilityDocumentError::Malformed)?;
-    if canonical(&wire, limits.bytes)? != bytes {
+    if !bounded_fair && canonical(&wire, limits.bytes)? != bytes {
         return Err(ProbabilityDocumentError::Noncanonical);
     }
     if wire.kind != "exact"
@@ -695,11 +743,18 @@ fn read_document_profile(
             !matches!(
                 wire.objective.profile.as_str(),
                 PROFILE | STATE_PROFILE | REWARD_PROFILE | CYCLIC_PROFILE | CYCLIC_REWARD_PROFILE
-            )
+            ) && !(allow_fair && wire.objective.profile == BOUNDED_FAIR_PROFILE)
         }
-        || !wire.objective.fairness.is_empty()
+        || !wire.objective.fairness.is_empty() && wire.objective.profile != BOUNDED_FAIR_PROFILE
     {
         return Err(ProbabilityDocumentError::Unsupported);
+    }
+    if wire.objective.profile == BOUNDED_FAIR_PROFILE {
+        let destination = fairness.ok_or(ProbabilityDocumentError::Unsupported)?;
+        *destination = fairness::read(&wire.objective.fairness, limits, cancel, meter, storage)?;
+        if destination.is_empty() || wire.objective.optimization == "workload" {
+            return Err(ProbabilityDocumentError::MalformedMember("objective"));
+        }
     }
     let state_profile = wire.objective.profile == STATE_PROFILE;
     let reward_profile = matches!(
@@ -837,6 +892,7 @@ fn subject_graph_with_identity(
     cancel: &Cancel,
     identity: qsl_foundation::IdentityLimits,
     cyclic_dtmc: bool,
+    allow_fair: bool,
     meter: &mut quire_exact::Meter,
     storage: &mut u64,
     control: &super::reward::RewardControl<'_>,
@@ -861,7 +917,7 @@ fn subject_graph_with_identity(
     {
         return Err(ProbabilityDocumentError::Unsupported);
     }
-    if !claim.fairness.is_empty()
+    if (!claim.fairness.is_empty() && !allow_fair)
         || !matches!(
             TimedSystem::new(system, &claim.subject.alias),
             Err(TimedSubjectRefusal::NoTimedModel { .. })
@@ -869,10 +925,21 @@ fn subject_graph_with_identity(
     {
         return Err(ProbabilityDocumentError::Unsupported);
     }
+    if allow_fair {
+        fairness::admit(claim)?;
+    }
     let binding = claim_binding(system, claim)?;
     let mut issue = None;
     let reference = binding.as_ref().map(|bound| &bound.reference);
     let workload = claim_workload(system, claim)?;
+    if allow_fair {
+        // The finite-prefix fairness rule presumes an admitted Markov subject.
+        // This traversal checks model actions without evaluating the query.
+        super::cyclic::enumerate_graph::<qsl_semantics::check::CheckedPredicate>(
+            system, None, reference, workload, limits, cancel, identity, meter, storage, false,
+            false,
+        )?;
+    }
     let mut state_event = None;
     let mut failures = Vec::new();
     let mut reward = None;
@@ -980,18 +1047,35 @@ fn subject_graph_with_identity(
             let context = probabilistic_formula_monitor_context(claim, reference)?;
             (
                 bound,
-                super::bounded::enumerate(
-                    system,
-                    formula,
-                    &context,
-                    reference,
-                    workload,
-                    limits,
-                    cancel,
-                    &mut |failure| {
-                        issue = Some(failure);
-                    },
-                )
+                if allow_fair {
+                    super::bounded::enumerate_with_budget(
+                        system,
+                        formula,
+                        &context,
+                        reference,
+                        workload,
+                        limits,
+                        cancel,
+                        &mut |failure| {
+                            issue = Some(failure);
+                        },
+                        meter,
+                        storage,
+                    )
+                } else {
+                    super::bounded::enumerate(
+                        system,
+                        formula,
+                        &context,
+                        reference,
+                        workload,
+                        limits,
+                        cancel,
+                        &mut |failure| {
+                            issue = Some(failure);
+                        },
+                    )
+                }
                 .map(|(graph, ranks)| (graph, Some(ranks))),
             )
         }
@@ -1098,6 +1182,7 @@ fn admit_reward_with_identity(
         cancel,
         identity,
         false,
+        false,
         &mut meter,
         &mut storage,
         &super::reward::RewardControl::new(cancel),
@@ -1112,6 +1197,7 @@ fn admit_reward_with_identity(
                 cancel,
                 identity,
                 true,
+                false,
                 &mut meter,
                 &mut storage,
                 &super::reward::RewardControl::new(cancel),
@@ -1186,6 +1272,7 @@ pub fn admit_cyclic_eventual_certificate_subject_with_identity(
         cancel,
         identity,
         true,
+        false,
         &mut meter,
         &mut 0,
         &super::reward::RewardControl::new(cancel),
@@ -1214,6 +1301,7 @@ pub fn probability_certificate_document(
         cancel,
         &mut meter,
         &mut storage,
+        false,
     )
 }
 
@@ -1227,6 +1315,7 @@ fn construct_document(
     cancel: &Cancel,
     meter: &mut quire_exact::Meter,
     storage: &mut u64,
+    allow_fair: bool,
 ) -> Result<ProbabilityCertificateDocument, ProbabilityDocumentError> {
     let identity = qsl_foundation::IdentityLimits::default();
     let original = subject_graph_with_identity(
@@ -1237,6 +1326,7 @@ fn construct_document(
         cancel,
         identity,
         false,
+        allow_fair,
         meter,
         storage,
         &super::reward::RewardControl::new(cancel),
@@ -1263,6 +1353,7 @@ fn construct_document(
             cancel,
             identity,
             true,
+            allow_fair,
             meter,
             storage,
             &super::reward::RewardControl::new(cancel),
@@ -1352,6 +1443,7 @@ pub fn check_probability_certificate_document(
         limits,
         cancel,
         &super::reward::RewardControl::new(cancel),
+        &fairness::Control::new(cancel),
     )
 }
 
@@ -1368,7 +1460,41 @@ pub fn check_cyclic_reward_probability_certificate_observing(
     observe: &mut dyn FnMut(super::reward::RewardProbabilityPhase),
 ) -> Result<ExactProbabilityCertificateCheck, ProbabilityDocumentError> {
     let control = super::reward::RewardControl::observing(cancel, observe);
-    check_document_with_control(system, claims, item, bytes, limits, cancel, &control)
+    check_document_with_control(
+        system,
+        claims,
+        item,
+        bytes,
+        limits,
+        cancel,
+        &control,
+        &fairness::Control::new(cancel),
+    )
+}
+
+/// Observe the actual bounded fairness checker with caller cancellation tokens.
+#[cfg(feature = "test-support")]
+#[allow(clippy::too_many_arguments)]
+pub fn check_bounded_fair_probability_certificate_observing(
+    system: &ModelSystem<'_>,
+    claims: &[CheckedProbabilisticClaim],
+    item: &ObligationIdentity,
+    bytes: &[u8],
+    limits: ProbabilityDocumentLimits,
+    cancel: &Cancel,
+    observe: &mut dyn FnMut(BoundedFairProbabilityPhase),
+) -> Result<ExactProbabilityCertificateCheck, ProbabilityDocumentError> {
+    let control = fairness::Control::observing(cancel, observe);
+    check_document_with_control(
+        system,
+        claims,
+        item,
+        bytes,
+        limits,
+        cancel,
+        &super::reward::RewardControl::new(cancel),
+        &control,
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1380,6 +1506,7 @@ fn check_document_with_control(
     limits: ProbabilityDocumentLimits,
     cancel: &Cancel,
     control: &super::reward::RewardControl<'_>,
+    fair_control: &fairness::Control<'_>,
 ) -> Result<ExactProbabilityCertificateCheck, ProbabilityDocumentError> {
     match profile_dispatch(bytes, limits, cancel)? {
         ProfileDispatch::LongRun => {
@@ -1390,16 +1517,53 @@ fn check_document_with_control(
                 system, claims, item, bytes, limits, cancel, control,
             )
         }
-        ProfileDispatch::Exact => {}
+        ProfileDispatch::Exact | ProfileDispatch::BoundedFair => {}
     }
     let mut meter = quire_exact::Meter::new(limits.accounting).with_cancel(cancel.clone());
-    let document = match read_document(bytes, limits, cancel, &mut meter) {
+    fair_control.phase(fairness::BoundedFairProbabilityPhase::Intake)?;
+    let mut fairness_records = Vec::new();
+    let mut storage = 0;
+    let document = match read_document_profile(
+        bytes,
+        limits,
+        cancel,
+        &mut meter,
+        false,
+        Some(&mut fairness_records),
+        &mut storage,
+    ) {
         Ok(document) => document,
         Err(error) => return document_admission_error(error),
     };
     if &document.identity != item {
         return Err(ProbabilityDocumentError::IdentityMismatch);
     }
+    let claim = bind_claim(claims, item, cancel)?;
+    if fairness_records.is_empty() != claim.fairness.is_empty() {
+        return Err(ProbabilityDocumentError::ObjectiveMismatch);
+    }
+    if !fairness_records.is_empty() {
+        let expected = fairness::checked_with_control(
+            system,
+            claim,
+            limits,
+            cancel,
+            &mut meter,
+            &mut storage,
+            fair_control,
+        )?;
+        if !fairness::same(
+            &expected,
+            &fairness_records,
+            limits,
+            cancel,
+            &mut meter,
+            &mut storage,
+        )? {
+            return Err(ProbabilityDocumentError::ObjectiveMismatch);
+        }
+    }
+    fair_control.phase(fairness::BoundedFairProbabilityPhase::Graph)?;
     let (graph, objective, bound, bounded_ranks, event, failures, reward) =
         subject_graph_with_identity(
             system,
@@ -1409,8 +1573,9 @@ fn check_document_with_control(
             cancel,
             qsl_foundation::IdentityLimits::default(),
             document.cyclic_dtmc,
+            !fairness_records.is_empty(),
             &mut meter,
-            &mut 0,
+            &mut storage,
             control,
         )?;
     if objective != document.optimization
@@ -1421,6 +1586,7 @@ fn check_document_with_control(
     {
         return Err(ProbabilityDocumentError::ObjectiveMismatch);
     }
+    fair_control.phase(fairness::BoundedFairProbabilityPhase::Equality)?;
     let ranks: BTreeMap<_, _> = document.ranking.into_iter().collect();
     let certificate = ExactProbabilityCertificate {
         values: document.values,

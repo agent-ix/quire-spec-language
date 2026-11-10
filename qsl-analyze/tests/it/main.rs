@@ -140,4 +140,5 @@ mod cyclic_reward_certificate;
 
 mod cyclic_mdp_certificate;
 
+mod bounded_fair_certificate;
 mod cyclic_mdp_reward_certificate;
