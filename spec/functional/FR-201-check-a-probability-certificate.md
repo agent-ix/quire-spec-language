@@ -1037,6 +1037,86 @@ another same-dimension UnitId SHALL NOT substitute for that identity.
   This contract is not a claim of completed implementation or whole-runtime
   allocation qualification.
 
+### Closed bounded fair eventual document profile
+
+The codec SHALL admit the separate profile
+`"quire.probability-objective/bounded-fair-eventual/v1"` only for
+origin-activated event-position `eventually[0,h] holds(P)`, finite integer
+h >= 0, checked state predicate P, untimed finite Markov models, one subject
+initial state, one admitted claim binding and a nonempty checked fairness
+set. Only Every-scheduler AtLeast/minimum and AtMost/maximum exact proofs
+are admitted. Source probability bounds remain strictly between 0 and 1;
+this does not exclude transported state probabilities 0 or 1. Horizon zero
+is admitted. Workload, clocks, rewards, unbounded and long-run events,
+other temporal shapes, unresolved post-state nondeterminism, multiple
+initial states/bindings and refutations remain outside this profile.
+
+- The objective SHALL contain exactly `profile`, `targets`, `optimization`
+  and `fairness`. Targets and optimization retain the bounded reachability
+  profile's extensional meaning; optimization is `"minimum"` or
+  `"maximum"`. Each fairness record SHALL contain exactly `fairness_kind`
+  (`"weak"` or `"strong"`), `granularity` (`"whole"` or `"each"`) and
+  `target`. Target SHALL reuse QSpec FR-322-AC-293's closed model-operation
+  variant of `TemporalFairnessTarget`: exactly `{kind: "operation",
+  declaration: NodeId, name: Identifier}`. The declaration is the actual
+  declaring model type's structural identity, not an alias, inferred
+  operation path, display name, AST encoding or private claim-hash bytes.
+  Protocol and hybrid target variants are not admitted here.
+- Fairness records SHALL be strictly ascending by unsigned lexicographic
+  comparison of each complete record's RFC 8785 UTF-8 canonical octets.
+  Duplicate records and noncanonical ordering SHALL be rejected as
+  `Malformed` at certificate member `objective`. The checker SHALL resolve
+  the checked claim's operations independently, deduplicate the exact
+  checked constraints and compare the complete canonically ordered set
+  before acceptance. A missing/extra record, changed strength, granularity,
+  declaration or operation name SHALL refuse objective mismatch as invalid
+  runtime input. It SHALL preserve distinct weak and strong constraints
+  without implication-based pruning. Authored reorderings and duplicate
+  spellings resolving to one checked constraint yield the same objective.
+  Inherited operations resolve to their actual declaring identity; aliases
+  do not substitute identity. Whole/each retain ADR-018 FA-1's actual
+  scheduled-identity/receiver interpretation, not a certificate-supplied
+  receiver list. Wrong source binding or receiver state cannot alias the
+  admitted subject.
+- The document SHALL retain exactly the existing bounded exact document's
+  top-level members, structural identity, rational/count transport, strict
+  parsing, complete reachable-state coverage, canonical row order, Bellman
+  equality, decided targets and remaining-horizon ranking rules. The
+  checker SHALL rebuild the monitor using the existing qualified checked
+  root/profile/origin/binding constructor, initialization at position zero,
+  observation transitions and terminal false-extension closure. The new
+  certificate profile string SHALL NOT replace that context constructor.
+  Keys retain FR-196's six components `[domain,binding,model,monitor,
+  accumulator,pending]`, with null accumulator/pending here. Fairness is
+  checked claim identity and objective content, not a seventh key component.
+  Equal fair/unfair numerical values do not establish equality of complete
+  keys or checked claim identities.
+- Under ADR-028 FS-2/FS-5 and FR-200's bounded rule, every finite scheduler
+  prefix in this admitted finite-action model extends by the uniform
+  scheduler to an almost-surely fair continuation. The checker SHALL reuse
+  the bounded numeric operator and horizon proof; it SHALL NOT require fair
+  end-component computation, a witness policy or a new vacuity verdict for
+  this profile. The checked fairness set SHALL accompany the result and
+  certificate. Empty checked fairness SHALL continue to use the existing
+  unfair profile with unchanged canonical bytes and admission; it SHALL
+  NOT be relabelled as this profile.
+- Source fairness admission and unresolved-operation refusals SHALL retain
+  their earlier typed outcomes. Identity mismatch precedes enumeration;
+  malformed evidence, objective mismatch, false equality/rank and missed
+  threshold retain the existing rejection/refusal rules and loci. No proof
+  SHALL be emitted from Bounds, PrecisionBudget or zero direct instances;
+  the latter retain UnsupportedBinding/unsupported without invented binding.
+  Requested/Deadline cancellation and byte/state/edge/work/storage/
+  representation/arithmetic limits SHALL retain their actual typed causes
+  throughout intake, source-operation identity reconstruction, full-key
+  construction, graph checking and canonical encoding. Declaration/node
+  depth, text traversal and metadata comparison/encoding work SHALL be
+  admitted against caller limits, using shared owner identity encoders and
+  the reserved canonical writer rather than manual JSON or copied AST
+  schemas. Existing external transition/private-reader and ordinary
+  interpreter allocation boundaries remain outside this narrow raw-state
+  proof qualification; this extension does not establish all AC-30.
+
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
@@ -1087,6 +1167,11 @@ another same-dimension UnitId SHALL NOT substitute for that identity.
 | FR-201-AC-44 | For WAIT self R=0 versus GO to B R=1, minimum V(s)=1 accepts with rank 1. Bogus minimum V(s)=0 or 1/2 satisfies Bellman equality through WAIT but rejects RankBroken because no tight action progresses. Maximum is infinity: no finite native document is emitted, and bogus maximum V(s)=1 rejects RankBroken despite Bellman equality. A zero-cost positive-exit retry accepts V(s)=0 with positive rank at bound 0; rank 0 rejects. Non-B terminals and closed zero-cost classes have infinity and cannot pass vacuous universal progress. Minimum initial safe exit cost 1 versus another action to an infinite non-B trap retains unsupported mixed-infinite coverage without a finite document; fabricated finite trap rows fail properness and missing rows fail coverage. | Test |
 | FR-201-AC-45 | AC-43/44 documents round-trip canonically through a fresh checker without analyzer/provider linkage. Entry-B cost is counted once, initial B has V/rank zero, and an otherwise admitted post-B cycle adds no rows or costs. Wrong checked reward/model/unit, targets, optimization/profile, identity or binding; changed actual draw R; false values/progress; malformed rational/JSON/full-key data; missing/duplicate/out-of-order/extra rows and model-only keys prevent acceptance under the precise existing rule/locus. Old acyclic and DTMC bytes/verdicts, producer preferences and sealed acceptance remain unchanged. | Test |
 | FR-201-AC-46 | Actual pre-cancellation and phase-observed Requested/Deadline or byte/state/edge/work/storage/representation/arithmetic exhaustion during original/stopped admission, actual raw/internal/full keys, all-action/draw/B/reward/unit reconstruction, exact sums, tightness and universal/existential progress preserve the typed cause without accepted truth. Earlier model/negative-reward refusal and deferred undefined or unsupported evaluation are not coerced to zero or omitted actions. Unsupported shape/fairness/workload/timed/multi-post/refutation/infinity forms issue no new-profile proof; zero direct instances preserve UnsupportedBinding/unsupported without invented evidence. No new bound directions or full all-expansion memory qualification are claimed. | Test |
+
+| FR-201-AC-47 | The bounded fair profile admits the exact Every/minimum AtLeast and maximum AtMost slice with nonempty checked weak/strong whole/each operation fairness; horizon zero and transported 0/1 values work with interior source bounds. The fair and unfair bounded fixture both have minimum 24/25, while fair result/objective retain the exact checked set. Fairness-empty documents retain existing bytes. Unsupported shapes and zero instances emit no new-profile proof. | Test |
+| FR-201-AC-48 | Canonical fairness records reuse the closed shared operation target and independently match the resolved checked set, including inherited declaring identities and whole/each receiver semantics. Authored reorder/duplicate spellings normalize identically; missing, extra, changed-kind/granularity/model/name, duplicate or out-of-order records and malformed/foreign targets cannot establish the claim. Distinct weak/strong constraints are retained. | Test |
+| FR-201-AC-49 | Independent bounded reconstruction checks exact targets, optimization, complete six-part keys, actual monitor context and remaining-horizon ranks without producer linkage. Wrong identity/binding/receiver, goal, monitor, horizon, values/ranks, coverage or canonical transport cannot be accepted, with existing precise rule/locus. Numeric invariance introduces no fair-MEC, policy, seventh key part or new vacuity outcome. | Test |
+| FR-201-AC-50 | Actual Requested/Deadline cancellation and byte/state/edge/work/storage/representation/arithmetic exhaustion during checked fairness/source declaration intake, structural identity traversal/encoding, canonical writing, raw/full-key admission and independent graph/arithmetic/rank checking retain typed causes without accepted truth. Earlier source refusals and unsupported/undefined evaluation remain distinct. External transition/private-reader and ordinary interpreter allocation boundaries are not claimed qualified. | Test |
 
 ## Dependencies
 
