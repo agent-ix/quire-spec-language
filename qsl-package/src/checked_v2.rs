@@ -1057,6 +1057,9 @@ pub fn read_evaluation_package<'package>(
 pub struct EvaluationWitnesses {
     /// The complete selected identities, or `None` when the supplier has none.
     pub identities: Option<quire_contract_model::SelectedExactIdentities>,
+    /// The source-operation identity rows (FR-390 "Source-declared operation
+    /// calls from the reader"); empty when the supplier has none.
+    pub source_operations: Vec<crate::SourceOperationRow>,
 }
 
 /// Why a supplier could not produce its witness.
@@ -1151,8 +1154,10 @@ impl EvaluationWitnessSupplier for SourceWitnessSupplier {
         let identities = identities
             .with_source_enum_rows(admitted, enum_rows, budget)
             .map_err(exhausted)?;
+        let source_operations = rows.source_operations().to_vec();
         Ok(EvaluationWitnesses {
             identities: Some(identities),
+            source_operations,
         })
     }
 }
@@ -1308,6 +1313,7 @@ impl AdmittedPackageRead<'_> {
             }
             Err(WitnessSupplyFailure::Fault) => return Err(fault()),
         };
+        let supplied_operations = supplied.source_operations.clone();
         let Some(supplied) = &supplied.identities else {
             return Err(witness(crate::bare::IdentityWitnessRefusal::Missing));
         };
@@ -1332,6 +1338,25 @@ impl AdmittedPackageRead<'_> {
                     Code::UnsupportedExactType => fault(),
                 }
             })?;
+        match crate::source_operation::admit(
+            &self.read.admitted.resolved_graph().nodes,
+            &supplied_operations,
+        ) {
+            Err(refusal) => return Err(witness(refusal)),
+            Ok(Some(anchor)) => {
+                let key = wire_graph(&self.read.admitted)
+                    .ok()
+                    .and_then(|graph| graph.key(anchor).ok())
+                    .ok_or_else(fault)?;
+                return Err(ViewFailure::Unsupported(Box::new(
+                    crate::reader_protocol_projection::UnsupportedView::missing_selected_join(
+                        self.emission.package.name(),
+                        key,
+                    ),
+                )));
+            }
+            Ok(None) => {}
+        }
         let slots = project_package(
             &self.read.admitted,
             &self.emission,

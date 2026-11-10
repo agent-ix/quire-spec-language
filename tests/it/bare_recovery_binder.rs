@@ -806,6 +806,7 @@ fn assert_case_arm_union(
         recipe.identities.fields().to_vec(),
         recipe.identities.source_records().to_vec(),
         Vec::new(),
+        recipe.identities.source_operations().to_vec(),
     );
     let missing_union = BarePackage::new(&recipe.package)
         .with_supply(

@@ -666,6 +666,7 @@ pub struct Emission {
     /// sealed members and ordered payload nodes (FR-092 "Source union
     /// identity rows").
     pub(crate) selected_source_union_rows: Vec<quire_contract_model::SelectedSourceUnionRow>,
+    pub(crate) selected_source_operation_rows: Vec<crate::SourceOperationRow>,
     /// QSL-stage declaration witnesses for emitted source-owned records
     /// (FR-092 "Source record identity rows").
     pub(crate) selected_source_record_rows: Vec<SelectedSourceRecordRow>,
@@ -922,6 +923,7 @@ impl DebugWith for Emission {
             selected_enum_declaration_rows,
             selected_enum_member_rows,
             selected_source_union_rows,
+            selected_source_operation_rows,
             selected_source_record_rows,
             selected_source_tuple_rows,
             selected_model_enum_shape_rows,
@@ -964,6 +966,10 @@ impl DebugWith for Emission {
             )
             .field("selected_enum_member_rows", selected_enum_member_rows)
             .field("selected_source_union_rows", selected_source_union_rows)
+            .field(
+                "selected_source_operation_rows",
+                selected_source_operation_rows,
+            )
             .field("selected_source_record_rows", selected_source_record_rows)
             .field("selected_source_tuple_rows", selected_source_tuple_rows)
             .field(
@@ -1328,6 +1334,12 @@ impl Emission {
         budget: &mut quire_contract_model::NativeJoinBudget,
     ) -> Result<crate::ReadIdentityRows, crate::IdentityFileRefusal> {
         self.materialize_identity_rows(package, budget)
+    }
+
+    /// The source-operation identity rows of the final graph, one per
+    /// source-declared operation anchor (FR-390, FR-517).
+    pub fn selected_source_operation_rows(&self) -> &[crate::SourceOperationRow] {
+        &self.selected_source_operation_rows
     }
 
     /// QSL-owned identity rows keyed by equality application and occurrence.
@@ -5635,6 +5647,7 @@ pub fn emit_timed_models(
         selected_enum_declaration_rows: Vec::new(),
         selected_enum_member_rows: Vec::new(),
         selected_source_union_rows: Vec::new(),
+        selected_source_operation_rows: Vec::new(),
         selected_source_record_rows: Vec::new(),
         selected_source_tuple_rows: Vec::new(),
         selected_model_enum_shape_rows: Vec::new(),
@@ -6700,6 +6713,7 @@ fn emit_package_inner(
         selected_enum_declaration_rows,
         selected_enum_member_rows,
         selected_source_union_rows,
+        selected_source_operation_rows: Vec::new(),
         selected_source_record_rows,
         selected_source_tuple_rows,
         selected_model_enum_shape_rows,

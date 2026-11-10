@@ -58,6 +58,8 @@ mod protocol_selection;
 pub mod protocol_view;
 #[cfg(feature = "std")]
 mod reader_protocol_projection;
+#[cfg(feature = "std")]
+mod source_operation;
 mod wire_form;
 
 #[cfg(feature = "std")]
@@ -136,6 +138,8 @@ pub use reader_protocol_projection::{
     MissingLocation, ReaderProtocolFunction, ReaderProtocolProjection, ReaderSlot,
     UnsupportedReason, UnsupportedView, ViewLocus,
 };
+#[cfg(feature = "std")]
+pub use source_operation::SourceOperationRow;
 
 #[cfg(feature = "std")]
 pub use quire_contract_model::{

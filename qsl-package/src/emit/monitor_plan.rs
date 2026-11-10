@@ -1335,6 +1335,7 @@ fn finish(
         selected_enum_declaration_rows: rows.selected_enum_declaration_rows,
         selected_enum_member_rows: rows.selected_enum_member_rows,
         selected_source_union_rows: rows.selected_source_union_rows,
+        selected_source_operation_rows: Vec::new(),
         selected_source_record_rows: rows.selected_source_record_rows,
         selected_source_tuple_rows: rows.selected_source_tuple_rows,
         selected_model_enum_shape_rows: rows.selected_model_enum_shape_rows,

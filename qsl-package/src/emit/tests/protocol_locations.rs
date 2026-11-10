@@ -1228,6 +1228,7 @@ where
     ) -> Result<crate::EvaluationWitnesses, crate::WitnessSupplyFailure> {
         Ok(crate::EvaluationWitnesses {
             identities: (self.0)(admitted, budget),
+            source_operations: Vec::new(),
         })
     }
 }
@@ -1327,4 +1328,278 @@ fn supplied_identities_are_validated_against_the_admitted_package() {
         }),
         UnsupportedReason::UnknownIdentityWitness
     );
+}
+
+fn admitted_read<'p>(
+    package: &'p CheckedPackage,
+    emission: &Emission,
+) -> crate::AdmittedPackageRead<'p> {
+    let document = domain();
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
+    crate::read_evaluation_emission(
+        package,
+        emission,
+        LibraryName::new(emission.package.name()).unwrap(),
+        &packages,
+        V2ReadLimits::fixture(),
+        crate::EmitLimits::fixture(),
+        crate::SourceWitnessSupplier::new(emission),
+    )
+    .expect("fixture E admits")
+}
+
+/// Fixture E's graph with the declaring type of its `step` anchor made a
+/// source-declared type of the unit (TC-1407 fixture E-S). QSL's source
+/// declares no object type or operation yet, so E-S is built from E's final
+/// graph by giving the anchor's context node a source owner. Returns the
+/// nodes, the anchor and the authority.
+fn source_declared_step(
+    emission: &Emission,
+) -> (
+    Vec<quire_contract_model::CheckedSemanticNodeV2>,
+    CheckedNodeId,
+    String,
+) {
+    use quire_contract_model::{CheckedDeclaration, CheckedNodeOwner, CheckedTerm};
+    let mut nodes = emission.wire_nodes.clone();
+    let authority = "agent-ix/unit".to_owned();
+    let anchor = nodes
+        .iter()
+        .find(|node| &*node.semantic_form == "operation_anchor")
+        .expect("fixture E has an operation anchor")
+        .clone();
+    let members = match &anchor.body {
+        CheckedTerm::Aggregate { members } => members.clone(),
+        CheckedTerm::OperationAnchorBody(body) => body.members.to_vec(),
+        other => panic!("anchor body {other:?}"),
+    };
+    let context = members
+        .iter()
+        .find_map(|member| match member {
+            CheckedTerm::Binding { name, value } if name.as_ref() == "context" => match &**value {
+                CheckedTerm::Reference { target } => Some(target.clone()),
+                other => panic!("context {other:?}"),
+            },
+            _ => None,
+        })
+        .expect("the anchor binds its context");
+    let declaring = nodes
+        .iter_mut()
+        .find(|node| node.node_id == context)
+        .expect("the context is a node of the package");
+    declaring.owner = Some(CheckedNodeOwner::Source {
+        authority: authority.clone().into(),
+        identity: "unit".into(),
+    });
+    declaring.declaration = Some(CheckedDeclaration {
+        qualified_name: vec!["Node".into()],
+    });
+    (nodes, anchor.node_id, authority)
+}
+
+fn row_of(
+    nodes: &[quire_contract_model::CheckedSemanticNodeV2],
+    anchor: &CheckedNodeId,
+    authority: &str,
+) -> crate::SourceOperationRow {
+    let rows = crate::source_operation::source_operation_rows(nodes);
+    let row = rows
+        .into_iter()
+        .find(|row| &row.structural_node == anchor)
+        .expect("the source-declared step anchor has a row");
+    assert_eq!(row.source_authority, authority);
+    row
+}
+
+/// FR-390-AC-70 (control): fixture E, whose `step` is model-owned, carries no
+/// source-operation row, and `identities.json` (`identities/4`) writes the
+/// member empty and reads it back equal.
+#[trace("TC-1407", "FR-390-AC-70")]
+#[test]
+fn model_owned_step_has_no_source_operation_row() {
+    let (package, _) = checked_and_emitted(tc1070::SOURCE);
+    let emission = emit_checked(&package).expect("fixture emits");
+    assert!(emission.selected_source_operation_rows().is_empty());
+    let read = admitted_read(&package, &emission);
+    let admitted = read.admitted();
+    let mut budget = quire_contract_model::NativeJoinBudget::new(1 << 30, 1 << 30);
+    let rows = emission
+        .identity_rows(admitted, &mut budget)
+        .expect("rows");
+    let bytes = rows.to_bytes(admitted).expect("file");
+    let file: Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(file["format"], "quire.checked-handoff.identities/4");
+    assert_eq!(file["source_operations"], json!([]));
+    let read = crate::ReadIdentityRows::read(&bytes, admitted, &mut budget).expect("reads");
+    assert_eq!(read, rows);
+}
+
+/// FR-390-AC-70: a source-declared `step` anchor yields one row with the
+/// unit's authority, `Node::step` and the anchor's full id, which the file
+/// writes and reads back equal.
+#[trace("TC-1407", "FR-390-AC-70")]
+#[test]
+fn source_declared_step_has_one_source_operation_row() {
+    let (package, _) = checked_and_emitted(tc1070::SOURCE);
+    let emission = emit_checked(&package).expect("fixture emits");
+    let (nodes, anchor, authority) = source_declared_step(&emission);
+    let rows = crate::source_operation::source_operation_rows(&nodes);
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0], row_of(&nodes, &anchor, &authority));
+    assert_eq!(rows[0].source_identity, "Node::step");
+    assert_eq!(rows[0].anchor_id, anchor);
+    let (model_owned, _, _) = (emission.wire_nodes.clone(), 0, 0);
+    assert!(crate::source_operation::source_operation_rows(&model_owned).is_empty());
+}
+
+/// FR-390-AC-72: omitted, unknown and foreign rows refuse as the spec orders
+/// them, and a complete row set is admitted.
+#[trace("TC-1407", "FR-390-AC-72")]
+#[test]
+fn source_operation_rows_refuse_missing_unknown_and_foreign() {
+    use crate::IdentityWitnessRefusal as Refusal;
+    let (package, _) = checked_and_emitted(tc1070::SOURCE);
+    let emission = emit_checked(&package).expect("fixture emits");
+    let (nodes, anchor, authority) = source_declared_step(&emission);
+    let row = row_of(&nodes, &anchor, &authority);
+    let admit = |rows: &[crate::SourceOperationRow]| {
+        crate::source_operation::admit(&nodes, rows).map(|found| found.cloned())
+    };
+    // R1: the `step` row removed.
+    assert_eq!(admit(&[]), Err(Refusal::Missing));
+    // R2: another source identity.
+    let mut halt = row.clone();
+    halt.source_identity = "Node::halt".to_owned();
+    assert_eq!(admit(&[halt]), Err(Refusal::Unknown));
+    // R3: another source authority is foreign, never unknown.
+    let mut other = row.clone();
+    other.source_authority = "another-authority".to_owned();
+    assert_eq!(admit(&[other]), Err(Refusal::Foreign));
+    // R4: a node that is no operation anchor.
+    let clause = nodes
+        .iter()
+        .find(|node| &*node.semantic_form == "frame")
+        .expect("fixture E has a frame node")
+        .node_id
+        .clone();
+    let mut wrong = row.clone();
+    wrong.structural_node = clause.clone();
+    wrong.anchor_id = clause;
+    assert_eq!(admit(&[wrong]), Err(Refusal::Unknown));
+    // Foreign wins over unknown for the same row.
+    let mut both = row.clone();
+    both.source_authority = "another-authority".to_owned();
+    both.source_identity = "Node::halt".to_owned();
+    assert_eq!(admit(&[both]), Err(Refusal::Foreign));
+    // Every row admitted: the anchor is reported for AC-73.
+    assert_eq!(admit(&[row]), Ok(Some(anchor)));
+}
+
+/// FR-390-AC-72, FR-531: fixture E's model-owned `step` is no source-declared
+/// anchor, so a row naming it is unknown, and the supplier with no rows is
+/// unaffected, on the in-process reader route at the `Package` locus.
+#[trace("TC-1407", "FR-390-AC-72", "FR-390-AC-73")]
+#[test]
+fn reader_view_over_model_owned_step_ignores_absent_rows_and_refuses_a_row_for_it() {
+    use crate::reader_protocol_projection::{UnsupportedReason, ViewLocus};
+    let (package, _) = checked_and_emitted(tc1070::SOURCE);
+    let emission = emit_checked(&package).expect("fixture emits");
+    let document = domain();
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()]).unwrap();
+    let read = crate::read_evaluation_emission(
+        &package,
+        &emission,
+        LibraryName::new(emission.package.name()).unwrap(),
+        &packages,
+        V2ReadLimits::fixture(),
+        crate::EmitLimits::fixture(),
+        crate::SourceWitnessSupplier::new(&emission),
+    )
+    .expect("fixture E admits");
+    assert!(
+        read.evaluation_view().is_ok(),
+        "AC-73: fixture E is unaffected"
+    );
+    let nodes = &read.admitted().resolved_graph().nodes;
+    let anchor = nodes
+        .iter()
+        .find(|node| &*node.semantic_form == "operation_anchor")
+        .unwrap()
+        .node_id
+        .clone();
+    let authority = "agent-ix/unit".to_owned();
+    let row = crate::SourceOperationRow {
+        structural_node: anchor.clone(),
+        source_authority: authority,
+        source_identity: "Node::step".to_owned(),
+        anchor_id: anchor,
+    };
+    let refused = crate::read_evaluation_emission(
+        &package,
+        &emission,
+        LibraryName::new(emission.package.name()).unwrap(),
+        &packages,
+        V2ReadLimits::fixture(),
+        crate::EmitLimits::fixture(),
+        WithOperationRows(vec![row], SourceWitnessSupplierOf(emission.clone())),
+    )
+    .expect("fixture E admits");
+    let Err(ViewFailure::Unsupported(view)) = refused.evaluation_view() else {
+        panic!("a row for a model-owned anchor is refused")
+    };
+    assert_eq!(view.locus(), &ViewLocus::Package);
+    assert_eq!(view.reason(), &UnsupportedReason::ForeignIdentityWitness);
+}
+
+struct SourceWitnessSupplierOf(Emission);
+
+/// The source supplier with its source-operation rows replaced.
+struct WithOperationRows(Vec<crate::SourceOperationRow>, SourceWitnessSupplierOf);
+
+impl crate::EvaluationWitnessSupplier for WithOperationRows {
+    fn supply(
+        &self,
+        admitted: &quire_contract_model::CheckedPackageV2,
+        budget: &mut quire_contract_model::NativeJoinBudget,
+    ) -> Result<crate::EvaluationWitnesses, crate::WitnessSupplyFailure> {
+        let mut supplied =
+            crate::SourceWitnessSupplier::new(&(self.1).0).supply(admitted, budget)?;
+        supplied.source_operations = self.0.clone();
+        Ok(supplied)
+    }
+}
+
+/// FR-531: `identities/3` is the old format and is refused with no read of
+/// its rows; the `source_operations` member is required.
+#[trace("TC-1407", "FR-390-AC-70")]
+#[test]
+fn identities_three_is_refused_as_the_old_format() {
+    let (package, _) = checked_and_emitted(tc1070::SOURCE);
+    let emission = emit_checked(&package).expect("fixture emits");
+    let read = admitted_read(&package, &emission);
+    let admitted = read.admitted();
+    let mut budget = quire_contract_model::NativeJoinBudget::new(1 << 30, 1 << 30);
+    let rows = emission.identity_rows(admitted, &mut budget).unwrap();
+    let mut file: Value = serde_json::from_slice(&rows.to_bytes(admitted).unwrap()).unwrap();
+    let read = |value: &Value, budget: &mut quire_contract_model::NativeJoinBudget| {
+        crate::ReadIdentityRows::read(
+            &crate::emit::tests::wire_bytes(value).unwrap(),
+            admitted,
+            budget,
+        )
+    };
+    let mut old = file.clone();
+    old["format"] = json!("quire.checked-handoff.identities/3");
+    old.as_object_mut().unwrap().remove("source_operations");
+    assert!(matches!(
+        read(&old, &mut budget),
+        Err(crate::IdentityFileRefusal::Format(_))
+    ));
+    file.as_object_mut().unwrap().remove("source_operations");
+    assert!(matches!(
+        read(&file, &mut budget),
+        Err(crate::IdentityFileRefusal::Malformed {
+            member: crate::IdentityMember::SourceOperations
+        })
+    ));
 }

@@ -21,6 +21,7 @@ pub(crate) enum WireTag {
     Function,
     Temporal,
     Protocol,
+    State,
 }
 
 #[cfg(feature = "std")]
@@ -36,6 +37,7 @@ impl WireTag {
             "function" => Self::Function,
             "temporal" => Self::Temporal,
             "protocol" => Self::Protocol,
+            "state" => Self::State,
             _ => return None,
         })
     }
@@ -68,6 +70,7 @@ pub(crate) enum WireForm {
     TemporalClause,
     ProtocolClause,
     Compensation,
+    OperationAnchor,
 }
 
 impl WireForm {
@@ -98,6 +101,7 @@ impl WireForm {
             "temporal_clause" => Self::TemporalClause,
             "protocol_clause" => Self::ProtocolClause,
             "compensation" => Self::Compensation,
+            "operation_anchor" => Self::OperationAnchor,
             _ => return None,
         })
     }

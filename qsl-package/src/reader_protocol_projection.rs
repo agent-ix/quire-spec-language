@@ -182,6 +182,16 @@ impl UnsupportedView {
         }
     }
 
+    /// A source-declared operation anchor no IR witness kind accepts yet
+    /// (FR-390 "Dependency on IR"), at the anchor's node.
+    pub(crate) fn missing_selected_join(package: &str, key: NodeKey) -> Self {
+        Self {
+            package: package.to_owned(),
+            locus: ViewLocus::node(key),
+            reason: UnsupportedReason::MissingSelectedJoin,
+        }
+    }
+
     /// A witness refusal (FR-390, FR-531): the package-scoped locus, no node
     /// key and no location, because producer-row validity is a property of
     /// the package.
@@ -294,6 +304,9 @@ pub enum UnsupportedReason {
     /// A slot-walk visit without its `protocol_locations` row, or a row
     /// without its visit.
     MissingLocationProjection(Box<MissingLocation>),
+    /// A source-declared operation anchor a protocol node reaches, which IR's
+    /// FR-352 witness kind does not yet accept (FR-390).
+    MissingSelectedJoin,
     /// The identity rows of a bytes-only supply are absent (FR-531).
     MissingIdentityWitness,
     /// The identity rows name no identity the package admits (FR-531).
@@ -319,6 +332,7 @@ impl UnsupportedReason {
                 format!("missing-operation-projection:{operation}")
             }
             Self::MissingLocationProjection(_) => "missing-location-projection".to_owned(),
+            Self::MissingSelectedJoin => "missing-selected-join".to_owned(),
             Self::MissingIdentityWitness => "missing-identity-witness".to_owned(),
             Self::UnknownIdentityWitness => "unknown-identity-witness".to_owned(),
             Self::ForeignIdentityWitness => "foreign-identity-witness".to_owned(),
@@ -342,6 +356,7 @@ impl UnsupportedReason {
             Self::MissingLiteralProjection => 7,
             Self::MissingOperationProjection { .. } => 8,
             Self::MissingLocationProjection(_) => 9,
+            Self::MissingSelectedJoin => 10,
         }
     }
 }

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! Required final producer facts in the identities/3 carrier (FR-531).
+//! Required final producer facts in the identities/4 carrier (FR-531).
 
 use quire_contract_model::{
     CheckedNodeId, SelectedSourceRecordMemberRow, SelectedSourceRecordRow, SelectedSourceUnionRow,
@@ -200,5 +200,34 @@ impl SourceRecordJson {
                 })
                 .collect::<Result<_, IdentityFileRefusal>>()?,
         })
+    }
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct SourceOperationJson {
+    structural_node: CheckedNodeId,
+    source_authority: String,
+    source_identity: String,
+    anchor_id: CheckedNodeId,
+}
+
+impl SourceOperationJson {
+    pub(super) fn of(row: &crate::SourceOperationRow) -> Self {
+        Self {
+            structural_node: row.structural_node.clone(),
+            source_authority: row.source_authority.clone(),
+            source_identity: row.source_identity.clone(),
+            anchor_id: row.anchor_id.clone(),
+        }
+    }
+
+    pub(super) fn row(self) -> crate::SourceOperationRow {
+        crate::SourceOperationRow {
+            structural_node: self.structural_node,
+            source_authority: self.source_authority,
+            source_identity: self.source_identity,
+            anchor_id: self.anchor_id,
+        }
     }
 }

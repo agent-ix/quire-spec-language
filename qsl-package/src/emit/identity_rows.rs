@@ -34,6 +34,8 @@ impl Emission {
             }).then_some(index)
                 })
                 .collect();
+        self.selected_source_operation_rows =
+            crate::source_operation::source_operation_rows(&self.wire_nodes);
         self.identity_row_selection.fields = self
             .selected_exact_field_rows
             .iter()
@@ -147,6 +149,16 @@ impl Emission {
             let locus = adapter_locus(index, "identity_union_output");
             unions.push(copy_source_union(row, budget, locus)?);
         }
+        let locus = package_locus("identity_operation_output");
+        charge::items(budget, locus, self.selected_source_operation_rows.len())?;
+        for (index, row) in self.selected_source_operation_rows.iter().enumerate() {
+            let locus = adapter_locus(index, "identity_operation_output");
+            charge::work(budget, locus, 1)?;
+            charge::node(budget, locus, &row.structural_node)?;
+            charge::text(budget, locus, &row.source_authority)?;
+            charge::text(budget, locus, &row.source_identity)?;
+            charge::node(budget, locus, &row.anchor_id)?;
+        }
         charge::text(
             budget,
             package_locus("identity_package_output"),
@@ -158,6 +170,7 @@ impl Emission {
             fields,
             records,
             unions,
+            self.selected_source_operation_rows.clone(),
         ))
     }
 }
