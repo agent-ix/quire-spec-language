@@ -98,6 +98,7 @@ fn form_name(node: CheckedNode<'_>) -> Option<String> {
         NodeKind::Let { .. } => "let",
         NodeKind::If { .. } => "if",
         NodeKind::Coerce(..)
+        | NodeKind::ConvertScalar(..)
         | NodeKind::Arithmetic(..)
         | NodeKind::IntegerDivision { .. }
         | NodeKind::Negate(_)
@@ -172,6 +173,7 @@ fn operation_of(node: CheckedNode<'_>, children: &[CheckedNode<'_>]) -> Option<C
             OrderingOperator::GreaterOrEqual => ">=",
         },
         NodeKind::Coerce(..) => "coerce",
+        NodeKind::ConvertScalar(..) => "convert",
         NodeKind::Equality(operator, ..) => match operator {
             EqualityOperator::Equal => "=",
             EqualityOperator::NotEqual => "!=",

@@ -25,7 +25,7 @@ use quire_exact::{
     DivisionMember, Integer, IntegerDomain, IntegerInterval, Meter, OrderingOperator, Outcome,
     ScalarLimits, Value, ValueType,
 };
-use quire_semantic_value::declaration::CheckedEquality;
+use quire_semantic_value::declaration::{CheckedEquality, EqualityOperand};
 use quire_semantic_value::location::ExpressionLocation;
 
 use crate::exec::{Shim, Signature, ARGUMENTS_OFFSET, FAILED_OFFSET, RESULT_OFFSET};
@@ -46,6 +46,8 @@ pub(crate) enum OpKind {
     },
     Order(OrderingOperator),
     Coerce(IntegerInterval),
+    /// An integer widening `ConvertScalar`: the interpreter's `operand_value`.
+    ConvertScalar(Box<EqualityOperand>),
     /// `=` or `!=` (the checked equality), over operands carried as
     /// Booleans (`true`) or Integers (`false`).
     Equality {
@@ -542,6 +544,29 @@ impl Emitter<'_, '_, '_> {
                     ty
                 };
                 Ok((result, narrowed))
+            }
+            NodeKind::ConvertScalar(operand, source_node) => {
+                // Only an Integer-like to Integer-like conversion is
+                // translated; float, quantity, decimal and rational
+                // conversions stay with the interpreter.
+                let integer_like =
+                    |ty: &ValueType| matches!(ty, ValueType::Integer | ValueType::Int(_));
+                let source = node.at(*source_node);
+                if !integer_like(source.value_type()) || !integer_like(node.value_type()) {
+                    return Err(self.unsupported(node));
+                }
+                let (a, ty) = self.emit(source, depth + 1)?;
+                let Ty::Int(..) = ty else {
+                    return Err(self.unsupported(node));
+                };
+                let zero = self.builder.ins().iconst(types::I64, 0);
+                let result = self.shim_call(
+                    node,
+                    OpKind::ConvertScalar(Box::new(operand.clone())),
+                    a,
+                    zero,
+                );
+                Ok((result, ty))
             }
             NodeKind::Equality(_, checked, left, right) => {
                 let (a, left_ty) = self.emit(node.at(*left), depth + 1)?;

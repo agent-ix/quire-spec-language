@@ -7,8 +7,9 @@ use std::sync::OnceLock;
 /// The ADR-012 `Value`-family forms this backend translates.
 pub(crate) const FORMS: [&str; 5] = ["literal", "operator", "let", "if", "call"];
 
-const INTEGER_OPERATORS: [&str; 14] = [
-    "+", "-", "*", "negate", "div", "rem", "mod", "<", "<=", ">", ">=", "coerce", "=", "!=",
+const INTEGER_OPERATORS: [&str; 15] = [
+    "+", "-", "*", "negate", "div", "rem", "mod", "<", "<=", ">", ">=", "coerce", "convert", "=",
+    "!=",
 ];
 
 const BOOLEAN_OPERATORS: [&str; 6] = ["and", "or", "implies", "not", "=", "!="];

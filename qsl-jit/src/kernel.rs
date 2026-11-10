@@ -11,7 +11,8 @@ use quire_exact::{
     BooleanConnective, Charge, ChargePoint, Integer, IntegerArithmetic, Meter, OrderedOperands,
     Refusal, Value,
 };
-use quire_semantic_value::declaration::TypeEnvironment;
+use quire_semantic_value::declaration::{operand_value, TypeEnvironment};
+use quire_semantic_value::quantity::UnitScope;
 use quire_semantic_value::stop::{outcome_into_stop, Stop};
 
 use crate::translate::{divide, integer_to_i64, Op, OpKind};
@@ -112,6 +113,15 @@ pub(crate) fn run(
                 .charge(Charge::new(ChargePoint::FunctionCall))
                 .map_err(Stop::Incomplete)?;
             Ok(0)
+        }
+        OpKind::ConvertScalar(operand) => {
+            // The interpreter's own operation, so the meter sees its charges.
+            let units = UnitScope::new(types.units());
+            let converted = operand_value(types, operand, &Value::Integer(left), &units, meter)?;
+            match converted {
+                Value::Integer(integer) => narrow(&integer),
+                _ => Err(Halt::Fault("jit-convert-scalar-integer-expected")),
+            }
         }
         OpKind::Coerce(target) => {
             if target.contains(&left) {

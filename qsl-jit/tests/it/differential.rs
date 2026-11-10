@@ -134,3 +134,28 @@ fn one_work_unit_below_the_spend_gives_the_interpreters_incomplete() {
     }
     assert!(checked > 0);
 }
+
+/// An `Int[0, 9]` argument widened to `Integer` at a call is translated
+/// through the kernel: value, charges and the denied charge at every spend
+/// point match the interpreter's.
+#[trace("TC-1385")]
+#[test]
+fn a_widened_call_argument_matches_the_interpreter_at_every_spend_point() {
+    let package = package_of(SOURCE);
+    let prepared = prepare(&package, &["twice", "chain"]);
+    assert!(crate::common::unsupported_names(&prepared).is_empty());
+    for function in ["twice", "chain"] {
+        let arguments = vec![int(9)];
+        let spend = interpreted(&package, function, &arguments, UNLIMITED)
+            .charges
+            .len() as u64;
+        for below in 0..=spend + 1 {
+            let mut limits = UNLIMITED;
+            limits.work_units = below;
+            let want = interpreted(&package, function, &arguments, limits);
+            let got = jitted(&prepared, function, &arguments, limits);
+            assert_eq!(got.result, want.result, "{function} work_units={below}");
+            assert_eq!(got.charges, want.charges, "{function} work_units={below}");
+        }
+    }
+}
