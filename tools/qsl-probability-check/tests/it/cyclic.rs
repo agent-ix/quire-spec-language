@@ -347,3 +347,82 @@ fn cyclic_evidence_mutations_and_caller_controls_prevent_acceptance() {
         assert_eq!(output["status"], "stopped", "{name}: {output}");
     }
 }
+
+#[trace("TC-636", "FR-201-AC-26", "FR-282-AC-19")]
+#[test]
+fn native_acyclicity_probe_uses_native_counts_and_working_storage_without_transport_bytes() {
+    use qsl_eval::simulation::model::{
+        ExpansionLimits, ModelSimulationRequest, ModelSystem, PopulationUniverse,
+    };
+    use qsl_semantics::model::observation::{DocumentRef, ObservationLimits};
+    use quire_checked::key::DeclarationKey;
+    use quire_exact::{Cancel, CancelCause};
+    let probe = |source: &str, exact: ExactProbLimits, cancel: &Cancel| {
+        let (checked, packages) = super::bounded::compile_source_with(source, domain().as_bytes());
+        let initial = DocumentRef {
+            authority: "test".to_owned(),
+            identity: "s0".to_owned(),
+        };
+        let snapshots = [(initial.clone(), SNAPSHOT.to_vec())].into_iter().collect();
+        let spine = qsl_replay::spine::SpineLimits::default();
+        let system = ModelSystem::new(ModelSimulationRequest {
+            package: checked.package(),
+            packages: &packages,
+            normalization: spine.model,
+            snapshots: &snapshots,
+            initial: vec![initial],
+            universes: vec![PopulationUniverse {
+                population: DeclarationKey {
+                    package: "test/link".to_owned(),
+                    node: "ix://test/link/msgs".to_owned(),
+                },
+                keys: vec!["m".to_owned()],
+            }],
+            observation: ObservationLimits::default(),
+            expansion: ExpansionLimits {
+                max_candidates: 100_000,
+            },
+            meter: qsl_replay::AccountingLimits::default().0,
+            emit: spine.package.emit(),
+        })
+        .unwrap();
+        qsl_replay::admit_acyclic_probabilistic_refutation_subject(&system, &exact, cancel)
+    };
+    let source = claim(
+        &model(false),
+        "every scheduler",
+        ">=",
+        "rational(3,5)",
+        "m.delivered",
+    );
+    let mut exact = ExactProbLimits::default();
+    exact.document.bytes = 0;
+    assert_eq!(probe(&source, exact, &Cancel::new()), Ok(false));
+    let terminal = source.replace("self.attempts = 2 and not self.delivered", "true");
+    assert_eq!(probe(&terminal, exact, &Cancel::new()), Ok(true));
+    exact.model.limits.max_states = 0;
+    assert!(matches!(
+        probe(&source, exact, &Cancel::new()),
+        Err(qsl_replay::ExactProbBuildIssue::Limit {
+            limit: qsl_replay::ModelCheckLimit::ExactProbMaxStates,
+            value: 0
+        })
+    ));
+    exact = ExactProbLimits::default();
+    exact.document.storage_bytes = 0;
+    assert!(matches!(
+        probe(&source, exact, &Cancel::new()),
+        Err(qsl_replay::ExactProbBuildIssue::Limit {
+            limit: qsl_replay::ModelCheckLimit::CertificateMaxWorkingBytes,
+            value: 0
+        })
+    ));
+    let cancel = Cancel::new();
+    cancel.cancel(CancelCause::Requested);
+    assert!(matches!(
+        probe(&source, ExactProbLimits::default(), &cancel),
+        Err(qsl_replay::ExactProbBuildIssue::Cancelled(
+            CancelCause::Requested
+        ))
+    ));
+}
