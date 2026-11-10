@@ -1294,4 +1294,51 @@ mod tests {
         drop(value);
         drop(value_type);
     }
+
+    #[test]
+    #[trace("TC-471", "FR-120-AC-4")]
+    fn complete_canonical_container_reservation_preserves_caller_denial() {
+        fn events(writer: &mut Writer<'_, Output<'_, '_>>) -> Result<(), Error> {
+            writer.begin_object()?;
+            writer.name("items")?;
+            writer.begin_array()?;
+            writer.null()?;
+            writer.end_array()?;
+            writer.end_object()
+        }
+        let cancel = Cancel::new();
+        let mut denied = Admission {
+            work_limit: u64::MAX,
+            ..Admission::default()
+        };
+        let scope = Scope {
+            budget: RefCell::new(&mut denied),
+            cancel: &cancel,
+            identity: IdentityLimits::default(),
+            refused: RefCell::new(None),
+        };
+        assert_eq!(
+            scope.canonical(events),
+            Err(ModelKeyError::Denied),
+            "the complete writer must ask before retaining its object frame"
+        );
+        assert!(
+            scope.refused.borrow().is_none(),
+            "the scoped writer denial must be consumed"
+        );
+        drop(scope);
+        assert_eq!(denied.storage, 0);
+        let mut admitted = Admission {
+            storage_limit: usize::MAX,
+            work_limit: u64::MAX,
+            ..Admission::default()
+        };
+        let scope = Scope {
+            budget: RefCell::new(&mut admitted),
+            cancel: &cancel,
+            identity: IdentityLimits::default(),
+            refused: RefCell::new(None),
+        };
+        assert_eq!(scope.canonical(events).unwrap(), br#"{"items":[null]}"#);
+    }
 }
