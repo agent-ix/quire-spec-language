@@ -108,6 +108,19 @@ fn two_step_named_reward_checks_minimum_maximum_and_both_workload_bounds() {
         let (code, output) = run(&stronger);
         assert_eq!(code, 1, "{output}");
         assert_eq!(output["rule"], "threshold-missed");
+        let false_claim = claim(&two_step(), scheduler, op, beyond, "m.delivered");
+        let (emitted, settlement) =
+            request_with(&false_claim, SNAPSHOT, ExactProbLimits::default(), DOMAIN);
+        assert!(
+            emitted.is_none(),
+            "reward refutations have no proof document"
+        );
+        assert!(
+            matches!(settlement,
+            qsl_analyze::analyze::Settlement::Disposed(disposed)
+                if disposed.kind == qsl_analyze::analyze::DispositionKind::Unsupported),
+            "reward refutation remains outside the admitted native witness path"
+        );
         if scheduler == "Even" {
             let changed_model =
                 two_step().replace("weight Msg::send_a = 1", "weight Msg::send_a = 3");
