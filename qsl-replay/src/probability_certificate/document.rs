@@ -1352,7 +1352,7 @@ mod tests {
         let mut node = reward.identity.node().clone();
         for _ in 0..256 {
             node = quire_exact::NodeKey::try_new(
-                "unit",
+                "unit".to_owned(),
                 vec![quire_exact::PathSegment::Node(node)],
                 0,
             )
