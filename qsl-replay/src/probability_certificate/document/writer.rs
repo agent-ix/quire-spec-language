@@ -22,6 +22,15 @@ impl<'a> Admission<'a> {
             stopped: None,
         }
     }
+    pub(super) fn with_used(bound: u64, cancel: &'a Cancel, used: u64) -> Self {
+        Self {
+            used,
+            ..Self::new(bound, cancel)
+        }
+    }
+    pub(super) fn used(&self) -> u64 {
+        self.used
+    }
     pub(super) fn take_stop(&mut self) -> Option<ProbabilityDocumentError> {
         self.stopped.take()
     }

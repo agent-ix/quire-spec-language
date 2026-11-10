@@ -21,7 +21,7 @@ pub use long_run::{
 };
 mod unit;
 mod writer;
-pub(super) use key::{model_product_key, model_product_key_with_budget};
+pub(super) use key::{model_product_key, model_product_key_with_budget, model_product_key_with_storage};
 
 const PROFILE: &str = "quire.probability-objective/reachability/v1";
 const STATE_PROFILE: &str = "quire.probability-objective/state-predicate/v1";

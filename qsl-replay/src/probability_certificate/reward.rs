@@ -89,14 +89,16 @@ pub(super) fn enumerate(
         let (bytes, _) = system
             .state_key(state)
             .map_err(|_| ExactProbabilityGraphError::ExpansionRefused)?;
-        ProbabilityProductKey::for_model_state_with_limits(
+        super::document::model_product_key_with_storage(
             binding,
             &bytes,
+            None,
             ProbabilityDocumentIoLimits {
                 bytes: limits.bytes,
                 storage_bytes: limits.storage_bytes,
             },
             cancel,
+            &mut storage.borrow_mut(),
         )
         .map_err(|error| {
             *failure.borrow_mut() = Some(error);

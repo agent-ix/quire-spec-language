@@ -12,14 +12,42 @@ pub(crate) fn model_product_key(
     limits: ProbabilityDocumentIoLimits,
     cancel: &Cancel,
 ) -> Result<ProbabilityProductKey, ProbabilityDocumentError> {
+    model_product_key_with_storage(binding, model_bytes, monitor, limits, cancel, &mut 0)
+}
+
+pub(super) fn model_product_key_with_storage(
+    binding: Option<&ObjectReference>,
+    model_bytes: &[u8],
+    monitor: Option<&qsl_eval::automaton::AutomatonStateKey>,
+    limits: ProbabilityDocumentIoLimits,
+    cancel: &Cancel,
+    storage: &mut u64,
+) -> Result<ProbabilityProductKey, ProbabilityDocumentError> {
     poll(cancel)?;
-    let admission = RefCell::new(writer::Admission::new(limits.storage_bytes, cancel));
-    let model = read(model_bytes, limits.bytes, &admission)?;
+    let admission = RefCell::new(writer::Admission::with_used(
+        limits.storage_bytes,
+        cancel,
+        *storage,
+    ));
+    let result = encode_product(binding, model_bytes, monitor, limits, cancel, &admission);
+    *storage = admission.borrow().used();
+    result
+}
+
+fn encode_product(
+    binding: Option<&ObjectReference>,
+    model_bytes: &[u8],
+    monitor: Option<&qsl_eval::automaton::AutomatonStateKey>,
+    limits: ProbabilityDocumentIoLimits,
+    cancel: &Cancel,
+    admission: &RefCell<writer::Admission<'_>>,
+) -> Result<ProbabilityProductKey, ProbabilityDocumentError> {
+    let model = read(model_bytes, limits.bytes, admission)?;
     if !model_form(model.root()) {
         return Err(ProbabilityDocumentError::Malformed);
     }
     let monitor = monitor
-        .map(|key| read(key.as_bytes(), limits.bytes, &admission))
+        .map(|key| read(key.as_bytes(), limits.bytes, admission))
         .transpose()?;
     if monitor
         .as_ref()
@@ -32,7 +60,7 @@ pub(crate) fn model_product_key(
         model: model.root(),
         monitor: monitor.as_ref().map(|key| key.root()),
     };
-    let bytes = writer::encode_reserved(&product, limits.bytes, &admission)?;
+    let bytes = writer::encode_reserved(&product, limits.bytes, admission)?;
     poll(cancel)?;
     Ok(ProbabilityProductKey::from_canonical_bytes(bytes))
 }
