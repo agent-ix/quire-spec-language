@@ -764,13 +764,24 @@ impl ItemCause {
     }
 }
 
+/// Most outcome items retain the existing nullable cause member. A request
+/// disposition's unsupported item instead carries a diagnostic and omits
+/// cause entirely (FR-286, QSpec FR-331).
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(untagged)]
+enum ItemCauseMember {
+    Present { cause: Option<ItemCause> },
+    Omitted {},
+}
+
 /// One requested item of a `prove`, `analyze` or `monitor` outcome: its
 /// terminal record and its category.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct OutcomeItem {
     request_index: usize,
     result: ItemLabel,
-    cause: Option<ItemCause>,
+    #[serde(flatten)]
+    cause: ItemCauseMember,
     /// The FR-272 diagnostic of a record settled by an `unsupported` or
     /// `invalid-request` disposition (FR-286). An `unsupported` item carries
     /// it and no `cause`; a `declined` item carries both.
@@ -1039,7 +1050,14 @@ impl OutcomeItem {
         Self {
             request_index: record.request_index().get(),
             result,
-            cause,
+            cause: if matches!(
+                value,
+                TerminalValue::Unsupported(UnavailabilityCause::Disposition)
+            ) {
+                ItemCauseMember::Omitted {}
+            } else {
+                ItemCauseMember::Present { cause }
+            },
             diagnostic,
             basis,
             certification,
@@ -1095,7 +1113,9 @@ impl OutcomeItem {
         Self {
             request_index: request_index.get(),
             result: ItemLabel::Refuted,
-            cause: Some(ItemCause::undefined_evaluation(at, cause)),
+            cause: ItemCauseMember::Present {
+                cause: Some(ItemCause::undefined_evaluation(at, cause)),
+            },
             diagnostic: None,
             basis: None,
             certification: None,
@@ -1157,7 +1177,9 @@ impl OutcomeItem {
             request_index: request_index.get(),
             result,
             diagnostic: None,
-            cause: clause_run_cause(report),
+            cause: ItemCauseMember::Present {
+                cause: clause_run_cause(report),
+            },
             position: record.position,
             counterexample: record.counterexample,
             decisive: record.decisive,

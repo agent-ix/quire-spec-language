@@ -24,6 +24,7 @@ fn prove_yields_an_item_of_each_reachable_kind() {
         assert_eq!(written(&outcome)["result"], result, "{kind:?}");
     }
     let unsupported = written(&outcome_of(Verb::Prove, OutcomeKind::Unsupported));
+    assert!(unsupported.get("cause").is_none(), "{unsupported}");
     assert_eq!(unsupported["diagnostic"]["code"], "unsupported_projection");
     assert_eq!(unsupported["diagnostic"]["cause"], "unbounded-extent");
     let incomplete = written(&outcome_of(Verb::Prove, OutcomeKind::Incomplete));

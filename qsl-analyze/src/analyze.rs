@@ -2045,7 +2045,7 @@ mod tests {
 
         let unbounded = written(refusing(|| Refusal::RequiresBound));
         assert_eq!(unbounded["result"], "unsupported");
-        assert!(unbounded["cause"].is_null());
+        assert!(unbounded.get("cause").is_none(), "{unbounded}");
         assert_eq!(
             unbounded["diagnostic"],
             json!({

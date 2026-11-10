@@ -2241,7 +2241,7 @@ mod tests {
         );
         let item = serde_json::to_value(crate::OutcomeItem::from_terminal(&record))
             .expect("an item is JSON");
-        assert!(item["cause"].is_null(), "{item}");
+        assert!(item.get("cause").is_none(), "{item}");
         assert_eq!(item["diagnostic"]["code"], "unsupported_projection");
     }
 

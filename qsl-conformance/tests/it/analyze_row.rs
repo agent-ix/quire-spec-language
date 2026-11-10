@@ -61,7 +61,7 @@ fn analyze_returns_each_reachable_kind() {
     // FR-281-AC-3 and FR-286: the item carries the disposition's diagnostic
     // naming the claim kind, and no cause.
     let item = &written(&unsupported)["items"][0];
-    assert!(item["cause"].is_null());
+    assert!(item.get("cause").is_none(), "{item}");
     assert_eq!(item["diagnostic"]["code"], "unsupported_projection");
     assert_eq!(
         item["diagnostic"]["cause"],
