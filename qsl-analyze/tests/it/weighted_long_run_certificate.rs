@@ -262,9 +262,15 @@ fn reachable_zero_weight_components_remain_typed_unsupported() {
         .unwrap()
         .bias[0]
         .state;
+    let outcome = match &result {
+        Ok(ExactProbabilityCertificateCheck::Accepted(_)) => "accepted",
+        Ok(ExactProbabilityCertificateCheck::Rejected(_)) => "rejected",
+        Err(ProbabilityDocumentError::ZeroWeightComponent { .. }) => "zero-weight-component",
+        Err(_) => "other-error",
+    };
     assert!(
         matches!(result, Err(ProbabilityDocumentError::ZeroWeightComponent { ref state }) if state == zero_key),
-        "expected actual zero-component key"
+        "expected actual zero-component key, got {outcome}"
     );
     let records = analyze_items(
         &Engines::qsl().unwrap(),
