@@ -3,6 +3,9 @@
 
 use ix_trace_rs::trace;
 use qsl_conformance::{OutcomeKind, Report, Verb};
+use qsl_foundation::RequestIndex;
+use qsl_replay::{OutcomeItem, TerminalValue, UnavailabilityCause};
+use quire_semantic_value::catalog::CatalogCode;
 
 use crate::support::{outcome_of, written};
 
@@ -23,10 +26,42 @@ fn prove_yields_an_item_of_each_reachable_kind() {
         assert_eq!(outcome.exit_code(), exit, "{kind:?}");
         assert_eq!(written(&outcome)["result"], result, "{kind:?}");
     }
-    let unsupported = written(&outcome_of(Verb::Prove, OutcomeKind::Unsupported));
+    let unsupported_outcome = outcome_of(Verb::Prove, OutcomeKind::Unsupported);
+    let [record] = unsupported_outcome.records() else {
+        panic!(
+            "one EN-1 refusal record: {:?}",
+            unsupported_outcome.records()
+        );
+    };
+    assert_eq!(record.request_index(), RequestIndex::new(0));
+    assert_eq!(
+        record.value(),
+        &TerminalValue::Unsupported(UnavailabilityCause::Disposition)
+    );
+    assert_eq!(
+        record.diagnostic(),
+        Some(CatalogCode::new(
+            "unsupported_projection",
+            "unbounded-extent"
+        ))
+    );
+    let detail = serde_json::json!({
+        "kind": "temporal-satisfaction",
+        "candidate": "en-1",
+        "modes": ["bounded", "unbounded"],
+    });
+    assert_eq!(record.disposition_detail(), detail.as_object());
+    let Report::Item(item) = unsupported_outcome.report() else {
+        panic!("prove returns an item");
+    };
+    assert_eq!(item.as_ref(), &OutcomeItem::from_terminal(record));
+
+    let unsupported = written(&unsupported_outcome);
+    assert_eq!(unsupported_outcome.exit_code(), 21);
     assert!(unsupported.get("cause").is_none(), "{unsupported}");
     assert_eq!(unsupported["diagnostic"]["code"], "unsupported_projection");
     assert_eq!(unsupported["diagnostic"]["cause"], "unbounded-extent");
+    assert_eq!(unsupported["diagnostic"]["detail"], detail);
     let incomplete = written(&outcome_of(Verb::Prove, OutcomeKind::Incomplete));
     assert_eq!(incomplete["cause"]["limit"], "max_states");
 
