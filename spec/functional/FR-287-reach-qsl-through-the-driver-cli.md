@@ -45,6 +45,26 @@ QSpec FR-301 owns the CLI's lifecycle, argument refusal and version output.
 QSL's part is the library surface the CLI calls: the operations (FR-275),
 `command`, the outcome document (FR-286) and the exit function (FR-285).
 
+The request-file owner is the non-core crate `qsl-command`, whose public
+modules are `qsl_command::command` and `qsl_command::formal_source`.
+These replace the existing root modules, with no compatibility re-export.
+The driver's `quire-cli` package calls this owner directly for bounded
+request preparation and compilation, without depending on the QSL root
+package. No core crate depends on `qsl-command`, and its filesystem intake
+stays outside the qualified core
+([FR-284](FR-284-keep-the-qualified-core-separable-by-crate.md)).
+
+`RunError::outcome_document(operation: qsl_replay::Operation)` returns a
+`qsl_replay::OutcomeDocument` through the command owner's pure projection
+of its existing typed failure. It SHALL retain the original category,
+catalog code, typed cause and available location. It SHALL retain the
+spine's reached stage for a stage refusal and `last_stage` null for a
+pre-stage intake failure, cancellation or fault as FR-286 specifies.
+Source identity causes retain FR-001's typed `label` and optional region.
+The projection uses the core outcome types and their one serializer;
+neither it nor the driver reads back native JSON or branches on a human
+diagnostic message.
+
 The verbs are `parse`, `format`, `check`, `compile`, `run`, `analyze`,
 `monitor`, `prove`, `replay`, `generate`, `inspect` and `version` (ADR-029
 CB-5). Every verb takes `--format json|text`, and `inspect` also takes
@@ -88,9 +108,11 @@ FR-298) and takes FR-285's exit code.
 | FR-287-AC-4 | `--request-bytes` and `--dependent-bytes` set `command`'s `request_bytes` and `dependent_bytes` settings for `quire run` (defaults 1 MiB and 8 MiB per FR-026), have no ceiling, and a run limit refusal names the limit, its configured value and the option that raises it. A run request one byte over each setting refuses naming it, and the same request with the option set to its size runs. `quire compile` has fixed 1 MiB request-file and 8 MiB dependent-file ceilings, accepts no limit options, and refuses an over-limit input naming its setting and maximum without an option hint. | Test (TC-1262) |
 | FR-287-AC-5 | An invalid invocation of `parse`, `format`, `run` or `compile` (an unknown option, a missing or extra operand, a malformed option value) exits 20 with no panic, and the same verb run over a valid invocation after it runs normally. | Test (TC-1262) |
 | FR-287-AC-6 | A command word or `parse`/`format` label that is not valid UTF-8 (Unix bytes, Windows unpaired surrogates) refuses before the file operand is opened, exit 20, with no panic; a valid source at a file path that is not valid UTF-8 parses. | Test (TC-1262) |
-| FR-287-AC-7 | When writing the outcome document, the formatted source, the package bytes or the refusal envelope to the process stream fails (stdout bound to `/dev/full`), `quire parse`, `format`, `run` and `compile` exit 30, FR-301's code for tool failure; a partial stdout prefix may remain and is not a complete artifact. | Test (TC-1262) |
-| FR-287-AC-8 | When the reader of stdout closes the pipe before the output is written, `quire parse`, `format`, `run` and `compile` end quietly, write nothing to stderr and exit with the outcome's FR-285 code, not 30. | Test (TC-1262) |
-| FR-287-AC-9 | `quire compile` writes exactly `command`'s package bytes to stdout, with no wrapper or extra newline, only after package construction finishes, and a failed compile writes no package byte; `quire run` writes exactly `command`'s native-run-result document to stdout; a refusal writes `command`'s refusal envelope to stderr and no result bytes to stdout; one request path resolved from two working directories, as a relative and as an absolute operand, gives equal output bytes and exit code. | Test (TC-1262) |
+| FR-287-AC-7 | When writing the machine outcome document or formatted text source to stdout fails (stdout bound to `/dev/full`), `quire parse`, `format`, `run` and `compile` exit 30, FR-301's code for tool failure; a partial stdout prefix may remain and is not a complete artifact. | Test (TC-1262) |
+| FR-287-AC-8 | When the reader of stdout closes the pipe before an attempted machine-outcome or formatted-source write, `quire parse`, `format`, `run` and `compile` end quietly, write nothing to stderr and exit with the outcome's FR-285 code, not 30. A text rendering that is unsupported and makes no primary stdout write is outside this pipe-write criterion; it retains the driver's declared unsupported-rendering behavior. | Test (TC-1262) |
+| FR-287-AC-9 | In machine mode, `quire compile` and `quire run` write exactly their producer-owned FR-286 `quire-outcome/1` document to stdout, for success and refusal alike, with no CLI-added or removed member; no native package bytes, native-run-result document or refusal envelope replace it on a process stream. A compile's document is built only after package construction finishes or refuses. Resolving the same valid request as a relative and an absolute operand from two working directories gives equal outcome bytes and exit code. | Test (TC-1262) |
+| FR-287-AC-10 | An external Rust consumer with no dependency on `quire-spec-language` calls `qsl_command::command::compile_outcome` over AC-2's compile request and `prepare_run` over its bounded run request. The compile bytes equal the existing `compile` entry's bytes and the document equals FR-286's projection of the actual package result. Executing the prepared run through the existing spine yields the same result and incomplete category as the existing command entry; preparation retains authored labels, package name, packages, libraries, call arguments and accounting. The QSL root defines and re-exports neither `command` nor `formal_source`, and no core crate depends on `qsl-command`. | Test |
+| FR-287-AC-11 | Missing request files and malformed request JSON produce the command owner's outcome document with the original catalog code and category and `last_stage` null; source, check and emit refusals retain their owning typed cause, category, reached stage and available region. A source identity refusal retains its exact typed label with no fabricated locus. The command's existing native library result and refusal behavior remain unchanged. | Test |
 
 ## Dependencies
 
@@ -111,8 +133,10 @@ configuration file its arguments do not name, and stream-write failures
 (exit 30, a closed pipe ending quietly with the outcome's code). For the
 `run` and `compile` verbs over FR-026 and FR-027 requests it also owns the
 request-file operand, usage and arity errors before any file is read (exit 20),
-and writing `command`'s package bytes or result document to stdout unchanged
-and its refusal envelope to stderr. `run` accepts the `request_bytes` and
+and writing the producer-owned FR-286 outcome document to stdout unchanged
+in machine mode. FR-286 explicitly replaces the earlier native result
+stream convention when the driver's verbs land; native library artifacts
+remain in-process command products. `run` accepts the `request_bytes` and
 `dependent_bytes` options; `compile` uses fixed default ceilings and accepts no
 limit options. For `parse` and `format` it
 owns the command and label operands, their OS encoding (a non-UTF-8 command

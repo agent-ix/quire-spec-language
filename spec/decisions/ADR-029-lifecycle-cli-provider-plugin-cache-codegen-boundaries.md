@@ -180,6 +180,15 @@ change that lands the driver verbs that replace them (`parse`, `format`,
 in QSL `command` that FR-027 and FR-100 specify stays a library operation,
 reached by the driver.
 
+The non-core crate `qsl-command` owns that existing request decoder,
+bounded filesystem intake, typed preparation and native-result projection.
+The public module is `qsl_command::command`, and its source-coordinate
+adapter is `qsl_command::formal_source`; neither remains in the QSL root
+package. The driver's `quire-cli` package depends on this owner directly,
+without adding a QSL root dependency to any driver package or moving file
+access into `qsl-replay`. The core list and ambient-input prohibition in
+CB-2 and FR-284 are unchanged.
+
 **CB-2 The qualified core.** The qualified core is the check path (S0 to S4),
 the prove path (E5 to S8, with replay through S6a), and the certificate
 checkers through which `analyze` enters the core (RU-2). The checkers are

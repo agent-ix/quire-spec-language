@@ -32,6 +32,19 @@ request is the command encoding of the `parse`, `select`, `check` and
 `package` operations composed (FR-278). Every exit status this requirement
 states is FR-285's exit code of the outcome's ADR-013 O-16 category.
 
+The request-file owner is the non-core `qsl_command::command` module
+([ADR-011](../decisions/ADR-011-stage-dag-and-dependency-architecture.md)
+§6.1). Its existing `compile(&std::path::Path)` returns the package bytes.
+For the driver, `compile_outcome(&std::path::Path)` returns
+`Result<CompileOutcome, Box<RunError>>`, where `CompileOutcome` exposes
+`package_bytes() -> &[u8]` and `document() -> &qsl_replay::OutcomeDocument`.
+The command SHALL construct that document with
+`OutcomeDocument::from_package` over the actual typed package result,
+before discarding its staged value. The existing `compile` entry SHALL
+use the same compilation and emitted bytes, without a second decoder or
+compile pass. A failed compilation returns its original typed `RunError`
+and no successful `CompileOutcome`.
+
 ## Inputs
 
 A closed format/request JSON envelope. The request contains only models,
