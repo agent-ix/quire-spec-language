@@ -124,4 +124,3 @@ PASS for the scoped code-review after disposition round 1. All original findings
 ## Disposition Evidence
 
 Only four source/spec paths changed after the initial reviewed head: run.rs, execute_row.rs, FR-565 and TC-1394. Both execution paths share the unmodified full ScalarLimits value. The non-work regression uses actual arithmetic so it reaches IntegerBits charging; its supplied RED/GREEN logs show the old implementation failing exit 0 versus expected 22, then the fixed matrix target passing all 16 tests. The initial literal-only failed attempt is explicitly excluded. Supplied final fmt and four-crate test-inclusive Clippy pass. Replay/analyze/monitor producers are unchanged from the original reviewed source and their focused evidence remains applicable. No Cargo, proof, full suite or second matrix run was performed by the reviewer.
-
