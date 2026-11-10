@@ -1224,6 +1224,9 @@ fn topological_order(
 }
 
 fn poll_cancel(cancel: &Cancel) -> Result<(), ExactProbabilityGraphError> {
+    if let Some(cause) = cancel.tripped() {
+        return Err(ExactProbabilityGraphError::Cancelled(cause));
+    }
     if cancel.poll() {
         if let Some(cause) = cancel.tripped() {
             return Err(ExactProbabilityGraphError::Cancelled(cause));

@@ -97,6 +97,15 @@ pub(super) fn invariants(walk: &Walk<'_, '_>) -> Result<Vec<ModelFinding>, Expan
                 .package
                 .evaluate_clause(&clause.qualified, &observations, &mut walk.meter())
                 .map_err(|_| stop(BROKEN))?;
+            if walk
+                .cancel
+                .as_ref()
+                .is_some_and(|cancel| cancel.tripped().is_some())
+            {
+                return Err(exhausted(ExpansionLimit::EvaluationMeter(
+                    quire_exact::LimitKind::WorkUnits,
+                )));
+            }
             match verdict(&evaluation.evaluation.outcome) {
                 Verdict::True => {}
                 Verdict::False => findings.push(ModelFinding::InvariantViolated {

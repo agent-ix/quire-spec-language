@@ -402,6 +402,9 @@ impl Builder<'_, '_> {
     }
 
     fn poll(&self) -> Step<()> {
+        if let Some(cause) = self.cancel.tripped() {
+            return Err(ProductRefusal::Stopped(ProductStop::Cancelled(cause)).into());
+        }
         if self.cancel.poll() {
             if let Some(cause) = self.cancel.cause() {
                 return Err(ProductRefusal::Stopped(ProductStop::Cancelled(cause)).into());
