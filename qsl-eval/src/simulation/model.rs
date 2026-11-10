@@ -598,7 +598,21 @@ impl<'a> ModelSystem<'a> {
     /// FR-106's [`AdmissionFailure`]: `Refused` or `Incomplete`, one record.
     pub fn new(request: ModelSimulationRequest<'a>) -> Result<Self, AdmissionFailure> {
         let selections = request.package.graph().model_selections();
-        Self::over(request, selections)
+        Self::over(request, selections, None)
+    }
+
+    /// [`Self::new`] with the caller's cancellation shared by qualified
+    /// reward-expression meters during reward admission.
+    ///
+    /// # Errors
+    /// The same admission failures as [`Self::new`]; cancelled evaluation
+    /// is incomplete and retains the cause on the supplied token.
+    pub fn new_with_cancel(
+        request: ModelSimulationRequest<'a>,
+        cancel: &quire_exact::Cancel,
+    ) -> Result<Self, AdmissionFailure> {
+        let selections = request.package.graph().model_selections();
+        Self::over(request, selections, Some(cancel))
     }
 
     /// The model system's selected populations in ascending declaration-key
@@ -636,12 +650,13 @@ impl<'a> ModelSystem<'a> {
                 &[("model", model.to_owned())],
             ));
         }
-        Self::over(request, &selected)
+        Self::over(request, &selected, None)
     }
 
     fn over(
         request: ModelSimulationRequest<'a>,
         selections: &[qsl_semantics::model::domain_package::DomainPackageRef],
+        cancel: Option<&quire_exact::Cancel>,
     ) -> Result<Self, AdmissionFailure> {
         let graph = request.package.graph();
         let types = graph.scope().types();
@@ -918,7 +933,7 @@ impl<'a> ModelSystem<'a> {
             clock_bits: bits,
             bounded: std::sync::OnceLock::new(),
         };
-        system.check_rewards()?;
+        system.check_rewards_with_cancel(cancel)?;
         Ok(system)
     }
 

@@ -415,10 +415,18 @@ impl ModelSystem<'_> {
     }
 
     /// The reward `reward` evaluated on `arguments`.
-    fn reward_value(&self, reward: &Reward, arguments: Vec<Value>) -> Result<Value, ExpansionStop> {
-        let evaluation =
-            evaluate_reward(self.package, reward, arguments, &mut Meter::new(self.meter))
-                .map_err(|_| stop(BROKEN))?;
+    fn reward_value_with_cancel(
+        &self,
+        reward: &Reward,
+        arguments: Vec<Value>,
+        cancel: Option<&quire_exact::Cancel>,
+    ) -> Result<Value, ExpansionStop> {
+        let mut meter = Meter::new(self.meter);
+        if let Some(cancel) = cancel {
+            meter = meter.with_cancel(cancel.clone());
+        }
+        let evaluation = evaluate_reward(self.package, reward, arguments, &mut meter)
+            .map_err(|_| stop(BROKEN))?;
         if let quire_eval::FamilyOutcome::Evaluated(Outcome::Completed(value)) = &evaluation.outcome
         {
             return Ok(value.clone());
@@ -439,6 +447,7 @@ impl ModelSystem<'_> {
         declaring: EffectiveId,
         name: &str,
         arguments: &[(String, Value)],
+        cancel: Option<&quire_exact::Cancel>,
     ) -> Result<Vec<(Identifier, Value)>, ExpansionStop> {
         self.probabilistic
             .names
@@ -450,9 +459,10 @@ impl ModelSystem<'_> {
                         && reward.name() == reward_name.as_str()
                 });
                 let value = match declared {
-                    Some(reward) => self.reward_value(
+                    Some(reward) => self.reward_value_with_cancel(
                         reward,
                         arguments.iter().map(|(_, value)| value.clone()).collect(),
+                        cancel,
                     )?,
                     None => zero.clone(),
                 };
@@ -475,7 +485,10 @@ impl ModelSystem<'_> {
     /// or of an object type (a reward reads no state, so no object), leaves
     /// its reward unchecked. The vectors count against the expansion's
     /// candidate bound.
-    pub(super) fn check_rewards(&self) -> Result<(), AdmissionFailure> {
+    pub(super) fn check_rewards_with_cancel(
+        &self,
+        cancel: Option<&quire_exact::Cancel>,
+    ) -> Result<(), AdmissionFailure> {
         let mut budget = 0u64;
         for reward in self.declarations().rewards() {
             let operation = reward.operation();
@@ -513,18 +526,18 @@ impl ModelSystem<'_> {
                     .ok_or_else(|| super::fault("reward-domain"))?;
                 // A reward that does not complete on a vector refuses
                 // admission: its sign there is unknown.
-                let value =
-                    self.reward_value(reward, arguments.clone())
-                        .map_err(|stop| match stop.limit {
-                            Some(ExpansionLimit::EvaluationMeter(_)) => {
-                                AdmissionFailure::Incomplete(Box::new(super::record(
-                                    Code::ResourceExhausted,
-                                    "insufficient-next-charge",
-                                    &[("limit", "evaluation_meter".to_owned())],
-                                )))
-                            }
-                            _ => super::fault("reward-evaluation"),
-                        })?;
+                let value = self
+                    .reward_value_with_cancel(reward, arguments.clone(), cancel)
+                    .map_err(|stop| match stop.limit {
+                        Some(ExpansionLimit::EvaluationMeter(_)) => {
+                            AdmissionFailure::Incomplete(Box::new(super::record(
+                                Code::ResourceExhausted,
+                                "insufficient-next-charge",
+                                &[("limit", "evaluation_meter".to_owned())],
+                            )))
+                        }
+                        _ => super::fault("reward-evaluation"),
+                    })?;
                 if is_negative(&value) {
                     let rendered = reward
                         .parameters()
@@ -576,10 +589,35 @@ impl ModelSystem<'_> {
         &self,
         state: &ModelSimState,
     ) -> Result<Result<Vec<Action>, UndecidedSuccessor>, ExpansionStop> {
-        Ok(self.enabled_actions(state)?.map(|mut actions| {
-            actions.retain(|action| action.draws.iter().any(|draw| !draw.successors.is_empty()));
-            actions
-        }))
+        self.actions_impl(state, None)
+    }
+
+    /// [`Self::actions`] with the caller's cancellation shared by each
+    /// qualified reward-expression meter. The supplied token retains its
+    /// cancellation cause when evaluation stops.
+    ///
+    /// # Errors
+    /// The same expansion/evaluation stops as [`Self::actions`].
+    pub fn actions_with_cancel(
+        &self,
+        state: &ModelSimState,
+        cancel: &quire_exact::Cancel,
+    ) -> Result<Result<Vec<Action>, UndecidedSuccessor>, ExpansionStop> {
+        self.actions_impl(state, Some(cancel))
+    }
+
+    fn actions_impl(
+        &self,
+        state: &ModelSimState,
+        cancel: Option<&quire_exact::Cancel>,
+    ) -> Result<Result<Vec<Action>, UndecidedSuccessor>, ExpansionStop> {
+        Ok(self
+            .enabled_actions_impl(state, cancel)?
+            .map(|mut actions| {
+                actions
+                    .retain(|action| action.draws.iter().any(|draw| !draw.successors.is_empty()));
+                actions
+            }))
     }
 
     /// [`Self::actions`] with every enabled scheduled identity, those with no
@@ -589,10 +627,26 @@ impl ModelSystem<'_> {
         &self,
         state: &ModelSimState,
     ) -> Result<Result<Vec<Action>, UndecidedSuccessor>, ExpansionStop> {
+        self.enabled_actions_impl(state, None)
+    }
+
+    fn enabled_actions_impl(
+        &self,
+        state: &ModelSimState,
+        cancel: Option<&quire_exact::Cancel>,
+    ) -> Result<Result<Vec<Action>, UndecidedSuccessor>, ExpansionStop> {
         // No post-state presences: a postcondition's `present(self.v)`
         // read fails closed with `place-presence-unrecorded`. Dense timed
         // models route only to EN-6, so nothing reaches it here today.
-        let (expansion, enabled) = expand_enabled(self, state, None)?;
+        let (expansion, enabled) = match cancel {
+            Some(cancel) => super::walk::expand_enabled_with_cancel(self, state, cancel)?,
+            None => expand_enabled(self, state, None)?,
+        };
+        if cancel.is_some_and(|cancel| cancel.tripped().is_some()) {
+            return Err(exhausted(ExpansionLimit::EvaluationMeter(
+                quire_exact::LimitKind::WorkUnits,
+            )));
+        }
         if expansion
             .findings
             .iter()
@@ -653,7 +707,7 @@ impl ModelSystem<'_> {
                     .into_iter()
                     .map(|(_, successor)| successor)
                     .collect(),
-                rewards: self.rewards_of(vector.declaring, &vector.name, &vector.args)?,
+                rewards: self.rewards_of(vector.declaring, &vector.name, &vector.args, cancel)?,
             };
             match groups.iter_mut().find(|(key, _)| *key == order) {
                 Some((_, action)) => action.draws.push(draw),
@@ -714,7 +768,30 @@ impl ModelSystem<'_> {
         state: &ModelSimState,
         workload: &Workload,
     ) -> Result<Result<Vec<WeightedStep>, Unsteppable>, ExpansionStop> {
-        let actions = match self.enabled_actions(state)? {
+        self.weighted_steps_impl(state, workload, None)
+    }
+
+    /// [`Self::weighted_steps`] with cancellable qualified reward-expression
+    /// meters, preserving the supplied token's cancellation cause.
+    ///
+    /// # Errors
+    /// The same expansion/evaluation stops as [`Self::weighted_steps`].
+    pub fn weighted_steps_with_cancel(
+        &self,
+        state: &ModelSimState,
+        workload: &Workload,
+        cancel: &quire_exact::Cancel,
+    ) -> Result<Result<Vec<WeightedStep>, Unsteppable>, ExpansionStop> {
+        self.weighted_steps_impl(state, workload, Some(cancel))
+    }
+
+    fn weighted_steps_impl(
+        &self,
+        state: &ModelSimState,
+        workload: &Workload,
+        cancel: Option<&quire_exact::Cancel>,
+    ) -> Result<Result<Vec<WeightedStep>, Unsteppable>, ExpansionStop> {
+        let actions = match self.enabled_actions_impl(state, cancel)? {
             Ok(actions) => actions,
             Err(undecided) => return Ok(Err(Unsteppable::UndecidedSuccessor(undecided))),
         };

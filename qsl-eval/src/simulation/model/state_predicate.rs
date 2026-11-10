@@ -61,11 +61,34 @@ impl ModelSystem<'_> {
         state: &ModelSimState,
         predicates: &[(&P, Option<&ObjectReference>)],
     ) -> Result<Vec<PredicateReading>, ExpansionStop> {
+        self.state_predicates_impl(state, predicates, None)
+    }
+
+    /// [`Self::state_predicates`] with the caller's cancellation shared by
+    /// every qualified predicate-expression meter.
+    ///
+    /// # Errors
+    /// The same observation/evaluation stops as [`Self::state_predicates`].
+    pub fn state_predicates_with_cancel<P: StatePredicate>(
+        &self,
+        state: &ModelSimState,
+        predicates: &[(&P, Option<&ObjectReference>)],
+        cancel: &quire_exact::Cancel,
+    ) -> Result<Vec<PredicateReading>, ExpansionStop> {
+        self.state_predicates_impl(state, predicates, Some(cancel))
+    }
+
+    fn state_predicates_impl<P: StatePredicate>(
+        &self,
+        state: &ModelSimState,
+        predicates: &[(&P, Option<&ObjectReference>)],
+        cancel: Option<&quire_exact::Cancel>,
+    ) -> Result<Vec<PredicateReading>, ExpansionStop> {
         let bound: Vec<_> = predicates
             .iter()
             .map(|(predicate, over)| (*predicate, *over, Vec::new()))
             .collect();
-        self.state_predicates_with(state, &bound, PlacePresences::default())
+        self.state_predicates_with_impl(state, &bound, PlacePresences::default(), cancel)
     }
 
     /// [`Self::state_predicates`] with each predicate's slots after `over`
@@ -80,6 +103,16 @@ impl ModelSystem<'_> {
         state: &ModelSimState,
         predicates: &[(&P, Option<&ObjectReference>, Vec<quire_exact::Value>)],
         presence: PlacePresences,
+    ) -> Result<Vec<PredicateReading>, ExpansionStop> {
+        self.state_predicates_with_impl(state, predicates, presence, None)
+    }
+
+    fn state_predicates_with_impl<P: StatePredicate>(
+        &self,
+        state: &ModelSimState,
+        predicates: &[(&P, Option<&ObjectReference>, Vec<quire_exact::Value>)],
+        presence: PlacePresences,
+        cancel: Option<&quire_exact::Cancel>,
     ) -> Result<Vec<PredicateReading>, ExpansionStop> {
         let mut walk = walk_of(self, state, None)?;
         walk.observation.environment.set_place_presence(presence);
@@ -104,13 +137,17 @@ impl ModelSystem<'_> {
                     Some(row.reference.clone())
                 }
             };
+            let mut meter = Meter::new(self.meter);
+            if let Some(cancel) = cancel {
+                meter = meter.with_cancel(cancel.clone());
+            }
             let evaluation = evaluate_state_predicate_with(
                 self.package,
                 *predicate,
                 &walk.observation.environment,
                 bound,
                 further.clone(),
-                &mut Meter::new(self.meter),
+                &mut meter,
             )
             .map_err(|_| stop(BROKEN))?;
             readings.push(match verdict(&evaluation.outcome) {
