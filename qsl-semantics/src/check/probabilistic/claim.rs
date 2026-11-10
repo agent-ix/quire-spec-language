@@ -2280,7 +2280,9 @@ mod conversion_budget_tests {
             ),
         ] {
             let error = normalized_quantity_threshold(from, to, &mut Meter::new(limits), &location)
-                .expect_err("actual quantity conversion must enforce its representation and work ceilings");
+                .expect_err(
+                    "actual quantity conversion must enforce its representation and work ceilings",
+                );
             let CheckCause::ResourceExhausted(cause) = error.cause else {
                 panic!("actual conversion must retain its meter denial");
             };
