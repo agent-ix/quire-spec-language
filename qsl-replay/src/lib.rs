@@ -344,6 +344,10 @@ pub use probability_certificate::{
     ProbabilityWitnessError, ProbabilityWitnessPath, ProbabilityWitnessReplay,
     ProbabilityWitnessStep, ReproducedProbabilityWitness,
 };
+#[cfg(feature = "test-support")]
+pub use probability_certificate::{
+    replay_probabilistic_witness_observing, ProbabilityWitnessSemanticPhase,
+};
 pub use product_action::{
     FreeDelayActionRow, FreeDelayRow, FreeDelaysRace, FreeRacer, GivenRacer, NotMixedRace,
     ProductAction, ProductActionError, ProductActionRefusal, Schedule,
