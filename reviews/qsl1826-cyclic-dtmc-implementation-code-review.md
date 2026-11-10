@@ -174,3 +174,36 @@ bindings:
   ac_id: FR-201-AC-23
   trace: correct
 ```
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Round 1: actual bounded owner API and transitive key callbacks now share caller meter, cumulative storage and original cancellation in cyclic/native admission and producer candidate paths. |
+
+## Disposition round 1 verification
+
+Resumed the original review on final frozen c5baf8ca2cbb4aac6bd8c060f1160595cbf48a04 against actual base bfebfd678f405a8778150843dd3bfaaefadc0f5b. Reviewed all 15 changed paths (including unchanged original finding custody files) and the complete new runtime/adoption delta, relevant inherited owner/candidate helpers and both new real-owner integration tests. No new concrete finding. Original Findings, Summary, Verdict and examined scope above are retained as historical review text; this round supersedes their current blocked status. Latest verdict: PASS for the scoped cyclic DTMC implementation and original raw-key owner adoption finding; mergeable from this review's scope, subject to ordinary artifact custody/final merge handling. No whole-repository qualification or full FR-201-AC-30 claim.
+
+FND-001 fixed: enumerate_graph now borrows one real caller Meter and cumulative storage counter through ProbabilityKeyAdmission, with original Cancel. Initial/current raw state bytes use state_key_bytes_with_budget; complete FR196 keys use for_model_state_with_budget; semantic distributions use the shared model_distributions_with_budget and actual actions_with_budget/weighted_steps_with_budget. The already merged owner routes carry the same scope through current/Undecided/candidate/post-sort keys. Wrapper construction never resets those counters. Raw identity byte policy stays distinct from document working storage and probability scalar_bits. Reservation and model integer representation/work denials preserve ProbabilityDocumentError causes; native preflight now returns the typed document envelope and document_failure maps its real cause. Native scratch uses raw equality bytes only, no certificate bytes gate or acceptance token. Native graph state/edge/scalar/storage/cancellation limits remain enforced. Shared producer CandidateBudget now applies to eventual forms, preserving one budget through build_retaining_monitor_with_budget, actual owner expansion, full keys, value slots and retained candidate rows; no nominal product identity rewrite. The wider external transition/private-reader/interpreter allocation boundary is outside the accepted narrow RAWSTATE owner scope; it is not falsely characterized as fully covered or introduced by this delta.
+
+The cyclic mathematics, independent original admission, stopped coverage, SCC/BSCC/Prob0, normalized harmonic equality, shortest target-support distances and exact threshold checks remain as previously examined. Strict reader/writer cyclic profile dispatch and old profile branches remain intact. Original residual MDP choices stay rejected even with equal distributions/values or beyond targets. Generic multi-action can_avoid_target is unchanged/outside this PR; no general cyclic MDP or cyclic native refutation capability is claimed.
+
+Evidence inspected, not rerun: /tmp/qsl1826-cyclic-adoption-regressions.log: 43 fresh-process tests passed, including exhaustive every-observed-poll Requested/Deadline typed cancellation (430.57 s). The roundtrip assertion now requires observed count >= selected target poll instead of exact equality, while retaining the loop over every observed poll and exact typed cancellation result: the owner legitimately polls during unwind; the assertion is not a relaxation of cancellation outcome or poll reachability. /tmp/qsl1826-cyclic-adoption-owner.log: 2 new owner-path tests pass actual raw/post/full identity ceilings, separate model integer_bits versus probability scalar_bits, zero transport-byte independence, cumulative storage refusal, work exhaustion and mid-operation native/cyclic cancellation. /tmp/qsl1826-cyclic-adoption-core.log: 5 core tests pass support-pass work/cancel and explicit profile codec controls. Touched-package all-target Clippy with warnings denied and formatting pass in -clippy.log/-fmt.log. Independent git diff --check on actual base/head passes. No heavy builds repeated because no concrete unresolved concern justified them. The owner/long-run/reward prerequisites are now merged in this base; no post-test rebase is claimed. Current main's additional weighted-long-run specification-only change does not alter this runtime delta.
+
+Computed full matrix remains unavailable as described in the initial review; scoped acceptance text and actual trace-tagged tests were inspected directly. Additional bindings examined: cyclic_key_admission::cyclic_and_native_preserve_raw_post_and_full_key_identity_causes and cyclic_key_admission::real_owner_route_preserves_cumulative_stops_and_mid_operation_cancellation, both trace FR-201-AC-26 and FR-282-AC-19, correctly asserting their scoped owner/admission obligations. Optional repository semantic campaign not invoked. Plan completion: not assessed.
+
+Fixed source excerpt (cyclic.rs:128-138):
+
+```rust
+            let bytes =
+                system.state_key_bytes_with_budget(state, identity, &mut admission, cancel)?;
+            if full_key {
+                ProbabilityProductKey::for_model_state_with_budget(
+                    binding,
+                    &bytes,
+                    identity,
+                    &mut admission,
+                    cancel,
+                )
+```
