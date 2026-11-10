@@ -3,11 +3,11 @@
 
 use ix_trace_rs::trace;
 use qsl_analyze::exact_probabilistic::{
-    decide_expected_reward, decide_reachability, decide_reachability_threshold, ExactProbLimits,
-    ExtRational, MonitorVerdict, ProbEdge, ProbKey, ProbProduct, ProbStateId, ProductAction,
-    ProductKind, UnboundedError, UnboundedObjective, UnboundedOutcome,
+    build_product, decide_expected_reward, decide_reachability, decide_reachability_threshold,
+    ExactProbLimits, ExtRational, MonitorVerdict, ProbBuild, ProbEdge, ProbKey, ProbProduct,
+    ProbStateId, ProductAction, ProductKind, UnboundedError, UnboundedObjective, UnboundedOutcome,
 };
-use quire_exact::{Identifier, Integer, Rational, Value};
+use quire_exact::{Cancel, Identifier, Integer, Rational, Value};
 
 fn ratio(n: i64, d: i64) -> Rational {
     Rational::new(Integer::from(n), Integer::from(d)).expect("nonzero denominator")
@@ -245,4 +245,49 @@ fn positive_nonreach_has_infinite_expected_until_even_with_zero_costs() {
     )
     .expect("the avoiding policy remains available");
     assert_eq!(result.values[0], ExtRational::PlusInfinity);
+}
+
+#[trace("TC-631", "FR-196-AC-4")]
+#[trace("TC-633", "FR-198-AC-1")]
+#[test]
+fn pending_post_state_resolutions_remain_scheduler_choices_after_the_draw() {
+    let world = crate::prob_world::World::new(&crate::prob_world::health(
+        "self.healthy = (pre(self.healthy) and not fault)",
+        "true: 1, false: 1",
+        true,
+        "probabilistic Anyhow using ev on M over (n: M::Node) under every scheduler \
+         on origin { probability >= 0.99 [ always[0,2] holds(n.healthy) ] }",
+    ));
+    let ProbBuild::Built(product) = build_product(
+        world.request("Anyhow", qsl_replay::ModelCheckLimits::default()),
+        &Cancel::new(),
+    )
+    .expect("checked finite product") else {
+        panic!("expected complete product")
+    };
+    let pending = product
+        .ids()
+        .find(|state| product.states[state.index()].pending.is_some())
+        .expect("draw with unresolved post-state alternatives");
+    let [first, second] = product.outgoing(pending) else {
+        panic!("two post-state choices")
+    };
+    assert!(matches!(first.choice, ProductAction::PostState(_)));
+    assert!(matches!(second.choice, ProductAction::PostState(_)));
+    assert_ne!(first.choice, second.choice);
+    assert_eq!(first.probability, ratio(1, 1));
+    assert_eq!(second.probability, ratio(1, 1));
+    let mut target = vec![false; product.states.len()];
+    target[first.to.index()] = true;
+    for (objective, expected) in [
+        (UnboundedObjective::Min, ratio(0, 1)),
+        (UnboundedObjective::Max, ratio(1, 1)),
+    ] {
+        let result = decide_reachability(&product, &target, objective, &ExactProbLimits::default())
+            .expect("post-draw alternatives are independent scheduler actions");
+        assert_eq!(
+            result.values[pending.index()],
+            ExtRational::Finite(expected)
+        );
+    }
 }
