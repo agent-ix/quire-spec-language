@@ -153,3 +153,37 @@ bindings:
   ac_id: FR-202-AC-20
   trace: correct
 ```
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Round 1: independently inspected owner API propagation, actual native callers and pre-retention producer controls at 8d584ebf46a714bb5c93891d1962401a45ab85c7; meaningful positive and counterfactual controls pass. |
+| FND-002 | fixed | Round 1: independently inspected owner API propagation, actual native callers and pre-retention producer controls at 8d584ebf46a714bb5c93891d1962401a45ab85c7; meaningful positive and counterfactual controls pass. |
+
+## Disposition round 1
+
+**PASS; mergeable for this implementation scope.** All original findings are fixed. The broader raw-key working-memory prerequisite remains open as stated below.
+
+Inspected frozen 8d584ebf46a714bb5c93891d1962401a45ab85c7 and all changed owner/caller files. FND-001 is fixed: original graph expansion, scheduler action validation, independent workload/action steps, shared state-event outcomes, ordinary eventual/bounded observations, analyzer product building, conversion and system admission adopt the caller-aware owner APIs. Owner expansion carries Cancel into candidate budget, invariant, conjunction/pre/post and computed-write meters; reward admission/evaluation and state predicates use cancellable qualified meters. Recorded tripped cancellation is checked before an additional observer poll so its original cause survives. Invariant iteration stops on cancellation. Old entry points delegate with no token and preserve compatibility.
+
+FND-002 is fixed: the stopped native lane first borrows its selected action; native_steps visits selected edges and admits action/draw/reward/rational payload and step/queue/map slots before allocating/cloning the first step. Queue growth, reverse predecessor maps/queues, accepted path copies, frontier links and scheduler entries have pre-retention controls. The legacy public wrapper remains. MaterializedStep is a test-support observation after the clone, not the reservation point. The one-byte-short 128-edge control requires zero materialized steps; the exact-budget positive control requires all 128, preventing a test that merely rejects everything.
+
+Accepted evidence: 41 replay tests /tmp/qsl1826-state-fix1-replay2.log; eight state-proof controls /tmp/qsl1826-state-fix1-core-state2.log; owner cancellation /tmp/qsl1826-state-fix1-owner-cancel3.log; 13 adapters /tmp/qsl1826-state-fix1-adapter.log; three producers /tmp/qsl1826-state-fix1-producer.log; all-target clippy /tmp/qsl1826-state-fix1-clippy3.log. Counterfactual logs /tmp/qsl1826-state-fix1-red-{expansion,predicate,workload,wide}.log fail their intended assertions when the actual fixed paths are reverted, including 128 materialized steps instead of zero. No redundant cargo run or source edit by reviewer. The worktree is clean.
+
+Residual scope is explicit: ModelSystem::state_key still constructs model Enc/canonical raw bytes under its pre-existing fixed identity_limits (1 GiB) before ProbabilityProductKey applies caller document limits. The retained-product quota does not cover that upstream raw-key scratch. This existing owner allocation gap needs the separately coordinated budgeted raw-key owner work and its public budgeted decimal primitive (upstream quire-exact#142); it is not fixed by these dispositions and is not a full working-memory qualification claim. The root keeps that prerequisite/partial scope on open QSL-1826. No upstream merge or exception is authorized by this review. Original FND-001/002 concern semantic cancellation and induced-vector retention, both now fixed. No new regression found within the reviewed implementation diff. Full computed matrix remains excluded by instruction; Plan completion: not assessed.
+
+Fixed excerpts:
+
+```yaml
+dispositions:
+- fnd: FND-001
+  outcome: fixed
+  after_excerpt: let readings = system.state_predicates_with_cancel(model, &[(predicate,
+    binding)], cancel);
+- fnd: FND-002
+  outcome: fixed
+  after_excerpt: "control(WitnessWork::Slots(slots(\n        count,\n        std::mem::size_of::<ProducedStep>(),\n\
+    \    )?))?;\n    control(WitnessWork::Slots(slots(\n        count,\n        std::mem::size_of::<ProbStateId>(),\n\
+    \    )?))?;"
+```
