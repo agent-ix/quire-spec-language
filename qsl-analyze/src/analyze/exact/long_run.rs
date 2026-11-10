@@ -5,7 +5,7 @@ use super::*;
 use crate::exact_probabilistic::{decide_long_run_workload, LongRunResult, ProductKind};
 use qsl_replay::{
     long_run_probability_certificate_document, write_long_run_probability_certificate,
-    LongRunProbabilityComponent,
+    LongRunProbabilityComponent, ProbabilityDocumentIoLimits,
 };
 
 pub(super) fn run(

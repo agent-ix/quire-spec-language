@@ -633,3 +633,8 @@ mod redaction_tests {
             .any(|(name, _)| name == marker));
     }
 }
+
+#[cfg(feature = "test-support")]
+pub use probability_certificate::{
+    check_long_run_probability_certificate_observing, LongRunProbabilityPhase,
+};

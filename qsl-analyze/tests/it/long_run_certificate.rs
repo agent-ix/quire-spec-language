@@ -230,3 +230,66 @@ fn long_run_control_stops_preserve_actual_causes_without_acceptance() {
         })
     ));
 }
+
+#[trace("TC-1401", "FR-201-AC-30")]
+#[test]
+fn phase_observed_cancellation_uses_the_actual_checker_control() {
+    use qsl_replay::{
+        check_long_run_probability_certificate_observing, LongRunProbabilityPhase as Phase,
+    };
+    let world = availability();
+    let bytes = produce(&world, "Lower");
+    let system = ModelSystem::new(world.subject().simulation).unwrap();
+    let item = qsl_replay::probabilistic_claim_identity(world.claim("Lower")).unwrap();
+    let claims = world.package.graph().probabilistic_model().claims();
+    for phase in [
+        Phase::Admission,
+        Phase::Key,
+        Phase::Predicate,
+        Phase::Workload,
+        Phase::Components,
+        Phase::Membership,
+        Phase::Arithmetic,
+    ] {
+        let mut reached = false;
+        let control = check_long_run_probability_certificate_observing(
+            &system,
+            claims,
+            &item,
+            &bytes,
+            limits(),
+            &Cancel::new(),
+            &mut |actual| {
+                if actual == phase {
+                    reached = true;
+                }
+            },
+        )
+        .unwrap();
+        assert!(reached, "phase {phase:?}");
+        assert!(matches!(
+            control,
+            ExactProbabilityCertificateCheck::Accepted(_)
+        ));
+        for cause in [CancelCause::Requested, CancelCause::Deadline] {
+            let cancel = Cancel::new();
+            let mut reached = false;
+            let stopped = check_long_run_probability_certificate_observing(
+                &system,
+                claims,
+                &item,
+                &bytes,
+                limits(),
+                &cancel,
+                &mut |actual| {
+                    if actual == phase {
+                        reached = true;
+                        cancel.cancel(cause);
+                    }
+                },
+            );
+            assert!(reached, "phase {phase:?}");
+            assert_eq!(stopped, Err(ProbabilityDocumentError::Cancelled(cause)));
+        }
+    }
+}

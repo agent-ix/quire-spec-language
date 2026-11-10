@@ -56,13 +56,6 @@ struct Events<'a> {
     text: Text<'a>,
 }
 
-impl<'a> std::ops::Deref for Events<'a> {
-    type Target = Text<'a>;
-    fn deref(&self) -> &Self::Target {
-        &self.text
-    }
-}
-
 pub(super) struct Text<'a> {
     limits: ProbabilityDocumentLimits,
     cancel: &'a Cancel,
@@ -196,7 +189,7 @@ impl<'a> Text<'a> {
 
 impl Encode for Events<'_> {
     fn encode_into<S: Sink + ?Sized>(&self, writer: &mut Writer<'_, S>) -> Result<(), Error> {
-        self.poll()?;
+        self.text.poll()?;
         writer.begin_object()?;
         writer.name("identity")?;
         writer.begin_object()?;
@@ -227,14 +220,14 @@ impl Encode for Events<'_> {
             writer.name("failures")?;
             writer.begin_array()?;
             for (index, key) in self.document.failures.iter().enumerate() {
-                self.key(key, writer, index != 0)?;
+                self.text.key(key, writer, index != 0)?;
             }
             writer.end_array()?;
         }
         writer.name("targets")?;
         writer.begin_array()?;
         for (index, key) in self.document.targets.iter().enumerate() {
-            self.key(key, writer, index != 0)?;
+            self.text.key(key, writer, index != 0)?;
         }
         writer.end_array()?;
         writer.name("optimization")?;
@@ -252,16 +245,16 @@ impl Encode for Events<'_> {
         writer.name("values")?;
         writer.begin_array()?;
         for row in &self.document.values {
-            self.poll()?;
+            self.text.poll()?;
             writer.begin_object()?;
             writer.name("state")?;
-            self.key(&row.state, writer, false)?;
+            self.text.key(&row.state, writer, false)?;
             writer.name("value")?;
             writer.begin_object()?;
             writer.name("numerator")?;
-            self.integer(row.value.numerator(), writer)?;
+            self.text.integer(row.value.numerator(), writer)?;
             writer.name("denominator")?;
-            self.integer(row.value.denominator(), writer)?;
+            self.text.integer(row.value.denominator(), writer)?;
             writer.end_object()?;
             writer.end_object()?;
         }
@@ -269,10 +262,10 @@ impl Encode for Events<'_> {
         writer.name("ranking")?;
         writer.begin_array()?;
         for (key, rank) in &self.document.ranking {
-            self.poll()?;
+            self.text.poll()?;
             writer.begin_object()?;
             writer.name("state")?;
-            self.key(key, writer, false)?;
+            self.text.key(key, writer, false)?;
             writer.name("rank")?;
             writer.integer(i128::from(*rank))?;
             writer.end_object()?;
@@ -318,8 +311,8 @@ fn encode(
 }
 
 fn encode_events(events: &Events<'_>) -> Result<Vec<u8>, ProbabilityDocumentError> {
-    let limits = events.limits;
-    let cancel = events.cancel;
+    let limits = events.text.limits;
+    let cancel = events.text.cancel;
     let admission = RefCell::new(Admission {
         used: 0,
         bound: limits.storage_bytes,
@@ -327,7 +320,7 @@ fn encode_events(events: &Events<'_>) -> Result<Vec<u8>, ProbabilityDocumentErro
         stopped: None,
     });
     let result = encode_reserved(events, limits.bytes, &admission);
-    if let Some(error) = events.stopped.borrow_mut().take() {
+    if let Some(error) = events.text.stopped.borrow_mut().take() {
         return Err(error);
     }
     result
@@ -436,9 +429,9 @@ mod tests {
                 quire_canonical::Limits::new(bytes),
                 &mut reservation,
             );
-            let error = events.integer(&integer, &mut writer).unwrap_err();
+            let error = events.text.integer(&integer, &mut writer).unwrap_err();
             assert_eq!(
-                events.texts.get(),
+                events.text.texts.get(),
                 0,
                 "oversized decimal transport was not retained"
             );
@@ -488,12 +481,12 @@ mod tests {
         let mut output = Vec::new();
         let mut writer = Writer::new(&mut output, quire_canonical::Limits::new(cap));
         writer.begin_array().unwrap();
-        events.key(&key, &mut writer, false).unwrap();
+        events.text.key(&key, &mut writer, false).unwrap();
         assert!(
-            matches!(events.key(&key, &mut writer, true), Err(Error::Limit(quire_canonical::LimitExceeded { required, .. })) if required == cap + 1)
+            matches!(events.text.key(&key, &mut writer, true), Err(Error::Limit(quire_canonical::LimitExceeded { required, .. })) if required == cap + 1)
         );
         assert_eq!(
-            events.texts.get(),
+            events.text.texts.get(),
             1,
             "the rejected second transport string was never encoded"
         );
@@ -530,7 +523,7 @@ mod tests {
                 "{error:?}"
             );
             assert_eq!(
-                events.texts.get(),
+                events.text.texts.get(),
                 0,
                 "no base64 or decimal text was materialized before admission: {error:?}"
             );

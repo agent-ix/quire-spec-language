@@ -170,16 +170,33 @@ fn proof_source_request(
         scalar_bits: 128,
         accounting: qsl_replay::AccountingLimits::default().0,
     };
-    let document = probability_certificate_document(
-        &system,
-        package.graph().probabilistic_model().claims(),
-        &item,
-        &evidence.certificate,
-        document_limits,
-        &cancel,
-    )
-    .unwrap();
-    let written = write_probability_certificate(&document, document_limits, &cancel).unwrap();
+    let written = if matches!(
+        claim.form,
+        qsl_semantics::check::ProbForm::LongRunFraction { .. }
+    ) {
+        let retained = record
+            .terminal()
+            .unwrap()
+            .exact_certificate_document()
+            .unwrap();
+        let document =
+            qsl_replay::read_long_run_probability_certificate(retained, document_limits, &cancel)
+                .unwrap();
+        qsl_replay::write_long_run_probability_certificate(&document, document_limits, &cancel)
+            .unwrap()
+    } else {
+        let document = probability_certificate_document(
+            &system,
+            package.graph().probabilistic_model().claims(),
+            &item,
+            &evidence.certificate,
+            document_limits,
+            &cancel,
+        )
+        .unwrap();
+        let written = write_probability_certificate(&document, document_limits, &cancel).unwrap();
+        written
+    };
     let retained = record
         .terminal()
         .unwrap()
@@ -707,4 +724,38 @@ fn real_model_keys_embed_parsed_forms_and_refuse_inner_base64_transport() {
         "the invalid inner base64 model transport must refuse: {result}"
     );
     assert_ne!(result["status"], "accepted");
+}
+
+#[trace("TC-1401", "FR-201-AC-29")]
+#[test]
+fn long_run_terminal_components_round_trip_through_an_independent_source_process() {
+    let claim = "\nprobabilistic Likely using inf on M over (m: M::Msg) under Even on origin { long_run_fraction holds(m.delivered) >= rational(391,400) }\n";
+    let request = proof_request(claim);
+    let (code, result) = run(&request, &[]);
+    assert_eq!(code, 0, "{result}");
+    assert_eq!(result["status"], "accepted");
+    let document: Value = serde_json::from_str(request["certificate"].as_str().unwrap()).unwrap();
+    assert_eq!(document["kind"], "long-run");
+    assert!(document["components"].as_array().unwrap().len() >= 2);
+    for mutation in 0..4 {
+        let mut bad = request.clone();
+        change_certificate(&mut bad, |document| match mutation {
+            0 => {
+                document.as_object_mut().unwrap().remove("components");
+            }
+            1 => {
+                document["components"][0]["gain"]["numerator"] = json!("77");
+            }
+            2 => {
+                let components = document["components"].as_array_mut().unwrap();
+                components.push(components[0].clone());
+            }
+            _ => {
+                document["objective"]["predicate_states"] = json!([]);
+            }
+        });
+        let (code, result) = run(&bad, &[]);
+        assert_ne!(code, 0, "mutation {mutation}: {result}");
+        assert_ne!(result["status"], "accepted");
+    }
 }

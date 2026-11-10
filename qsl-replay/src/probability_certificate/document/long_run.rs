@@ -5,6 +5,26 @@ use super::*;
 use quire_canonical::{Encode, Error, Sink, Writer};
 use std::cell::RefCell;
 
+/// Actual long-run checking phase entered under the caller's control.
+#[cfg(feature = "test-support")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LongRunProbabilityPhase {
+    /// Canonical document admission.
+    Admission,
+    /// Complete model/product key encoding.
+    Key,
+    /// Checked state predicate evaluation.
+    Predicate,
+    /// Qualified workload expansion.
+    Workload,
+    /// Positive-support component traversal.
+    Components,
+    /// Supplied versus independent membership comparison.
+    Membership,
+    /// Exact rational sums and equations.
+    Arithmetic,
+}
+
 const PROFILE: &str = "quire.probability-objective/dtmc-long-run/v1";
 
 /// Candidate evidence for one complete recurrent component.
@@ -103,6 +123,8 @@ fn read(
     bytes: &[u8],
     cx: &mut Context<'_>,
 ) -> Result<LongRunProbabilityDocument, ProbabilityDocumentError> {
+    #[cfg(feature = "test-support")]
+    cx.phase(LongRunProbabilityPhase::Admission)?;
     if !has_profile(bytes, cx.limits, cx.cancel)? {
         return Err(ProbabilityDocumentError::Unsupported);
     }
@@ -174,7 +196,7 @@ fn read(
                     previous.bias[0].state >= bias[0].state
                 })
         {
-            return Err(ProbabilityDocumentError::Malformed);
+            return Err(ProbabilityDocumentError::MalformedMember("components"));
         }
         components.push(LongRunProbabilityComponent { value, gain, bias });
     }
@@ -199,7 +221,11 @@ fn read_rows(
             .last()
             .is_some_and(|previous: &ExactProbabilityValue| previous.state >= state)
         {
-            return Err(ProbabilityDocumentError::Malformed);
+            return Err(ProbabilityDocumentError::MalformedMember(if probability {
+                "values"
+            } else {
+                "components"
+            }));
         }
         let value = ratio_checked(
             row.value,
@@ -327,6 +353,8 @@ struct Context<'a> {
     cancel: &'a Cancel,
     meter: quire_exact::Meter,
     storage: u64,
+    #[cfg(feature = "test-support")]
+    observe: Option<&'a mut dyn FnMut(LongRunProbabilityPhase)>,
 }
 impl<'a> Context<'a> {
     fn new(limits: ProbabilityDocumentLimits, cancel: &'a Cancel) -> Self {
@@ -335,7 +363,16 @@ impl<'a> Context<'a> {
             cancel,
             meter: quire_exact::Meter::new(limits.accounting).with_cancel(cancel.clone()),
             storage: 0,
+            #[cfg(feature = "test-support")]
+            observe: None,
         }
+    }
+    #[cfg(feature = "test-support")]
+    fn phase(&mut self, phase: LongRunProbabilityPhase) -> Result<(), ProbabilityDocumentError> {
+        if let Some(observe) = self.observe.as_mut() {
+            observe(phase);
+        }
+        poll(self.cancel)
     }
     fn rows(&self, n: usize) -> Result<(), ProbabilityDocumentError> {
         if n > self.limits.states {
@@ -376,6 +413,8 @@ impl<'a> Context<'a> {
         &mut self,
         operation: quire_exact::RationalArithmetic<'_>,
     ) -> Result<Rational, ProbabilityDocumentError> {
+        #[cfg(feature = "test-support")]
+        self.phase(LongRunProbabilityPhase::Arithmetic)?;
         let value = arithmetic(operation, &mut self.meter, self.cancel)?;
         check_scalar(&value, self.limits)?;
         Ok(value)
@@ -424,6 +463,8 @@ fn subject(
     let stopped = RefCell::new(None);
     let key_of = |state: &ModelSimState| {
         let encoded = (|| {
+            #[cfg(feature = "test-support")]
+            cx.borrow_mut().phase(LongRunProbabilityPhase::Key)?;
             cx.borrow_mut().work(1)?;
             // Raw state-key scratch remains the tracked owner-adoption gate.
             let (bytes, _) = system.state_key(state).map_err(|_| {
@@ -462,18 +503,33 @@ fn subject(
         false,
         &key_of,
         &mut |bytes| {
-            let result = cx
-                .borrow_mut()
-                .reserve(bytes)
-                .and_then(|()| cx.borrow_mut().work(1));
+            let result = {
+                let mut context = cx.borrow_mut();
+                context.reserve(bytes).and_then(|()| context.work(1))
+            };
             result.map_err(|error| {
                 *stopped.borrow_mut() = Some(error);
                 ExactProbabilityGraphError::ExpansionRefused
             })
         },
         #[cfg(feature = "test-support")]
-        &mut |_| {},
-        &mut |_, _| Ok(()),
+        &mut |phase| {
+            if phase == ProbabilityWitnessSemanticPhase::ExpansionEntered {
+                if let Err(error) = cx.borrow_mut().phase(LongRunProbabilityPhase::Workload) {
+                    *stopped.borrow_mut() = Some(error);
+                }
+            }
+        },
+        &mut |_, _| {
+            #[cfg(feature = "test-support")]
+            cx.borrow_mut()
+                .phase(LongRunProbabilityPhase::Predicate)
+                .map_err(|error| {
+                    *stopped.borrow_mut() = Some(error);
+                    ExactProbabilityGraphError::ExpansionRefused
+                })?;
+            Ok(())
+        },
         &mut |error| issue = Some(error),
     );
     if let Some(error) = stopped.borrow_mut().take() {
@@ -535,21 +591,48 @@ pub(super) fn check(
     cancel: &Cancel,
 ) -> Result<ExactProbabilityCertificateCheck, ProbabilityDocumentError> {
     let mut cx = Context::new(limits, cancel);
-    let document = match read(bytes, &mut cx) {
+    check_with_context(system, claims, item, bytes, &mut cx)
+}
+
+/// Check with a phase observer while retaining the original caller controls.
+#[cfg(feature = "test-support")]
+pub fn check_long_run_probability_certificate_observing(
+    system: &ModelSystem<'_>,
+    claims: &[CheckedProbabilisticClaim],
+    item: &ObligationIdentity,
+    bytes: &[u8],
+    limits: ProbabilityDocumentLimits,
+    cancel: &Cancel,
+    observe: &mut dyn FnMut(LongRunProbabilityPhase),
+) -> Result<ExactProbabilityCertificateCheck, ProbabilityDocumentError> {
+    let mut cx = Context::new(limits, cancel);
+    cx.observe = Some(observe);
+    check_with_context(system, claims, item, bytes, &mut cx)
+}
+
+fn check_with_context(
+    system: &ModelSystem<'_>,
+    claims: &[CheckedProbabilisticClaim],
+    item: &ObligationIdentity,
+    bytes: &[u8],
+    cx: &mut Context<'_>,
+) -> Result<ExactProbabilityCertificateCheck, ProbabilityDocumentError> {
+    let document = match read(bytes, cx) {
         Ok(document) => document,
         Err(ProbabilityDocumentError::MissingMember("components")) => {
             return Ok(malformed("components"))
         }
+        Err(ProbabilityDocumentError::MalformedMember(member)) => return Ok(malformed(member)),
         Err(error) => return Err(error),
     };
     if &document.identity != item {
         return Err(ProbabilityDocumentError::IdentityMismatch);
     }
-    let (graph, bound) = subject(system, claims, item, &mut cx)?;
+    let (graph, bound) = subject(system, claims, item, cx)?;
     if document.predicate_states != target_keys(&graph) {
         return Err(ProbabilityDocumentError::ObjectiveMismatch);
     }
-    check_graph(&graph, &document, &bound, &mut cx).map(|mut check| {
+    check_graph(&graph, &document, &bound, cx).map(|mut check| {
         if let ExactProbabilityCertificateCheck::Accepted(accepted) = &mut check {
             accepted.document = Some(bytes.into());
         }
@@ -625,6 +708,8 @@ fn check_graph(
         seen[start] = true;
         let mut stack = vec![(start, 0)];
         while let Some((state, offset)) = stack.last_mut() {
+            #[cfg(feature = "test-support")]
+            cx.phase(LongRunProbabilityPhase::Components)?;
             cx.work(1)?;
             if let Some(&next) = edges[*state].get(*offset) {
                 *offset += 1;
@@ -659,7 +744,6 @@ fn check_graph(
                 }
             }
         }
-        component.sort_unstable();
         components.push(component);
     }
     let mut bottom = vec![true; components.len()];
@@ -674,8 +758,13 @@ fn check_graph(
     let mut expected = vec![None; keys.len()];
     for (index, component) in components.iter().enumerate() {
         if bottom[index] {
+            cx.work(component.len() as u64)?;
+            let first = *component
+                .iter()
+                .min()
+                .ok_or(ProbabilityDocumentError::Malformed)?;
             for &state in component {
-                expected[state] = Some(component[0]);
+                expected[state] = Some(first);
             }
         }
     }
@@ -700,6 +789,8 @@ fn check_graph(
         }
     }
     for (state, key) in keys.iter().enumerate() {
+        #[cfg(feature = "test-support")]
+        cx.phase(LongRunProbabilityPhase::Membership)?;
         cx.work(1)?;
         if expected[state] != offered[state] {
             return Ok(rejected(

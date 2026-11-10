@@ -9,6 +9,8 @@ use super::*;
 
 mod key;
 mod long_run;
+#[cfg(feature = "test-support")]
+pub use long_run::{check_long_run_probability_certificate_observing, LongRunProbabilityPhase};
 pub use long_run::{
     long_run_probability_certificate_document, read_long_run_probability_certificate,
     write_long_run_probability_certificate, LongRunProbabilityComponent,
@@ -131,6 +133,9 @@ pub enum ProbabilityDocumentError {
     /// A required evidence member was omitted.
     #[error("invalid_runtime_input: missing probability certificate member {0}")]
     MissingMember(&'static str),
+    /// A structurally invalid evidence row group.
+    #[error("invalid_runtime_input: malformed probability certificate member {0}")]
+    MalformedMember(&'static str),
     /// Bytes are valid JSON but not their RFC 8785 encoding.
     #[error("invalid_runtime_input: noncanonical probability certificate")]
     Noncanonical,
@@ -954,6 +959,12 @@ pub(super) fn document_admission_error(
 ) -> Result<ExactProbabilityCertificateCheck, ProbabilityDocumentError> {
     match error {
         ProbabilityDocumentError::MissingMember("ranking") => Ok(malformed_ranking()),
+        ProbabilityDocumentError::MalformedMember(member) => Ok(
+            ExactProbabilityCertificateCheck::Rejected(ProbabilityCertificateRejection {
+                rule: ProbabilityCertificateRule::Malformed,
+                at: ProbabilityCertificateLocus::Member(member),
+            }),
+        ),
         ProbabilityDocumentError::MissingMember("components") => Ok(
             ExactProbabilityCertificateCheck::Rejected(ProbabilityCertificateRejection {
                 rule: ProbabilityCertificateRule::Malformed,
