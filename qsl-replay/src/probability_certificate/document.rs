@@ -93,7 +93,7 @@ pub enum ProbabilityStateEvent {
     Always,
 }
 
-/// Exact probability evidence, before independent semantic checking.
+/// Exact probability or expected-reward evidence, before semantic checking.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProbabilityCertificateDocument {
     /// Structural claim identity.

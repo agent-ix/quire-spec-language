@@ -23,8 +23,8 @@ mod bounded;
 mod key_admission;
 pub use key_admission::ProbabilityKeyAdmission;
 mod document;
-mod state_predicate;
 mod reward;
+mod state_predicate;
 pub use bounded::probabilistic_formula_monitor_context;
 mod source;
 pub use document::*;
@@ -297,7 +297,7 @@ pub struct ExactProbabilityCertificate {
     pub values: Vec<ExactProbabilityValue>,
 }
 
-/// The scheduler objective for an exact reachability certificate.
+/// The scheduler objective for an exact event or expected-reward certificate.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ProbabilityObjective {
     /// The minimum over all enabled actions.
@@ -308,7 +308,7 @@ pub enum ProbabilityObjective {
     Workload,
 }
 
-/// Whether the certified initial value satisfies the claim's probability bound.
+/// Whether the certified initial value satisfies the checked claim's bound.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ProbabilityBoundSide {
     /// The value satisfies an authored `>=` bound.
@@ -337,7 +337,7 @@ pub enum ProbabilityCertificateRule {
     Malformed,
     /// A positive non-target state has no required progress rank.
     RankMissing,
-    /// A positive non-target state has no positive lower-rank successor.
+    /// A rank fails its profile's progress or exact-height/debt condition.
     RankBroken,
 }
 
