@@ -1832,101 +1832,95 @@ impl OutcomeDocument {
     pub fn from_run(result: &Result<CallOutcome, Box<RunRefusal>>) -> Self {
         match result {
             Ok(outcome) => Self::from_call(outcome),
-            Err(refusal) => match refusal.as_ref() {
-                RunRefusal::Compile(compile) => Self::new(
-                    Operation::Execute,
-                    Some(compile.stage().into()),
-                    refusal.category(),
-                )
-                .with_diagnostics(vec![OutcomeDiagnostic::from_compile_refusal(compile)]),
-                RunRefusal::Cancelled(cause) => Self::cancelled(Operation::Execute, *cause),
-                RunRefusal::Fault(fault) => Self::faulted(Operation::Execute, fault),
-                // FR-277: a supplied-phase stop is phase-marked, not a
-                // catalog record. Its category is the document's; the shared
-                // result contract has no field for the phase context yet, so
-                // nothing is invented for it here.
-                RunRefusal::Supplied(stop) => match stop.cause {
-                    quire_semantic_value::supplied_stop::SuppliedCause::Cancelled(cause) => {
-                        Self::cancelled(Operation::Execute, cause)
-                    }
-                    quire_semantic_value::supplied_stop::SuppliedCause::Limit(_) => Self::new(
-                        Operation::Execute,
-                        Some(OutcomeStage::S6a),
-                        refusal.category(),
-                    ),
-                    quire_semantic_value::supplied_stop::SuppliedCause::Input { .. }
-                    | quire_semantic_value::supplied_stop::SuppliedCause::Storage(_)
-                    | quire_semantic_value::supplied_stop::SuppliedCause::Capacity(_) => Self::new(
-                        Operation::Execute,
-                        Some(OutcomeStage::S6a),
-                        refusal.category(),
-                    )
-                    .with_diagnostics(vec![OutcomeDiagnostic::new(
-                        qsl_eval::value::supplied_stop_cause(stop),
-                        qsl_eval::value::supplied_stop_code(stop).as_str(),
+            Err(refusal) => Self::from_run_refusal(Operation::Execute, refusal),
+        }
+    }
+
+    /// Project an existing run refusal without taking ownership or executing it.
+    /// The caller names the operation whose pipeline produced the refusal.
+    pub fn from_run_refusal(operation: Operation, refusal: &RunRefusal) -> Self {
+        match refusal {
+            RunRefusal::Compile(compile) => {
+                Self::new(operation, Some(compile.stage().into()), refusal.category())
+                    .with_diagnostics(vec![OutcomeDiagnostic::from_compile_refusal(compile)])
+            }
+            RunRefusal::Cancelled(cause) => Self::cancelled(operation, *cause),
+            RunRefusal::Fault(fault) => Self::faulted(operation, fault),
+            // FR-277: a supplied-phase stop is phase-marked, not a
+            // catalog record. Its category is the document's; the shared
+            // result contract has no field for the phase context yet, so
+            // nothing is invented for it here.
+            RunRefusal::Supplied(stop) => match stop.cause {
+                quire_semantic_value::supplied_stop::SuppliedCause::Cancelled(cause) => {
+                    Self::cancelled(operation, cause)
+                }
+                quire_semantic_value::supplied_stop::SuppliedCause::Limit(_) => {
+                    Self::new(operation, Some(OutcomeStage::S6a), refusal.category())
+                }
+                quire_semantic_value::supplied_stop::SuppliedCause::Input { .. }
+                | quire_semantic_value::supplied_stop::SuppliedCause::Storage(_)
+                | quire_semantic_value::supplied_stop::SuppliedCause::Capacity(_) => {
+                    Self::new(operation, Some(OutcomeStage::S6a), refusal.category())
+                        .with_diagnostics(vec![OutcomeDiagnostic::new(
+                            qsl_eval::value::supplied_stop_cause(stop),
+                            qsl_eval::value::supplied_stop_code(stop).as_str(),
+                            None,
+                            refusal.to_string(),
+                        )])
+                }
+            },
+            RunRefusal::UnsupportedHelper(_) => {
+                Self::new(operation, Some(OutcomeStage::S6a), refusal.category())
+            }
+            RunRefusal::ObjectEnvironment(record) => {
+                Self::new(operation, Some(OutcomeStage::S6a), refusal.category()).with_diagnostics(
+                    vec![OutcomeDiagnostic::new(
+                        Some(record.catalog.cause()),
+                        refusal.code().as_str(),
                         None,
                         refusal.to_string(),
-                    )]),
-                },
-                RunRefusal::UnsupportedHelper(_) => Self::new(
-                    Operation::Execute,
-                    Some(OutcomeStage::S6a),
-                    refusal.category(),
-                ),
-                RunRefusal::ObjectEnvironment(record) => Self::new(
-                    Operation::Execute,
-                    Some(OutcomeStage::S6a),
-                    refusal.category(),
+                    )],
                 )
-                .with_diagnostics(vec![OutcomeDiagnostic::new(
-                    Some(record.catalog.cause()),
-                    refusal.code().as_str(),
-                    None,
-                    refusal.to_string(),
-                )]),
-                RunRefusal::Unsupported(entry) => Self::new(
-                    Operation::Execute,
-                    Some(OutcomeStage::S6a),
-                    refusal.category(),
+            }
+            RunRefusal::Unsupported(entry) => {
+                Self::new(operation, Some(OutcomeStage::S6a), refusal.category()).with_diagnostics(
+                    vec![OutcomeDiagnostic::new(
+                        Some(entry.catalog_code().cause()),
+                        refusal.code().as_str(),
+                        None,
+                        refusal.to_string(),
+                    )],
                 )
-                .with_diagnostics(vec![OutcomeDiagnostic::new(
-                    Some(entry.catalog_code().cause()),
-                    refusal.code().as_str(),
-                    None,
-                    refusal.to_string(),
-                )]),
-                RunRefusal::SourceNotSupplied { .. } => Self::new(
-                    Operation::Execute,
-                    Some(OutcomeStage::S6a),
-                    refusal.category(),
+            }
+            RunRefusal::SourceNotSupplied { .. } => {
+                Self::new(operation, Some(OutcomeStage::S6a), refusal.category()).with_diagnostics(
+                    vec![OutcomeDiagnostic::new(
+                        Some("missing-member"),
+                        refusal.code().as_str(),
+                        None,
+                        refusal.to_string(),
+                    )],
                 )
-                .with_diagnostics(vec![OutcomeDiagnostic::new(
-                    Some("missing-member"),
-                    refusal.code().as_str(),
-                    None,
-                    refusal.to_string(),
-                )]),
-                RunRefusal::MissingDeclaration { .. }
-                | RunRefusal::UnsupportedResult { .. }
-                | RunRefusal::UnknownParameter { .. }
-                | RunRefusal::DuplicateArgument { .. }
-                | RunRefusal::UnboundParameter { .. }
-                | RunRefusal::WrongValueKind { .. }
-                | RunRefusal::Admission { .. }
-                | RunRefusal::Storage { .. }
-                | RunRefusal::PrepareLimit(_)
-                | RunRefusal::DanglingReference { .. } => Self::new(
-                    Operation::Execute,
-                    Some(OutcomeStage::S6a),
-                    refusal.category(),
+            }
+            RunRefusal::MissingDeclaration { .. }
+            | RunRefusal::UnsupportedResult { .. }
+            | RunRefusal::UnknownParameter { .. }
+            | RunRefusal::DuplicateArgument { .. }
+            | RunRefusal::UnboundParameter { .. }
+            | RunRefusal::WrongValueKind { .. }
+            | RunRefusal::Admission { .. }
+            | RunRefusal::Storage { .. }
+            | RunRefusal::PrepareLimit(_)
+            | RunRefusal::DanglingReference { .. } => {
+                Self::new(operation, Some(OutcomeStage::S6a), refusal.category()).with_diagnostics(
+                    vec![OutcomeDiagnostic::new(
+                        None,
+                        refusal.code().as_str(),
+                        None,
+                        refusal.to_string(),
+                    )],
                 )
-                .with_diagnostics(vec![OutcomeDiagnostic::new(
-                    None,
-                    refusal.code().as_str(),
-                    None,
-                    refusal.to_string(),
-                )]),
-            },
+            }
         }
     }
 
