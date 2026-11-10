@@ -521,4 +521,27 @@ mod tests {
             }
         }
     }
+
+    #[trace("TC-636", "FR-201-AC-26", "FR-282-AC-19")]
+    #[test]
+    fn support_passes_preserve_each_exhausted_work_budget() {
+        let cancel = Cancel::new();
+        let mut meter = quire_exact::Meter::new(limits().accounting).with_cancel(cancel.clone());
+        analyze(&mut graph(), limits(), &cancel, &mut meter).unwrap();
+        let total = meter.consumed(quire_exact::LimitKind::WorkUnits);
+        assert!(total > 0);
+        for bound in 0..total {
+            let mut accounting = limits().accounting;
+            accounting.work_units = bound;
+            let mut meter = quire_exact::Meter::new(accounting).with_cancel(cancel.clone());
+            let Err(ProbabilityDocumentError::Accounting(incomplete)) =
+                analyze(&mut graph(), limits(), &cancel, &mut meter)
+            else {
+                panic!("support analysis must stop under work budget {bound}/{total}");
+            };
+            assert_eq!(incomplete.limit_kind, quire_exact::LimitKind::WorkUnits);
+            assert_eq!(incomplete.limit, bound);
+            assert!(incomplete.consumed <= bound);
+        }
+    }
 }
