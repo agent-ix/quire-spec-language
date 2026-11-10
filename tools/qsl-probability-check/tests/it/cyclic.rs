@@ -101,6 +101,13 @@ fn self_loop_and_transient_scc_accept_exact_values_and_shortest_distances() {
                 .iter()
                 .map(|row| row["rank"].as_u64().unwrap())
                 .collect();
+            let initial = doc["ranking"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .max_by_key(|row| row["rank"].as_u64().unwrap())
+                .unwrap()["state"]
+                .clone();
             assert_eq!(
                 ranks.iter().copied().max(),
                 Some(if transient { 2 } else { 1 })
@@ -131,6 +138,7 @@ fn self_loop_and_transient_scc_accept_exact_values_and_shortest_distances() {
             let (code, output) = run(&stronger);
             assert_eq!(code, 1, "{output}");
             assert_eq!(output["rule"], "threshold-missed");
+            assert_eq!(output["at"]["product_key"], initial);
             let wrong = mutate(&request, |doc| {
                 for row in doc["ranking"].as_array_mut().unwrap() {
                     if row["rank"] == 2 {
@@ -143,6 +151,7 @@ fn self_loop_and_transient_scc_accept_exact_values_and_shortest_distances() {
             let (code, output) = run(&wrong);
             assert_eq!(code, 1, "{output}");
             assert_eq!(output["rule"], "rank-broken");
+            assert_eq!(output["at"]["product_key"], initial);
         }
     }
 }
@@ -168,6 +177,10 @@ fn target_free_recurrence_forces_zero_and_early_target_cannot_hide_scheduler_cho
     let (code, output) = run(&wrong);
     assert_eq!(code, 1, "{output}");
     assert_eq!(output["rule"], "inequality-fails");
+    assert_eq!(
+        output["at"]["product_key"],
+        document(&request)["values"][0]["state"]
+    );
     let source = claim(
         &model(false),
         "every scheduler",
@@ -314,13 +327,16 @@ fn cyclic_evidence_mutations_and_caller_controls_prevent_acceptance() {
         "m.delivered",
     );
     let request = proof(&source);
+    for member in ["values", "ranking"] {
+        let missing = mutate(&request, |doc| {
+            doc[member].as_array_mut().unwrap().pop();
+        });
+        let (code, output) = run(&missing);
+        assert_eq!(code, 1, "{output}");
+        assert_eq!(output["rule"], "malformed");
+        assert_eq!(output["at"], json!({"member": member}));
+    }
     for changed in [
-        mutate(&request, |doc| {
-            doc["values"].as_array_mut().unwrap().pop();
-        }),
-        mutate(&request, |doc| {
-            doc["ranking"].as_array_mut().unwrap().pop();
-        }),
         mutate(&request, |doc| {
             alter_keys(doc, |key| key[1] = Value::Null);
         }),
