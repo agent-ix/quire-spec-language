@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-1394: the published cases give their expected documents, stable and
 //! self-contained.
 

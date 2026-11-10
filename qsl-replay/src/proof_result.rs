@@ -2224,6 +2224,7 @@ mod tests {
     /// FR-286: an `unsupported` record built with the disposition marker
     /// still carries the FR-272 diagnostic, and the marker is never written
     /// as a cause.
+    #[trace("TC-770")]
     #[test]
     fn a_disposition_marked_unsupported_record_carries_its_diagnostic_and_no_cause() {
         let record = TerminalRecord::unsupported(

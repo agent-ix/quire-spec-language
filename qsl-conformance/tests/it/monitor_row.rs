@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-1392: the `monitor` row.
 
 use ix_trace_rs::trace;

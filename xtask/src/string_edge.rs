@@ -40,6 +40,7 @@ fn crate_roots() -> Vec<PathBuf> {
         "qsl-analyze/src",
         "qsl-inspect/src",
         "qsl-bench/src",
+        "qsl-conformance/src",
         "qsl-string-edge/src",
         "tests/fixtures/checked-closure-consumer/src",
         "tests/fixtures/hyper-query-consumer/src",

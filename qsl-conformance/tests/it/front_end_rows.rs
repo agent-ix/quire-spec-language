@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-1388 and TC-1389: the `check` and `package` rows.
 
 use ix_trace_rs::trace;

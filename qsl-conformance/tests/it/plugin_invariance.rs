@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-1395: a registered process plugin changes no matrix outcome and only
 //! the candidate sets it advertises (FR-566).
 

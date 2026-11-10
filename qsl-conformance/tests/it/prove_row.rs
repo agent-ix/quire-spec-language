@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-1393: the QSL half of `prove` yields an item of each kind.
 
 use ix_trace_rs::trace;

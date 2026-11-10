@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! Helpers the row tests share.
 
 use qsl_conformance::{
