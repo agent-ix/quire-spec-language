@@ -1,0 +1,8 @@
+language "ix:native" edition "1-draft";
+profile v = "quire.value.complete/v1";
+profile t0 = "quire.temporal.infinite-trace/v1";
+model M = "test/counter";
+function Noop using v(): Boolean pure { true }
+temporal P using t0 over (c: M::Counter) clock "model-steps" on origin {  always holds(c.value < 2) }
+temporal Q using t0 over (c: M::Counter) clock "model-steps" on origin {  always eventually holds(c.value = 3) }
+temporal F using t0 over (c: M::Counter) clock "model-steps" on origin { fair weak M::Counter::inc; always eventually holds(c.value = 3) }

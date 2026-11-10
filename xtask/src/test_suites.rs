@@ -215,6 +215,16 @@ const WORKSPACE_EMPTY: &[EmptySuite] = &[
         reason: NO_DOC_EXAMPLE,
     },
     EmptySuite {
+        source: "qsl-conformance/src/lib.rs",
+        kind: SuiteKind::Tests,
+        reason: "no unit tests in src/; the crate's tests are its tests/ directory",
+    },
+    EmptySuite {
+        source: "qsl-conformance/src/lib.rs",
+        kind: SuiteKind::Doctests,
+        reason: NO_DOC_EXAMPLE,
+    },
+    EmptySuite {
         source: "qsl-analyze/src/lib.rs",
         kind: SuiteKind::Doctests,
         reason: NO_DOC_EXAMPLE,

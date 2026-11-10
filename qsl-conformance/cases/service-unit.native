@@ -1,0 +1,15 @@
+language "ix:native" edition "1-draft";
+profile v = "quire.model.complete/v1";
+profile ev = "quire.temporal.event-position.false-extension/v1";
+profile inf = "quire.temporal.infinite-trace/v1";
+model M = "test/service";
+pre Idle using v on M::Server::request { self.phase = 0 }
+post Started using v on M::Server::request { self.phase = 1 and self.attempts = 0 }
+pre Busy using v on M::Server::attempt { self.phase = 1 }
+post Attempted using v on M::Server::attempt { self.attempts - pre(self.attempts) = 1 and ((ok and self.phase = 2) or (not ok and pre(self.attempts) = 1 and self.phase = 2) or (not ok and pre(self.attempts) = 0 and self.phase = 1)) }
+pre Done using v on M::Server::reset { self.phase = 2 }
+post Reset using v on M::Server::reset { self.phase = 0 }
+random Server::attempt(d) ~ { 1: 90, 3: 7, 12: 3 };
+random Server::attempt(ok) ~ { true: 98, false: 2 };
+reward duration on Server::attempt = d;
+workload Steady on M { weight Server::request = 1; weight Server::attempt = 1; weight Server::reset = 1; }

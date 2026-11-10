@@ -1,0 +1,16 @@
+language "ix:native" edition "1-draft";
+profile v = "quire.model.complete/v1";
+profile ev = "quire.temporal.event-position.false-extension/v1";
+profile inf = "quire.temporal.infinite-trace/v1";
+model M = "test/link";
+pre Ready_send_a using v on M::Msg::send_a { not self.delivered and self.attempts < 2 }
+post Sent_send_a using v on M::Msg::send_a { self.attempts - pre(self.attempts) = 1 and self.delivered = (not lost) }
+pre Ready_send_b using v on M::Msg::send_b { not self.delivered and self.attempts < 2 }
+post Sent_send_b using v on M::Msg::send_b { self.attempts - pre(self.attempts) = 1 and self.delivered = (not lost) }
+random Msg::send_a(lost) ~ { true: 1, false: 9 };
+random Msg::send_b(lost) ~ { true: 1, false: 4 };
+reward cost on Msg::send_a = 1;
+reward cost on Msg::send_b = 1;
+terminal Stop using v on M when { self.delivered or self.attempts = 2 };
+workload Even on M { weight Msg::send_a = 1; weight Msg::send_b = 1; }
+probabilistic Likely using inf on M over (m: M::Msg) under every scheduler on origin { probability >= 0.95 [ eventually holds(m.delivered) ] }

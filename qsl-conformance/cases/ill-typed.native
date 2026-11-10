@@ -1,0 +1,4 @@
+language "ix:native" edition "1-draft";
+profile v = "quire.value.complete/v1";
+type Digit = Int[0, 9];
+function inv using v(x: Digit): Boolean pure { 1 / x > 0 }

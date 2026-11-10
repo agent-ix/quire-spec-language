@@ -88,15 +88,16 @@ and compares those encodings. QSL's own `OutcomeDocument::to_bytes`
   cancellation plan (none, or cancelled before the call with `Requested` or
   `Deadline`), and the expected category and exit code. Its bytes are the
   crate's own data, and `run_case` reads no file.
-- **Source identity.** The `quire` CLI reads each source from the path its
-  arguments name and builds `SourceIdentity::new("quire", path)` from that
-  path. Every `MatrixCase` therefore states, for each input it carries, the
-  file name the driver writes it under, relative to the case's working
-  directory, and states that working directory: a new empty directory the
-  driver creates for the case, from which it runs `quire` with each file
-  argument spelled as its file name. `run_case` reads each source under
-  `SourceIdentity::new("quire", <file name>)`, so the identities in the two
-  documents agree.
+- **Source identity.** Each `MatrixCase` states the authored source authority
+  and identity in `RequestParameters::source_authority` and
+  `RequestParameters::source_identity`, separately from the file name at which
+  the driver writes the source bytes. The driver supplies these labels through
+  FR-287's explicit-label input contract; for example, parse and format use
+  `<authority> <identity> <file>`. The working directory is a new empty
+  directory the driver creates for the case, with each input located at its
+  stated file name. `run_case` reads the authored source under
+  `SourceIdentity::new(source_authority, source_identity)`, so the library and
+  driver use equal source labels independently of their physical file paths.
 - `run_case` runs the case through QSL's library operation and returns
   `Ok(CaseOutcome)`, or `Err(CaseError)` naming the failed stage when the
   case itself could not be run.
@@ -124,8 +125,10 @@ typed document or item, and the exit code, or `Err(CaseError)` with its stage.
   `stage` names the failed stage.
 - Each `MatrixCase` shall state the file name of each input and the working
   directory the driver runs `quire` in.
-- The `run_case` operation shall read each source under
-  `SourceIdentity::new("quire", <file name>)`.
+- Each `MatrixCase` shall state its authored source authority and identity
+  separately from the input file names.
+- The `run_case` operation shall read the authored source under the case's
+  `SourceIdentity::new(source_authority, source_identity)`.
 - The document `run_case` returns shall have the case's expected category,
   and its exit code shall be the case's expected exit code.
 
@@ -134,7 +137,7 @@ typed document or item, and the exit code, or `Err(CaseError)` with its stage.
 | ID | Criteria | Verification |
 | --- | --- | --- |
 | FR-565-AC-1 | `lifecycle_matrix()` returns one cell per (verb, kind) pair in FR-564's verb and kind order: `Case` cells exactly at FR-564's applicable cells and `NotApplicable` cells exactly at its n/a cells, each `NotApplicable` with a non-empty reason. | Test (TC-1394) |
-| FR-565-AC-2 | For every `Case`, `run_case` returns `Ok` with a typed document (or, for `prove`, an item) whose category and exit code equal the case's expected category and exit code, two `run_case` calls give equal `OutcomeDocument` values, and every source identity in the document is `SourceIdentity::new("quire", <the case's file name>)`. A case with an input the test removes returns `Err(CaseError)` whose `stage` is `CaseStage::Read`, the `Copy` stage value, and no `CaseOutcome`. | Test (TC-1394) |
+| FR-565-AC-2 | For every `Case`, `run_case` returns `Ok` with a typed document (or, for `prove`, an item) whose category and exit code equal the case's expected category and exit code, two `run_case` calls give equal `OutcomeDocument` values, and every authored source identity in the document equals `SourceIdentity::new(case.parameters.source_authority, case.parameters.source_identity)`, independently of the input's physical file name. A case with an input the test removes returns `Err(CaseError)` whose `stage` is `CaseStage::Read`, the `Copy` stage value, and no `CaseOutcome`. | Test |
 | FR-565-AC-3 | Run with the process's working directory set to an empty temporary directory, every `Case` gives the same `OutcomeDocument` as AC-2. | Test (TC-1394) |
 
 ## Dependencies

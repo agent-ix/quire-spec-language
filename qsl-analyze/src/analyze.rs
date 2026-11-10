@@ -45,14 +45,14 @@ pub use request::{
 
 use qsl_eval::simulation::model::PopulationUniverse;
 use qsl_eval::simulation::protocol::ProtocolTransition;
-use qsl_foundation::diagnostic::Code;
+use qsl_foundation::diagnostic::category_of;
 use qsl_foundation::{BackendId, RequestIndex};
 use qsl_package::CheckedPackage;
 use qsl_replay::statistical::StatisticalRecord;
 use qsl_replay::{CounterexampleKind, TemporalCounterexample};
 use qsl_replay::{
-    DeclineCode, IncompleteCause, ModelCheckRecord, OutcomeItem, ProofRefusalCause, TerminalRecord,
-    TerminalValue, UnavailabilityCause, UndefinedEvaluation,
+    DeclineCode, IncompleteCause, ModelCheckRecord, Operation, OutcomeDiagnostic, OutcomeDocument,
+    OutcomeItem, ProofRefusalCause, TerminalRecord, TerminalValue, UndefinedEvaluation,
 };
 use qsl_route::routing::Disposition;
 use qsl_route::{BackendDescriptor, Candidate, Mode, ProviderOrigin, RegistrationRefusal};
@@ -62,7 +62,7 @@ use qsl_semantics::model::observation::{
     AdmissionFailure, DocumentProvision, DocumentRef, ObservationLimits,
 };
 use quire_exact::{Cancel, ScalarLimits};
-use quire_semantic_value::catalog::CatalogCode;
+use quire_semantic_value::catalog::{CatalogCode, Category};
 
 pub use crate::contract_check::contract_item;
 pub use crate::value_check::value_item;
@@ -240,12 +240,18 @@ impl Engine {
         self.descriptor.id()
     }
 
-    /// The modes the engine's manifest advertises for `kind`.
+    /// The modes the engine's manifest advertises for `kind`, in wire-name
+    /// order: the descriptor's own iteration order varies between runs, and
+    /// the diagnostic that carries the modes is written into documents that
+    /// must be stable (FR-565).
     fn modes(&self, kind: Capability) -> Vec<Mode> {
-        self.descriptor
+        let mut modes: Vec<Mode> = self
+            .descriptor
             .advertises()
             .filter_map(|(advertised, mode)| (advertised == kind).then_some(mode))
-            .collect()
+            .collect();
+        modes.sort_by_key(|mode| mode.to_wire());
+        modes
     }
 }
 
@@ -419,6 +425,71 @@ pub enum Counterexample {
     Probabilistic(Box<qsl_replay::ReproducedProbabilityWitness>),
 }
 
+impl AnalyzeRefusal {
+    /// The FR-286 `analyze` document of a whole-request refusal: the
+    /// admission failure's category, one diagnostic with its catalog code and
+    /// cause, and no item.
+    pub fn document(&self) -> OutcomeDocument {
+        match self {
+            Self::Binding(failure) => {
+                refusal_document(Operation::Analyze, failure, failure.to_string())
+            }
+            Self::Provision(refusal) => {
+                let catalog = refusal.catalog_code();
+                let category = category_of(&catalog).unwrap_or(Category::Refusal);
+                OutcomeDocument::new(Operation::Analyze, None, category).with_diagnostics(vec![
+                    OutcomeDiagnostic::new(
+                        Some(catalog.cause()),
+                        catalog.code(),
+                        None,
+                        refusal.to_string(),
+                    ),
+                ])
+            }
+        }
+    }
+}
+
+/// The FR-286 document of an `operation` refused by an admission `failure`:
+/// the failure's category and one diagnostic with its catalog code and cause.
+pub(crate) fn refusal_document(
+    operation: Operation,
+    failure: &AdmissionFailure,
+    message: String,
+) -> OutcomeDocument {
+    let (catalog, category) = match failure {
+        AdmissionFailure::Refused(record) | AdmissionFailure::Incomplete(record) => (
+            record.catalog,
+            category_of(&record.catalog).unwrap_or(Category::Refusal),
+        ),
+        AdmissionFailure::Fault(fault) => (fault.catalog_code(), fault.category()),
+    };
+    OutcomeDocument::new(operation, None, category).with_diagnostics(vec![OutcomeDiagnostic::new(
+        Some(catalog.cause()),
+        catalog.code(),
+        None,
+        message,
+    )])
+}
+
+impl AnalyzeOutcome {
+    /// The FR-286 `analyze` document of these records: one item per record in
+    /// request order (FR-286-AC-3).
+    pub fn document(&self) -> OutcomeDocument {
+        analyze_document(&self.records)
+    }
+}
+
+/// The FR-286 `analyze` document of `records`, one item per record in
+/// request order. Its category is the most severe item's (ADR-029 CB-4).
+pub fn analyze_document(records: &[TerminalRecord]) -> OutcomeDocument {
+    OutcomeDocument::settled(
+        Operation::Analyze,
+        None,
+        records.iter().map(OutcomeItem::from_terminal).collect(),
+    )
+}
+
 impl Engines {
     /// The layer-A engines `analyze` has an item adapter for: EN-1, EN-4, EN-5
     /// and EN-6.
@@ -507,6 +578,67 @@ pub enum Payload {
         /// The claim's declaration family, absent for an unknown claim node.
         family: Option<DeclarationFamily>,
     },
+}
+
+impl Payload {
+    /// The payload as the FR-331 diagnostic `detail`, keyed by FR-272 payload
+    /// names (`kind`, `candidate`, `modes`, `request_index`, `capability`,
+    /// `family`).
+    #[must_use]
+    pub fn detail(&self) -> serde_json::Map<String, serde_json::Value> {
+        use serde_json::{json, Value};
+        let entries: Vec<(&str, Value)> = match self {
+            Self::None => Vec::new(),
+            Self::Kind(kind) => vec![("kind", json!(kind.to_wire()))],
+            Self::Backend(backend) => vec![("backend", json!(backend.as_str()))],
+            Self::Inconsistent { candidate, .. } => {
+                vec![("candidates", json!([candidate.as_str()]))]
+            }
+            Self::Unbounded {
+                kind,
+                candidate,
+                modes,
+            } => vec![
+                ("kind", json!(kind.to_wire())),
+                ("candidate", json!(candidate.as_str())),
+                (
+                    "modes",
+                    Value::Array(modes.iter().map(|mode| json!(mode.to_wire())).collect()),
+                ),
+            ],
+            Self::Inapplicable {
+                request_index,
+                capability,
+                family,
+            } => {
+                let mut entries = vec![
+                    ("request_index", json!(request_index.get())),
+                    ("capability", json!(capability.to_wire())),
+                ];
+                if let Some(family) = family {
+                    entries.push(("family", json!(family_label(*family))));
+                }
+                entries
+            }
+        };
+        entries
+            .into_iter()
+            .map(|(name, value)| (name.to_owned(), value))
+            .collect()
+    }
+}
+
+/// The FR-290 declaration-family label.
+const fn family_label(family: DeclarationFamily) -> &'static str {
+    match family {
+        DeclarationFamily::Value => "value",
+        DeclarationFamily::StateModel => "state-model",
+        DeclarationFamily::TemporalTrace => "temporal-trace",
+        DeclarationFamily::RelationClaim => "relation-claim",
+        DeclarationFamily::Protocol => "protocol",
+        DeclarationFamily::Probabilistic => "probabilistic",
+        DeclarationFamily::RealTime => "real-time",
+    }
 }
 
 /// The FR-272 diagnostic of a record settled by a disposition.
@@ -967,12 +1099,20 @@ pub fn aggregate(
 
 /// Analyze the negotiated items over one admitted checked-package subject
 /// (FR-281). The binding is admitted before any engine item runs.
-pub(crate) fn terminal_records(records: Vec<AnalyzeRecord>) -> Vec<TerminalRecord> {
+/// The FR-331 terminal record each of `records` settles, in request order: a
+/// record settled by a disposition is written from that disposition and its
+/// diagnostic, as FR-281 states.
+pub fn terminal_records(records: Vec<AnalyzeRecord>) -> Vec<TerminalRecord> {
     records
         .into_iter()
         .map(|record| match record.settlement {
             Settlement::Terminal(terminal) => *terminal,
             Settlement::Disposed(disposed) => {
+                let detail = disposed
+                    .diagnostic
+                    .as_ref()
+                    .map(|diagnostic| diagnostic.payload.detail())
+                    .unwrap_or_default();
                 let diagnostic = disposed
                     .diagnostic
                     .map(|diagnostic| diagnostic.code)
@@ -984,15 +1124,14 @@ pub(crate) fn terminal_records(records: Vec<AnalyzeRecord>) -> Vec<TerminalRecor
                     DispositionKind::RequiresBound | DispositionKind::Unsupported => {
                         TerminalRecord::disposition_unsupported(
                             record.request_index,
-                            UnavailabilityCause::BackendAbsent,
                             diagnostic,
+                            detail,
                         )
                     }
-                    DispositionKind::InvalidRequest => TerminalRecord::disposition_declined(
+                    DispositionKind::InvalidRequest => TerminalRecord::disposition_invalid_request(
                         record.request_index,
-                        ProofRefusalCause::InvalidInput,
-                        DeclineCode::Qsl(Code::InvalidRequest),
                         diagnostic,
+                        detail,
                     ),
                 }
             }
@@ -1884,6 +2023,86 @@ mod tests {
         assert_eq!(settled.kind, DispositionKind::InvalidRequest);
         assert_eq!(settled.diagnostic.as_ref(), Some(&ambiguous));
         assert!(records[1].terminal().is_some());
+    }
+
+    /// FR-286 and QSpec FR-331: an item a disposition settles carries its
+    /// diagnostic as `{code, cause, detail}`, `detail` keyed by FR-272 payload
+    /// names. An `unsupported` item has no `cause`; a `declined` item has both.
+    #[trace("TC-763", "FR-281-AC-11")]
+    #[test]
+    fn dispositions_write_their_diagnostic_detail_into_the_item() {
+        use serde_json::json;
+        let mut engines = Engines::default();
+        engines
+            .with(engine("test-a", Capability::OperationContract))
+            .expect("first");
+        let ran = std::cell::Cell::new(false);
+        let written = |item: AnalyzeItem<'_>| {
+            let records = analyze_items(&engines, vec![item], &Cancel::new());
+            let records = terminal_records(records);
+            serde_json::to_value(OutcomeItem::from_terminal(&records[0])).expect("serializes")
+        };
+
+        let unbounded = written(refusing(|| Refusal::RequiresBound));
+        assert_eq!(unbounded["result"], "unsupported");
+        assert!(unbounded.get("cause").is_none(), "{unbounded}");
+        assert_eq!(
+            unbounded["diagnostic"],
+            json!({
+                "code": "unsupported_projection",
+                "cause": "unbounded-extent",
+                "detail": {
+                    "kind": "operation-contract",
+                    "candidate": "test-a",
+                    "modes": ["bounded"],
+                },
+            })
+        );
+
+        let inapplicable = written(item(
+            "test-a",
+            Capability::FiniteReplay,
+            DeclarationFamily::StateModel,
+            &ran,
+        ));
+        assert_eq!(inapplicable["result"], "declined");
+        assert_eq!(inapplicable["cause"]["kind"], "invalid-input");
+        assert_eq!(
+            inapplicable["diagnostic"],
+            json!({
+                "code": "invalid_capability",
+                "cause": "inapplicable-kind",
+                "detail": {
+                    "request_index": 0,
+                    "capability": "finite-replay",
+                    "family": "state-model",
+                },
+            })
+        );
+
+        let inconsistent = written(item(
+            "test-a",
+            Capability::TemporalSatisfaction,
+            DeclarationFamily::TemporalTrace,
+            &ran,
+        ));
+        assert_eq!(inconsistent["cause"]["kind"], "invalid-input");
+        assert_eq!(
+            inconsistent["diagnostic"]["detail"],
+            json!({ "candidates": ["test-a"] })
+        );
+
+        let unknown = written(item(
+            "test-c",
+            Capability::OperationContract,
+            DeclarationFamily::StateModel,
+            &ran,
+        ));
+        assert_eq!(
+            unknown["diagnostic"]["detail"],
+            json!({ "backend": "test-c" })
+        );
+        assert!(!ran.get());
     }
 
     fn refusing<'a>(refusal: impl Fn() -> Refusal + 'a) -> AnalyzeItem<'a> {

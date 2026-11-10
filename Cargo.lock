@@ -1453,6 +1453,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "qsl-conformance"
+version = "0.1.0"
+dependencies = [
+ "ix-trace-rs",
+ "qsl-analyze",
+ "qsl-cst",
+ "qsl-eval",
+ "qsl-forms",
+ "qsl-foundation",
+ "qsl-package",
+ "qsl-replay",
+ "qsl-route",
+ "qsl-semantics",
+ "quire-checked",
+ "quire-eval",
+ "quire-exact",
+ "quire-semantic-value",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+]
+
+
+[[package]]
 name = "qsl-cst"
 version = "0.1.0"
 dependencies = [

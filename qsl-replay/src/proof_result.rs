@@ -534,6 +534,10 @@ pub enum UnavailabilityCause {
     /// No backend satisfying the request's capability negotiation is
     /// present.
     BackendAbsent,
+    /// Marks an `unsupported` record the request's disposition settled
+    /// (FR-281, FR-286): it carries the FR-272 diagnostic and no cause, so
+    /// this value is never written as a cause.
+    Disposition,
     /// A clause with a fairness constraint was evaluated over a supplied
     /// trace, which carries no enabledness (FR-132, ADR-019 SV-2): the
     /// first constraint of its checked fairness set. Wire cause
@@ -736,6 +740,9 @@ impl UnavailabilityCause {
             Self::SolverAbsent => "solver-absent",
             Self::HybridProviderAbsent => "unsupported-requested-capability",
             Self::BackendAbsent => "backend-absent",
+            // Never written as a cause; the spelling is the closed FR-272
+            // cause the disposition's own diagnostic carries.
+            Self::Disposition => "unsupported-requested-capability",
             Self::MissingFairnessPremise { .. } => "missing-fairness-premise",
             Self::UnsupportedReduction { .. }
             | Self::HiddenFieldLiveness
@@ -767,6 +774,7 @@ impl UnavailabilityCause {
         match self {
             Self::SolverAbsent
             | Self::BackendAbsent
+            | Self::Disposition
             | Self::NotMarkov
             | Self::TotalAboveDrawRange { .. }
             | Self::NotStochastic { .. }
@@ -1456,6 +1464,9 @@ pub struct TerminalRecord {
     diagnostic: Option<CatalogCode>,
     exact_certificate: Option<Box<crate::ExactProbabilityCertificate>>,
     exact_certificate_document: Option<Box<[u8]>>,
+    /// The `detail` of `diagnostic`, keyed by FR-272 payload names, present
+    /// exactly when a disposition settled the record (FR-281, FR-286).
+    disposition_detail: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
 impl TerminalRecord {
@@ -1532,6 +1543,7 @@ impl TerminalRecord {
             diagnostic: None,
             exact_certificate: None,
             exact_certificate_document: None,
+            disposition_detail: None,
         })
     }
 
@@ -1702,6 +1714,7 @@ impl TerminalRecord {
             diagnostic: Some(diagnostic),
             exact_certificate: None,
             exact_certificate_document: None,
+            disposition_detail: None,
         }
     }
 
@@ -1714,21 +1727,48 @@ impl TerminalRecord {
         Self::with_backend(request_index, backend, TerminalValue::Unsupported(cause))
     }
 
-    /// Build an unsupported record settled by request disposition, with no
-    /// producing backend and the disposition's diagnostic.
+    /// Build an unsupported record settled by request disposition: no
+    /// producing backend, no cause, and the disposition's diagnostic with its
+    /// `detail` (FR-286: an `unsupported` record carries exactly one of
+    /// `cause` and `diagnostic`).
     pub fn disposition_unsupported(
         request_index: RequestIndex,
-        cause: UnavailabilityCause,
         diagnostic: CatalogCode,
+        detail: serde_json::Map<String, serde_json::Value>,
     ) -> Self {
         Self {
             request_index,
             backend: None,
-            value: TerminalValue::Unsupported(cause),
+            value: TerminalValue::Unsupported(UnavailabilityCause::Disposition),
             replay: None,
             diagnostic: Some(diagnostic),
             exact_certificate: None,
             exact_certificate_document: None,
+            disposition_detail: Some(detail),
+        }
+    }
+
+    /// Build the `declined` record of an `invalid-request` disposition (cause
+    /// `invalid-input`): no producing backend, and the disposition's
+    /// diagnostic with its `detail`. It writes both `cause` and `diagnostic`
+    /// (QSpec FR-331).
+    pub fn disposition_invalid_request(
+        request_index: RequestIndex,
+        diagnostic: CatalogCode,
+        detail: serde_json::Map<String, serde_json::Value>,
+    ) -> Self {
+        Self {
+            request_index,
+            backend: None,
+            value: TerminalValue::Declined {
+                cause: ProofRefusalCause::InvalidInput,
+                code: DeclineCode::Qsl(Code::InvalidRequest),
+            },
+            replay: None,
+            diagnostic: Some(diagnostic),
+            exact_certificate: None,
+            exact_certificate_document: None,
+            disposition_detail: Some(detail),
         }
     }
 
@@ -1743,6 +1783,7 @@ impl TerminalRecord {
             diagnostic: Some(diagnostic),
             exact_certificate: None,
             exact_certificate_document: None,
+            disposition_detail: None,
         }
     }
 
@@ -1816,12 +1857,23 @@ impl TerminalRecord {
         backend: BackendId,
         value: TerminalValue,
     ) -> Self {
+        // An `unsupported` record settled by disposition carries the FR-272
+        // diagnostic (FR-286); a caller that builds one without a
+        // diagnostic gets the generic capability diagnostic, never a record
+        // with neither `cause` nor `diagnostic`.
+        let disposed = matches!(
+            value,
+            TerminalValue::Unsupported(UnavailabilityCause::Disposition)
+        );
         Self {
             request_index,
             backend: Some(backend),
             value,
             replay: None,
-            diagnostic: None,
+            diagnostic: disposed.then(|| {
+                CatalogCode::new("unsupported_projection", "unsupported-requested-capability")
+            }),
+            disposition_detail: disposed.then(serde_json::Map::new),
             exact_certificate: None,
             exact_certificate_document: None,
         }
@@ -1843,6 +1895,7 @@ impl TerminalRecord {
             diagnostic: None,
             exact_certificate: None,
             exact_certificate_document: None,
+            disposition_detail: None,
         }
     }
 
@@ -1883,6 +1936,12 @@ impl TerminalRecord {
     /// one.
     pub fn diagnostic(&self) -> Option<CatalogCode> {
         self.diagnostic
+    }
+
+    /// The `detail` of the diagnostic of a record a disposition settled
+    /// (`None` for every other record).
+    pub fn disposition_detail(&self) -> Option<&serde_json::Map<String, serde_json::Value>> {
+        self.disposition_detail.as_ref()
     }
 
     /// This record with `diagnostic`, the one diagnostic its settlement
@@ -2160,6 +2219,30 @@ mod tests {
             TerminalValue::Unsupported(cause).category(),
             Category::Unsupported
         );
+    }
+
+    /// FR-286: an `unsupported` record built with the disposition marker
+    /// still carries the FR-272 diagnostic, and the marker is never written
+    /// as a cause.
+    #[trace("TC-770")]
+    #[test]
+    fn a_disposition_marked_unsupported_record_carries_its_diagnostic_and_no_cause() {
+        let record = TerminalRecord::unsupported(
+            RequestIndex::new(0),
+            BackendId::new("en-1"),
+            UnavailabilityCause::Disposition,
+        );
+        assert_eq!(
+            record.diagnostic(),
+            Some(CatalogCode::new(
+                "unsupported_projection",
+                "unsupported-requested-capability"
+            ))
+        );
+        let item = serde_json::to_value(crate::OutcomeItem::from_terminal(&record))
+            .expect("an item is JSON");
+        assert!(item.get("cause").is_none(), "{item}");
+        assert_eq!(item["diagnostic"]["code"], "unsupported_projection");
     }
 
     use super::*;
