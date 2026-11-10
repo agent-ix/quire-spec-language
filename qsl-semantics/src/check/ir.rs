@@ -1064,6 +1064,13 @@ pub(crate) fn node_children(kind: &NodeKind<NodeId>) -> Vec<NodeId> {
         | NodeKind::Size(operand)
         | NodeKind::DropFirst(operand)
         | NodeKind::Pre(operand) => vec![*operand],
+        NodeKind::PlaceReference {
+            reference, slots, ..
+        } => {
+            let mut children = vec![*reference];
+            children.extend(slots.iter().copied());
+            children
+        }
         NodeKind::Let { value, body, .. } => vec![*value, *body],
         NodeKind::If {
             condition,
@@ -1217,6 +1224,25 @@ mod tests {
         assert!(quire_exact::compare_keys(&one.0, &one.0).is_none());
         assert_eq!(one, one.clone());
         assert_ne!(one, CheckedLiteral(population(2)));
+    }
+
+    /// A clock-place reference traverses its owner before each slot selector.
+    #[trace("TC-685")]
+    #[test]
+    fn place_reference_children_visit_owner_then_selectors_in_order() {
+        let place = NodeKey::new(
+            "fixture".to_owned(),
+            vec![quire_exact::PathSegment::Text("clock".to_owned())],
+            0,
+        )
+        .expect("a valid place key");
+        let kind = NodeKind::PlaceReference {
+            reference: NodeId(8),
+            place,
+            slots: vec![NodeId(3), NodeId(2)],
+        };
+
+        assert_eq!(node_children(&kind), [NodeId(8), NodeId(3), NodeId(2)]);
     }
 
     /// FR-258 behaviour 2: a 100,000-deep checked body clones, compares

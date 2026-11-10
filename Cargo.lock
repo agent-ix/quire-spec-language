@@ -1705,7 +1705,7 @@ source = "git+https://github.com/agent-ix/quire-semantic-value?branch=main#0eed5
 [[package]]
 name = "quire-canonical"
 version = "0.3.0"
-source = "git+https://github.com/agent-ix/quire-canonical?branch=main#6ff8e0914f1ddc00c2969aa001592d4c3d9f631a"
+source = "git+https://github.com/agent-ix/quire-canonical?branch=main#7d2f8389d01fcbf318e658746015b85a31526cc9"
 dependencies = [
  "quire-canonical-derive",
  "ryu-js",
@@ -1718,7 +1718,7 @@ dependencies = [
 [[package]]
 name = "quire-canonical-derive"
 version = "0.3.0"
-source = "git+https://github.com/agent-ix/quire-canonical?branch=main#6ff8e0914f1ddc00c2969aa001592d4c3d9f631a"
+source = "git+https://github.com/agent-ix/quire-canonical?branch=main#7d2f8389d01fcbf318e658746015b85a31526cc9"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1728,7 +1728,7 @@ dependencies = [
 [[package]]
 name = "quire-checked"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-eval?branch=main#a5c89a9cafd2c35d8f34cb1f68189f4cb0696df7"
+source = "git+https://github.com/agent-ix/quire-eval?branch=main#0e9f1a67e0142d8862f4bbc4a1ad96c32739d0ba"
 dependencies = [
  "quire-canonical",
  "quire-exact",
@@ -1767,7 +1767,7 @@ dependencies = [
 [[package]]
 name = "quire-eval"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-eval?branch=main#a5c89a9cafd2c35d8f34cb1f68189f4cb0696df7"
+source = "git+https://github.com/agent-ix/quire-eval?branch=main#0e9f1a67e0142d8862f4bbc4a1ad96c32739d0ba"
 dependencies = [
  "quire-exact",
  "quire-semantic-value",
@@ -1828,7 +1828,7 @@ dependencies = [
 [[package]]
 name = "quire-semantic-value"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-semantic-value?branch=main#0eed59b1ed2c72e1df54333d85e3da3221091e95"
+source = "git+https://github.com/agent-ix/quire-semantic-value?branch=main#3c4616dafd4f739573c86af049661646f24dc293"
 dependencies = [
  "quire-canonical",
  "quire-exact",
@@ -1890,7 +1890,7 @@ dependencies = [
 [[package]]
 name = "quire-walk"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-walk?branch=main#b439a72321609d218974ca80db73735899962099"
+source = "git+https://github.com/agent-ix/quire-walk?branch=main#b48d991914a964fcd39c2fe6d67b322f2498e3c9"
 
 [[package]]
 name = "quote"
