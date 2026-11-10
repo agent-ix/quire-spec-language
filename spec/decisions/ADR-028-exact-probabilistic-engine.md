@@ -249,6 +249,42 @@ kinds and its own `ProofBasis` members, never with ADR-024's `measured`.
 | CE-6 | **Size and cost.** A certificate holds one value per state it names, plus a rank and a policy choice where CE-3 needs them. The checker's arithmetic pass is linear in the enumerated edges in exact rationals; qualitative component/refinement/admissibility work (§13a where applicable) is additional checker-owned graph work, charged to the same budgets. It runs under the request's B-5 budgets. |
 | CE-7 | **A small trusted base.** The checker lives in the qualified core, as the owner ruled for certificate checkers (ADR-029, References). The checker's arithmetic and its graph algorithms are separate code from EN-5's iterative and linear-algebra methods and are kept small. The product construction is shared with EN-1, whose translations already answer to SM-1 (ADR-018 SM-7). |
 
+#### Closed cyclic DTMC eventual proof profile
+
+FR-201's `quire.probability-objective/cyclic-dtmc-eventual/v1` is a separate
+closed exact proof profile for untimed infinite-trace `eventually holds(P)`.
+The finite original graph may cycle; it has one initial, at most one actual
+binding, no fairness/rewards/clocks and only current FR-196 single-post Markov
+successors. Every original live state must have one semantic distribution,
+or an authored workload must fully resolve its choices with no residual
+scheduler/post-state choice. General cyclic MDP certification remains outside
+this profile even when a candidate policy or equal action values are supplied.
+
+The document retains the existing exact values/ranking body and complete
+binding-bearing model-key ownership with null absent controls. The checker
+rederives targets and stops their expansion; targets have value 1 and
+non-target terminal stutter has value 0. On this stopped positive-support
+graph it independently computes SCCs/closed bottom components and Prob0
+(no support path to a target), requiring their non-target values to be 0.
+It checks exact harmonic equalities elsewhere. Every remaining recurrent
+class has a boundary, so all remaining states are transient before boundary
+absorption; the finite transient matrix has spectral radius below 1 and
+the equations have a unique solution. This is graph analysis plus equation
+checking, not a trusted producer partition or a checker linear solve.
+
+Ranks are canonically 0 at targets and Prob0, and shortest support-path
+distance to a target elsewhere, derived independently after stopping targets.
+Such a shortest path stays outside Prob0 and supplies CE-3's positive-valued
+lower-rank successor at every positive non-target state. This is existential
+progress, not decrease on all cyclic edges; SCC condensation height cannot
+replace it. The profile neither weakens CE-3 nor reinterprets any older
+profile's ranks, admission or canonical bytes. FR-201 defines strict decoding,
+threshold/identity/objective checks, first-failure loci and bounded work,
+storage, representation, scalar and cancellation obligations; FR-282 requires
+fresh-process qualified checking. Raw-model-key owner budget admission remains
+open, as does shared FR-413 wire. No FR-202 cyclic native refutation, reward,
+long-run, timed or fairness coverage follows from this proof increment.
+
 ### 12. Limits
 
 | ID | Rule |
