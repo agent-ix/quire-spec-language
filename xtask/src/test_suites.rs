@@ -113,8 +113,10 @@ impl EmptySuite {
 pub struct Lane {
     /// The name `make ci` passes.
     pub name: &'static str,
-    /// The suites that legitimately run no tests in this invocation.
+    /// The suites that legitimately run no tests in every configuration.
     pub empty: &'static [EmptySuite],
+    /// Additional empty suites specific to this lane.
+    pub additional_empty: &'static [EmptySuite],
 }
 
 #[derive(Clone, Copy)]
@@ -179,10 +181,9 @@ fn feature_argument(argument: &str) -> FeatureArgument {
 
 const NO_DOC_EXAMPLE: &str = "no executable doc example in the library";
 
-/// The zero-pass suites of the retained `make ci` log of the QSL#670 gate
-/// (its default-feature and all-feature workspace runs listed the same
-/// suites). That log is from an older head; the guard's own first run at a
-/// new head is what checks this list against the tree.
+/// The zero-pass suites of the retained `make ci` log of the QSL#670 gate,
+/// excluding suites whose behavior differs between lanes. That log is from
+/// an older head; the guard's own first run at a new head checks this list.
 const WORKSPACE_EMPTY: &[EmptySuite] = &[
     EmptySuite {
         source: "qsl-bench/src/bin/qsl-bench-probe.rs",
@@ -281,24 +282,36 @@ const WORKSPACE_EMPTY: &[EmptySuite] = &[
     },
 ];
 
+/// Root doctests have no executable examples by default, but the
+/// `checked-handoff` feature adds two that run in the all-features lane.
+const DEFAULT_WORKSPACE_EXTRA_EMPTY: &[EmptySuite] = &[EmptySuite {
+    source: "src/lib.rs",
+    kind: SuiteKind::Doctests,
+    reason: NO_DOC_EXAMPLE,
+}];
+
 /// The `cargo test` invocations of `make ci`, one lane each. The two `-p`
 /// lanes declare nothing: every suite they run has tests.
 pub const LANES: &[Lane] = &[
     Lane {
         name: "default-workspace",
         empty: WORKSPACE_EMPTY,
+        additional_empty: DEFAULT_WORKSPACE_EXTRA_EMPTY,
     },
     Lane {
         name: "default-qsl-semantics",
         empty: &[],
+        additional_empty: &[],
     },
     Lane {
         name: "default-qsl-cst",
         empty: &[],
+        additional_empty: &[],
     },
     Lane {
         name: "all-features-workspace",
         empty: WORKSPACE_EMPTY,
+        additional_empty: &[],
     },
 ];
 
@@ -1083,7 +1096,15 @@ pub fn evaluate(
     suites: &[SuiteOutcome],
     findings: Vec<Finding>,
 ) -> Vec<Finding> {
-    evaluate_declared(lane.empty, expected, suites, findings)
+    evaluate_declared(&lane_empty(lane), expected, suites, findings)
+}
+
+fn lane_empty(lane: &Lane) -> Vec<EmptySuite> {
+    lane.empty
+        .iter()
+        .chain(lane.additional_empty)
+        .copied()
+        .collect()
 }
 
 /// [`evaluate`] with the empty suites given directly, for a run that leaves
@@ -1543,7 +1564,8 @@ pub fn run_lane(
         .doctests
         .then(|| workspace.select(&selection.packages))
         .transpose()?;
-    let empty = in_scope(lane.empty, Some(&workspace), workspace_root, &selection);
+    let declarations = lane_empty(lane);
+    let empty = in_scope(&declarations, Some(&workspace), workspace_root, &selection);
     let mut parser = RunParser::new(&artifacts, workspace_root);
     run_tests(workspace_root, cargo_args, target_dir, &mut parser, echo)?;
     let (suites, findings) = parser.finish();
@@ -1793,6 +1815,7 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
         Lane {
             name: "test",
             empty,
+            additional_empty: &[],
         }
     }
 
@@ -3250,13 +3273,25 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
     #[trace("TC-950", "NFR-014-AC-5")]
     fn every_lane_names_each_empty_suite_once_with_a_reason() {
         for lane in LANES {
-            let ids: BTreeSet<SuiteId> = lane.empty.iter().map(EmptySuite::id).collect();
-            assert_eq!(ids.len(), lane.empty.len(), "{}", lane.name);
-            assert!(lane
-                .empty
-                .iter()
-                .all(|empty| !empty.reason.trim().is_empty()));
+            let empty = lane_empty(lane);
+            let ids: BTreeSet<SuiteId> = empty.iter().map(EmptySuite::id).collect();
+            assert_eq!(ids.len(), empty.len(), "{}", lane.name);
+            assert!(empty.iter().all(|empty| !empty.reason.trim().is_empty()));
         }
+    }
+
+    #[test]
+    #[trace("TC-950", "NFR-014-AC-5")]
+    fn root_doctests_are_empty_only_in_the_default_workspace_lane() {
+        let root_doctests = SuiteId {
+            source: "src/lib.rs".to_owned(),
+            kind: SuiteKind::Doctests,
+        };
+        let default = lane_empty(lane_named("default-workspace").unwrap());
+        let all_features = lane_empty(lane_named("all-features-workspace").unwrap());
+
+        assert!(default.iter().any(|empty| empty.id() == root_doctests));
+        assert!(!all_features.iter().any(|empty| empty.id() == root_doctests));
     }
 
     #[test]
