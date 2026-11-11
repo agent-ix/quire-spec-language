@@ -289,16 +289,19 @@ Snapshot, format `quire.state.snapshot/v1`:
   invocation document the snapshot observes. A snapshot without it
   is unbound to any invocation.
 - `population` and `type` are declaration identities of the selected
-  package; `fields` is keyed by member name. A population or object type the
-  unit's own source declares (FR-569) is named instead by its source
-  identity, the declared name as the unit writes it (`"population":
-  "nodes"`, `"type": "Node"`), here and in an object reference. A name with
-  no `ix://` scheme names a source declaration of the checked package and
-  never a model declaration, and an `ix://` name never names a source
-  declaration. `model` is required exactly when the checked package selects
-  a domain package, and a snapshot of a package that selects none carries no
-  `model` member. A source-declared object's model component is the unit's
-  source owner (authority, identity).
+  package; `fields` is keyed by member name. Admission SHALL accept a
+  population or object type the unit's own source declares (FR-569) named by
+  its source identity, the declared name as the unit writes it
+  (`"population": "nodes"`, `"type": "Node"`), here and in an object
+  reference. Admission SHALL resolve a name with no `ix://` scheme only among
+  the source declarations of the checked package and an `ix://` name only
+  among its model declarations; a name that resolves to no population, or an
+  object whose type is not a member type of its population, is check 6.1's
+  `invalid_runtime_input`/`wrong-role-mapping`. Admission SHALL require
+  `model` exactly when the checked package selects a domain package, and SHALL
+  refuse a `model` member in a snapshot of a package that selects none
+  `invalid_runtime_input`/`unknown-member` naming `model`. A source-declared
+  object's model component is the unit's source owner (authority, identity).
 - `relationships` is optional on a snapshot. Each entry has exactly `relationship`, `complete` and
   `instances`. `relationship` is the declaration identity of a navigation
   relationship of the selected package

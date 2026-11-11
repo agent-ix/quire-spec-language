@@ -3,6 +3,8 @@ id: FR-383
 title: "Emit a checked protocol as v2 protocol nodes"
 type: FR
 relationships:
+  - target: ix://agent-ix/quire-spec-language/FR-569
+    type: traces_to
   - target: ix://agent-ix/quire-spec-language/US-024
     type: implements
   - target: ix://agent-ix/quire-spec-language/ADR-011
@@ -73,6 +75,25 @@ scalar, an `Option`, a collection) has no model declaration node to name: S4
 refuses the protocol typed, `unsupported_construct`/`not-yet-implemented`
 naming the construct `NoOwnerModel` (QSL-1147), and a reference to it,
 and writes no clause node, rather than emit a clause the reader refuses.
+
+When the `over` input references an object type the unit's own source
+declares (`over (input: T)`, a `Reference<T>` to a source-declared object
+type, FR-569), the clause's model context is that type and the edge is its
+source-declared `model`/`object_type` node: a local reference that S4 includes
+in the clause's preimage and exact `dependencies` as it does a model's node.
+The owner of that edge is the node's own `SourceOwner`, the unit's source
+authority and identity, and the node's source-object identity row (FR-569)
+carries its fields, identity and supertypes for the reader; no selected model
+row is involved. A role on a source-declared object type (`role R on T`)
+writes that node as the role's `model` node in the same way. QSpec FR-464 and
+FR-465 do not yet admit a source-declared `owner_model` or role `model`, and
+IR's protocol-body reader joins `owner_model` only to a selected model row
+(ADR-013 QC-30 item (3)). Until both change, S4 SHALL refuse such a protocol
+typed, `unsupported_construct`/`not-yet-implemented`, naming the construct
+`SourceOwnerModel` at the `over` parameter or `SourceRoleModel` at the role
+(the first in source order), and SHALL write no clause node and no package, as
+FR-569 "Interim behavior" states; S3 and the source route check and evaluate
+the protocol unchanged.
 
 ## Use case
 
@@ -652,6 +673,7 @@ refusal changes no other protocol's result (see "Per-protocol results").
 | FR-383-AC-64 | In the two-record variant of fixture L (TC-1063 row L4e), compiled once in each source order of its two `related by` clauses, the shared `identityRef(view)` call of the two `from` ends has its rows under `protocol Pipeline run Main Got related 0 from` and `... related 1 from`, the `to` end that is a call has its rows under `... related <k> to` with `k` the emitted position of its record, the record whose `to` end is the reference `view` has no `to` row, each record keeps one emitted position in both orders, and each origin holds rows of one end only. | Test (TC-1063) |
 | FR-383-AC-65 | In both compiles of FR-383-AC-64 the checked package holds no `Location` and the `protocol_locations` array holds no row under a `related <start> <end>` origin. | Test (TC-1063) |
 | FR-383-AC-66 | A compile of the two-record variant that writes its second `related by` clause twice emits the same nodes, the same `identityRef(view)` occurrences, the same source-map rows and the same `protocol_locations` rows as the compile without the repeat. | Test (TC-1063) |
+| FR-383-AC-67 | Over TC-1407 fixture E-S, whose `Refunds` is `over (view: Node)` with `Node` source-declared, S3 checks the protocol and the source route evaluates its slots, and S4 refuses `unsupported_construct`/`not-yet-implemented` naming `SourceOwnerModel` at `over (view: Node)`, writes no `protocol_clause` node and no package. A protocol of TC-1408 variant S-M over `M::Order` with `role Seller on Order` (`Order` source-declared) is refused naming `SourceRoleModel` at the role. With QC-30 item (3) adopted by QSpec and IR, the E-S clause instead carries `owner_model` the source-declared `Node` node, in its preimage and exact `dependencies`, and IR's reader admits it. | Test (TC-1407, TC-1408) |
 ## Dependencies
 
 - FR-383-AC-15 rests on QSpec FR-322 "Operand index segments" (QSL-1695): inside a node every operand is an operand slot `{"operand": k}` into the document's required `semantic_graph.operand_rows`, numbered by first occurrence in the node's serialization, and only ids outside nodes keep `{"node": i}`. A node's bytes therefore hold no graph index of its own graph, so adding a node ahead of an operand a protocol reaches changes no protocol node's bytes, only `operand_rows`; node equality across documents is equality of resolved structural keys (each operand slot replaced by the key of the node it names). The path-stability gate (STD-653) is closed by that wire form.
