@@ -190,6 +190,7 @@ fn a_state_machine_meaning_is_emitted_as_an_object_type() {
         selected.span,
         &mut operations,
         &BTreeMap::new(),
+        &[],
     )
     .expect("state-machine meaning is supported by the object-type seam");
     assert!(composites.is_empty());
@@ -261,6 +262,7 @@ fn model_tuple_positions_are_assembled_as_a_tuple_type() {
         selected.span,
         &mut operations,
         &BTreeMap::new(),
+        &[],
     )
     .expect("the tuple declaration assembles");
     assert_eq!(model_types.composites.len(), 1);
@@ -305,6 +307,7 @@ fn a_model_scalar_is_named_with_its_integer_interval() {
         selected.span,
         &mut operations,
         &BTreeMap::new(),
+        &[],
     )
     .expect("a scalar-only model is supported");
     assert_eq!(types.scalars, [("M::Total".to_owned(), int(0, 1000))]);
@@ -367,6 +370,7 @@ fn unresolved_model_unit_type_names_the_operation_parameter_path() {
         selected.span,
         &mut operations,
         &BTreeMap::new(),
+        &[],
     ) {
         Ok(_) => panic!("the unresolved unit typeRef refuses during model assembly"),
         Err(errors) => errors,

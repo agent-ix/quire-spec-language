@@ -146,8 +146,7 @@ fn fixture_s_m_refuses_at_the_first_object() {
     );
 }
 
-#[path = "../../../../qsl-semantics/tests/support/tc1070.rs"]
-mod tc1070_source;
+use super::protocol_controls::tc1070 as tc1070_source;
 
 /// TC-1407 fixture E-S and its domain package's input.
 fn fixture_e_s() -> (String, qsl_semantics::model::intake::PackageInput) {
