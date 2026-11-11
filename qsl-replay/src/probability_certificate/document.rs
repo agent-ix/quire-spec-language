@@ -612,6 +612,9 @@ fn read_document(
     read_document_profile(bytes, limits, cancel, meter, false, None, &mut 0)
 }
 
+/// The closed profile and objective strings are the wire discriminator for
+/// each document family admitted at this boundary.
+#[ix_trace_rs::string_edge]
 #[allow(clippy::too_many_arguments)]
 fn read_document_profile(
     bytes: &[u8],

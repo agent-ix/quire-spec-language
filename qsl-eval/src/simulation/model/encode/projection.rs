@@ -177,6 +177,8 @@ impl Retained {
     }
 }
 
+/// Select the private projection's map-entry key member for canonical encoding.
+#[ix_trace_rs::string_edge]
 fn map_key_bytes(value: &Enc) -> Vec<u8> {
     let Enc::Object(members) = value else {
         panic!("the private projection emits map-entry objects");

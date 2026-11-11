@@ -420,6 +420,8 @@ pub(super) fn admit_encoding(
     Ok(())
 }
 
+/// Decode the closed fairness-kind, granularity, and operation vocabulary.
+#[ix_trace_rs::string_edge]
 pub(super) fn read(
     records: &[Box<serde_json::value::RawValue>],
     limits: ProbabilityDocumentLimits,

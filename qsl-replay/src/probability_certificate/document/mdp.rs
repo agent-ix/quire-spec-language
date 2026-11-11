@@ -282,6 +282,8 @@ impl<'a, 'control> Context<'a, 'control> {
     }
 }
 
+/// Validate the cyclic-MDP value and ranking member shapes.
+#[ix_trace_rs::string_edge]
 pub(super) fn member_shapes(
     document: &quire_canonical::Document,
     cancel: &Cancel,

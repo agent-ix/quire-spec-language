@@ -6,6 +6,8 @@ use quire_canonical::{Node, NodeRef};
 use quire_exact::{NodeKey, UnitId};
 use std::cell::RefCell;
 
+/// Decode the unit descriptor's tagged term and integer-text forms.
+#[ix_trace_rs::string_edge]
 pub(super) fn read(
     bytes: &[u8],
     limits: ProbabilityDocumentLimits,

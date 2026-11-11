@@ -314,6 +314,8 @@ fn source_failure(error: ProbabilitySourceError) -> Result<Value, String> {
     .map_err(|error| error.to_string())
 }
 
+/// Parse the command's option vocabulary and select its input source.
+#[ix_trace_rs::string_edge]
 fn run() -> Result<Value, String> {
     let mut input = None;
     let mut bound = 16_777_216_u64;
