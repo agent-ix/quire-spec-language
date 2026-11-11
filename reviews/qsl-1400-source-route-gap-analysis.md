@@ -32,3 +32,12 @@ Ticket: QSL-1400. `quoin matrix` does not read this repo's `#[trace]` tags (esta
 ## Verdict
 
 The vectors that matter most (V1 to V6, E-S against E) are strong. The `Unavailable` vector and the source-spelled `ix://` rule are the two medium gaps.
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | Round 1: `an_unavailable_target_halts_the_slot_over_a_source_node_as_it_does_over_a_model` evaluates `Refund.recovery.predicate` with `target` supplied `Unavailable`. It requires `ProtocolSlotEvaluation::Unavailable` over E, the read set [recovered, target] with `activated` unread, and E-S equal to E on read set, charge log and metered units. |
+| FND-002 | fixed | Round 1: `an_ix_name_spelling_a_source_declaration_is_refused` refuses `ix://source/<pkg>/Order` as a type and `ix://source/<pkg>/orders` as a population `wrong-role-mapping`, over both S and S-M. Traced, not re-run: under the round-0 mutation (no sentinel) the name resolves to the source record and is admitted, so this assertion fails. |
+| FND-003 | fixed | Round 1: `a_source_clause_reads_only_the_source_objects_in_a_mixed_snapshot` checks that `Small` over the source `orders` holds beside a model object of total 8, and that the control `SmallModel` over `M::orders` fails. |
+| FND-004 | fixed | Round 1: `a_source_member_of_a_model_type_is_admitted_by_that_types_bound` admits and evaluates `t = 3` and refuses `t = 99` `invalid_runtime_input`/`invalid-value`. |

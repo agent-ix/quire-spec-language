@@ -32,3 +32,11 @@ Ticket: QSL-1400, slice 2 (FR-569-AC-9, AC-10, model-typed members, E-S checking
 ## Verdict
 
 The source route is sound on the main path, and the coder's claims hold. Two medium defects remain on edges. Unbounded collection members are refused through a dead match arm. Model types in source members are resolved across unit boundaries.
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | Round 1 (e476e25e7): the arm is now `(None, None) if form.bounds.is_empty() => (0, None)`. `an_unbounded_and_a_bounded_collection_member_both_assemble` checks `tags`/`loose` at (0, None) and `few` at (0, Some(3)). Restoring the old arm in a scratch clone makes that test fail. |
+| FND-002 | fixed | Round 1: `unit_model_selections` limits `foreign` and `foreign_models` to the declaring unit's own selections and repeats. Both two-unit tests (b with no `M`, refused missing-name in either order; a and b with different packages as `M`, each binding its own `Total`) fail when `unit_model_selections` is mutated to return every selection. |
+| FND-003 | fixed | Round 1: `DeclarationNames` is built once per document read or selection. It holds the source prefixes and a `BTreeSet` of every node, so each name costs one set lookup per source prefix instead of a scan of every record. |
