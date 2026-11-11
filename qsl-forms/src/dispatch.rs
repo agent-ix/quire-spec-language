@@ -30,6 +30,7 @@ use super::extension_declaration;
 use super::guarantee_declaration;
 use super::hybrid_declaration;
 use super::hyper_clause;
+use super::object_declaration;
 use super::probabilistic;
 use super::protocol_clause;
 use super::refinement;
@@ -113,6 +114,7 @@ impl ParsedForm {
             F::Function(form) => Some(form.name.as_str()),
             F::Alias(form) => Some(&form.name.name),
             F::Record(form) => Some(&form.name.name),
+            F::Object(form) => Some(&form.name.name),
             F::Tuple(form) => Some(&form.name.name),
             F::Enum(form) => Some(&form.name.name),
             F::Dimension(form) => Some(&form.name.name),
@@ -319,6 +321,8 @@ pub enum LeadingTokenKind {
     Type,
     /// `record`: the `Value` record form.
     Record,
+    /// `object` or `abstract`: the source object declaration form (FR-569).
+    Object,
     /// `tuple`: the `Value` tuple form.
     Tuple,
     /// `enum`: the `Value` enum form, not ordered.
@@ -770,6 +774,7 @@ fn dispatch(
         LeadingTokenKind::Function => value::function(construct),
         LeadingTokenKind::Type => value::alias(construct),
         LeadingTokenKind::Record => value::record(construct),
+        LeadingTokenKind::Object => object_declaration::object_declaration(construct),
         LeadingTokenKind::Tuple => value::tuple(construct),
         LeadingTokenKind::Enum | LeadingTokenKind::Ordered => value::enumeration(construct),
         LeadingTokenKind::Predicate => value::predicate(construct),
@@ -847,6 +852,8 @@ const LEADING_SPELLINGS: &[(&str, LeadingTokenKind)] = &[
     ("function", LeadingTokenKind::Function),
     ("type", LeadingTokenKind::Type),
     ("record", LeadingTokenKind::Record),
+    ("object", LeadingTokenKind::Object),
+    ("abstract", LeadingTokenKind::Object),
     ("tuple", LeadingTokenKind::Tuple),
     ("enum", LeadingTokenKind::Enum),
     ("ordered", LeadingTokenKind::Ordered),

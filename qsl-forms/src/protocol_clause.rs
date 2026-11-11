@@ -13,6 +13,7 @@
 //! declaration-level production is `ProtocolClause`'s own.
 
 use qsl_cst::{CstNode, LosslessCst, Production, TokenKind};
+use qsl_foundation::Span;
 
 use std::ops::ControlFlow;
 
@@ -27,7 +28,7 @@ use super::syntax::{
     ActivationForm, AnchorForm, AnchorSegment, AnchorSite, AttemptForm, BinderForm, BinderKind,
     CheckForm, ChoiceForm, ClockForm, CompensationAttempts, CompensationCommit, CompensationForm,
     CompensationRecover, CompensationRetry, DeclarationForm, DeclaredName, ExpressionForm,
-    OperationBodyForm, ProtocolBodyForm, ProtocolConstructForm, ProtocolConstructKind,
+    NameForm, OperationBodyForm, ProtocolBodyForm, ProtocolConstructForm, ProtocolConstructKind,
     ProtocolDeclarationForm, ProtocolNodeDeclaration, ProtocolNodeKind, RelatedForm,
     RelationshipForm, RequirementForm, ScopeEntry, ScopeId, ScopeName, ScopedAnchorForm,
     StateClauseForm, StateClauseKind, TypeForm, UsingAlias,
@@ -104,10 +105,9 @@ pub(crate) fn state_clause(construct: Construct<'_>) -> Result<DeclarationForm, 
         StateClauseKind::Precondition | StateClauseKind::Postcondition => {
             let operation_name = only(&clause_items, Production::OperationName, node)?;
             let operation_items = items(cst, operation_name);
-            let type_name = only(&operation_items, Production::TypeName, operation_name)?;
-            let context = name_form(cst, type_name)?;
             let member =
                 operation_member(&operation_items).ok_or_else(|| unexpected(operation_name))?;
+            let context = operation_context(&operation_items, operation_name)?;
             let operation = DeclaredName {
                 name: text(member, operation_name)?,
                 span: member.span(),
@@ -1286,8 +1286,7 @@ fn attempt_form(
         .collect::<Result<Vec<_>, FormsRefusal>>()?;
     let operation_name = only(event_items, Production::OperationName, node)?;
     let operation_items = items(cst, operation_name);
-    let type_name = only(&operation_items, Production::TypeName, operation_name)?;
-    let context = name_form(cst, type_name)?;
+    let context = operation_context(&operation_items, operation_name)?;
     let member = operation_member(&operation_items).ok_or_else(|| unexpected(operation_name))?;
     let operation = DeclaredName {
         name: text(member, operation_name)?,
@@ -1304,6 +1303,41 @@ fn attempt_form(
             .map(|order| access_ordering(cst, order))
             .transpose()?,
     })
+}
+
+/// The context type of an `OperationName`: every segment but the last,
+/// spelled and spanned as one name.
+fn operation_context(
+    items: &[Item<'_>],
+    operation_name: &CstNode,
+) -> Result<NameForm, FormsRefusal> {
+    let segments: Vec<&qsl_cst::CstToken> = items
+        .iter()
+        .filter_map(|item| match item {
+            Item::Token(token) if token.spelling() != b"::" => Some(*token),
+            Item::Token(_) | Item::Node(_) => None,
+        })
+        .collect();
+    let [context @ .., _member] = segments.as_slice() else {
+        return Err(unexpected(operation_name));
+    };
+    let (Some(first), Some(last)) = (context.first(), context.last()) else {
+        return Err(unexpected(operation_name));
+    };
+    let mut name = String::new();
+    for token in context {
+        if !name.is_empty() {
+            name.push_str("::");
+        }
+        name.push_str(&text(token, operation_name)?);
+    }
+    Ok(NameForm::new(
+        name,
+        Span {
+            start: first.span().start,
+            end: last.span().end,
+        },
+    ))
 }
 
 /// Read the final segment of an `OperationName` without requiring the

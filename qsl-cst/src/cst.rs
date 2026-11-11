@@ -115,7 +115,22 @@ productions! {
     RatioTerm,
     UnitDeclaration, EnumDeclaration,
     EnumMember, RecordDeclaration, Field, TupleDeclaration, UnionDeclaration, UnionMember, AliasDeclaration,
-    FunctionDeclaration, Predicate, Parameter, StateClause, OperationBody, PopulationBound, Block, Expression,
+    FunctionDeclaration, Predicate, Parameter, StateClause, OperationBody, PopulationBound,
+    #[doc = "`[abstract] object <identifier> [extends <identifier>, ...] [identity ( <identifier>, ... )] { <object-member>* }`: a source-declared object type (FR-569)."]
+    ObjectDeclaration,
+    #[doc = "`[symmetric] population <identifier> ;`: a closed population of an object declaration's own type."]
+    ObjectPopulation,
+    #[doc = "`operation <identifier> ( <parameter>, ... ) [: <type-reference>] [redefines <identifier> :: <member-name>] <frame-clause>* ;`: an operation of an object declaration."]
+    ObjectOperation,
+    #[doc = "`modifies <field-target>, ...`, `creates <identifier>, ...` or `deletes <delete-target>, ...`: one frame clause of an operation."]
+    FrameClause,
+    #[doc = "`self . <identifier>` or `<identifier> [. <identifier>]`: one `modifies` entry."]
+    FieldTarget,
+    #[doc = "`self` or `<identifier>`: one `deletes` entry."]
+    DeleteTarget,
+    #[doc = "`<identifier> [:: <member-name>]`: a population name, a source population or a model population."]
+    PopulationName,
+    Block, Expression,
     Implication, Disjunction, Conjunction, Comparison, Sum, Product, Unary,
     Postfix, Primary, CaseExpression, CaseArm, CaseBinder,
     ScrutineeExpression, ScrutineeImplication, ScrutineeDisjunction,

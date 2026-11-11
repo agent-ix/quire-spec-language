@@ -389,7 +389,7 @@ fn row_form(cst: &LosslessCst, row: &CstNode) -> Result<RefinementRowForm, Forms
     let row_items = items(cst, row);
     match row.production() {
         Production::PopulationRow => {
-            let [target, source] = nodes_of(&row_items, Production::ModelName)[..] else {
+            let [target, source] = nodes_of(&row_items, Production::PopulationName)[..] else {
                 return Err(unexpected(row));
             };
             Ok(RefinementRowForm::Population(PopulationRowForm {
