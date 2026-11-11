@@ -40,3 +40,5 @@ Disposition pass 1, checked against fix commit ba4ea0fcd.
 | FND-001 | fixed | The reserved-word, segment-resolution and snapshot rules now carry SHALL: FR-569:136-145 and 395-404, and FR-106's amended snapshot paragraph. |
 
 Disposition pass 2, checked against fix commit b3e72440c: no finding of this SR is outstanding, so this round adds no rows. The round-2 re-split checks (honest "now" cases, no remaining claim that IR admits anything now, the three old refusals removed everywhere, and the cross-AC consistency of FR-390-AC-70 to AC-73, FR-105-AC-18, FR-383-AC-67, FR-218-AC-39, TC-1407 and TC-1408) are clean.
+
+Disposition pass 3, checked against fix commit 3ef786bab: no finding of this SR is outstanding, so this round adds no rows.

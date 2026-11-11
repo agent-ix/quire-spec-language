@@ -50,6 +50,14 @@ Found against fix commit b3e72440c.
 | --- | --- | --- | --- |
 | FND-005 | medium | FR-569-AC-6's target expectations name nodes fixture S cannot contain. (1) FR-094 builds clause functions only for a dispatch-eligible operation, which `checked_dispatch.rs:979` defines as a query: it has a result and an empty effect. `bump` has `modifies self.total`, so it is not a query, and none of `["Order","bump","precondition","Q"]`, `["Sub","bump","effective-precondition"]` or `["Sub","bump","precondition","Q2"]` (S-R) exists. (2) The "`r.size()` dispatch-table row" needs an `r.size()` application in a checked node, and fixture S has none; `r.size()` appears only as evaluation vector V5. The target test cannot pass as written, and the sibling-name case of FND-004 has no fixture. | spec/functional/FR-569-declare-object-types-populations-and-operations-in-qsl-source.md:489; spec/test-cases/TC-1408-declare-object-types-populations-and-operations-in-source.md:42-61 |
 
+## New findings (disposition pass 3)
+
+Found against fix commit 3ef786bab.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-006 | low | Fixture D's twin text still lists only the four `on M::...` rewrites. It does not state D's twin of the new `function sized (r: Reference<Order>)`. AC-5's dispatch-table comparison and AC-10's equal-charge-log comparison need that twin, written over `Reference<M::Order>`. The intent is obvious, but the fixture text leaves it to the implementer. | spec/test-cases/TC-1408-declare-object-types-populations-and-operations-in-source.md:69-73 |
+
 ## Dispositions
 
 Disposition pass 1, checked against fix commit ba4ea0fcd.
@@ -61,3 +69,5 @@ Disposition pass 1, checked against fix commit ba4ea0fcd.
 | FND-003 | fixed | AC-9 adds variant S-M, with D selected as `M`. In it, bare names admit as source objects, `ix://` names admit as model objects, and a bare type in an `ix://` population is refused `wrong-role-mapping`. |
 | FND-004 | fixed | AC-1 now gives `invalid_syntax`/`unexpected-token` for a reserved-word parameter. AC-7 no longer has the digest clause. AC-6 no longer names a forall, and the variant is renamed S-P. |
 | FND-005 | still-open: new this round, routed to the coder | AC-6 names `bump` clause functions (but `bump` is not a query) and an `r.size()` dispatch row (but S has no such application). |
+| FND-005 | fixed | Round 3 (3ef786bab). Fixture S now has the query `size` with `pre Qs`, plus `function sized` holding a real `r.size()` application. S-R now adds `Qs2` on the redefined query `Sub.size`, and S-R' carries the effect-escape case. AC-6 now builds clause functions for queries only, says `bump` has none, and names the dispatch row of the `r.size()` application in `sized`. AC-5 and TC-1408 steps 4 and 5 match. All "now" cases (AC-5, AC-9 to AC-11, steps 1-4 and 7-9) remain source-route or S4-refusal checks. |
+| FND-006 | still-open: new this round (low) | D's twin of `sized` is unstated in the fixture text. |

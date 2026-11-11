@@ -70,8 +70,9 @@ functions; `bump` writes `total`, so it has none.
 Fixture **D**, its model twin, is a domain package `test/orders` selected as
 `M` that declares the same object types, fields, identity, supertypes,
 populations and operations (frames included), with S's state clauses and
-bodies written `on M::Order`, `on M::Order::bump`, `on M::Sub::size()` and
-`on M::Order::size()`.
+bodies written `on M::Order`, `on M::Order::bump`, `on M::Order::size`,
+`on M::Sub::size()` and `on M::Order::size()`, and S's `sized` written
+`function sized using P (r: Reference<M::Order>): Integer pure { r.size() }`.
 
 Variants, each one change to S (or D):
 
