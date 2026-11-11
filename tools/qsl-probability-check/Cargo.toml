@@ -16,11 +16,11 @@ quire-checked = { workspace = true }
 quire-exact = { workspace = true }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = { version = "1.0.151", features = ["raw_value"] }
+ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }
 
 [dev-dependencies]
 base64 = "0.22"
 qsl-analyze = { path = "../../qsl-analyze" }
-ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }
 
 [lints.rust]
 unsafe_code = "forbid"

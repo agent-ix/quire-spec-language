@@ -6,6 +6,7 @@ use quire_canonical::{Node, NodeRef};
 use quire_exact::{NodeKey, UnitId};
 use std::cell::RefCell;
 
+#[ix_trace_rs::string_edge]
 pub(super) fn read(
     bytes: &[u8],
     limits: ProbabilityDocumentLimits,
