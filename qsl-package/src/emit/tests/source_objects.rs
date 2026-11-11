@@ -149,36 +149,12 @@ fn fixture_s_m_refuses_at_the_first_object() {
 #[path = "../../../../qsl-semantics/tests/support/tc1070.rs"]
 mod tc1070_source;
 
-/// TC-1407 fixture E-S: TC-1070's fixture E with the object type `Node`
-/// declared by the unit's source instead of by the domain package `M`, whose
-/// document keeps every other declaration. The unit adds
-/// `object Node identity (total) { total: M::Total; population nodes;
-/// operation step(): M::Flag; }` and its protocol `Refunds` names `Node` and
-/// `Node::step` where fixture E names `M::Node` and `M::Node::step`.
+/// TC-1407 fixture E-S and its domain package's input.
 fn fixture_e_s() -> (String, qsl_semantics::model::intake::PackageInput) {
-    let mut document = tc1070_source::document();
-    document["types"]
-        .as_array_mut()
-        .expect("types")
-        .retain(|declared| declared["displayName"] != "Node");
-    document["populations"] = serde_json::json!([]);
-    // `Node` was the only `thing`: no declaration is of that kind now.
-    document["constructs"]
-        .as_array_mut()
-        .expect("constructs")
-        .retain(|construct| construct["kind"]["name"] != "thing");
+    let (text, document) = tc1070_source::source_node();
     let bytes = crate::emit::tests::wire_bytes(&document).expect("the document encodes");
     let packages = qsl_semantics::model::intake::package_input([bytes.as_slice()])
         .expect("E-S's domain package admits");
-    let source = tc1070_source::SOURCE;
-    let refunds = &source[..source.find("protocol Pipeline").expect("fixture L follows")];
-    let refunds = refunds
-        .replace("M::Node::step", "Node::step")
-        .replace("M::Node", "Node");
-    let selection = "model M = \"test/orders\";\n";
-    let object = "object Node identity (total) {\n  total: M::Total;\n  population nodes;\n  \
-         operation step(): M::Flag;\n}\n";
-    let text = refunds.replacen(selection, &format!("{selection}{object}"), 1);
     (text, packages)
 }
 
