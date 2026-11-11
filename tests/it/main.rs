@@ -101,6 +101,8 @@ mod retired_mapped_extraction;
 mod retired_native_runtime;
 mod seam5_retired;
 mod source_map;
+#[cfg(feature = "checked-handoff")]
+mod source_object_emission;
 mod spine_deletion_boundaries;
 mod spine_retained_criteria;
 mod spine_run;

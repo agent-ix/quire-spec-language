@@ -93,6 +93,7 @@ mod schedulability_claims;
 mod selected_model_rows;
 mod source_enum_rows;
 mod source_map_debug;
+mod source_objects;
 mod source_record_rows;
 mod source_tuple_rows;
 mod source_union_rows;
@@ -1992,6 +1993,9 @@ fn emit_checked_never_returns_incomplete_across_the_fixture_set() {
             }
             Err(EmitRefusal::InvalidTemporalClockValue { .. }) => {
                 panic!("the fixture set selects only valid temporal clock values")
+            }
+            Err(EmitRefusal::SourceObjectEmission { .. }) => {
+                panic!("the fixture set declares no source object type")
             }
             Err(EmitRefusal::ProtocolResultInvariant) => Seen::ProtocolResultInvariant,
             Err(EmitRefusal::ProtocolResultsRequired) => Seen::ProtocolResultsRequired,

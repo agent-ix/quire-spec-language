@@ -129,6 +129,8 @@ pub(crate) struct Typing<'a> {
     pub(crate) models: &'a [AdmittedModel],
     pub(crate) limits: CheckingLimits,
     pub(crate) cancel: Option<&'a Cancel>,
+    /// The source unit declaring the clause, whose populations it may name.
+    pub(crate) unit: Option<qsl_foundation::source::provenance::RawSourceRef>,
 }
 
 /// A part of a clause a condition is located at (FR-487 "Lowering a holds
@@ -310,7 +312,7 @@ fn typer<'a>(
     hyper: HyperTyping,
     location: &Location,
 ) -> Result<Typer<'a>, CheckRefusal> {
-    let named = NamedScope::of(typing.models, typing.scope);
+    let named = NamedScope::of(typing.models, typing.scope, typing.unit.as_ref());
     let mut typer = Typer::new(
         typing.scope,
         typing.signatures,

@@ -1359,6 +1359,13 @@ impl<'c> Mapping<'c> {
             | Production::StateClause
             | Production::OperationBody
             | Production::PopulationBound
+            | Production::PopulationName
+            | Production::ObjectDeclaration
+            | Production::ObjectPopulation
+            | Production::ObjectOperation
+            | Production::FrameClause
+            | Production::FieldTarget
+            | Production::DeleteTarget
             | Production::Block
             | Production::ExactNumber
             | Production::FloatValue
@@ -2110,6 +2117,13 @@ impl<'c> Mapping<'c> {
             | Production::StateClause
             | Production::OperationBody
             | Production::PopulationBound
+            | Production::PopulationName
+            | Production::ObjectDeclaration
+            | Production::ObjectPopulation
+            | Production::ObjectOperation
+            | Production::FrameClause
+            | Production::FieldTarget
+            | Production::DeleteTarget
             | Production::Block
             | Production::Expression
             | Production::Implication
@@ -2398,7 +2412,7 @@ impl<'c> Mapping<'c> {
         let binder = tokens_of(&binder_items, TokenKind::Identifier)
             .first()
             .map_or_else(|| Err(unexpected(binder_node)), |token| text(token, node))?;
-        let name = only(&binder_items, Production::ModelName, binder_node)?;
+        let name = only(&binder_items, Production::PopulationName, binder_node)?;
         let population = DeclaredName {
             name: spelled(self.cst, name)?,
             span: name.span(),

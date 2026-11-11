@@ -99,6 +99,8 @@ mod relationship_reachability;
 #[cfg(feature = "test-support")]
 mod relationship_snapshots;
 mod reserved_declaration_names;
+#[cfg(feature = "test-support")]
+mod source_objects;
 mod state_clauses;
 #[cfg(feature = "test-support")]
 mod state_graph_claims;

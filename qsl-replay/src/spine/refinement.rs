@@ -203,7 +203,7 @@ impl CompileRefusal {
             }
             Self::Dependency { refusal, .. } => refusal.causes(),
             Self::Link(refusal) => vec![RefusalCause::new(refusal.code(), refusal.cause())],
-            Self::Emit(refusal) => vec![RefusalCause::new(refusal.code(), refusal.cause())],
+            Self::Emit(refusal, _) => vec![RefusalCause::new(refusal.code(), refusal.cause())],
             Self::Limit(limit) => vec![RefusalCause::new(
                 Code::StageLimitExceeded,
                 Some(limit.kind().catalog_cause()),
@@ -257,6 +257,7 @@ fn assembly_limit(cause: &AssemblyCause) -> Option<ReachedLimit> {
         | AssemblyCause::UnsuppliedImport { .. }
         | AssemblyCause::UnadmittedModel { .. }
         | AssemblyCause::UnsupportedModelMember { .. }
+        | AssemblyCause::SourceObject(_)
         | AssemblyCause::ModelType { .. }
         | AssemblyCause::UnresolvedOperation { .. }
         | AssemblyCause::AmbiguousOperation { .. }
@@ -460,7 +461,7 @@ fn group(refusal: &CompileRefusal) -> Group {
             | ImportRefusal::MissingSelection { .. }
             | ImportRefusal::UnnamedImport => Group::Setup,
         },
-        CompileRefusal::Link(_) | CompileRefusal::Emit(_) => Group::Projection,
+        CompileRefusal::Link(_) | CompileRefusal::Emit(..) => Group::Projection,
         CompileRefusal::Limit(_) => Group::Limit,
         CompileRefusal::Omitted(_) => Group::Omitted,
     }

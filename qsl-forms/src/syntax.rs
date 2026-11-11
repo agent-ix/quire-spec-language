@@ -2580,6 +2580,115 @@ pub struct RecordForm {
     pub fields: Vec<RecordFieldForm>,
 }
 
+/// `[abstract] object T [extends A, B] [identity (f, g)] { member* }`
+/// (FR-569): a source-declared object type, its parts spelled and spanned in
+/// source order and resolved by the assembler.
+#[derive(Clone, Debug)]
+pub struct ObjectForm {
+    /// The declared type name.
+    pub name: DeclaredName,
+    /// The span of the `abstract` word, when written.
+    pub abstract_span: Option<Span>,
+    /// The `extends` supertype names, as written, in source order.
+    pub extends: Vec<NameForm>,
+    /// The `identity` field names, in source order.
+    pub identity: Vec<DeclaredName>,
+    /// The fields, populations and operations, in source order.
+    pub members: Vec<ObjectMemberForm>,
+    /// The span of the whole declaration.
+    pub span: Span,
+}
+
+/// One member of an [`ObjectForm`].
+#[derive(Clone, Debug)]
+pub enum ObjectMemberForm {
+    /// `f: T;` or `f: T?;`.
+    Field(ObjectFieldForm),
+    /// `[symmetric] population p;`.
+    Population(ObjectPopulationForm),
+    /// `operation op(...) ...;`.
+    Operation(ObjectOperationForm),
+}
+
+/// One `f: T;` or `f: T?;` field of an [`ObjectForm`].
+#[derive(Clone, Debug)]
+pub struct ObjectFieldForm {
+    /// The field name and the span of its identifier.
+    pub name: DeclaredName,
+    /// The declared type, as spelled.
+    pub type_form: TypeForm,
+    /// Whether the field is written with the optional marker `?`.
+    pub optional: bool,
+    /// The span of the whole field.
+    pub span: Span,
+}
+
+/// One `[symmetric] population p;` of an [`ObjectForm`].
+#[derive(Clone, Debug)]
+pub struct ObjectPopulationForm {
+    /// The population name and the span of its identifier.
+    pub name: DeclaredName,
+    /// Whether `symmetric` is written.
+    pub symmetric: bool,
+    /// The span of the whole member.
+    pub span: Span,
+}
+
+/// `redefines T::op` of an [`ObjectOperationForm`].
+#[derive(Clone, Debug)]
+pub struct RedefinesForm {
+    /// The ancestor type name.
+    pub declaring: DeclaredName,
+    /// The redefined operation's name.
+    pub member: DeclaredName,
+}
+
+/// One entry of an operation's `modifies`, `creates` or `deletes` clause.
+#[derive(Clone, Debug)]
+pub enum FrameEntryForm {
+    /// `modifies self.f`: a receiver-scoped field entry.
+    ModifiesReceiver {
+        /// The field name.
+        field: DeclaredName,
+    },
+    /// `modifies f`: an every-object entry of the declaring type's field.
+    ModifiesField {
+        /// The field name.
+        field: DeclaredName,
+    },
+    /// `modifies T.f`: an every-object entry of another type's field.
+    ModifiesTypeField {
+        /// The type name.
+        object: DeclaredName,
+        /// The field name.
+        field: DeclaredName,
+    },
+    /// `creates T`.
+    Creates(DeclaredName),
+    /// `deletes self`, with the span of `self`.
+    DeletesReceiver(Span),
+    /// `deletes p` or `deletes T`.
+    Deletes(DeclaredName),
+}
+
+/// One `operation op(params): R [redefines T::op] frame* ;` of an
+/// [`ObjectForm`].
+#[derive(Clone, Debug)]
+pub struct ObjectOperationForm {
+    /// The operation name and the span of its identifier.
+    pub name: DeclaredName,
+    /// The parameters, in order.
+    pub parameters: Vec<ParameterForm>,
+    /// The result type, when written.
+    pub result: Option<TypeForm>,
+    /// The redefined ancestor operation, when written.
+    pub redefines: Option<RedefinesForm>,
+    /// The frame entries of every clause, in source order.
+    pub frame: Vec<FrameEntryForm>,
+    /// The span of the whole member.
+    pub span: Span,
+}
+
 /// `tuple Name(T, ...);` (FR-091 "Tuple form").
 #[derive(Clone, Debug)]
 pub struct TupleForm {
@@ -2944,8 +3053,9 @@ pub struct OperationBodyForm {
 pub struct PopulationBoundForm {
     /// The declared label.
     pub label: DeclaredName,
-    /// The model alias, as written.
-    pub model: DeclaredName,
+    /// The model alias, as written; `None` for a source population's
+    /// one-segment name.
+    pub model: Option<DeclaredName>,
     /// The population name, as written.
     pub population: DeclaredName,
     /// The digits of `N` exactly as written; the assembler reads them.
@@ -4937,6 +5047,9 @@ pub enum DeclarationForm {
     Alias(AliasForm),
     /// A `record` declaration.
     Record(RecordForm),
+    /// An `object` declaration (FR-569), boxed for the same reason as
+    /// [`Self::Function`].
+    Object(Box<ObjectForm>),
     /// A `tuple` declaration.
     Tuple(TupleForm),
     /// An `enum` or `ordered enum` declaration.

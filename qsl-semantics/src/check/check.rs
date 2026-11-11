@@ -411,6 +411,9 @@ pub struct PackageDeclarations {
     /// resolve to, ascending; the lock's `definition_selections` hold their
     /// `requires` closure.
     pub header_layers: Vec<crate::value::layer::HeaderLayer>,
+    /// The span of the unit's first source `object` declaration, which the
+    /// package emitter refuses until it can write source object types.
+    pub first_source_object: Option<(RawSourceRef, qsl_foundation::Span)>,
     /// Record, tuple and model object-type declarations.
     pub types: TypeEnvironment,
     /// Where each record keeps the fields its ancestors name (FR-359).
@@ -778,6 +781,7 @@ impl PackageDeclarations {
             package_name: package_name.into(),
             protocol_profile: None,
             header_layers: Vec::new(),
+            first_source_object: None,
             types: TypeEnvironment::default(),
             model_records: ModelRecords::default(),
             relationships: Relationships::default(),
@@ -1906,6 +1910,8 @@ impl Scope {
     ) -> Option<EffectiveId> {
         match self.model_spellings.spelled(source, name) {
             Spelled::Model(found) => found?.object.clone(),
+            // A source object type is seen in the unit that declares it only.
+            Spelled::Other if self.model_spellings.is_source_type(name) => None,
             Spelled::Other => self.index.object_types.get(name).cloned(),
         }
     }
@@ -2364,7 +2370,11 @@ pub(crate) struct NamedPopulation {
 
 impl NamedScope {
     /// The scope over `models`, with `scope`'s enums for the ambiguity rule.
-    pub(crate) fn of(models: &[super::lowering::AdmittedModel], scope: &Scope) -> Self {
+    pub(crate) fn of(
+        models: &[super::lowering::AdmittedModel],
+        scope: &Scope,
+        unit: Option<&RawSourceRef>,
+    ) -> Self {
         let mut populations = Vec::new();
         let mut ambiguous = Vec::new();
         let mut aliases = Vec::new();
@@ -2372,12 +2382,16 @@ impl NamedScope {
             let Some(alias) = model.alias() else {
                 continue;
             };
+            // A source model's populations are visible in its own unit only.
+            if !model.visible_in(unit) {
+                continue;
+            }
             aliases.push(alias.to_owned());
             if scope.names_enum(alias) {
                 ambiguous.push(alias.to_owned());
             }
             populations.extend(model.named_populations().map(|record| NamedPopulation {
-                name: format!("{alias}::{}", record.name),
+                name: super::source_model::qualified(alias, record.name),
                 key: record.key.clone(),
                 members: record.members,
                 domain: super::state_clause::PopulationDomain {

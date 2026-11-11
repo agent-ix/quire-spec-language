@@ -44,6 +44,13 @@ const ACCEPTED_PRODUCTIONS: &[Production] = &[
     Production::StateClause,
     Production::OperationBody,
     Production::PopulationBound,
+    Production::ObjectDeclaration,
+    Production::ObjectPopulation,
+    Production::ObjectOperation,
+    Production::FrameClause,
+    Production::FieldTarget,
+    Production::DeleteTarget,
+    Production::PopulationName,
     Production::Block,
     Production::Expression,
     Production::Implication,
@@ -259,6 +266,7 @@ fn corpus() -> Vec<(&'static str, String)> {
         ("abstraction", source("abstraction Link using Complete { type M::Thing to \"store::Thing\" { ready to \"is_ready\"; }; population M::Things to \"things\"; operation M::Thing::act to \"store::act\" receiver \"self\" (amount to \"amount\"); }")),
         ("guarantee", source("guarantee G of P using A { initial to \"f\"; progress M::T::o decreases \"m\"; progress M::T::p bound 3; environment E by \"s\" fair weak each M::T::o; environment N by \"n\" assumes Pred; }")),
         ("composition", source("compose Sys rule assume-guarantee { component A from P using M; component B from Q using M; guarantee A::G; guarantee B::H; rely B::H on A::G; depends B::H on A::G; supplies fair weak each M::T::o; environment E by \"s\" assumes Pred; }")),
+        ("object", source("object Counter extends Base identity (n) { n: Integer; symmetric population counters; operation bump(delta: Integer): Integer redefines Base::bump modifies self.n, Counter.n creates Counter deletes self, delta; }")),
         ("sum-case", source("union Shape { Empty, Circle(Integer), Rect(Integer, Integer), } function area using Complete(s: Shape): Integer pure { case s { Circle(r): r; Shape::Rect(w, h): w * h; Empty: 0; } }")),
         (
             "values",
@@ -661,9 +669,9 @@ fn exact_ebnf_name_boundaries_refuse_overbroad_qualified_names() {
         .find(|(id, _)| *id == "protocol")
         .unwrap()
         .1;
-    let invalid = valid.replace("M::Actor::undo", "M::Actor");
+    let invalid = valid.replace("M::Actor::undo", "Actor");
     let parsed = parse("compensation-operation-name", &invalid);
-    let at = invalid.find("M::Actor using").unwrap() + "M::Actor ".len();
+    let at = invalid.find("Actor using").unwrap() + "Actor ".len();
     assert!(!parsed.is_admissible());
     assert_eq!(parsed.diagnostics()[0].byte_span().unwrap().start, at);
 

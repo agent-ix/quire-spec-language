@@ -16,7 +16,7 @@ use super::value::{items, only, production_node, text, tokens_of, unexpected, It
 
 /// `bound L on M::p [N]` (FR-380 "The declaration"): the label is the
 /// declaration's own identifier token, the alias and the population are the
-/// two segments of its `ModelName`, and `N` is its integer token.
+/// segments of its `PopulationName`, and `N` is its integer token.
 pub(crate) fn population_bound(construct: Construct<'_>) -> Result<DeclarationForm, FormsRefusal> {
     let cst = construct.cst;
     let node = production_node(construct)?;
@@ -35,7 +35,7 @@ pub(crate) fn population_bound(construct: Construct<'_>) -> Result<DeclarationFo
     let [maximum] = maxima.as_slice() else {
         return Err(unexpected(node));
     };
-    let target = only(&bound_items, Production::ModelName, node)?;
+    let target = only(&bound_items, Production::PopulationName, node)?;
     let target_items = items(cst, target);
     // The population segment is a member name, which may reuse a word.
     let segments: Vec<&qsl_cst::CstToken> = target_items
@@ -45,8 +45,10 @@ pub(crate) fn population_bound(construct: Construct<'_>) -> Result<DeclarationFo
             Item::Token(_) | Item::Node(_) => None,
         })
         .collect();
-    let [model, population] = segments.as_slice() else {
-        return Err(unexpected(target));
+    let (model, population) = match segments.as_slice() {
+        [model, population] => (Some(spelled(model)?), spelled(population)?),
+        [population] => (None, spelled(population)?),
+        _ => return Err(unexpected(target)),
     };
     let delimiter = |spelling: &[u8]| {
         bound_items.iter().find_map(|item| match item {
@@ -59,8 +61,8 @@ pub(crate) fn population_bound(construct: Construct<'_>) -> Result<DeclarationFo
     };
     Ok(DeclarationForm::PopulationBound(PopulationBoundForm {
         label: spelled(label)?,
-        model: spelled(model)?,
-        population: spelled(population)?,
+        model,
+        population,
         maximum: spelled(maximum)?,
         bracketed: Span {
             start: open.start,

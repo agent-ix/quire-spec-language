@@ -375,7 +375,7 @@ fn limit_of(
         | CompileRefusal::DependencyInput(_)
         | CompileRefusal::Import { .. }
         | CompileRefusal::Link(_)
-        | CompileRefusal::Emit(_)
+        | CompileRefusal::Emit(..)
         | CompileRefusal::Omitted(_) => None,
     }
 }
@@ -2236,6 +2236,7 @@ pub fn package_with_temporal_selections(
                             source_ref: selection.source.clone(),
                             span: selection.declaration_span,
                         },
+                        None,
                     ))
                     .into());
                 }
@@ -2258,7 +2259,7 @@ pub fn package_with_temporal_selections(
                     limits.emit(),
                 )
             })
-            .map_err(emit_refusal)?;
+            .map_err(|refusal| emit_refusal(refusal, &checked.package))?;
             let results = merge_emission_results(
                 &checked.protocol_results,
                 lifecycle_emission_results(&protocol_emission, &checked.source),
@@ -2286,6 +2287,7 @@ pub fn package_with_temporal_selections(
                             qsl_package::EmitRefusal::NothingToEmit {
                                 omitted: Vec::new(),
                             },
+                            None,
                         ))
                     })?
                 }
@@ -3039,10 +3041,24 @@ fn parse_operation_clauses(
 
 /// The compile refusal for an emit refusal; a reached `emit.output_bytes`
 /// ceiling is the stage limit outcome (FR-264 Behavior 5).
-fn emit_refusal(refusal: qsl_package::EmitRefusal) -> Box<CompileRefusal> {
+fn emit_refusal(
+    refusal: qsl_package::EmitRefusal,
+    package: &pkg::CheckedPackage,
+) -> Box<CompileRefusal> {
     Box::new(match refusal {
         qsl_package::EmitRefusal::OutputLimit(limit) => CompileRefusal::Limit(limit),
-        other => CompileRefusal::Emit(other),
+        qsl_package::EmitRefusal::SourceObjectEmission { span } => {
+            // The declaration's own unit locates it.
+            let region = package
+                .graph()
+                .first_source_object()
+                .and_then(|(source, _)| region(source, span));
+            CompileRefusal::Emit(
+                qsl_package::EmitRefusal::SourceObjectEmission { span },
+                region,
+            )
+        }
+        other => CompileRefusal::Emit(other, None),
     })
 }
 
@@ -3061,7 +3077,7 @@ fn emit_unit(
         cancel,
         limits.emit(),
     )
-    .map_err(emit_refusal)?;
+    .map_err(|refusal| emit_refusal(refusal, package))?;
     if !emission.omitted().is_empty() {
         return Err(Box::new(CompileRefusal::Omitted(
             emission.omitted().to_vec(),

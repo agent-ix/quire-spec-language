@@ -42,6 +42,9 @@ pub(crate) type PackageNames = BTreeMap<String, ModelName>;
 /// not of the form `first::T`.
 #[ix_trace_rs::string_edge]
 fn member_of_qualifier<'n>(name: &'n str, first: &str) -> Option<&'n str> {
+    if first == super::source_model::ALIAS {
+        return (!name.contains("::")).then_some(name);
+    }
     name.strip_prefix(first)?.strip_prefix("::")
 }
 
@@ -110,6 +113,11 @@ impl ModelSpellings {
             primary: Some(primary),
             ..Self::default()
         }
+    }
+
+    /// Whether `name` is a model alias of some unit.
+    pub(crate) fn is_model_alias(&self, name: &str) -> bool {
+        self.model_aliases.contains(name)
     }
 
     /// Add the selected package `selection` with no names yet, returning
@@ -252,7 +260,15 @@ impl ModelSpellings {
     /// How `name`, written in `unit` (the primary unit when `None`), reads.
     pub(crate) fn spelled(&self, unit: Option<&RawSourceRef>, name: &str) -> Spelled<'_> {
         let Some((alias, member)) = name.split_once("::") else {
-            return Spelled::Other;
+            // A name with no qualifier names a source object type when the
+            // unit declares one of that name.
+            return match self
+                .package(unit, super::source_model::ALIAS)
+                .and_then(|package| package.names.get(name))
+            {
+                Some(found) => Spelled::Model(Some(found)),
+                None => Spelled::Other,
+            };
         };
         if !self.model_aliases.contains(alias) {
             return Spelled::Other;
@@ -280,8 +296,21 @@ impl ModelSpellings {
     ) -> &'a [ValueType] {
         match self.spelled(unit, name) {
             Spelled::Model(found) => found.map_or(&[], |found| found.types.as_slice()),
+            // A source object type is seen in the unit that declares it only.
+            Spelled::Other if self.is_source_type(name) => &[],
             Spelled::Other => table.get(name).map_or(&[], Vec::as_slice),
         }
+    }
+
+    /// Whether some unit declares the source object type `name`.
+    pub(crate) fn is_source_type(&self, name: &str) -> bool {
+        super::source_model::is_unqualified(name)
+            && self.units.values().any(|aliases| {
+                aliases
+                    .get(super::source_model::ALIAS)
+                    .and_then(|index| self.packages.get(*index))
+                    .is_some_and(|package| package.names.contains_key(name))
+            })
     }
 
     /// The object type `name`, written in `unit`, names through the unit's

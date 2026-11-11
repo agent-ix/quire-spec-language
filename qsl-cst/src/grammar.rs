@@ -373,6 +373,7 @@ fn source_and_types(g: &mut Grammar) {
         r(P::StateClause),
         r(P::OperationBody),
         r(P::PopulationBound),
+        r(P::ObjectDeclaration),
         r(P::TemporalClause),
         r(P::TerminalDeclaration),
         r(P::TimeInvariant),
@@ -409,8 +410,18 @@ fn source_and_types(g: &mut Grammar) {
         s(vec![ident(), star(s(vec![x("::"), member()]))]),
     );
     g.insert(P::ModelName, s(vec![ident(), x("::"), member()]));
-    g.insert(P::TypeName, r(P::ModelName));
-    g.insert(P::OperationName, s(vec![r(P::TypeName), x("::"), member()]));
+    let name_or_model_name = || s(vec![ident(), opt(s(vec![x("::"), member()]))]);
+    g.insert(P::TypeName, name_or_model_name());
+    g.insert(P::PopulationName, name_or_model_name());
+    g.insert(
+        P::OperationName,
+        s(vec![
+            ident(),
+            x("::"),
+            member(),
+            opt(s(vec![x("::"), member()])),
+        ]),
+    );
     g.insert(P::SignedInteger, s(vec![opt(x("-")), uint()]));
     g.insert(
         P::RoundingMode,
@@ -736,12 +747,86 @@ fn source_and_types(g: &mut Grammar) {
             x("bound"),
             ident(),
             x("on"),
-            r(P::ModelName),
+            r(P::PopulationName),
             x("["),
             uint(),
             x("]"),
         ]),
     );
+    g.insert(
+        P::ObjectDeclaration,
+        s(vec![
+            opt(literal("abstract")),
+            literal("object"),
+            type_ident(),
+            opt(s(vec![
+                x("extends"),
+                r(P::TypeName),
+                star(s(vec![x(","), r(P::TypeName)])),
+            ])),
+            opt(s(vec![
+                x("identity"),
+                x("("),
+                ident(),
+                star(s(vec![x(","), ident()])),
+                x(")"),
+            ])),
+            x("{"),
+            star(c(vec![
+                r(P::ObjectPopulation),
+                r(P::ObjectOperation),
+                r(P::Field),
+            ])),
+            x("}"),
+        ]),
+    );
+    g.insert(
+        P::ObjectPopulation,
+        s(vec![
+            opt(x("symmetric")),
+            literal("population"),
+            ident(),
+            x(";"),
+        ]),
+    );
+    g.insert(
+        P::ObjectOperation,
+        s(vec![
+            literal("operation"),
+            member(),
+            x("("),
+            opt(list(|| r(P::Parameter))),
+            x(")"),
+            opt(s(vec![x(":"), r(P::TypeReference)])),
+            opt(s(vec![x("redefines"), ident(), x("::"), member()])),
+            star(r(P::FrameClause)),
+            x(";"),
+        ]),
+    );
+    g.insert(
+        P::FrameClause,
+        c(vec![
+            s(vec![
+                x("modifies"),
+                r(P::FieldTarget),
+                star(s(vec![x(","), r(P::FieldTarget)])),
+            ]),
+            s(vec![x("creates"), ident(), star(s(vec![x(","), ident()]))]),
+            s(vec![
+                x("deletes"),
+                r(P::DeleteTarget),
+                star(s(vec![x(","), r(P::DeleteTarget)])),
+            ]),
+        ]),
+    );
+    g.insert(
+        P::FieldTarget,
+        c(vec![
+            s(vec![x("self"), x("."), ident()]),
+            s(vec![ident(), opt(s(vec![x("."), ident()]))]),
+        ]),
+    );
+    g.insert(P::DeleteTarget, c(vec![x("self"), ident()]));
     g.insert(P::Block, s(vec![x("{"), r(P::Expression), x("}")]));
 }
 
@@ -1027,7 +1112,7 @@ fn expressions(g: &mut Grammar) {
         s(vec![
             ident(),
             x("in"),
-            r(P::ModelName),
+            r(P::PopulationName),
             opt(s(vec![literal("where"), r(P::Expression)])),
         ]),
     );
@@ -2300,9 +2385,9 @@ fn protocol(g: &mut Grammar) {
         P::PopulationRow,
         s(vec![
             literal("population"),
-            r(P::ModelName),
+            r(P::PopulationName),
             x("from"),
-            r(P::ModelName),
+            r(P::PopulationName),
             x(";"),
         ]),
     );

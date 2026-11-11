@@ -259,6 +259,9 @@ impl PackagePlace {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AdmittedModel {
     alias: Option<String>,
+    /// The unit that declares this model, for a source model: its types and
+    /// populations are visible in that unit only.
+    source_unit: Option<qsl_foundation::source::provenance::RawSourceRef>,
     selection: DomainPackageRef,
     records: BTreeMap<DeclarationKey, DomainPackageRecord>,
     /// FCD dimensions and units retained for FR-230's owner-qualified graph.
@@ -911,6 +914,7 @@ impl AdmittedModel {
                 })
                 .collect(),
             alias: None,
+            source_unit: None,
             population_bounds: BTreeMap::new(),
             places: Vec::new(),
             references: Vec::new(),
@@ -960,6 +964,7 @@ impl AdmittedModel {
             normalization_limits: crate::model::accounting::ModelNormalizationLimits::default(),
             supertypes: BTreeMap::new(),
             alias: None,
+            source_unit: None,
             population_bounds: BTreeMap::new(),
             places: Vec::new(),
             references: Vec::new(),
@@ -982,6 +987,31 @@ impl AdmittedModel {
     pub fn with_alias(mut self, alias: impl Into<String>) -> Self {
         self.alias = Some(alias.into());
         self
+    }
+
+    /// This source model as declared by `unit`.
+    #[must_use]
+    pub(crate) fn declared_in(
+        mut self,
+        unit: &qsl_foundation::source::provenance::RawSourceRef,
+    ) -> Self {
+        self.source_unit = Some(unit.clone());
+        self
+    }
+
+    /// Whether `unit` sees this model's source declarations. A model that
+    /// is no source model, or a source model of a single-unit package, is
+    /// seen by every unit; a unit-scoped source model is seen only by its
+    /// declaring unit, so a caller that names no unit sees none of it.
+    pub(crate) fn visible_in(
+        &self,
+        unit: Option<&qsl_foundation::source::provenance::RawSourceRef>,
+    ) -> bool {
+        match (&self.source_unit, unit) {
+            (Some(declaring), Some(unit)) => declaring == unit,
+            (Some(_), None) => false,
+            (None, _) => true,
+        }
     }
 
     /// This package with the authored population bounds the unit's `bound`

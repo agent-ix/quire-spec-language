@@ -36,6 +36,7 @@ mod extension_declaration;
 mod guarantee_declaration;
 mod hybrid_declaration;
 mod hyper_clause;
+mod object_declaration;
 mod probabilistic;
 mod protocol_clause;
 mod protocol_control;
@@ -97,19 +98,20 @@ pub use syntax::{
     EquationForm, EventForm, ExactNumberForm, ExactNumberKind, ExactValueForm, ExactValueKind,
     ExpectedQuantity, ExprId, ExprNode, ExprRef, Expression, ExpressionBuilder, ExpressionForm,
     ExtensionClauseForm, ExtensionForm, FairnessConstraintForm, FairnessGranularity, FairnessKind,
-    FieldInitializer, FractionForm, FunctionDeclaration, HorizonForm, HybridForm,
+    FieldInitializer, FractionForm, FrameEntryForm, FunctionDeclaration, HorizonForm, HybridForm,
     HybridInitialForm, HybridModeForm, InitialEntryForm, IntervalForm, IntervalUpper, MeasureForm,
-    MeasureWindowForm, NameForm, OperationBodyForm, OperatorInterval, ParameterForm,
+    MeasureWindowForm, NameForm, ObjectFieldForm, ObjectForm, ObjectMemberForm,
+    ObjectOperationForm, ObjectPopulationForm, OperationBodyForm, OperatorInterval, ParameterForm,
     PastWindowForm, PolicyForm, PopulationBoundForm, PopulationForm, PriorityForm,
     ProbabilisticBody, ProbabilisticForm, ProtocolBodyForm, ProtocolConstructForm,
     ProtocolConstructKind, ProtocolDeclarationForm, ProtocolNodeDeclaration, ProtocolNodeKind,
     QuantifiedClockBoundForm, QuantityForm, RandomForm, RatioNumberForm, RatioNumberKind,
-    RatioTermForm, RecordFieldForm, RecordForm, RelatedForm, RelationshipForm, ReleaseForm,
-    ReplicatedRoleForm, RequirementForm, ResponseForm, RewardForm, RoleForm, RoleLifetime,
-    SchedulableForm, SchedulerForm, ScopeEntry, ScopeId, ScopeName, ScopedAnchorForm, ShapeChanged,
-    SignedQuantityForm, SignificantContent, Spellings, StateClauseForm, StateClauseKind,
-    StateGraphClaimForm, StateGraphClaimKind, StateGraphPredicateForm, StepLabelForm,
-    StringLiteral, TaskForm, TasksetForm, TemporalClauseForm, TemporalFormulaForm,
+    RatioTermForm, RecordFieldForm, RecordForm, RedefinesForm, RelatedForm, RelationshipForm,
+    ReleaseForm, ReplicatedRoleForm, RequirementForm, ResponseForm, RewardForm, RoleForm,
+    RoleLifetime, SchedulableForm, SchedulerForm, ScopeEntry, ScopeId, ScopeName, ScopedAnchorForm,
+    ShapeChanged, SignedQuantityForm, SignificantContent, Spellings, StateClauseForm,
+    StateClauseKind, StateGraphClaimForm, StateGraphClaimKind, StateGraphPredicateForm,
+    StepLabelForm, StringLiteral, TaskForm, TasksetForm, TemporalClauseForm, TemporalFormulaForm,
     TemporalNodeForm, TemporalNodeId, TemporalOperator, TemporalOperatorForm, TemporalOperatorUse,
     TermOperator, TerminalDeclarationForm, TerminalDeclarationKind, TimeInvariantBoundForm,
     TimeInvariantForm, TimeSourceForm, TimeSourceSyntax, TimedIntervalForm, TimedUpper,

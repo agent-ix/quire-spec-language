@@ -1058,6 +1058,39 @@ fn minimum_protocol_work_budget(protocols: &str) -> u64 {
     low
 }
 
+/// FR-569-AC-11: a unit that declares a source object type is refused at
+/// emission with `SourceObjectEmission` at the first `object`, even when a
+/// refused protocol would make every entry point ask for per-protocol results.
+#[trace("FR-569-AC-11", "TC-1408")]
+#[test]
+fn a_source_object_refusal_wins_over_a_refused_protocol() {
+    let good = parallel_flow(
+        "parallel Par { branch a sequence A { } branch b sequence B { } } join all [a, b];",
+    );
+    let broken = good
+        .replace("protocol Flow", "protocol Broken")
+        .replace("join all [a, b]", "join all [a, ghost]");
+    let text = format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"quire.model.complete/v1\";\n{PROFILES}\
+         model M = \"acme/orders\";\nobject Widget {{ }}\n{broken}"
+    );
+    let document = model();
+    let packages = qsl_semantics::model::intake::package_input([document.as_slice()])
+        .expect("the test model admits");
+    let graph = assemble_with_models(text.as_bytes(), &packages)
+        .expect("the unit assembles")
+        .check_with_protocol_results(CheckingLimits::default())
+        .expect("unit-level checks succeed");
+    assert_eq!(graph.protocol_refusals().len(), 1);
+    let at = text.find("object Widget").unwrap();
+    let package = CheckedPackage::link(graph);
+    let Err(EmitRefusal::SourceObjectEmission { span }) = emit_checked(&package) else {
+        panic!("the source object is refused first");
+    };
+    assert_eq!((span.start, span.end), (at, at + "object Widget { }".len()));
+}
+
 /// FR-383-AC-18, AC-28 and AC-29 (TC-1297): a refused protocol leaves
 /// independent protocol results readable and makes the aggregate inadmissible.
 #[trace("FR-383-AC-18", "FR-383-AC-28", "FR-383-AC-29", "TC-1297")]

@@ -54,8 +54,9 @@ fn a_bound_builds_one_form_with_every_part_spelled_and_spanned() {
     let slice = |span: Span| &text[span.start..span.end];
     assert_eq!(form.label.name, "HistoryBound");
     assert_eq!(slice(form.label.span), "HistoryBound");
-    assert_eq!(form.model.name, "Config");
-    assert_eq!(slice(form.model.span), "Config");
+    let model = form.model.as_ref().expect("a model-qualified population");
+    assert_eq!(model.name, "Config");
+    assert_eq!(slice(model.span), "Config");
     assert_eq!(form.population.name, "config_history");
     assert_eq!(slice(form.population.span), "config_history");
     assert_eq!(form.maximum.name, "8");

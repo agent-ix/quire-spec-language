@@ -34,8 +34,8 @@ use qsl_package::{EmitRefusal, ImportViewRefusal, LinkRefusal, OmittedNode};
 use qsl_semantics::check::AssemblyLimits;
 use qsl_semantics::check::{
     AccessClass, AssemblyCause, AssemblyRefusal, CheckCause, CheckRefusal, ExtensionCause,
-    ProbabilisticCause, ProfileRefusal, ProtocolAnchorCause, ShadowedDeclaration, TemporalCause,
-    TimeUnitCause, TopologyRetained,
+    ProbabilisticCause, ProfileRefusal, ProtocolAnchorCause, ShadowedDeclaration,
+    SourceObjectFault, TemporalCause, TimeUnitCause, TopologyRetained,
 };
 use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
@@ -355,7 +355,7 @@ pub enum CompileRefusal {
     Link(LinkRefusal),
     /// E4: the v2 emitter wrote no bytes.
     #[error("{0}")]
-    Emit(EmitRefusal),
+    Emit(EmitRefusal, Option<SourceRegion>),
     /// A stage limit the front end reached (FR-277): the limit kind, the
     /// configured value, the counter reached and the setting that raises it
     /// (FR-255), rendered as FR-255 Behavior 3 states.
@@ -398,7 +398,7 @@ impl CompileRefusal {
             Self::Import { refusal, .. } => refusal.code(),
             Self::Dependency { refusal, .. } => refusal.code(),
             Self::Link(refusal) => refusal.code(),
-            Self::Emit(refusal) => refusal.code(),
+            Self::Emit(refusal, _) => refusal.code(),
             Self::Limit(_) => Code::StageLimitExceeded,
             // An emission path IR's pinned v2 vocabulary does not hold yet.
             Self::Omitted(_) => Code::UnsupportedProjection,
@@ -422,12 +422,12 @@ impl CompileRefusal {
             Self::Import { refusal, .. } => refusal.cause(),
             Self::Dependency { refusal, .. } => refusal.cause(),
             Self::Link(refusal) => refusal.cause(),
+            Self::Emit(refusal, _) => refusal.cause(),
             Self::Limit(limit) => Some(limit.kind().catalog_cause()),
             Self::Intake { refusal, .. } => refusal.cause.cause(),
             Self::Forms { .. }
             | Self::OperationClause { .. }
             | Self::TypeInvariant { .. }
-            | Self::Emit(_)
             | Self::Omitted(_) => None,
         }
     }
@@ -493,7 +493,7 @@ impl CompileRefusal {
                 SpineStage::Assembly
             }
             Self::Check { .. } => SpineStage::Check,
-            Self::Link(_) | Self::Emit(_) | Self::Omitted(_) => SpineStage::Emit,
+            Self::Link(_) | Self::Emit(..) | Self::Omitted(_) => SpineStage::Emit,
             Self::Limit(limit) => match limit.setting() {
                 // Formatting, rendering and backend prepare are never compile stages.
                 Setting::FormatOutputBytes
@@ -598,6 +598,7 @@ impl CompileRefusal {
             | Self::Import { region, .. }
             | Self::Check { region, .. } => region.as_ref(),
             Self::Dependency { refusal, .. } => refusal.region(),
+            Self::Emit(_, region) => region.as_ref(),
             Self::Limit(limit) => match limit.locus() {
                 Some(Locus::Region(region)) => Some(region),
                 Some(_) | None => None,
@@ -607,7 +608,6 @@ impl CompileRefusal {
             | Self::DependencyInput(_)
             | Self::Extension(_)
             | Self::Link(_)
-            | Self::Emit(_)
             | Self::Omitted(_) => None,
         }
     }
@@ -956,6 +956,31 @@ fn assembly_message(refusal: &AssemblyRefusal) -> String {
             "the domain package of `model {alias}` declares `{node}`, which no type environment \
              entry represents yet"
         ),
+        AssemblyCause::SourceObject(fault) => match fault {
+            SourceObjectFault::NotAnObjectType { name } => {
+                format!("`{name}` is not a source object type")
+            }
+            SourceObjectFault::NotAReference { name } => {
+                format!("`{name}` is not a reference the operation can delete")
+            }
+            SourceObjectFault::MissingMember { name } => {
+                format!("no field or operation `{name}` is declared or inherited here")
+            }
+            SourceObjectFault::SupertypeCycle { edges } => format!(
+                "the object type `{}` is its own supertype",
+                edges.first().map_or("", |(subtype, _)| subtype.as_str())
+            ),
+            SourceObjectFault::ModelAliasAsType { alias } => format!(
+                "`{alias}` is a model alias; a context names `{alias}::Type` or a source type"
+            ),
+            SourceObjectFault::Normalization(refusal) => refusal.detail.clone(),
+            SourceObjectFault::Limit(_) => {
+                "normalizing the source object types reached a limit".to_owned()
+            }
+            SourceObjectFault::UnsupportedType => {
+                "a source object member's type is not supported yet".to_owned()
+            }
+        },
         AssemblyCause::ModelType { alias, node } => {
             format!("the domain package of `model {alias}` has no effective type for `{node}`")
         }

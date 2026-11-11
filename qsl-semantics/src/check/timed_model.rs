@@ -4845,8 +4845,12 @@ pub(crate) fn check(
         };
         // FR-230-AC-58: a time invariant or `urgent when` predicate names
         // the populations of its own timed model's alias.
-        let named = NamedScope::of(checking.declarations.models, checking.declarations.scope)
-            .of_alias(&draft.model);
+        let named = NamedScope::of(
+            checking.declarations.models,
+            checking.declarations.scope,
+            checking.declarations.unit,
+        )
+        .of_alias(&draft.model);
         let mut sites = Vec::new();
         let mut guards = Vec::with_capacity(draft.guards.len());
         for (index, parts) in draft.guards {

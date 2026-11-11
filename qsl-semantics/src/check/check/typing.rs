@@ -139,6 +139,18 @@ fn ambiguous_alias(name: &str, location: &Location) -> CheckRefusal {
     )
 }
 
+/// `ambiguous_declaration`/`ambiguous-name` for a source population named
+/// like a binder or parameter in scope, at the use.
+fn ambiguous_source_population(name: &str, location: &Location) -> CheckRefusal {
+    refuse(
+        location,
+        CheckCause::AmbiguousName {
+            name: name.to_owned(),
+            loci: vec![location.clone(), location.child(0)],
+        },
+    )
+}
+
 /// `missing_declaration`/`missing-name` for a two-segment `M::P` name that
 /// names no population here, located at its second segment (FR-391
 /// "Resolution").
@@ -1299,6 +1311,7 @@ impl<'a> Typer<'a> {
             // anywhere else outside a refinement `M::P` names nothing.
             ExprNode::Name(name)
                 if self.populations.is_none()
+                    && !self.population_hidden(&name.name)
                     && self
                         .scope
                         .known_populations
@@ -1747,7 +1760,7 @@ impl<'a> Typer<'a> {
                 // FR-391: a quantifier ranges over a named population.
                 let domain = match query {
                     BinderQuery::Forall | BinderQuery::Exists => {
-                        self.named_domain(expression.at(*source), &source_location)?
+                        self.named_domain(expression.at(*source), binder, &source_location)?
                     }
                     BinderQuery::Map | BinderQuery::Filter | BinderQuery::FlatMap => None,
                 };
@@ -2439,7 +2452,7 @@ impl<'a> Typer<'a> {
             return Err(refuse(&location, CheckCause::IeeeProfileNotAdmitted));
         }
         let source_location = location.child(0);
-        let domain = self.named_domain(source, &source_location)?;
+        let domain = self.named_domain(source, binder, &source_location)?;
         frames.push(Frame::Tally(Box::new(TallyFrame {
             tally,
             value_type,
@@ -3378,12 +3391,30 @@ impl<'a> Typer<'a> {
         ))
     }
 
+    /// Whether `name` is an unqualified population this clause's unit does
+    /// not see: a source population of another unit.
+    fn population_hidden(&self, name: &str) -> bool {
+        crate::check::source_model::is_unqualified(name)
+            && self
+                .named
+                .as_ref()
+                .is_some_and(|named| named.named(name).is_none())
+    }
+
+    /// Whether `name`, an unqualified source population, is also a local
+    /// binder in scope or the `binder` the form itself introduces.
+    fn shadows_source_population(&self, name: &str, binder: Option<&str>) -> bool {
+        crate::check::source_model::is_unqualified(name)
+            && (binder == Some(name) || self.local(name).is_some())
+    }
+
     /// The population `expression` names in a population position (FR-391),
     /// when it is a `M::P` name of one; a two-segment name under an alias
     /// that is also an enum refuses as ambiguous.
     fn named_population(
         &self,
         expression: ExprRef<'_>,
+        binder: Option<&str>,
         location: &Location,
     ) -> Result<Option<super::NamedPopulation>, CheckRefusal> {
         let (Some(named), ExprNode::Name(name)) = (&self.named, expression.node()) else {
@@ -3393,6 +3424,9 @@ impl<'a> Typer<'a> {
             return Err(ambiguous_alias(&name.name, location));
         }
         match named.named(&name.name) {
+            Some(_) if self.shadows_source_population(&name.name, binder) => {
+                Err(ambiguous_source_population(&name.name, location))
+            }
             Some(population) => Ok(Some(population.clone())),
             None if named.is_under_alias(&name.name) => Err(missing_segment(&name.name, location)),
             None => Ok(None),
@@ -3407,7 +3441,7 @@ impl<'a> Typer<'a> {
         expression: ExprRef<'_>,
         location: &Location,
     ) -> Result<Option<Node>, CheckRefusal> {
-        let Some(population) = self.named_population(expression, location)? else {
+        let Some(population) = self.named_population(expression, None, location)? else {
             return Ok(None);
         };
         self.enter(location)?;
@@ -3419,9 +3453,10 @@ impl<'a> Typer<'a> {
     fn named_domain(
         &mut self,
         expression: ExprRef<'_>,
+        binder: &str,
         location: &Location,
     ) -> Result<Option<Node>, CheckRefusal> {
-        let Some(population) = self.named_population(expression, location)? else {
+        let Some(population) = self.named_population(expression, Some(binder), location)? else {
             return Ok(None);
         };
         self.population_domain(&population, location).map(Some)
@@ -3461,6 +3496,9 @@ impl<'a> Typer<'a> {
                     return Err(ambiguous_alias(population, &location));
                 }
                 match named.named(population).cloned() {
+                    Some(_) if self.shadows_source_population(population, Some(binder)) => {
+                        return Err(ambiguous_source_population(population, &location));
+                    }
                     Some(named) => self.population_domain(&named, &location.child(0))?,
                     None if named.is_under_alias(population) => {
                         return Err(missing_segment_at(

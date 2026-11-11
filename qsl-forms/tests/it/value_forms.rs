@@ -48,6 +48,7 @@ fn function(form: &DeclarationForm) -> &FunctionDeclaration {
         DeclarationForm::Function(function) => function,
         DeclarationForm::Alias(_)
         | DeclarationForm::Record(_)
+        | DeclarationForm::Object(_)
         | DeclarationForm::Tuple(_)
         | DeclarationForm::Enum(_)
         | DeclarationForm::Union(_)
@@ -286,6 +287,7 @@ fn a_unit_builds_one_form_per_declaration_in_source_order() {
             DeclarationForm::Probabilistic(_) => "probabilistic",
             DeclarationForm::StateGraphClaim(_) => "state-graph",
             DeclarationForm::Hybrid(_) => "hybrid",
+            DeclarationForm::Object(_) => "object",
             DeclarationForm::Extension(_) => "extension",
         })
         .collect();

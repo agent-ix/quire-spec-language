@@ -57,11 +57,11 @@ abstract object Shape { population shapes; }
 
 invariant I using P on Order at current { self.total >= 0 }
 pre Q using P on Order::bump { self.total < 9 }
-post R using P on Order::bump { self.total = pre(self.total) + 1 }
+post R using P on Order::bump { self.total > pre(self.total) }
 body B using P on Sub::size() { 7 }
 body C using P on Order::size() { 1 }
 pre Qs using P on Order::size { self.total >= 0 }
-function sized using P (r: Reference<Order>): Integer pure { r.size() }
+invariant Sized using P on Order at current { self.size() >= 0 }
 ```
 
 `size` is a query (a result and an empty frame), so FR-094 builds its clause
@@ -71,8 +71,8 @@ Fixture **D**, its model twin, is a domain package `test/orders` selected as
 `M` that declares the same object types, fields, identity, supertypes,
 populations and operations (frames included), with S's state clauses and
 bodies written `on M::Order`, `on M::Order::bump`, `on M::Order::size`,
-`on M::Sub::size()` and `on M::Order::size()`, and S's `sized` written
-`function sized using P (r: Reference<M::Order>): Integer pure { r.size() }`.
+`on M::Sub::size()` and `on M::Order::size()`, and S's `Sized` written
+`invariant Sized using P on M::Order at current { self.size() >= 0 }`.
 
 Variants, each one change to S (or D):
 
@@ -81,11 +81,13 @@ Variants, each one change to S (or D):
 - **S-R'** (and **D-R'**): `Sub` adds `operation bump(): Boolean redefines
   Order::bump modifies self.total, self.note;`.
 - **S-P**: S with V4's invariant `invariant V4 using P on Order at current {
-  forall o in orders: deref(o).total >= 0 }`.
+  forall(o in orders : deref(o).total >= 0) }`.
 - **S-M**: S with `model M = "test/orders";` selecting D's package (whose
   `Order` and population `orders` are then `M::Order` and `M::orders`), and a
   protocol `protocol Sell using Pp over (view: M::Order) on origin { role w on
-  M; role Seller on Order; ... }` with `Pp` the protocol profile.
+  M; role Seller on Order; ... }` with `Pp` the protocol profile, and the same
+  protocol with `over (view: Order)` (FR-218-AC-39), whose model context is
+  the source `Order`.
 
 1. Parse S; parse each malformed variant of AC-1. (FR-569-AC-1)
 2. Check S with the clauses of AC-2, alone and as S-M. (FR-569-AC-2,
@@ -98,7 +100,7 @@ Variants, each one change to S (or D):
 5. **waits on QC-30.** Emit S, S-R and D. Read the object, anchor and frame
    nodes; the clause functions of `size` (`Qs`, `C`, `B`, and in S-R `Qs2` and
    `Sub.size`'s effective precondition); the six `operation_effects` rows;
-   and the dispatch-table row of the `r.size()` application in `sized`. Emit
+   and the dispatch-table row of the `self.size()` application in `Sized`. Emit
    the AC-7 variants of S, and read every package with IR's strict reader.
    (FR-569-AC-6, FR-569-AC-7, FR-105-AC-18, FR-383-AC-67)
 6. **waits on QC-30.** Read the `source_objects` and `source_operations` rows
@@ -131,7 +133,7 @@ Tag each test with the criteria it asserts and `TC-1408`, for example
   states, and no checked package.
 - Step 4: equal views, dispatch tables and types; `Sub.size`'s effective
   precondition is `Qs2 or Qs` in S-R and in D-R; S-R' and D-R' each refuse
-  `ill_typed`/`effect-escape` once, at `self.note`.
+  `ill_typed`/`effect-escape` once, on the member `Sub.bump` and the field `note`.
 - Step 5: the node shapes of AC-6 and FR-105-AC-18, including `Order`'s and
   `Sub`'s field bindings; the clause functions
   `["Order", "size", "precondition", "Qs"]`, `["Order", "size", "body"]` and
@@ -141,7 +143,7 @@ Tag each test with the criteria it asserts and `TC-1408`, for example
   `source_declaration_operation_frame`, `member` `<type>::<operation>` and
   `document` the unit's source identity, in `(document, declaring,
   operation)` order, `bump`'s holding the receiver `modifies` of `total`; the
-  `r.size()` dispatch row with context `Order` and candidates `Order.size`
+  `self.size()` dispatch row with context `Order` and candidates `Order.size`
   and `Sub.size` carrying `C`'s and `B`'s body ids; S's `Order` id is
   unchanged by the field addition, the operation rename and the move, and
   changed by the rename of `Order`; S's and D's `Order` ids differ; IR's

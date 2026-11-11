@@ -258,12 +258,57 @@ pub enum TopologyRetained {
     },
 }
 
+/// Why a source `object` declaration is refused beyond a missing or ambiguous
+/// name (FR-569 "Declaration checks").
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum SourceObjectFault {
+    /// An `extends` entry names a model type, or a source declaration that is
+    /// no object type.
+    NotAnObjectType {
+        /// The entry as written.
+        name: String,
+    },
+    /// `deletes p` names a parameter that is no `Reference`.
+    NotAReference {
+        /// The parameter as written.
+        name: String,
+    },
+    /// A field, parameter or result type the source object model does not
+    /// represent.
+    UnsupportedType,
+    /// A field or operation that the object type neither declares nor
+    /// inherits: an `identity` name, a `modifies` field or a `redefines`
+    /// member.
+    MissingMember {
+        /// The member as written.
+        name: String,
+    },
+    /// `extends` entries that lead back to the type: each edge as
+    /// `(subtype, supertype)`.
+    SupertypeCycle {
+        /// The edges of the cycle, sorted.
+        edges: Vec<(String, String)>,
+    },
+    /// A context written `Alias::name` whose first segment is a model alias:
+    /// a context names `Alias::Type` or a source `Type`.
+    ModelAliasAsType {
+        /// The model alias as written.
+        alias: String,
+    },
+    /// Normalizing the source objects as a domain package refused.
+    Normalization(Box<crate::model::normalize::ModelRefusal>),
+    /// Normalizing the source objects as a domain package reached a limit.
+    Limit(crate::model::accounting::NormalizationIncomplete),
+}
+
 /// Why the assembler refused one part of a unit (FR-091 "The assembler
 /// refuses in these cases").
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AssemblyCause {
     /// The aggregate assembler was given no admitted source units.
     EmptyUnitList,
+    /// A source object declaration the assembler refuses (FR-569).
+    SourceObject(SourceObjectFault),
     /// A qualified type name names no declaration of the unit and nothing
     /// in an admitted domain package.
     UnresolvedTypeName {
@@ -598,6 +643,16 @@ impl AssemblyCause {
     pub fn code(&self) -> Code {
         match self {
             Self::EmptyUnitList => Code::InvalidPackage,
+            Self::SourceObject(fault) => match fault {
+                SourceObjectFault::UnsupportedType => Code::UnknownRequiredFeature,
+                SourceObjectFault::MissingMember { .. }
+                | SourceObjectFault::ModelAliasAsType { .. } => Code::MissingDeclaration,
+                SourceObjectFault::SupertypeCycle { .. } => Code::InvalidPackage,
+                SourceObjectFault::Normalization(refusal) => refusal.code,
+                SourceObjectFault::Limit(_) => Code::ResourceExhausted,
+                SourceObjectFault::NotAnObjectType { .. }
+                | SourceObjectFault::NotAReference { .. } => Code::InvalidModelBinding,
+            },
             Self::UnresolvedTypeName { .. }
             | Self::UnresolvedUnitName { .. }
             | Self::UndeclaredAlias { .. }
@@ -694,6 +749,16 @@ impl AssemblyCause {
     pub fn catalog_code(&self) -> CatalogCode {
         let cause = match self {
             Self::EmptyUnitList => "established-invariant-broken",
+            Self::SourceObject(fault) => match fault {
+                SourceObjectFault::UnsupportedType => "unsupported-feature",
+                SourceObjectFault::MissingMember { .. }
+                | SourceObjectFault::ModelAliasAsType { .. } => "missing-name",
+                SourceObjectFault::SupertypeCycle { .. } => "definition-cycle",
+                SourceObjectFault::Normalization(refusal) => refusal.cause.as_str(),
+                SourceObjectFault::Limit(_) => "insufficient-next-charge",
+                SourceObjectFault::NotAnObjectType { .. }
+                | SourceObjectFault::NotAReference { .. } => "malformed-declaration",
+            },
             Self::UnresolvedTypeName { .. }
             | Self::UnresolvedUnitName { .. }
             | Self::UnresolvedOperation { .. }
@@ -918,6 +983,8 @@ struct Unit {
     functions: Vec<FunctionDeclaration>,
     /// Each declared type name's declarations, with the span of each name.
     declared: BTreeMap<String, Vec<(Declared, Span)>>,
+    /// Each source `object` declaration, in source order (FR-569).
+    objects: Vec<qsl_forms::ObjectForm>,
     /// State clause declarations in declaration order (FR-102), resolved
     /// by the caller into `StateClauseDeclaration`s (FR-104).
     state_clauses: Vec<StateClauseForm>,
@@ -980,6 +1047,7 @@ impl Unit {
             enums: Vec::new(),
             functions: Vec::new(),
             declared: BTreeMap::new(),
+            objects: Vec::new(),
             state_clauses: Vec::new(),
             operation_bodies: Vec::new(),
             population_bounds: Vec::new(),
@@ -1029,6 +1097,7 @@ impl Unit {
             };
             match form {
                 DeclarationForm::Function(function) => unit.functions.push(*function),
+                DeclarationForm::Object(object) => unit.objects.push(*object),
                 DeclarationForm::Abstraction(abstraction) => unit.abstractions.push(*abstraction),
                 DeclarationForm::Guarantee(guarantee) => unit.guarantees.push(*guarantee),
                 DeclarationForm::Composition(composition) => {
@@ -1294,7 +1363,7 @@ pub(crate) fn variant_type_declarations(
         }
         let Some(type_declaration) = VariantTypeDeclaration::new(
             identity.clone(),
-            format!("{alias}::{}", variant_type.name),
+            super::source_model::qualified(alias, &variant_type.name),
             variant_type.key.clone(),
             node,
             cases,
@@ -1374,6 +1443,155 @@ impl ModelTypes {
                 .chain(scalars),
         )
     }
+}
+
+/// The names the unit's `object` declarations share with its other
+/// declarations (FR-569 "Name resolution and collisions"): an object type or
+/// population whose name equals another declaration's, a model alias, a
+/// profile alias or an import alias is refused at every declaration of the
+/// name.
+fn source_name_collisions(
+    unit: &Unit,
+    selections: &qsl_foundation::selection::SourceSelections,
+    errors: &mut Vec<AssemblyError>,
+) {
+    let mut owners: BTreeMap<&str, Vec<Span>> = BTreeMap::new();
+    let mut source: BTreeSet<&str> = BTreeSet::new();
+    for object in &unit.objects {
+        owners
+            .entry(object.name.name.as_str())
+            .or_default()
+            .push(object.name.span);
+        source.insert(object.name.name.as_str());
+        for member in &object.members {
+            if let qsl_forms::ObjectMemberForm::Population(population) = member {
+                owners
+                    .entry(population.name.name.as_str())
+                    .or_default()
+                    .push(population.name.span);
+                source.insert(population.name.name.as_str());
+            }
+        }
+    }
+    for (name, declarations) in &unit.declared {
+        if let Some(spans) = owners.get_mut(name.as_str()) {
+            spans.extend(declarations.iter().map(|(_, span)| *span));
+        }
+    }
+    for function in &unit.functions {
+        if let Some(spans) = owners.get_mut(function.name.as_str()) {
+            // A function not read from a source unit has no span: the empty
+            // span stands for it.
+            spans.push(
+                function
+                    .spans()
+                    .map_or(Span { start: 0, end: 0 }, |s| s.declaration),
+            );
+        }
+    }
+    for clause in &unit.state_clauses {
+        if let Some(spans) = owners.get_mut(clause.name.name.as_str()) {
+            spans.push(clause.name.span);
+        }
+    }
+    let aliases = selections
+        .models
+        .iter()
+        .map(|selection| (selection.alias.as_str(), selection.span))
+        .chain(
+            selections
+                .profiles
+                .iter()
+                .map(|selection| (selection.alias.as_str(), selection.span)),
+        )
+        .chain(
+            selections
+                .imports
+                .iter()
+                .filter_map(|selection| Some((selection.alias.as_deref()?, selection.span))),
+        );
+    for (alias, span) in aliases {
+        if let Some(spans) = owners.get_mut(alias) {
+            spans.push(span);
+        }
+    }
+    for (name, mut spans) in owners {
+        if spans.len() < 2 || !source.contains(name) {
+            continue;
+        }
+        spans.sort_by_key(|span| span.start);
+        for span in &spans {
+            errors.push(AssemblyError {
+                cause: AssemblyCause::AmbiguousTypeName {
+                    name: name.to_owned(),
+                    candidates: spans.clone(),
+                    native: false,
+                },
+                span: *span,
+            });
+        }
+    }
+}
+
+/// One unit's `object` declarations as the model selected under the empty
+/// alias (FR-569 "The source model"), with the selection that names it.
+/// `identity` is the model's package identity.
+fn source_model(
+    objects: &[qsl_forms::ObjectForm],
+    declared_types: &BTreeSet<String>,
+    identity: String,
+    meter: &mut crate::model::accounting::Meter,
+    errors: &mut Vec<AssemblyError>,
+) -> Option<(qsl_foundation::selection::ModelSelection, SelectedModel)> {
+    let first = objects.first()?;
+    let package = match super::source_model::build(
+        objects,
+        &super::source_model::Context {
+            identity: &identity,
+            declared_types,
+        },
+    ) {
+        Ok(package) => package,
+        Err(found) => {
+            errors.extend(found);
+            return None;
+        }
+    };
+    let view = match crate::model::normalize::normalize_on(&package, meter) {
+        crate::model::normalize::NormalizeOutcome::Completed(view) => view,
+        crate::model::normalize::NormalizeOutcome::Refused(refusals) => {
+            errors.push(AssemblyError {
+                cause: AssemblyCause::SourceObject(SourceObjectFault::Normalization(Box::new(
+                    refusals.into_first(),
+                ))),
+                span: first.name.span,
+            });
+            return None;
+        }
+        crate::model::normalize::NormalizeOutcome::Incomplete(incomplete) => {
+            errors.push(AssemblyError {
+                cause: AssemblyCause::SourceObject(SourceObjectFault::Limit(incomplete)),
+                span: first.name.span,
+            });
+            return None;
+        }
+    };
+    let selection = qsl_foundation::selection::ModelSelection {
+        alias: super::source_model::ALIAS.to_owned(),
+        identity,
+        span: first.span,
+        identity_span: first.name.span,
+    };
+    Some((
+        selection.clone(),
+        SelectedModel {
+            alias: selection.alias,
+            span: selection.span,
+            view,
+            operation_clauses: Vec::new(),
+            type_invariants: Vec::new(),
+        },
+    ))
 }
 
 /// The object types of the domain package admitted for the `model`
@@ -1707,7 +1925,7 @@ fn model_object_types(
         declarations.push(
             ObjectTypeDeclaration::new(
                 identity.clone(),
-                format!("{alias}::{artifact}"),
+                super::source_model::qualified(alias, artifact),
                 fields.remove(key).unwrap_or_default(),
             )
             .with_supertypes(effective_supertypes),
@@ -1832,7 +2050,7 @@ fn model_object_types(
         composites.push(
             CompositeDeclaration::new(
                 handle.clone(),
-                format!("{alias}::{artifact}"),
+                super::source_model::qualified(alias, artifact),
                 CompositeShape::Record(declared_fields),
             )
             .with_supertypes(composite_supertypes),
@@ -1907,7 +2125,7 @@ fn model_object_types(
         }
         composites.push(CompositeDeclaration::new(
             handle,
-            format!("{alias}::{artifact}"),
+            super::source_model::qualified(alias, artifact),
             CompositeShape::Tuple(elements),
         ));
     }
@@ -1993,7 +2211,7 @@ fn model_object_types(
         }
         composites.push(CompositeDeclaration::new(
             handle,
-            format!("{alias}::{}", variant_type.name),
+            super::source_model::qualified(alias, &variant_type.name),
             CompositeShape::Union(members),
         ));
     }
@@ -2035,7 +2253,7 @@ fn model_object_types(
                 units,
             )
             .ok()?;
-            Some((format!("{alias}::{artifact}"), value_type))
+            Some((super::source_model::qualified(alias, artifact), value_type))
         })
         .collect();
     if errors.is_empty() {
@@ -3760,13 +3978,13 @@ impl PackageDeclarations {
             cancel,
             execution_points,
         } = run;
-        let model_selection_units = unit.model_selection_units().to_vec();
+        let mut model_selection_units = unit.model_selection_units().to_vec();
         let repeated_model_selection_units = unit.repeated_model_selection_units().to_vec();
         let import_selection_units = unit.import_selection_units().to_vec();
-        let (selections, forms) = unit.into_parts();
+        let (mut selections, forms) = unit.into_parts();
         // The models and the one meter their admission counted on; checking
         // continues that meter into the conformance stage.
-        let (models, model_meter, exact_declarations, exact_fields, tuple_declarations) =
+        let (mut models, mut model_meter, exact_declarations, exact_fields, tuple_declarations) =
             models.into().into_parts();
         // FR-230 "Clock-typed positions": a package record type that holds a
         // clock is clock-bearing where the unit's own source writes it.
@@ -3808,6 +4026,45 @@ impl PackageDeclarations {
                 .map(SourceOwner::from)
                 .unwrap_or_else(|| owner.clone())
         };
+        // FR-569: the unit's `object` declarations are one more selected
+        // model, under the alias no `model` declaration can take.
+        if !unit.objects.is_empty() {
+            source_name_collisions(&unit, &selections, &mut errors);
+            if errors.is_empty() {
+                // An object type is visible only in the unit that declares
+                // it: each declaring unit gets its own source model.
+                let declared_types: BTreeSet<String> = unit.declared.keys().cloned().collect();
+                let mut by_unit: BTreeMap<usize, Vec<qsl_forms::ObjectForm>> = BTreeMap::new();
+                for object in &unit.objects {
+                    let declaring = source_owners
+                        .get(&object.name.name)
+                        .and_then(|owner| sources.iter().position(|source| source == owner))
+                        .unwrap_or(0);
+                    by_unit.entry(declaring).or_default().push(object.clone());
+                }
+                for (position, (declaring, objects)) in by_unit.iter().enumerate() {
+                    let identity = if position == 0 {
+                        format!("source/{package_name}")
+                    } else {
+                        format!("source/{package_name}/{position}")
+                    };
+                    if let Some((selection, model)) = source_model(
+                        objects,
+                        &declared_types,
+                        identity,
+                        &mut model_meter,
+                        &mut errors,
+                    ) {
+                        selections.models.push(selection);
+                        model_selection_units.push(*declaring);
+                        models.push(model);
+                    }
+                }
+            }
+            if !errors.is_empty() {
+                return refuse(errors);
+            }
+        }
         // The selected packages' dimensions, which a source dimension's
         // terms may name.
         let imported = units::Imported::new(
@@ -3898,7 +4155,12 @@ impl PackageDeclarations {
                 });
                 continue;
             };
-            admitted.push(AdmittedModel::from_view(&model.view).with_alias(&selection.alias));
+            let mut declared = AdmittedModel::from_view(&model.view).with_alias(&selection.alias);
+            // Units scope a source model only when the package has several.
+            if super::source_model::is_source_alias(&selection.alias) && !source_owners.is_empty() {
+                declared = declared.declared_in(unit_source);
+            }
+            admitted.push(declared);
             // Model declarations select package-owned records by identity.
             // Several aliases may name that same package, but its type and
             // population declarations contribute to the environment once,
@@ -5183,6 +5445,13 @@ impl PackageDeclarations {
             .collect::<BTreeSet<_>>()
             .into_iter()
             .collect();
+        package.first_source_object = unit.objects.first().map(|object| {
+            let declaring = package
+                .source_owners
+                .get(&object.name.name)
+                .unwrap_or(&package.source);
+            (declaring.clone(), object.span)
+        });
         package.protocols = unit.protocols;
         package.temporal_clauses = unit.temporal_clauses;
         package.timed_forms = unit.timed;
@@ -5308,12 +5577,16 @@ fn state_clauses(
         }
         let context = spellings.object_type(source_owners.get(&form.name.name), &form.context.name);
         let Some(context) = context else {
-            errors.push(error(
+            let cause = if spellings.is_model_alias(&form.context.name) {
+                AssemblyCause::SourceObject(SourceObjectFault::ModelAliasAsType {
+                    alias: form.context.name.clone(),
+                })
+            } else {
                 AssemblyCause::UnresolvedTypeName {
                     name: form.context.name.clone(),
-                },
-                form.context.span,
-            ));
+                }
+            };
+            errors.push(error(cause, form.context.span));
             continue;
         };
         let mut operation_key = None;
@@ -5326,7 +5599,7 @@ fn state_clauses(
                 } => {
                     // FR-302: the key of the declaring operation joins the
                     // clause to the body and the model record.
-                    let alias = form.context.name.split("::").next().unwrap_or_default();
+                    let alias = super::source_model::alias_of(&form.context.name);
                     operation_key =
                         operation_key_of(selected, alias, declaring.clone(), declaration.name());
                     if operation_key.is_none() {
@@ -5856,12 +6129,16 @@ fn population_bounds(
         };
         // The model the bound's own unit binds the alias to (FR-480
         // "Selections and imports").
-        let package = spellings.selection(source_owners.get(&form.label.name), &form.model.name);
+        // A one-segment name is a source population.
+        let alias = form
+            .model
+            .as_ref()
+            .map_or(super::source_model::ALIAS, |model| model.name.as_str());
+        let package = spellings.selection(source_owners.get(&form.label.name), alias);
         let Some(model) = selected.iter().find(|model| {
-            model.alias == form.model.name
-                && Some(&model.view.domain_package().model_selection) == package
+            model.alias == alias && Some(&model.view.domain_package().model_selection) == package
         }) else {
-            errors.push(unresolved(&form.model));
+            errors.push(unresolved(form.model.as_ref().unwrap_or(&form.population)));
             continue;
         };
         let population =
@@ -5891,11 +6168,11 @@ fn population_bounds(
             continue;
         };
         named
-            .entry((form.model.name.as_str(), population.clone()))
+            .entry((alias, population.clone()))
             .or_default()
             .push(form.label.span);
         let bound_model = (
-            form.model.name.clone(),
+            alias.to_owned(),
             model.view.domain_package().model_selection.identity.clone(),
         );
         bounds.entry(bound_model).or_default().insert(
@@ -5911,7 +6188,7 @@ fn population_bounds(
         if spans.len() > 1 {
             let name = type_identity_segment(&population.package, &population.node).map_or_else(
                 || population.node.clone(),
-                |segment| format!("{alias}::{segment}"),
+                |segment| super::source_model::qualified(alias, segment),
             );
             ambiguous.push((name, spans));
         }
@@ -6041,22 +6318,27 @@ fn operation_bodies(
                 }
             }
         }
-        let [model, object, member] = form.target.as_slice() else {
-            // The grammar admits any qualified name; only
-            // `model-alias::Type::operation` names an operation.
-            let name = form
-                .target
-                .iter()
-                .map(|segment| segment.name.as_str())
-                .collect::<Vec<_>>()
-                .join("::");
-            errors.push(error(
-                AssemblyCause::UnresolvedTypeName { name },
-                form.target_span,
-            ));
-            continue;
+        let (alias, object, member) = match form.target.as_slice() {
+            [model, object, member] => (model.name.as_str(), object, member),
+            [object, member] => (super::source_model::ALIAS, object, member),
+            _ => {
+                // The grammar admits any qualified name; only
+                // `model-alias::Type::operation` and `Type::operation` name
+                // an operation.
+                let name = form
+                    .target
+                    .iter()
+                    .map(|segment| segment.name.as_str())
+                    .collect::<Vec<_>>()
+                    .join("::");
+                errors.push(error(
+                    AssemblyCause::UnresolvedTypeName { name },
+                    form.target_span,
+                ));
+                continue;
+            }
         };
-        let context_name = format!("{}::{}", model.name, object.name);
+        let context_name = super::source_model::qualified(alias, &object.name);
         let Some(context) =
             spellings.object_type(source_owners.get(&form.label.name), &context_name)
         else {
@@ -6093,12 +6375,11 @@ fn operation_bodies(
                     continue;
                 }
             };
-        let Some(key) =
-            operation_key_of(selected, &model.name, declaring.clone(), declaration.name())
+        let Some(key) = operation_key_of(selected, alias, declaring.clone(), declaration.name())
         else {
             errors.push(error(
                 AssemblyCause::ModelType {
-                    alias: model.name.clone(),
+                    alias: alias.to_owned(),
                     node: member.name.clone(),
                 },
                 member.span,
@@ -6110,7 +6391,7 @@ fn operation_bodies(
         };
         bodies.push(OperationBodyDeclaration {
             key,
-            model: model.name.clone(),
+            model: alias.to_owned(),
             label: form.label,
             selection,
             context,

@@ -162,6 +162,7 @@ mod refinement;
 mod refusal;
 mod region;
 mod settings;
+mod source_model;
 mod state_clause;
 mod state_graph_claim;
 mod state_model;
@@ -398,7 +399,7 @@ pub use assemble::{
     AdmittedImport, AssemblyCause, AssemblyError, AssemblyLimits, AssemblyRefusal, AssemblyRun,
     ClockReadingDeclaration, ClockSite, ClockSlot, ClockTypePosition, ClockUse,
     DimensionEquivalence, EquivalenceClasses, EquivalenceFault, EquivalenceRetained,
-    TimedDeclaration, TopologyFault, TopologyRetained, DEFAULT_DECIMAL_SCALE,
+    SourceObjectFault, TimedDeclaration, TopologyFault, TopologyRetained, DEFAULT_DECIMAL_SCALE,
 };
 pub use capability::{Capability, DeclarationFamily, UnknownCapabilityLabel};
 pub use check::{
@@ -865,6 +866,11 @@ pub struct CheckedGraph {
     /// FR-110: the header-selectable layers the unit's header profiles
     /// resolve to, ascending.
     header_layers: Vec<crate::value::layer::HeaderLayer>,
+    /// The span of the unit's first source `object` declaration.
+    first_source_object: Option<(
+        qsl_foundation::source::provenance::RawSourceRef,
+        qsl_foundation::Span,
+    )>,
     /// FR-110 "Extension selection": the extension definitions the unit
     /// selects, ascending by `(authority, identity)`.
     extension_selections: Vec<qsl_foundation::selection::DefinitionRef>,
@@ -1059,6 +1065,7 @@ impl DebugWith for CheckedGraph {
             protocol_population_types,
             model_roots,
             header_layers,
+            first_source_object,
             extension_selections,
             extension_definitions,
             time_sources,
@@ -1176,6 +1183,7 @@ impl DebugWith for CheckedGraph {
             )
             .field("model_roots", &NodeList(model_roots.iter(), table))
             .field("header_layers", &header_layers)
+            .field("first_source_object", &first_source_object)
             .field("extension_selections", &extension_selections)
             .field("extension_definitions", &extension_definitions)
             .field("time_sources", &Seq(time_sources, table))
@@ -2547,7 +2555,6 @@ impl PackageDeclarations {
             model_function_bodies[index] = true;
             model_context_calls.extend(layer::called_functions(&self.functions[index].body));
         }
-        let model_scope = check::NamedScope::of(&self.models, &scope);
         let symmetric_objects = self
             .models
             .iter()
@@ -2710,6 +2717,7 @@ impl PackageDeclarations {
             .collect();
         let protocol_profile = self.protocol_profile;
         let header_layers = self.header_layers;
+        let first_source_object = self.first_source_object;
         let mut held_extensions: Vec<_> = self.held_extensions.iter().collect();
         held_extensions.sort_by(|a, b| {
             let (a, b) = (a.definition(), b.definition());
@@ -3041,7 +3049,9 @@ impl PackageDeclarations {
                     .get(index)
                     .copied()
                     .unwrap_or(false)
-                    .then(|| model_scope.clone()),
+                    .then(|| {
+                        check::NamedScope::of(&models, &scope, self.function_sources.get(index))
+                    }),
                 // A model operation in the body selects the model family's
                 // typing for that body, whether the function's declared
                 // profile is value-complete or model-complete.
@@ -3150,6 +3160,7 @@ impl PackageDeclarations {
         for (index, clause) in state_clause_forms.iter().enumerate() {
             let location = clause_location(index, &clause.name);
             let declarations = state_clause::ClauseDeclarations {
+                unit: self.source_owners.get(&format!("state_clause:{index}")),
                 scope: &scope,
                 signatures: &signatures,
                 dispatch_tables: &dispatch_tables,
@@ -3241,6 +3252,7 @@ impl PackageDeclarations {
         for clause in &self.operation_clauses {
             let location = clause.location();
             let declarations = state_clause::ClauseDeclarations {
+                unit: None,
                 scope: &scope,
                 signatures: &signatures,
                 dispatch_tables: &dispatch_tables,
@@ -3291,6 +3303,7 @@ impl PackageDeclarations {
         for invariant in &self.type_invariants {
             let location = invariant.location();
             let declarations = state_clause::ClauseDeclarations {
+                unit: None,
                 scope: &scope,
                 signatures: &signatures,
                 dispatch_tables: &dispatch_tables,
@@ -3368,6 +3381,7 @@ impl PackageDeclarations {
                 continue;
             }
             let declarations = state_clause::ClauseDeclarations {
+                unit: None,
                 scope: &scope,
                 signatures: &signatures,
                 dispatch_tables: &dispatch_tables,
@@ -3424,6 +3438,7 @@ impl PackageDeclarations {
         let mut timed_models = {
             let location = Location::root(Origin::Expression);
             let declarations = state_clause::ClauseDeclarations {
+                unit: None,
                 scope: &scope,
                 signatures: &signatures,
                 dispatch_tables: &dispatch_tables,
@@ -3517,6 +3532,7 @@ impl PackageDeclarations {
             ($index:expr, $refinement:expr, $views:expr, $defer_abstract:expr) => {{
                 let location = Location::root(Origin::Expression);
                 let declarations = state_clause::ClauseDeclarations {
+                    unit: None,
                     scope: &scope,
                     signatures: &signatures,
                     dispatch_tables: &dispatch_tables,
@@ -3855,6 +3871,7 @@ impl PackageDeclarations {
             // stage may read.
             let obligation_location = root(Origin::Expression);
             let obligation_declarations = state_clause::ClauseDeclarations {
+                unit: self.source_owners.get(&protocol.name.name),
                 scope: &scope,
                 signatures: &signatures,
                 dispatch_tables: &dispatch_tables,
@@ -4176,6 +4193,7 @@ impl PackageDeclarations {
             };
             let location = Location::root(Origin::Expression);
             let declarations = state_clause::ClauseDeclarations {
+                unit: None,
                 scope: &scope,
                 signatures: &signatures,
                 dispatch_tables: &dispatch_tables,
@@ -4214,6 +4232,7 @@ impl PackageDeclarations {
         {
             let location = Location::root(Origin::Expression);
             let declarations = state_clause::ClauseDeclarations {
+                unit: None,
                 scope: &scope,
                 signatures: &signatures,
                 dispatch_tables: &dispatch_tables,
@@ -4313,6 +4332,7 @@ impl PackageDeclarations {
             if body_refused {
                 let location = lowering::temporal_location(index, lowering::TemporalSite::Claim);
                 let condition_declarations = state_clause::ClauseDeclarations {
+                    unit: self.source_owners.get(&clause.form.name.name),
                     scope: &scope,
                     signatures: &signatures,
                     dispatch_tables: &dispatch_tables,
@@ -4349,6 +4369,7 @@ impl PackageDeclarations {
                     let location =
                         lowering::temporal_location(index, lowering::TemporalSite::Claim);
                     let condition_declarations = state_clause::ClauseDeclarations {
+                        unit: self.source_owners.get(&clause.form.name.name),
                         scope: &scope,
                         signatures: &signatures,
                         dispatch_tables: &dispatch_tables,
@@ -4487,6 +4508,7 @@ impl PackageDeclarations {
         for claim in &self.state_graph_claims {
             let location = root(Origin::Expression);
             let declarations = state_clause::ClauseDeclarations {
+                unit: self.source_owners.get(&claim.form.name.name),
                 scope: &scope,
                 signatures: &signatures,
                 dispatch_tables: &dispatch_tables,
@@ -6629,7 +6651,6 @@ impl PackageDeclarations {
                 over.node = over_node;
             }
         }
-        let named_scope = NamedScope::of(&models, &scope);
         let lowered_temporal = lowered_temporal
             .into_iter()
             .collect::<Option<Vec<_>>>()
@@ -6650,6 +6671,8 @@ impl PackageDeclarations {
                         *at == location
                     })
                     .ok_or_else(unkeyable)?;
+                let named_scope =
+                    NamedScope::of(&models, &scope, self.source_owners.get(checked.name()));
                 let objects: std::collections::BTreeSet<_> = conditions
                     .all()
                     .flat_map(|condition| references::body_objects(condition.body.root()))
@@ -7344,6 +7367,7 @@ impl PackageDeclarations {
             protocol_population_types,
             model_roots,
             header_layers,
+            first_source_object,
             extension_selections,
             extension_definitions,
             time_sources: self.time_sources,
@@ -8242,6 +8266,19 @@ impl CheckedGraph {
     /// `requires` closure of these.
     pub fn header_layers(&self) -> &[crate::value::layer::HeaderLayer] {
         &self.header_layers
+    }
+
+    /// The span of the unit's first source `object` declaration, if it
+    /// declares one.
+    pub fn first_source_object(
+        &self,
+    ) -> Option<(
+        &qsl_foundation::source::provenance::RawSourceRef,
+        qsl_foundation::Span,
+    )> {
+        self.first_source_object
+            .as_ref()
+            .map(|(source, span)| (source, *span))
     }
 
     /// FR-110 "Extension selection": the extension definitions the unit
