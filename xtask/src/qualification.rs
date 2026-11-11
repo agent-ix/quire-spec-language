@@ -19,7 +19,6 @@ mod adapters;
 const USAGE: &str = "usage: cargo xtask qualify --corpus <dir> [--capability <id>]... [--limit <setting>=<value>]... [--text]";
 const CORPUS_FILE: &str = "complete-v1.json";
 const SCHEMA_FILE: &str = "proposals/conformance-corpus-v1/schema.json";
-const QSL_VERSION: &str = "0.2.0";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum QualificationOption {
@@ -370,6 +369,8 @@ struct Report {
     counts: Counts,
     coverage: CoverageReport,
     capabilities: Vec<CapabilityReport>,
+    /// FR-567: the parts the verdict covers, in the order they ran.
+    parts: Vec<crate::qualify::PartReport>,
 }
 
 /// Run `cargo xtask qualify` after a full preflight. All corpus reads and
@@ -397,6 +398,18 @@ pub fn execute(workspace_root: &Path, operands: &[OsString]) -> Result<Execution
 /// Execute against an explicitly selected QSpec checkout, without changing
 /// process-global environment variables.
 pub fn execute_with_qspec(qspec: &Path, operands: &[OsString]) -> Result<Execution> {
+    execute_with_parts(qspec, operands, None)
+}
+
+/// [`execute_with_qspec`] over `matrix`, or the published matrix: the verdict
+/// is `qualified` only when the corpus and every FR-567 part pass. The parts
+/// beyond the corpus run after every preflight refusal, so a refused run
+/// executes no matrix case.
+pub(crate) fn execute_with_parts(
+    qspec: &Path,
+    operands: &[OsString],
+    matrix: Option<&[qsl_conformance::MatrixCell]>,
+) -> Result<Execution> {
     let args = parse_args(operands)?;
     let limits = qsl_replay::CallerLimits::from_operands(args.limits.iter().map(String::as_str))
         .map_err(|error| Error::QualificationRefusal(error.to_string()))?;
@@ -579,9 +592,24 @@ pub fn execute_with_qspec(qspec: &Path, operands: &[OsString]) -> Result<Executi
     }
     capability_reports.sort_by(|left, right| left.capability_id.cmp(&right.capability_id));
     let counts = count_outcomes(&capability_reports);
-    let qualified = counts.passed == scope_ids.len();
+    let corpus_failures: Vec<String> = capability_reports
+        .iter()
+        .filter(|capability| capability.outcome != CapabilityOutcome::Passed)
+        .map(|capability| capability.capability_id.clone())
+        .collect();
+    let mut parts = vec![crate::qualify::PartReport {
+        part: "corpus",
+        result: if counts.passed == scope_ids.len() {
+            crate::qualify::PartResult::Passed
+        } else {
+            crate::qualify::PartResult::Failed
+        },
+        failures: corpus_failures,
+    }];
+    parts.extend(crate::qualify::lifecycle_and_parity_parts(matrix));
+    let qualified = parts.iter().all(crate::qualify::PartReport::passed);
     let report = Report {
-        qsl_version: QSL_VERSION,
+        qsl_version: quire_spec_language::VERSION,
         qualification: default_scope.then_some("complete-v1"),
         scope: scope_ids.clone(),
         verdict: if qualified {
@@ -597,6 +625,7 @@ pub fn execute_with_qspec(qspec: &Path, operands: &[OsString]) -> Result<Executi
         },
         counts,
         capabilities: capability_reports,
+        parts,
     };
     let stdout = if args.text {
         render_text(&report)
@@ -997,6 +1026,12 @@ fn render_text(report: &Report) -> String {
         report.counts.incomplete,
         report.counts.uncovered
     ));
+    for part in &report.parts {
+        output.push_str(&format!("part {}: {}\n", part.part, part.result.as_str()));
+        for failure in &part.failures {
+            output.push_str(&format!("  {failure}\n"));
+        }
+    }
     for capability in &report.capabilities {
         output.push_str(&format!(
             "{}: {:?} [{}]\n",

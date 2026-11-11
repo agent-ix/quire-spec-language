@@ -63,10 +63,12 @@ The crate holds the only copy of a case (FR-565).
 - FR-564-AC-4 and AC-6 are not tagged: the `refuted` cells do not yet produce
   an `ItemCounterexample` of the case's outcome; `AnalyzeOutcome::counterexamples`
   is not read yet.
-- FR-567 qualification integration is outside this library slice. The
-  corpus/matrix/parity combined gate, its linked-backend controls and its
-  scratch-copy version test remain open; this crate does not establish full
-  QSL-12 qualification.
+- FR-567-AC-5's scratch-copy half (a copy of the root package whose version is
+  `9.9.9` makes the report say `9.9.9`) needs a rebuild of the copy; the
+  version is a compile-time constant. The test covers the first half only and
+  carries no `FR-567-AC-5` tag.
+- FR-567's `parity` part reports `no-backend`: FR-563's runner arrives from the
+  jit lane's branch and moves into `qsl-conformance` after this lands.
 
 ## What the driver companion exposes
 

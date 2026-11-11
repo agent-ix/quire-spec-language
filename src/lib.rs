@@ -3,6 +3,10 @@
 //! complete-V1 editor tooling over `qsl-cst`, and the
 //! checked-package v2 emitter and handoff corpus. The language stages live in
 //! the `qsl-*` layer crates (ADR-011 §6.1); this crate re-exports none of them.
+/// The version of this package as built, which `cargo xtask qualify` reports
+/// as the QSL version (FR-567-AC-5).
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
 #[cfg(feature = "checked-handoff")]
 pub mod checked_handoff;
 pub mod complete;

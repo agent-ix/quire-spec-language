@@ -15,6 +15,9 @@ ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main"
 # and reads its inputs as FR-106 observation documents.
 qsl-foundation = { path = "../qsl-foundation" }
 qsl-analyze = { path = "../qsl-analyze" }
+qsl-conformance = { path = "../qsl-conformance" }
+# FR-567-AC-5: the report names this package's own `CARGO_PKG_VERSION`.
+quire-spec-language = { path = ".." }
 qsl-cst = { path = "../qsl-cst" }
 logos = "0.16.1"
 qsl-route = { path = "../qsl-route" }
@@ -32,6 +35,10 @@ syn = { version = "2.0.119", features = ["full", "visit"] }
 thiserror = "2.0.20"
 jsonschema = { version = "0.17.1", default-features = false, features = ["draft202012"] }
 serde_json_canonicalizer = "0.3.2"
+
+[features]
+# FR-567: a test may replace the matrix cell set; the command line cannot.
+test-support = []
 
 [dev-dependencies]
 tempfile = "3.27.0"
