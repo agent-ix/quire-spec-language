@@ -4157,7 +4157,7 @@ impl PackageDeclarations {
             };
             let mut declared = AdmittedModel::from_view(&model.view).with_alias(&selection.alias);
             // Units scope a source model only when the package has several.
-            if selection.alias == super::source_model::ALIAS && !source_owners.is_empty() {
+            if super::source_model::is_source_alias(&selection.alias) && !source_owners.is_empty() {
                 declared = declared.declared_in(unit_source);
             }
             admitted.push(declared);

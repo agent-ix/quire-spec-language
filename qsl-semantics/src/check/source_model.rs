@@ -39,11 +39,23 @@ pub(crate) const ALIAS: &str = "";
 /// `member` of the model selected under `alias`, as the unit writes it: the
 /// member alone for the source model, `alias::member` for a domain package.
 pub(crate) fn qualified(alias: &str, member: &str) -> String {
-    if alias == ALIAS {
+    if is_source_alias(alias) {
         member.to_owned()
     } else {
         format!("{alias}::{member}")
     }
+}
+
+/// Whether `alias` is the source model's: the model selected under no alias,
+/// so the empty alias is the absence of a qualifier, not a spelling to match.
+pub(crate) fn is_source_alias(alias: &str) -> bool {
+    alias.is_empty()
+}
+
+/// Whether `name` is written without a qualifier, so it names a member of the
+/// source model.
+pub(crate) fn is_unqualified(name: &str) -> bool {
+    is_source_alias(alias_of(name))
 }
 
 /// The alias a type name is written under: its first segment when qualified,

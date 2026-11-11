@@ -304,7 +304,7 @@ impl ModelSpellings {
 
     /// Whether some unit declares the source object type `name`.
     pub(crate) fn is_source_type(&self, name: &str) -> bool {
-        !name.contains("::")
+        super::source_model::is_unqualified(name)
             && self.units.values().any(|aliases| {
                 aliases
                     .get(super::source_model::ALIAS)

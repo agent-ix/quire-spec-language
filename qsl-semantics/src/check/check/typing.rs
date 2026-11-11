@@ -3394,7 +3394,7 @@ impl<'a> Typer<'a> {
     /// Whether `name` is an unqualified population this clause's unit does
     /// not see: a source population of another unit.
     fn population_hidden(&self, name: &str) -> bool {
-        !name.contains("::")
+        crate::check::source_model::is_unqualified(name)
             && self
                 .named
                 .as_ref()
@@ -3404,7 +3404,8 @@ impl<'a> Typer<'a> {
     /// Whether `name`, an unqualified source population, is also a local
     /// binder in scope or the `binder` the form itself introduces.
     fn shadows_source_population(&self, name: &str, binder: Option<&str>) -> bool {
-        !name.contains("::") && (binder == Some(name) || self.local(name).is_some())
+        crate::check::source_model::is_unqualified(name)
+            && (binder == Some(name) || self.local(name).is_some())
     }
 
     /// The population `expression` names in a population position (FR-391),
