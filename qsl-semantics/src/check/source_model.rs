@@ -764,7 +764,7 @@ fn value_type(
         };
         let (lower, upper) = match (bound(0), bound(1)) {
             (Some(lower), Some(upper)) if lower <= upper => (lower, Some(upper)),
-            (Some(0), None) if form.bounds.is_empty() => (0, None),
+            (None, None) if form.bounds.is_empty() => (0, None),
             _ => return Err(unsupported()),
         };
         return Ok((

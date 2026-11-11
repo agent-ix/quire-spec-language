@@ -147,3 +147,72 @@ fn the_source_route_evaluates_the_slots_of_a_protocol_over_a_source_node() {
     );
     assert_eq!(source, control, "E-S gives E's values and charge logs");
 }
+
+/// TC-1407 S3: `Refund`'s recovery predicate under TC-1072's supply, where
+/// `target` is `Unavailable`. The slot halts as unavailable, having read
+/// `recovered` and `target` only, and E-S gives fixture E's outcome and
+/// charge log.
+#[test]
+#[trace("FR-569-AC-11", "TC-1407")]
+fn an_unavailable_target_halts_the_slot_over_a_source_node_as_it_does_over_a_model() {
+    let unavailable = |package: &CheckedPackage| {
+        let binders = [
+            ("recovered", receipt(package, 5)),
+            ("target", int(5)),
+            ("activated", Value::Boolean(false)),
+        ]
+        .into_iter()
+        .map(|(name, value)| {
+            let supplied = if name == "target" {
+                SuppliedValue::Unavailable(CatalogCode::new(
+                    "unavailable_observation",
+                    "missing-required-artifact",
+                ))
+            } else {
+                SuppliedValue::Value(value)
+            };
+            (binder(package, "Refunds", name), supplied.into())
+        })
+        .collect();
+        let mut meter = Meter::new(UNLIMITED);
+        let result = package
+            .evaluate_protocol_slot(
+                &slot(package, "Refunds", "Refund", "recovery.predicate", None),
+                &ProtocolSupply {
+                    binders,
+                    observation: None,
+                },
+                &mut meter,
+            )
+            .expect("an unavailable binder is a slot outcome");
+        let ProtocolSlotEvaluation::Unavailable { charges, .. } = &result else {
+            panic!("an unavailable target halts the slot: {result:?}");
+        };
+        let read: Vec<bool> = ["recovered", "target", "activated"]
+            .iter()
+            .map(|name| charges.binder(&binder(package, "Refunds", name)).is_some())
+            .collect();
+        let log: Vec<String> = meter
+            .admitted_charges()
+            .iter()
+            .map(|charge| format!("{charge:?}"))
+            .collect();
+        let usage = [
+            LimitKind::IntegerBits,
+            LimitKind::ValueOccurrences,
+            LimitKind::WorkUnits,
+            LimitKind::ResultUnits,
+        ]
+        .map(|kind| meter.consumed(kind))
+        .to_vec();
+        (read, log, usage)
+    };
+    let control = unavailable(&fixture());
+    let source = unavailable(&source_node_fixture());
+    assert_eq!(
+        control.0,
+        [true, true, false],
+        "the slot read `recovered` and `target`, and stopped before `activated`"
+    );
+    assert_eq!(source, control, "E-S halts as E does, with E's charge log");
+}

@@ -998,3 +998,144 @@ fn a_name_without_a_scheme_is_the_source_declaration_and_an_ix_name_the_model_s(
         )
     );
 }
+
+/// AC-9, variant S-M: `I` reads only the source objects. A clause over the
+/// source `Order` quantifies over the source `orders`, so a model `M::Order`
+/// of total 8 in `M::orders` does not reach it; the control clause over
+/// `M::orders` does read that object.
+#[trace("FR-569-AC-9", "TC-1408")]
+#[test]
+fn a_source_clause_reads_only_the_source_objects_in_a_mixed_snapshot() {
+    let mut unit = Unit::new(
+        Twin::Mixed,
+        "invariant Small using P on Order at current \
+           { forall(o in orders : deref(o).total <= 5) }\n\
+         invariant SmallModel using P on M::Order at current \
+           { forall(o in M::orders : deref(o).total <= 5) }\n",
+    );
+    let snapshot = unit.snapshot_of(
+        "mixed",
+        json!([
+            {"population": ident("orders"), "complete": true,
+             "objects": [order("m1", &ident("Order"), 8)]},
+            {"population": ident("shapes"), "complete": true, "objects": []},
+            {"population": "orders", "complete": true, "objects": [order("o1", "Order", 3)]},
+            {"population": "shapes", "complete": true, "objects": []},
+        ]),
+    );
+    let admitted = unit
+        .current("Small", &snapshot, "o1")
+        .expect("the mixed snapshot admits");
+    let (outcome, _) = unit.evaluate("Small", &admitted);
+    assert!(
+        holds(&outcome),
+        "the source clause does not see the model's object of total 8"
+    );
+    let model_self = ClauseSelectionInput::Current {
+        snapshot: snapshot.clone(),
+        anchor: SelectedAnchor {
+            kind: qsl_semantics::model::observation::AnchorKind::Handler,
+            name: "validate".to_owned(),
+        },
+        self_object: Some(SelectedObject {
+            population: ident("orders"),
+            key: "m1".to_owned(),
+        }),
+    };
+    let admitted = unit
+        .admit("SmallModel", model_self)
+        .expect("the model clause admits");
+    let (outcome, _) = unit.evaluate("SmallModel", &admitted);
+    assert!(
+        !holds(&outcome),
+        "the control clause over M::orders reads the object of total 8"
+    );
+}
+
+/// A source member of a model-owned type: its value is held to the model
+/// type's bound at admission.
+#[trace("FR-569-AC-9", "TC-1408")]
+#[test]
+fn a_source_member_of_a_model_type_is_admitted_by_that_types_bound() {
+    let mut unit = Unit::new(
+        Twin::Mixed,
+        "object Z { t: M::Total; population zs; }\n\
+         invariant ZI using P on Z at current { self.t >= 0 }\n",
+    );
+    let zs = |total: i64| {
+        json!([
+            {"population": "zs", "complete": true, "objects": [
+                {"key": "z1", "type": "Z", "fields": {"t": {"integer": total.to_string()}}}]},
+            {"population": "orders", "complete": true, "objects": []},
+            {"population": "shapes", "complete": true, "objects": []},
+        ])
+    };
+    let select = |snapshot: &DocumentRef| ClauseSelectionInput::Current {
+        snapshot: snapshot.clone(),
+        anchor: SelectedAnchor {
+            kind: qsl_semantics::model::observation::AnchorKind::Handler,
+            name: "validate".to_owned(),
+        },
+        self_object: Some(SelectedObject {
+            population: "zs".to_owned(),
+            key: "z1".to_owned(),
+        }),
+    };
+    let within = unit.snapshot_of("within", zs(3));
+    let admitted = unit
+        .admit("ZI", select(&within))
+        .expect("t = 3 is within M::Total's bound");
+    let (outcome, _) = unit.evaluate("ZI", &admitted);
+    assert!(holds(&outcome), "ZI holds for t = 3");
+    let beyond = unit.snapshot_of("beyond", zs(99));
+    assert_eq!(
+        refusal_of(unit.admit("ZI", select(&beyond))),
+        (
+            "invalid_runtime_input".to_owned(),
+            "invalid-value".to_owned()
+        ),
+        "t = 99 exceeds M::Total's bound"
+    );
+}
+
+/// FR-106: an `ix://` name resolves only among model declarations, so one
+/// that spells a source declaration (`ix://source/<package>/Order`) names
+/// nothing, in a population position and as an object's type, whether or not
+/// the package also selects a model.
+#[trace("FR-106", "FR-569-AC-9", "TC-1408")]
+#[test]
+fn an_ix_name_spelling_a_source_declaration_is_refused() {
+    let source_ix = |name: &str| format!("ix://source/{}/{name}", crate::TEST_PACKAGE_NAME);
+    for twin in [Twin::Source, Twin::Mixed] {
+        let mut unit = Unit::new(twin, "");
+        let typed = unit.snapshot_of(
+            "typed",
+            json!([
+                {"population": "orders", "complete": true,
+                 "objects": [order("o1", &source_ix("Order"), 3)]},
+                {"population": "shapes", "complete": true, "objects": []},
+            ]),
+        );
+        assert_eq!(
+            refusal_of(unit.current("I", &typed, "o1")),
+            (
+                "invalid_runtime_input".to_owned(),
+                "wrong-role-mapping".to_owned()
+            ),
+            "an object typed by the ix:// spelling of a source declaration"
+        );
+        let populated = unit.snapshot_of(
+            "populated",
+            json!([
+                {"population": source_ix("orders"), "complete": true,
+                 "objects": [order("o1", "Order", 3)]},
+                {"population": "shapes", "complete": true, "objects": []},
+            ]),
+        );
+        assert_eq!(
+            refusal_of(unit.current("I", &populated, "o1")).1,
+            "wrong-role-mapping",
+            "a population named by the ix:// spelling of a source declaration"
+        );
+    }
+}

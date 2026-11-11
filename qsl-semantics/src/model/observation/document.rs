@@ -267,7 +267,8 @@ impl ReadDocument {
         if !views.iter().any(ModelView::is_source) {
             return;
         }
-        let rename = |name: &str| super::declaration_name(views, name);
+        let names = super::DeclarationNames::new(views);
+        let rename = |name: &str| names.resolve(name);
         let rename_object = |object: &mut SelectedObject| {
             object.population = rename(&object.population);
         };
@@ -424,28 +425,36 @@ pub(super) fn read_document(
         "created",
         "deleted",
     ];
+    // `model` is required exactly when the package selects a domain
+    // package, which `read_model` decides, so no list here requires it.
+    const INVOCATION_REQUIRED: &[&str] = &[
+        "format",
+        "identity",
+        "context",
+        "operation",
+        "self",
+        "pre",
+        "post",
+        "parameters",
+        "result",
+        "created",
+        "deleted",
+    ];
     let always_required: &[&str] = match kind {
-        DocumentKind::Snapshot => &["format", "identity", "observation", "model", "populations"],
-        DocumentKind::Invocation => INVOCATION_MEMBERS,
+        DocumentKind::Snapshot => &["format", "identity", "observation", "populations"],
+        DocumentKind::Invocation => INVOCATION_REQUIRED,
         DocumentKind::InvocationCall => &[
             "format",
             "identity",
-            "model",
             "context",
             "operation",
             "self",
             "pre",
             "parameters",
         ],
-        DocumentKind::InvocationContext => &[
-            "format",
-            "identity",
-            "model",
-            "context",
-            "operation",
-            "self",
-            "pre",
-        ],
+        DocumentKind::InvocationContext => {
+            &["format", "identity", "context", "operation", "self", "pre"]
+        }
     };
     let allowed: &[&str] = match kind {
         DocumentKind::Snapshot => &[
@@ -464,9 +473,7 @@ pub(super) fn read_document(
         | DocumentKind::InvocationContext => INVOCATION_MEMBERS,
     };
     for member in always_required {
-        // `model` is required exactly when the package selects a domain
-        // package, which `read_model` decides.
-        if *member != "model" && !object.contains_key(member) {
+        if !object.contains_key(member) {
             return Err(refuse(
                 admission_record(Code::InvalidRuntimeInput, "missing-member")
                     .with("field", *member),

@@ -26,7 +26,7 @@
 //! already compiled -- a re-admission failure is therefore an
 //! [`InternalFault`], never a document defect.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use qsl_forms::StateClauseKind;
 use qsl_foundation::diagnostic::{BudgetDenial, Code, LimitExceeded, ALLOCATION_FAILED};
@@ -322,7 +322,8 @@ impl ClauseSelection {
     /// The selection with every declaration name it spells rewritten to the
     /// declaration it names (FR-106 "Document forms").
     fn resolved(&self, views: &[ModelView]) -> Self {
-        let rename = |name: &str| declaration_name(views, name);
+        let names = DeclarationNames::new(views);
+        let rename = |name: &str| names.resolve(name);
         let object = |object: &Option<SelectedObject>| {
             object.as_ref().map(|object| SelectedObject {
                 population: rename(&object.population),
@@ -1538,12 +1539,6 @@ impl ModelView {
         self.source
     }
 
-    /// The `ix://` identity of the declaration this view's source package
-    /// declares under `name`, as the unit writes it.
-    fn source_declaration(&self, name: &str) -> String {
-        format!("ix://{}/{name}", self.view.model_selection().identity)
-    }
-
     fn type_name(&self, effective: EffectiveId) -> Option<&str> {
         self.by_effective_id
             .get(&effective)
@@ -1694,33 +1689,51 @@ pub(crate) fn model_views<'a>(
 /// stands for. A name with no `ix://` scheme names a declaration of the
 /// unit's own source package, written as the unit writes it; an `ix://` name
 /// names a model declaration only, so one that spells a source package's
-/// declaration names nothing.
-pub(crate) fn declaration_name(views: &[ModelView], name: &str) -> String {
-    if name.starts_with("ix://") {
-        let spells_source = views.iter().any(|view| {
-            view.is_source()
-                && name.starts_with(&format!("ix://{}/", view.view.model_selection().identity))
-        });
-        return if spells_source {
-            format!("unresolved:{name}")
-        } else {
-            name.to_owned()
-        };
+/// declaration names nothing. Built once per admission, so each name resolves
+/// by lookup instead of a scan of every view's records.
+pub(crate) struct DeclarationNames<'a> {
+    /// `ix://<identity>/` for each source package.
+    source_prefixes: Vec<String>,
+    /// Every declaration node of every view.
+    nodes: BTreeSet<&'a str>,
+}
+
+impl<'a> DeclarationNames<'a> {
+    pub(crate) fn new(views: &'a [ModelView]) -> Self {
+        Self {
+            source_prefixes: views
+                .iter()
+                .filter(|view| view.is_source())
+                .map(|view| format!("ix://{}/", view.view.model_selection().identity))
+                .collect(),
+            nodes: views
+                .iter()
+                .flat_map(|view| view.view.domain_package().records.iter())
+                .map(|record| record.key().node.as_str())
+                .collect(),
+        }
     }
-    views
-        .iter()
-        .filter(|view| view.is_source())
-        .map(|view| view.source_declaration(name))
-        .find(|candidate| {
-            views.iter().any(|view| {
-                view.view
-                    .domain_package()
-                    .records
-                    .iter()
-                    .any(|record| record.key().node == *candidate)
-            })
-        })
-        .unwrap_or_else(|| name.to_owned())
+
+    /// The scheme of a document `name` is wire text, so this is a string edge.
+    #[ix_trace_rs::string_edge]
+    pub(crate) fn resolve(&self, name: &str) -> String {
+        if name.starts_with("ix://") {
+            return if self
+                .source_prefixes
+                .iter()
+                .any(|prefix| name.starts_with(prefix.as_str()))
+            {
+                format!("unresolved:{name}")
+            } else {
+                name.to_owned()
+            };
+        }
+        self.source_prefixes
+            .iter()
+            .map(|prefix| format!("{prefix}{name}"))
+            .find(|candidate| self.nodes.contains(candidate.as_str()))
+            .unwrap_or_else(|| name.to_owned())
+    }
 }
 
 /// The one [`ModelView`] whose effective view names `effective`, and the

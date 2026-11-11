@@ -1168,3 +1168,179 @@ fn clauses_on_a_source_operation_share_the_declaring_type() {
     );
     assert_eq!(q.declaration.name(), "bump");
 }
+
+/// FR-569 "Declaration checks": a member may have any type a record field may
+/// have, so an unbounded collection and a bounded one both assemble.
+#[trace("FR-569-AC-2", "TC-1408")]
+#[test]
+fn an_unbounded_and_a_bounded_collection_member_both_assemble() {
+    let graph = check(
+        "\
+object Z {
+  tags: Set<Int[0, 9]>;
+  loose: Sequence<Int[0, 9]>;
+  few: Set<Int[0, 9]>[0, 3];
+  population zs;
+}
+invariant X using P on Z at current { forall(z in zs : true) }
+",
+    );
+    let package = graph
+        .source_packages()
+        .first()
+        .expect("the unit's objects form a source package");
+    let multiplicity = |name: &str| {
+        package
+            .records
+            .iter()
+            .find_map(|record| match record {
+                qsl_semantics::model::domain_package::DomainPackageRecord::FieldMember(field)
+                    if field.key.node.ends_with(&format!("/Z/{name}")) =>
+                {
+                    Some((field.multiplicity.lower, field.multiplicity.upper))
+                }
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("member {name}"))
+    };
+    assert_eq!(multiplicity("tags"), (0, None));
+    assert_eq!(multiplicity("loose"), (0, None));
+    assert_eq!(multiplicity("few"), (0, Some(3)));
+}
+
+/// Two units of one package, `a` and `b`, each parsed, with `models` the
+/// admitted selections of both.
+fn assemble_two_units(
+    a: &str,
+    b: &str,
+    models: Vec<qsl_semantics::model::intake::SelectedModel>,
+) -> Result<PackageDeclarations, AssemblyRefusal> {
+    use qsl_semantics::check::AssemblyLimits;
+    let units: Vec<_> = [("a", a), ("b", b)]
+        .iter()
+        .map(|(identity, text)| {
+            let source = format!("{HEADER}{text}\n");
+            let parsed = qsl_cst::parse(
+                qsl_foundation::SourceIdentity::new("test", *identity),
+                "unit.native",
+                source.as_bytes(),
+                qsl_cst::Limits::default(),
+            )
+            .expect("S1 reads the unit");
+            assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
+            let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
+            (parsed.source().reference().clone(), unit)
+        })
+        .collect();
+    PackageDeclarations::assemble_units(
+        crate::TEST_PACKAGE_NAME.to_owned(),
+        units,
+        SelectedModels::fixture_entries(models),
+        Vec::new(),
+        AssemblyLimits::default(),
+        &quire_exact::Cancel::new(),
+    )
+}
+
+/// The admitted selection of `package` as alias `M`.
+fn selected_as_m(package: DomainPackage) -> qsl_semantics::model::intake::SelectedModel {
+    let selected = SelectedModels::fixture(
+        "M",
+        qsl_foundation::Span { start: 0, end: 1 },
+        package,
+        ModelNormalizationLimits::UNLIMITED,
+    )
+    .expect("the model admits");
+    selected[0].clone()
+}
+
+/// A second domain package, `test/other`, whose `Total` is a different
+/// declaration from fixture D's.
+fn other_package() -> DomainPackage {
+    use qsl_semantics::model::domain_package::{
+        DomainPackageRecord, DomainPackageRef, ScalarTypeRecord,
+    };
+    DomainPackage::new(
+        DomainPackageRef {
+            identity: "test/other".to_owned(),
+        },
+        vec![DomainPackageRecord::ScalarType(ScalarTypeRecord {
+            key: quire_checked::key::DeclarationKey {
+                package: "test/other".to_owned(),
+                node: "ix://test/other/Total".to_owned(),
+            },
+            domain: qsl_semantics::model::domain_package::ScalarValueDomain::Integer {
+                lower: 0,
+                upper: 99,
+            },
+        })],
+    )
+}
+
+/// The node of the value type of source member `Owner.name`, as a package
+/// type.
+fn member_type_node(graph: &CheckedGraph, owner: &str, name: &str) -> String {
+    use qsl_semantics::model::domain_package::{DomainPackageRecord, ValueTypeRef};
+    graph
+        .source_packages()
+        .iter()
+        .flat_map(|package| &package.records)
+        .find_map(|record| match record {
+            DomainPackageRecord::FieldMember(field)
+                if field.key.node.ends_with(&format!("/{owner}/{name}")) =>
+            {
+                match &field.value_type {
+                    ValueTypeRef::Package(key) => Some(key.node.clone()),
+                    other => panic!("{owner}.{name} is not package-typed: {other:?}"),
+                }
+            }
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("member {owner}.{name}"))
+}
+
+/// A model type a source member names resolves through the declaring unit's
+/// own `model` aliases: unit `b` selects no `M`, so its `M::Total` names
+/// nothing, although unit `a` selects one.
+#[trace("FR-569-AC-2", "TC-1408")]
+#[test]
+fn a_model_type_resolves_only_through_the_declaring_units_own_aliases() {
+    let selecting = "model M = \"test/orders\";\nobject A { t: M::Total; }\n";
+    let bare = "object B { t: M::Total; }\n";
+    let models = vec![selected_as_m(model_package(false))];
+    // `a` alone: the member resolves.
+    assemble_two_units(selecting, "object Plain { }\n", models.clone())
+        .expect("a's own alias resolves");
+    // `b` names `M::Total` without selecting `M`, whichever way they sort.
+    for (a, b) in [(selecting, bare), (bare, selecting)] {
+        let refused = assemble_two_units(a, b, models.clone())
+            .expect_err("the unit that selects no M cannot name M::Total");
+        let [error] = &refused.errors[..] else {
+            panic!("one refusal: {refused:?}");
+        };
+        assert_eq!(
+            (error.cause.code(), error.cause.catalog_code().cause()),
+            MISSING,
+            "{error:?}"
+        );
+    }
+}
+
+/// Two units that select different packages as `M` each bind their own.
+#[trace("FR-569-AC-2", "TC-1408")]
+#[test]
+fn two_units_selecting_different_packages_as_m_each_bind_their_own() {
+    let a = "model M = \"test/orders\";\nobject A { t: M::Total; }\n";
+    let b = "model M = \"test/other\";\nobject B { t: M::Total; }\n";
+    let models = vec![
+        selected_as_m(model_package(false)),
+        selected_as_m(other_package()),
+    ];
+    for (first, second) in [(a, b), (b, a)] {
+        let declarations = assemble_two_units(first, second, models.clone())
+            .expect("each unit's M::Total resolves");
+        let graph = finish(declarations).expect("the units check");
+        assert_eq!(member_type_node(&graph, "A", "t"), "ix://test/orders/Total");
+        assert_eq!(member_type_node(&graph, "B", "t"), "ix://test/other/Total");
+    }
+}

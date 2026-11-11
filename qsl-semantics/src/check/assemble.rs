@@ -1533,6 +1533,36 @@ fn source_name_collisions(
     }
 }
 
+/// The first `count` model selections that `unit` itself makes: the ones it
+/// declares and the ones it repeats from an earlier unit. `units` gives each
+/// selection's declaring unit and `repeated` each repeat's kept selection and
+/// repeating unit.
+fn unit_model_selections<'a>(
+    selections: &'a [qsl_foundation::selection::ModelSelection],
+    count: usize,
+    units: &[usize],
+    repeated: &[(usize, usize)],
+    unit: usize,
+) -> Vec<&'a qsl_foundation::selection::ModelSelection> {
+    let declared = units
+        .iter()
+        .take(count)
+        .enumerate()
+        .filter(|(_, declaring)| **declaring == unit)
+        .map(|(index, _)| index);
+    let repeats = repeated
+        .iter()
+        .filter(|(kept, repeating)| *repeating == unit && *kept < count)
+        .map(|(kept, _)| *kept);
+    let mut indices: Vec<usize> = declared.chain(repeats).collect();
+    indices.sort_unstable();
+    indices.dedup();
+    indices
+        .into_iter()
+        .filter_map(|index| selections.get(index))
+        .collect()
+}
+
 /// One unit's `object` declarations as the model selected under the empty
 /// alias (FR-569 "The source model"), with the selection that names it.
 /// `identity` is the model's package identity.
@@ -4073,6 +4103,8 @@ impl PackageDeclarations {
                 .map(SourceOwner::from)
                 .unwrap_or_else(|| owner.clone())
         };
+        // The selections the sources make; the source models follow them.
+        let domain_selections = selections.models.len();
         // FR-569: the unit's `object` declarations are one more selected
         // model, under the alias no `model` declaration can take.
         if !unit.objects.is_empty() {
@@ -4081,24 +4113,6 @@ impl PackageDeclarations {
                 // An object type is visible only in the unit that declares
                 // it: each declaring unit gets its own source model.
                 let declared_types: BTreeSet<String> = unit.declared.keys().cloned().collect();
-                // The selected domain packages, whose types a source field,
-                // parameter or result may name.
-                let foreign_packages: Vec<(String, DomainPackage)> = selections
-                    .models
-                    .iter()
-                    .filter_map(|selection| {
-                        let model = models.iter().find(|model| {
-                            model.alias == selection.alias
-                                && model.view.domain_package().model_selection.identity
-                                    == selection.identity
-                        })?;
-                        Some((selection.alias.clone(), model.view.domain_package().clone()))
-                    })
-                    .collect();
-                let foreign: Vec<(&str, &DomainPackage)> = foreign_packages
-                    .iter()
-                    .map(|(alias, package)| (alias.as_str(), package))
-                    .collect();
                 let mut by_unit: BTreeMap<usize, Vec<qsl_forms::ObjectForm>> = BTreeMap::new();
                 for object in &unit.objects {
                     let declaring = source_owners
@@ -4108,6 +4122,30 @@ impl PackageDeclarations {
                     by_unit.entry(declaring).or_default().push(object.clone());
                 }
                 for (position, (declaring, objects)) in by_unit.iter().enumerate() {
+                    // The selected domain packages the declaring unit itself
+                    // selects, whose types a source field, parameter or
+                    // result may name.
+                    let foreign_packages: Vec<(String, DomainPackage)> = unit_model_selections(
+                        &selections.models,
+                        domain_selections,
+                        &model_selection_units,
+                        &repeated_model_selection_units,
+                        *declaring,
+                    )
+                    .into_iter()
+                    .filter_map(|selection| {
+                        let model = models.iter().find(|model| {
+                            model.alias == selection.alias
+                                && model.view.domain_package().model_selection.identity
+                                    == selection.identity
+                        })?;
+                        Some((selection.alias.clone(), model.view.domain_package().clone()))
+                    })
+                    .collect();
+                    let foreign: Vec<(&str, &DomainPackage)> = foreign_packages
+                        .iter()
+                        .map(|(alias, package)| (alias.as_str(), package))
+                        .collect();
                     let identity = if position == 0 {
                         format!("source/{package_name}")
                     } else {
@@ -4265,19 +4303,23 @@ impl PackageDeclarations {
             // The source model's members may name the other selected models'
             // types; a domain package's own never do.
             let foreign_models: Vec<&SelectedModel> =
-                if selection.alias == super::source_model::ALIAS {
-                    selections
-                        .models
-                        .iter()
-                        .filter(|other| other.alias != super::source_model::ALIAS)
-                        .filter_map(|other| {
-                            models.iter().find(|candidate| {
-                                candidate.alias == other.alias
-                                    && candidate.view.domain_package().model_selection.identity
-                                        == other.identity
-                            })
+                if super::source_model::is_source_alias(&selection.alias) {
+                    unit_model_selections(
+                        &selections.models,
+                        domain_selections,
+                        &model_selection_units,
+                        &repeated_model_selection_units,
+                        *source_unit,
+                    )
+                    .into_iter()
+                    .filter_map(|other| {
+                        models.iter().find(|candidate| {
+                            candidate.alias == other.alias
+                                && candidate.view.domain_package().model_selection.identity
+                                    == other.identity
                         })
-                        .collect()
+                    })
+                    .collect()
                 } else {
                     Vec::new()
                 };
