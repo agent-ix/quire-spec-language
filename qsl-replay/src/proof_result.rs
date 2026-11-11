@@ -7,6 +7,8 @@
 //! proof column never produces `undefined`: an undefined claim evaluation
 //! settles `refuted`, category violation.
 
+use qsl_semantics::check::NegotiationOutcome;
+
 use crate::bounds::{BoundExceeded, ReplayLimits};
 use crate::call_site::CallSiteRefusal;
 use crate::certificate::closed_form::outcome::ClosedFormAnalysis;
@@ -738,18 +740,24 @@ impl UnavailabilityCause {
     pub const fn as_str(&self) -> &'static str {
         match self {
             Self::SolverAbsent => "solver-absent",
-            Self::HybridProviderAbsent => "unsupported-requested-capability",
+            Self::HybridProviderAbsent => NegotiationOutcome::UnsupportedRequestedCapability
+                .code()
+                .cause(),
             Self::BackendAbsent => "backend-absent",
             // Never written as a cause; the spelling is the closed FR-272
             // cause the disposition's own diagnostic carries.
-            Self::Disposition => "unsupported-requested-capability",
+            Self::Disposition => NegotiationOutcome::UnsupportedRequestedCapability
+                .code()
+                .cause(),
             Self::MissingFairnessPremise { .. } => "missing-fairness-premise",
             Self::UnsupportedReduction { .. }
             | Self::HiddenFieldLiveness
             | Self::UnsupportedHyperForm { .. }
             | Self::UnsupportedSmtFragment
             | Self::StrongAbstractFairness
-            | Self::StatisticalRequest(_) => "unsupported-requested-capability",
+            | Self::StatisticalRequest(_) => NegotiationOutcome::UnsupportedRequestedCapability
+                .code()
+                .cause(),
             Self::NotMarkov => "not-markov",
             Self::TotalAboveDrawRange { .. } => "total-above-draw-range",
             Self::NotStochastic { .. } => "not-stochastic",
@@ -763,7 +771,9 @@ impl UnavailabilityCause {
             Self::TimedFormShape { .. } => "timed-form-shape",
             Self::PunctualInterval { .. } => "punctual-interval",
             Self::ValueCheck { .. } | Self::ContractCheck { .. } => {
-                "unsupported-requested-capability"
+                NegotiationOutcome::UnsupportedRequestedCapability
+                    .code()
+                    .cause()
             }
         }
     }
@@ -1870,9 +1880,7 @@ impl TerminalRecord {
             backend: Some(backend),
             value,
             replay: None,
-            diagnostic: disposed.then(|| {
-                CatalogCode::new("unsupported_projection", "unsupported-requested-capability")
-            }),
+            diagnostic: disposed.then(|| NegotiationOutcome::UnsupportedRequestedCapability.code()),
             disposition_detail: disposed.then(serde_json::Map::new),
             exact_certificate: None,
             exact_certificate_document: None,

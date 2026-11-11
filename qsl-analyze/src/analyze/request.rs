@@ -574,10 +574,7 @@ fn work<'a>(
         if candidate.id().as_str() != expected {
             built.work = Some(Box::new(move |_, _| {
                 super::EngineReport::Refused(super::Refusal::Unsupported(
-                    quire_semantic_value::catalog::CatalogCode::new(
-                        "unsupported_projection",
-                        "unsupported-requested-capability",
-                    ),
+                    qsl_route::NegotiationOutcome::UnsupportedRequestedCapability.code(),
                 ))
             }));
         }

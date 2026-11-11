@@ -40,7 +40,7 @@ use crate::deadlock::{
 use crate::declaration::DeclaredItem;
 use crate::reductions::{ObligationReductions, Reductions};
 use crate::request::{AbstractSubject, DerivedLimits, ItemKind, RequestItem, RequestWriter};
-use crate::Registry;
+use crate::{NegotiationOutcome, Registry};
 
 /// The caller's items of one request over model subjects `S`, in index
 /// order, each with its obligation identity and its subject's reading.
@@ -446,7 +446,7 @@ pub struct UnanchoredItem<S> {
 impl<S> UnanchoredItem<S> {
     /// The settlement's diagnostic code.
     pub const fn catalog_code(&self) -> CatalogCode {
-        CatalogCode::new("unsupported_projection", "unsupported-requested-capability")
+        NegotiationOutcome::UnsupportedRequestedCapability.code()
     }
 
     /// The diagnostic's `detail`: the item kind and that the subject reads

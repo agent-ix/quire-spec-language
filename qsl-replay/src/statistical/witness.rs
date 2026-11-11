@@ -21,7 +21,7 @@ use qsl_eval::simulation::{
     replay_sampled, SampleStop, SampledDisagreement, SampledRecord, SampledReplay,
     SampledReplayRefusal, SampledStep, TransitionSystem,
 };
-use qsl_semantics::check::Workload;
+use qsl_semantics::check::{NegotiationOutcome, Workload};
 use quire_exact::{Cancel, Rational};
 use quire_semantic_value::catalog::CatalogCode;
 
@@ -209,8 +209,7 @@ const CANCELLED: CatalogCode = CatalogCode::new("cancelled", "caller-cancelled")
 
 /// `unsupported_projection`/`unsupported-requested-capability`: the witness
 /// names a sampler this one is not (FR-192).
-const UNSUPPORTED: CatalogCode =
-    CatalogCode::new("unsupported_projection", "unsupported-requested-capability");
+const UNSUPPORTED: CatalogCode = NegotiationOutcome::UnsupportedRequestedCapability.code();
 
 /// `unsupported_projection`/`not-markov`: the sample took a step that is not
 /// Markov (ADR-024 PM-3).

@@ -55,6 +55,9 @@
 
 use std::fmt;
 
+use qsl_foundation::BackendId;
+use quire_semantic_value::catalog::CatalogCode;
+
 /// The declaration family that owns a claim in the checked package.
 ///
 /// This is the FR-290 declaration-family axis. It is deliberately separate
@@ -276,6 +279,63 @@ impl fmt::Display for UnknownCapabilityLabel {
 }
 
 impl std::error::Error for UnknownCapabilityLabel {}
+
+/// One of the three negotiation outcomes that carry an FR-290 code
+/// (FR-057 "One negotiation cause type"), without its payload.
+///
+/// This is the only definition of the three spellings in QSL.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum NegotiationOutcome {
+    /// The request named a backend the registry does not hold.
+    UnknownBackend,
+    /// Several candidates serve the request and none was named.
+    AmbiguousBackend,
+    /// No candidate serves the requested capability kind.
+    UnsupportedRequestedCapability,
+}
+
+impl NegotiationOutcome {
+    /// The outcome's catalog code.
+    pub const fn code(self) -> CatalogCode {
+        match self {
+            Self::UnknownBackend => CatalogCode::new("invalid_capability", "unknown-backend"),
+            Self::AmbiguousBackend => CatalogCode::new("invalid_capability", "ambiguous-backend"),
+            Self::UnsupportedRequestedCapability => {
+                CatalogCode::new("unsupported_projection", "unsupported-requested-capability")
+            }
+        }
+    }
+}
+
+/// A negotiation outcome with its payload (FR-057 "One negotiation cause
+/// type").
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum NegotiationCause {
+    /// The named backend the registry does not hold.
+    UnknownBackend(BackendId),
+    /// Every candidate, in candidate order.
+    AmbiguousBackend(Vec<BackendId>),
+    /// The item's capability kind and the backend the request named.
+    UnsupportedRequestedCapability(Capability, Option<BackendId>),
+}
+
+impl NegotiationCause {
+    /// The cause's payload-free outcome.
+    pub const fn outcome(&self) -> NegotiationOutcome {
+        match self {
+            Self::UnknownBackend(_) => NegotiationOutcome::UnknownBackend,
+            Self::AmbiguousBackend(_) => NegotiationOutcome::AmbiguousBackend,
+            Self::UnsupportedRequestedCapability(..) => {
+                NegotiationOutcome::UnsupportedRequestedCapability
+            }
+        }
+    }
+
+    /// The outcome's catalog code.
+    pub const fn code(&self) -> CatalogCode {
+        self.outcome().code()
+    }
+}
 
 #[cfg(test)]
 mod tests {

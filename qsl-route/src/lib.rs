@@ -61,6 +61,7 @@ use qsl_foundation::{BackendId, MemoryModelName, ReductionKind};
 #[cfg(test)]
 use qsl_foundation::{Code, EmptyBackendIdentity};
 use qsl_semantics::check::Capability;
+pub use qsl_semantics::check::{NegotiationCause, NegotiationOutcome};
 use quire_semantic_value::catalog::CatalogCode;
 #[cfg(test)]
 use quire_semantic_value::catalog::Category;
@@ -1313,6 +1314,43 @@ pub enum CandidateOutcome {
     /// reported as, or confused with, an empty candidate set
     /// (FR-075-AC-3).
     UnknownBackend(BackendId),
+}
+
+/// What a candidate outcome settles (FR-057 "One negotiation cause type").
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum NegotiationSettlement {
+    /// A refusal cause the outcome carries.
+    Cause(NegotiationCause),
+    /// Several candidates and a named backend: no cause; the caller settles
+    /// `invalid_capability`/`inconsistent-candidates`.
+    Inconsistent,
+    /// Exactly one candidate: no cause; its arm settles the item.
+    Single(BackendId),
+}
+
+/// The settlement FR-057's table gives `outcome` for an item of `kind` that
+/// named `named`.
+pub fn settle_candidates(
+    outcome: &CandidateOutcome,
+    kind: Capability,
+    named: Option<&BackendId>,
+) -> NegotiationSettlement {
+    match outcome {
+        CandidateOutcome::UnknownBackend(id) => {
+            NegotiationSettlement::Cause(NegotiationCause::UnknownBackend(id.clone()))
+        }
+        CandidateOutcome::Candidates(set) => match set.candidates() {
+            [] => NegotiationSettlement::Cause(NegotiationCause::UnsupportedRequestedCapability(
+                kind,
+                named.cloned(),
+            )),
+            [one] => NegotiationSettlement::Single(one.id().clone()),
+            _ if named.is_some() => NegotiationSettlement::Inconsistent,
+            many => NegotiationSettlement::Cause(NegotiationCause::AmbiguousBackend(
+                many.iter().map(|c| c.id().clone()).collect(),
+            )),
+        },
+    }
 }
 
 /// The `#185` registry: an ordinary value built by the orchestrating driver

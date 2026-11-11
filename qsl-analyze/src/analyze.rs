@@ -59,6 +59,7 @@ use qsl_replay::{
 };
 use qsl_route::routing::Disposition;
 use qsl_route::{BackendDescriptor, Candidate, Mode, ProviderOrigin, RegistrationRefusal};
+use qsl_route::{NegotiationCause, NegotiationOutcome};
 use qsl_semantics::check::{Capability, DeclarationFamily};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::observation::{
@@ -981,7 +982,7 @@ impl<'a> AnalyzeItem<'a> {
 
 fn unsupported_kind(kind: Capability) -> Diagnostic {
     Diagnostic {
-        code: CatalogCode::new("unsupported_projection", "unsupported-requested-capability"),
+        code: NegotiationOutcome::UnsupportedRequestedCapability.code(),
         payload: Payload::Kind(kind),
     }
 }
@@ -1457,7 +1458,7 @@ fn run(engines: &Engines, item: AnalyzeItem<'_>, cancel: &Cancel) -> AnalyzeReco
         return disposed(
             DispositionKind::InvalidRequest,
             Some(Diagnostic {
-                code: CatalogCode::new("invalid_capability", "unknown-backend"),
+                code: NegotiationCause::UnknownBackend(backend.clone()).code(),
                 payload: Payload::Backend(backend),
             }),
         );
@@ -1744,10 +1745,7 @@ mod tests {
             ),
             (
                 Disposition::InvalidRequest,
-                Some(Diagnostic::new(CatalogCode::new(
-                    "invalid_capability",
-                    "ambiguous-backend",
-                ))),
+                Some(Diagnostic::new(NegotiationOutcome::AmbiguousBackend.code())),
             ),
         ];
 
@@ -2262,8 +2260,7 @@ mod tests {
             .with(engine("test-a", Capability::ValueValidity))
             .expect("first");
         let ran = std::cell::Cell::new(false);
-        let ambiguous =
-            Diagnostic::new(CatalogCode::new("invalid_capability", "ambiguous-backend"));
+        let ambiguous = Diagnostic::new(NegotiationOutcome::AmbiguousBackend.code());
         let records = analyze_items(
             &engines,
             vec![
