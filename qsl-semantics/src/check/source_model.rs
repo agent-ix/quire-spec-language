@@ -12,7 +12,7 @@
 //! selected under the empty alias, which the unit cannot spell, and a name
 //! of that package is written without a qualifier.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use qsl_forms::{
     BuiltinType, FrameEntryForm, ObjectFieldForm, ObjectForm, ObjectMemberForm,
@@ -88,25 +88,33 @@ impl<'a> Model<'a> {
 
     /// The fields `owner` declares or inherits, by name, nearest first.
     fn field(&self, object: usize, name: &str) -> Option<Located> {
-        self.chain(object).find_map(|owner| {
-            self.objects[owner]
-                .members
-                .iter()
-                .position(|member| matches!(member, ObjectMemberForm::Field(field) if field.name.name == name))
-                .map(|member| Located { owner, member })
-        })
+        self.chain(object)
+            .find_map(|owner| self.own_field(owner, name))
     }
 
     /// The operation `object` declares or inherits under `name`, nearest
     /// first.
     fn operation(&self, object: usize, name: &str) -> Option<Located> {
-        self.chain(object).find_map(|owner| {
-            self.objects[owner]
-                .members
-                .iter()
-                .position(|member| matches!(member, ObjectMemberForm::Operation(operation) if operation.name.name == name))
-                .map(|member| Located { owner, member })
-        })
+        self.chain(object)
+            .find_map(|owner| self.own_operation(owner, name))
+    }
+
+    /// The field `owner` itself declares under `name`.
+    fn own_field(&self, owner: usize, name: &str) -> Option<Located> {
+        self.objects[owner]
+            .members
+            .iter()
+            .position(|member| matches!(member, ObjectMemberForm::Field(field) if field.name.name == name))
+            .map(|member| Located { owner, member })
+    }
+
+    /// The operation `owner` itself declares under `name`.
+    fn own_operation(&self, owner: usize, name: &str) -> Option<Located> {
+        self.objects[owner]
+            .members
+            .iter()
+            .position(|member| matches!(member, ObjectMemberForm::Operation(operation) if operation.name.name == name))
+            .map(|member| Located { owner, member })
     }
 
     /// `object` and its ancestors, nearest first.
@@ -146,6 +154,17 @@ fn missing(name: &str, span: Span) -> AssemblyError {
         },
         span,
     }
+}
+
+/// A field or operation of an object type that the type neither declares nor
+/// inherits.
+fn missing_member(name: &str, span: Span) -> AssemblyError {
+    fault(
+        SourceObjectFault::MissingMember {
+            name: name.to_owned(),
+        },
+        span,
+    )
 }
 
 fn ambiguous(name: &str, candidates: Vec<Span>, span: Span) -> AssemblyError {
@@ -266,7 +285,7 @@ fn resolve_supertypes(
         cycle.dedup();
         let first = component.iter().min().copied().unwrap_or_default();
         errors.push(AssemblyError {
-            cause: AssemblyCause::AliasCycle { edges: cycle },
+            cause: AssemblyCause::SourceObject(SourceObjectFault::SupertypeCycle { edges: cycle }),
             span: model.objects[first]
                 .extends
                 .first()
@@ -278,9 +297,10 @@ fn resolve_supertypes(
             continue;
         }
         let mut ancestors = Vec::new();
-        let mut frontier = edges[index].clone();
-        while let Some(next) = (!frontier.is_empty()).then(|| frontier.remove(0)) {
-            if cyclic.contains(&next) || ancestors.contains(&next) || next == index {
+        let mut seen = BTreeSet::from([index]);
+        let mut frontier: VecDeque<usize> = edges[index].iter().copied().collect();
+        while let Some(next) = frontier.pop_front() {
+            if cyclic.contains(&next) || !seen.insert(next) {
                 continue;
             }
             ancestors.push(next);
@@ -313,7 +333,7 @@ fn check_object(model: &Model<'_>, index: usize, errors: &mut Vec<AssemblyError>
     }
     for name in &object.identity {
         if model.field(index, &name.name).is_none() {
-            errors.push(missing(&name.name, name.span));
+            errors.push(missing_member(&name.name, name.span));
         }
     }
     for member in &object.members {
@@ -321,7 +341,7 @@ fn check_object(model: &Model<'_>, index: usize, errors: &mut Vec<AssemblyError>
             ObjectMemberForm::Field(field) => {
                 if let Some(inherited) = model.ancestors[index]
                     .iter()
-                    .find_map(|ancestor| model.field(*ancestor, &field.name.name))
+                    .find_map(|ancestor| model.own_field(*ancestor, &field.name.name))
                 {
                     let first = field_span(model, inherited);
                     errors.push(ambiguous(
@@ -355,7 +375,7 @@ fn check_operation(
 ) {
     let inherited = model.ancestors[index]
         .iter()
-        .find_map(|ancestor| model.operation(*ancestor, &operation.name.name));
+        .find_map(|ancestor| model.own_operation(*ancestor, &operation.name.name));
     match (&operation.redefines, inherited) {
         (None, Some(inherited)) => {
             let first = field_span(model, inherited);
@@ -370,7 +390,10 @@ fn check_operation(
             match declaring {
                 Some(declaring) if model.ancestors[index].contains(&declaring) => {
                     if model.operation(declaring, &redefines.member.name).is_none() {
-                        errors.push(missing(&redefines.member.name, redefines.member.span));
+                        errors.push(missing_member(
+                            &redefines.member.name,
+                            redefines.member.span,
+                        ));
                     }
                 }
                 _ => errors.push(missing(&redefines.declaring.name, redefines.declaring.span)),
@@ -388,14 +411,14 @@ fn check_operation(
             FrameEntryForm::ModifiesReceiver { field }
             | FrameEntryForm::ModifiesField { field } => {
                 if model.field(index, &field.name).is_none() {
-                    errors.push(missing(&field.name, field.span));
+                    errors.push(missing_member(&field.name, field.span));
                 }
             }
             FrameEntryForm::ModifiesTypeField { object, field } => {
                 match model.named(&object.name) {
                     Some(target) => {
                         if model.field(target, &field.name).is_none() {
-                            errors.push(missing(&field.name, field.span));
+                            errors.push(missing_member(&field.name, field.span));
                         }
                     }
                     None => errors.push(missing(&object.name, object.span)),

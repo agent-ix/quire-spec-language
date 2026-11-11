@@ -6,6 +6,7 @@ use ix_trace_rs::trace;
 use qsl_foundation::diagnostic::Code;
 use qsl_semantics::check::{
     AssemblyCause, AssemblyRefusal, CheckCause, CheckedGraph, PackageDeclarations,
+    SourceObjectFault,
 };
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::domain_package::{
@@ -47,10 +48,11 @@ abstract object Shape { population shapes; }
 const CLAUSES: &str = "\
 invariant I using P on Order at current { self.total >= 0 }
 pre Q using P on Order::bump { self.total < 9 }
-post R using P on Order::bump { self.total >= pre(self.total) }
+post R using P on Order::bump { self.total > pre(self.total) }
 body B using P on Sub::size() { 7 }
 body C using P on Order::size() { 1 }
 pre Qs using P on Order::size { self.total >= 0 }
+invariant Sized using P on Order at current { self.size() >= 0 }
 ";
 
 /// One refusal as its catalog code and cause.
@@ -172,7 +174,6 @@ fn an_unresolved_context_refuses_missing_name_at_the_name() {
         )),
         [(missing, "Nothing".to_owned())]
     );
-    let _ = AssemblyCause::EmptyUnitList;
 }
 
 // ---------------------------------------------------------------------------
@@ -377,30 +378,41 @@ fn assemble_model(
     )
 }
 
-fn check_model(declarations: &str) -> CheckedGraph {
-    finish(assemble_model(declarations, model_package(false)).expect("the model unit assembles"))
-        .expect("the model unit checks")
-}
-
 /// Fixture S's clauses written against the model: `on M::Order`.
 const MODEL_CLAUSES: &str = "\
 invariant I using P on M::Order at current { self.total >= 0 }
 pre Q using P on M::Order::bump { self.total < 9 }
-post R using P on M::Order::bump { self.total >= pre(self.total) }
+post R using P on M::Order::bump { self.total > pre(self.total) }
 body B using P on M::Sub::size() { 7 }
 body C using P on M::Order::size() { 1 }
 pre Qs using P on M::Order::size { self.total >= 0 }
+invariant Sized using P on M::Order at current { self.size() >= 0 }
 ";
-
-/// The model twin checks fixture S's clauses.
-#[test]
-fn the_model_twin_checks_the_clauses() {
-    let _ = check_model(MODEL_CLAUSES);
-}
 
 const AMBIGUOUS: Refused = (Code::AmbiguousDeclaration, "ambiguous-name");
 const MISSING: Refused = (Code::MissingDeclaration, "missing-name");
 const MALFORMED: Refused = (Code::InvalidModelBinding, "malformed-declaration");
+
+/// The text of `declarations` as the model unit `assemble_model` assembles.
+fn model_text(declarations: &str) -> String {
+    format!("{HEADER}model M = \"test/orders\";\n{declarations}\n")
+}
+
+/// The refusals of the model unit with `declarations`, as catalog codes with
+/// the offset each is at in [`model_text`].
+fn model_refusals_at(declarations: &str) -> Vec<(Refused, usize)> {
+    assemble_model(declarations, model_package(false))
+        .expect_err("the unit is refused")
+        .errors
+        .iter()
+        .map(|error| {
+            (
+                (error.cause.code(), error.cause.catalog_code().cause()),
+                error.span.start,
+            )
+        })
+        .collect()
+}
 
 /// FR-569-AC-3: a source object type or population whose name another
 /// declaration of the unit's namespace takes is refused at every declaration
@@ -417,35 +429,55 @@ fn a_name_two_declarations_share_is_refused_at_each() {
             (AMBIGUOUS, offset(&text, "object Order", 0, 7)),
         ]
     );
-    // Population `orders` beside a function `orders`: both.
+    // Population `orders` beside a function `orders`: the population's name
+    // and the function's declaration.
     let text = format!("{OBJECTS}function orders using P (): Integer pure {{ 1 }}\n");
-    let refused = refusals_at(&text);
-    assert_eq!(refused.len(), 2, "{refused:?}");
-    assert!(refused.iter().all(|(cause, _)| *cause == AMBIGUOUS));
-    assert!(refused
-        .iter()
-        .any(|(_, at)| *at == offset(&text, "population orders", 0, 11)));
+    assert_eq!(
+        refusals_at(&text),
+        [
+            (AMBIGUOUS, offset(&text, "population orders", 0, 11)),
+            (AMBIGUOUS, offset(&text, "function orders", 0, 0)),
+        ]
+    );
 }
 
 /// `object M` in a unit with `model M`: both declarations.
 #[trace("FR-569-AC-3", "TC-1408")]
 #[test]
 fn an_object_named_like_a_model_alias_is_refused_at_both() {
-    let text = format!("{HEADER}model M = \"test/orders\";\nobject M {{ }}\n");
-    let package = model_package(false);
-    let refusal = assemble_model("object M { }", package).expect_err("the unit is refused");
-    assert_eq!(refusal.errors.len(), 2, "{refusal:?}");
-    assert!(refusal
-        .errors
-        .iter()
-        .all(|error| (error.cause.code(), error.cause.catalog_code().cause()) == AMBIGUOUS));
-    let starts: Vec<usize> = refusal
-        .errors
-        .iter()
-        .map(|error| error.span.start)
-        .collect();
-    let object = text.find("object M").unwrap() + 7;
-    assert!(starts.contains(&object), "{starts:?} holds {object}");
+    let refused = model_refusals_at("object M { }");
+    let text = model_text("object M { }");
+    assert_eq!(
+        refused,
+        [
+            (AMBIGUOUS, offset(&text, "model M", 0, 0)),
+            (AMBIGUOUS, offset(&text, "object M", 0, 7)),
+        ]
+    );
+}
+
+/// A quantifier binder named like a source population is ambiguous at the
+/// use, naming both.
+#[trace("FR-569-AC-3", "TC-1408")]
+#[test]
+fn a_binder_named_like_a_population_is_ambiguous() {
+    let declarations = assemble(&format!(
+        "{OBJECTS}invariant Bad using P on Order at current {{ forall(orders in orders : true) }}\n"
+    ))
+    .expect("the unit assembles");
+    let refusals = finish(declarations).expect_err("the binder is ambiguous");
+    let [refusal] = &refusals[..] else {
+        panic!("one refusal: {refusals:?}");
+    };
+    let CheckCause::AmbiguousName { name, loci } = &refusal.cause else {
+        panic!("an ambiguous name: {refusal:?}");
+    };
+    assert_eq!(name, "orders");
+    assert_eq!(loci.len(), 2, "the use and the binder: {loci:?}");
+    // A binder of another name over the same population checks.
+    check(&format!(
+        "{OBJECTS}invariant Good using P on Order at current {{ forall(o in orders : true) }}\n"
+    ));
 }
 
 /// Members of one object type: two fields of a name (the second), a field
@@ -499,74 +531,115 @@ fn a_deletes_name_that_is_a_parameter_and_a_type_is_ambiguous() {
     );
 }
 
-/// FR-569-AC-4: the declaration checks, each at the offending name.
+/// FR-569-AC-4: each declaration check refuses once, with its code and cause,
+/// at the offending name.
 #[trace("FR-569-AC-4", "TC-1408")]
 #[test]
 fn a_declaration_check_refuses_with_its_code_at_the_offending_name() {
     let cycle = (Code::InvalidPackage, "definition-cycle");
-    let cases: [(&str, &str, Refused, &str); 8] = [
+    // (declarations, the text the refusal is at, its code and cause)
+    let cases: [(&str, &str, Refused); 8] = [
         (
             "object X extends Receipt { }\nrecord Receipt { total: Integer; }",
             "Receipt",
             MALFORMED,
-            "a source record is no object type",
         ),
-        (
-            "object X extends Ghost { }",
-            "Ghost",
-            MISSING,
-            "an unknown supertype",
-        ),
+        ("object X extends Ghost { }", "Ghost", MISSING),
         (
             "object X identity (ghost) { total: Integer; }",
             "ghost",
             MISSING,
-            "an unknown identity field",
         ),
         (
             "object X { total: Integer; operation f() modifies self.ghost; }",
             "ghost",
             MISSING,
-            "an unknown field",
         ),
         (
             "object X { operation f() creates Ghost; }",
             "Ghost",
             MISSING,
-            "an unknown type",
         ),
         (
             "object X { operation f(n: Integer) deletes n; }",
             "n;",
             MALFORMED,
-            "a non-reference deletion",
         ),
         (
             "object X { operation f() redefines Order::reset; }",
-            "Order",
+            "Order::reset",
             MISSING,
-            "a redefinition of a non-supertype",
         ),
         (
             "object A extends B { }\nobject B extends A { }",
-            "B { }",
+            "B {",
             cycle,
-            "a supertype cycle",
         ),
     ];
-    for (declarations, _at, expected, label) in cases {
+    for (declarations, at, expected) in cases {
         let text = format!("{OBJECTS}{declarations}");
-        let refused = refusals(&text);
-        assert!(!refused.is_empty(), "{label}");
-        assert!(
-            refused.iter().all(|(cause, _)| *cause == expected),
-            "{label}: {refused:?}"
+        // The needle's first occurrence inside the case's own declarations.
+        let start = text.find(declarations).unwrap()
+            + declarations
+                .find(at)
+                .unwrap_or_else(|| panic!("`{at}` in {declarations}"));
+        let at_extends = if at == "B {" {
+            // The cycle is reported at the first `extends` entry.
+            text.find(declarations).unwrap() + declarations.find("B").unwrap()
+        } else {
+            start
+        };
+        assert_eq!(
+            refusals_at(&text),
+            [(expected, at_extends)],
+            "{declarations}"
         );
     }
 }
 
+/// `extends M::Order` names a model type: `malformed-declaration` at the
+/// entry.
+#[trace("FR-569-AC-4", "TC-1408")]
+#[test]
+fn extending_a_model_type_is_refused_at_the_entry() {
+    let declarations = "object X extends M::Order { }";
+    let text = model_text(declarations);
+    assert_eq!(
+        model_refusals_at(declarations),
+        [(MALFORMED, offset(&text, "M::Order", 0, 0))]
+    );
+}
+
+/// A redefinition whose parameter type is not contravariant refuses
+/// `variance-parameter` once, naming the redefining member.
+#[trace("FR-569-AC-4", "TC-1408")]
+#[test]
+fn a_redefinition_with_a_narrower_parameter_refuses_variance_parameter() {
+    let text = OBJECTS.replace(
+        "operation scaled(m: Integer): Integer redefines",
+        "operation scaled(m: Text[0, 8; nfc]): Integer redefines",
+    );
+    let declarations = assemble(&format!("{text}{CLAUSES}")).expect("the unit assembles");
+    let refusals = finish(declarations).expect_err("the parameter is not contravariant");
+    let [refusal] = &refusals[..] else {
+        panic!("one refusal: {refusals:?}");
+    };
+    let CheckCause::ModelConformance(failure) = &refusal.cause else {
+        panic!("a conformance failure: {refusal:?}");
+    };
+    assert!(failure.member.node.ends_with("/Sub/scaled"), "{failure:?}");
+    assert!(
+        failure.parent.node.ends_with("/Order/scaled"),
+        "{failure:?}"
+    );
+    assert!(
+        matches!(&failure.cause, ModelRefusalCause::VarianceParameter { .. }),
+        "{failure:?}"
+    );
+}
+
 /// `redefines Order::reset`: `Order` is a proper supertype that exposes no
-/// `reset`.
+/// `reset`, so the refusal is at the member.
 #[trace("FR-569-AC-4", "TC-1408")]
 #[test]
 fn a_redefinition_of_an_operation_the_supertype_lacks_is_refused_at_the_operation() {
@@ -590,7 +663,8 @@ fn a_supertype_cycle_is_one_definition_cycle_naming_both_edges() {
     let [error] = &refusal.errors[..] else {
         panic!("one refusal: {refusal:?}");
     };
-    let AssemblyCause::AliasCycle { edges } = &error.cause else {
+    let AssemblyCause::SourceObject(SourceObjectFault::SupertypeCycle { edges }) = &error.cause
+    else {
         panic!("a cycle: {error:?}");
     };
     assert_eq!(
@@ -606,12 +680,75 @@ fn a_supertype_cycle_is_one_definition_cycle_naming_both_edges() {
     );
 }
 
-/// One dispatch entry's candidate without its receiver's package identity:
-/// body, precondition and precondition clauses.
-type CandidateShape = (usize, Option<usize>, Vec<usize>);
+/// Every checked node type under `node`, with the package identity written
+/// `P`, so that the source and model routes compare equal.
+fn type_names(node: qsl_semantics::check::CheckedNode<'_>, out: &mut Vec<String>) {
+    out.push(
+        format!("{:?}", node.value_type())
+            .replace("source/qsl-semantics-integration-tests", "P")
+            .replace("test/orders", "P"),
+    );
+    for child in node.children() {
+        type_names(child, out);
+    }
+}
 
-/// The dispatch tables as their candidates' shapes.
-fn table_shapes(graph: &CheckedGraph) -> Vec<Vec<CandidateShape>> {
+/// The checked types of the clause `name`'s expression.
+fn clause_types(graph: &CheckedGraph, name: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    type_names(
+        graph.state_clause(name).expect("the clause").body(),
+        &mut out,
+    );
+    out
+}
+
+/// The checked types of the function `name`'s body.
+fn function_types(graph: &CheckedGraph, name: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let body = (0..)
+        .map_while(|index| graph.function_state(index))
+        .find(|function| function.name == name)
+        .expect("the function")
+        .body;
+    type_names(body, &mut out);
+    out
+}
+
+/// The receiver type names of a dispatch table's entries.
+fn tables_receivers(table: &qsl_semantics::check::DispatchTable) -> Vec<String> {
+    table
+        .entries()
+        .iter()
+        .map(|(receiver, _)| {
+            format!("{receiver:?}")
+                .rsplit('/')
+                .next()
+                .unwrap_or_default()
+                .trim_end_matches("\" }])")
+                .to_owned()
+        })
+        .collect()
+}
+
+/// A checked expression's node kinds, package identities written `P`.
+fn shape_of(node: qsl_semantics::check::CheckedNode<'_>, out: &mut String) {
+    out.push_str(
+        &format!("{:?};", node.kind())
+            .replace("source/qsl-semantics-integration-tests", "P")
+            .replace("test/orders", "P"),
+    );
+    for child in node.children() {
+        shape_of(child, out);
+    }
+}
+
+/// One dispatch entry without its receiver's package identity: the receiver
+/// type's name, body, precondition and precondition clauses.
+type CandidateShape = (String, usize, Option<usize>, Vec<usize>);
+
+/// The dispatch tables' candidates, by receiver type name.
+fn tables(graph: &CheckedGraph) -> Vec<Vec<CandidateShape>> {
     graph
         .dispatch_tables()
         .iter()
@@ -619,76 +756,207 @@ fn table_shapes(graph: &CheckedGraph) -> Vec<Vec<CandidateShape>> {
             table
                 .entries()
                 .iter()
-                .map(|(_, c)| (c.body, c.precondition, c.precondition_clauses.clone()))
+                .map(|(receiver, candidate)| {
+                    let receiver = format!("{receiver:?}");
+                    let name = receiver
+                        .rsplit("/")
+                        .next()
+                        .unwrap_or_default()
+                        .trim_end_matches("\" }])")
+                        .to_owned();
+                    (
+                        name,
+                        candidate.body,
+                        candidate.precondition,
+                        candidate.precondition_clauses.clone(),
+                    )
+                })
                 .collect()
         })
         .collect()
 }
 
-const CALL_SIZE: &str = "invariant Sized using P on Order at current { self.size() >= 0 }\n";
-const MODEL_CALL_SIZE: &str =
-    "invariant Sized using P on M::Order at current { self.size() >= 0 }\n";
+/// The source `Sub`-typed and `Order`-typed expressions of AC-5, with the
+/// names `object` qualifies by `qualifier`.
+fn ac5_extras(qualifier: &str) -> String {
+    format!(
+        "bound B on {q}orders [3]\n\
+         invariant Cap using P on {q}Order at current {{ count(o in {q}orders where o.total = 0) < 4 }}\n\
+         invariant Every using P on {q}Order at current {{ forall(o in allInstances<{q}Order>({q}orders) : deref(o).total >= 0) }}\n\
+         invariant SizedSub using P on {q}Sub at current {{ self.size() >= 0 }}\n\
+         function totalOf using P (s: Reference<{q}Sub>): Int[0, 9] pure {{ deref(s).total }}\n",
+        q = qualifier
+    )
+}
 
-/// FR-569-AC-5, S-R: a clause on `Sub::size` joins `Sub.size`'s effective
-/// precondition as `Qs2 or Qs`, and the source and model twins link equal
-/// dispatch tables.
+/// FR-569-AC-5 (S-R): a clause on `Sub::size` joins `Sub.size`'s effective
+/// precondition as `Qs2 or Qs` with the own clause first, and S and D link
+/// the same dispatch tables and check the same types.
 #[trace("FR-569-AC-5", "TC-1408")]
 #[test]
-fn the_source_and_model_twins_link_equal_dispatch_tables() {
+fn the_source_and_model_twins_link_equal_tables_and_check_equal_types() {
     let source = check(&format!(
-        "{OBJECTS}{CLAUSES}{CALL_SIZE}pre Qs2 using P on Sub::size {{ self.total >= 1 }}\n"
+        "{OBJECTS}{CLAUSES}pre Qs2 using P on Sub::size {{ self.total >= 1 }}\n{}",
+        ac5_extras("")
     ));
     let model = finish(
         assemble_model(
             &format!(
-                "{MODEL_CLAUSES}{MODEL_CALL_SIZE}pre Qs2 using P on M::Sub::size {{ self.total >= 1 }}\n"
+                "{MODEL_CLAUSES}pre Qs2 using P on M::Sub::size {{ self.total >= 1 }}\n{}",
+                ac5_extras("M::")
             ),
             model_package(false),
         )
         .expect("the model twin assembles"),
     )
     .expect("the model twin checks");
-    assert_eq!(table_shapes(&source), table_shapes(&model));
-    let [table] = source.dispatch_tables() else {
-        panic!("one table");
+
+    // Dispatch tables: equal, with `Sub.size` carrying its own clause first.
+    let (source_tables, model_tables) = (tables(&source), tables(&model));
+    assert_eq!(source_tables, model_tables);
+    assert!(source_tables.iter().any(|table| {
+        table
+            .iter()
+            .all(|entry| entry.0 == "Order" || entry.0 == "Sub")
+    }));
+    let precondition_of = |graph: &CheckedGraph, name: &str| -> String {
+        let table = graph
+            .dispatch_tables()
+            .iter()
+            .find(|table| tables_receivers(table).iter().any(|r| r == "Sub"))
+            .expect("the size table");
+        let (_, candidate) = table
+            .entries()
+            .iter()
+            .find(|(receiver, _)| format!("{receiver:?}").contains(&format!("/{name}\"")))
+            .unwrap_or_else(|| panic!("{name} has an entry"));
+        let function = graph
+            .function_state(candidate.precondition.expect("an effective precondition"))
+            .expect("the precondition function");
+        let mut shape = String::new();
+        shape_of(function.body, &mut shape);
+        shape
     };
-    // `Sub.size` carries both clauses; `Order.size` only `Qs`.
-    let counts: Vec<usize> = table
-        .entries()
+    // `Sub.size`'s effective precondition is `Qs2 or Qs`, the own clause
+    // first (`>= 1` is Qs2, `>= 0` is Qs); `Order.size`'s is `Qs` alone.
+    let sub = precondition_of(&source, "Sub");
+    assert!(sub.starts_with("Connective(Or"), "{sub}");
+    assert!(
+        sub.find("Integer(1)").unwrap() < sub.find("Integer(0)").unwrap(),
+        "Qs2 first: {sub}"
+    );
+    assert!(!precondition_of(&source, "Order").contains("Connective"));
+    assert_eq!(sub, precondition_of(&model, "Sub"));
+    assert_eq!(
+        precondition_of(&source, "Order"),
+        precondition_of(&model, "Order")
+    );
+
+    // Checked types: equal on the two routes, and the expected ones.
+    for clause in ["Cap", "Every", "SizedSub"] {
+        assert_eq!(clause_types(&source, clause), clause_types(&model, clause));
+    }
+    assert_eq!(
+        function_types(&source, "totalOf"),
+        function_types(&model, "totalOf")
+    );
+    let cap = clause_types(&source, "Cap");
+    assert!(
+        cap.contains(&"Int(IntegerInterval { lower: Integer(0), upper: Integer(3) })".to_owned())
+    );
+    assert!(cap.iter().any(|t| t.contains("kind: Set")
+        && t.contains("bound: Some(CardinalityBound { minimum: 0, maximum: 3 })")
+        && t.contains("ix://P/Order")));
+    assert!(cap.contains(&"Population(Some(3))".to_owned()));
+    let every = clause_types(&source, "Every");
+    assert!(every
         .iter()
-        .map(|(_, candidate)| candidate.precondition_clauses.len())
-        .collect();
-    assert_eq!(counts, [1, 2]);
+        .any(|t| t.contains("kind: Set") && t.contains("ix://P/Order")));
+    let total_of = function_types(&source, "totalOf");
+    assert_eq!(
+        total_of[0], "Int(IntegerInterval { lower: Integer(0), upper: Integer(9) })",
+        "deref(s).total is the field's Int[0, 9]"
+    );
+    assert!(total_of[1].contains("ix://P/Sub"), "s is a Reference<Sub>");
 }
 
-/// FR-569-AC-5, S-R': a redefinition whose frame writes a field the
-/// redefined operation does not is refused once, at the field.
+/// FR-569-AC-5 (S-R'): `Sub` redefines `bump` and also modifies `note`, which
+/// `Order.bump` does not; S and D each refuse one `effect-escape` on the
+/// `note` field of the redefining member.
 #[trace("FR-569-AC-5", "TC-1408")]
 #[test]
-fn a_redefinition_that_widens_the_frame_refuses_effect_escape_at_the_field() {
+fn a_redefinition_that_widens_the_frame_refuses_effect_escape_on_both_routes() {
     let text = OBJECTS.replace(
-        "abstract object Shape",
-        "object Wide extends Order { operation bump(): Boolean redefines Order::bump modifies self.total, self.note; }\nabstract object Shape",
+        "operation scaled(m: Integer): Integer redefines Order::scaled;",
+        "operation scaled(m: Integer): Integer redefines Order::scaled;\n  \
+         operation bump(): Boolean redefines Order::bump modifies self.total, self.note;",
     );
-    let text = format!("{text}{CLAUSES}{CALL_SIZE}");
-    let declarations = assemble(&text).expect("the unit assembles");
-    let refusals = finish(declarations).expect_err("the frame escapes");
-    let [refusal] = &refusals[..] else {
-        panic!("one refusal: {refusals:?}");
+    let source = finish(assemble(&format!("{text}{CLAUSES}")).expect("S-R' assembles"))
+        .expect_err("the frame escapes");
+    let model = finish(assemble_model(MODEL_CLAUSES, model_package(true)).expect("D-R' assembles"))
+        .expect_err("the frame escapes");
+    for (route, refusals) in [("S-R'", source), ("D-R'", model)] {
+        let [refusal] = &refusals[..] else {
+            panic!("{route}: one refusal: {refusals:?}");
+        };
+        let CheckCause::ModelConformance(failure) = &refusal.cause else {
+            panic!("{route}: a conformance failure: {refusal:?}");
+        };
+        assert_eq!(
+            (failure.code, failure.axis),
+            (Code::IllTyped, "effect"),
+            "{route}"
+        );
+        assert!(
+            failure.member.node.ends_with("/Sub/bump"),
+            "{route}: {failure:?}"
+        );
+        assert!(
+            failure.parent.node.ends_with("/Order/bump"),
+            "{route}: {failure:?}"
+        );
+        assert!(
+            matches!(&failure.cause, ModelRefusalCause::EffectEscape { field } if field.node.ends_with("/Order/note")),
+            "{route}: {failure:?}"
+        );
+    }
+}
+
+/// FR-569-AC-2: `on Order` and `on M::Order` check against different field
+/// sets when the source `Order` declares a field the model's lacks.
+#[trace("FR-569-AC-2", "TC-1408")]
+#[test]
+fn a_bare_and_a_qualified_context_see_different_field_sets() {
+    let objects = OBJECTS.replace(
+        "  total: Int[0, 9];",
+        "  total: Int[0, 9];\n  extra: Integer;",
+    );
+    // `extra` is a field of the source `Order` only.
+    let both = |clause: &str| {
+        finish(
+            assemble_model(&format!("{objects}{clause}"), model_package(false))
+                .expect("the unit assembles"),
+        )
     };
-    let CheckCause::ModelConformance(failure) = &refusal.cause else {
-        panic!("a conformance failure: {refusal:?}");
-    };
-    assert_eq!((failure.code, failure.axis), (Code::IllTyped, "effect"));
+    both("invariant OnSource using P on Order at current { self.extra >= 0 }\n")
+        .expect("`on Order` sees `extra`");
+    let refusals = both("invariant OnModel using P on M::Order at current { self.extra >= 0 }\n")
+        .expect_err("`on M::Order` does not");
     assert!(
-        matches!(&failure.cause, ModelRefusalCause::EffectEscape { field } if field.node.ends_with("/Order/note")),
-        "{failure:?}"
+        matches!(&refusals[..], [refusal] if matches!(&refusal.cause, CheckCause::StateModel(_) | CheckCause::MissingName(_))),
+        "{refusals:?}"
     );
-    assert!(failure.member.node.ends_with("/Wide/bump"));
+    // The model's `note` is seen by both.
+    both(
+        "invariant A using P on Order at current { present(self.note) or true }\n\
+         invariant B using P on M::Order at current { present(self.note) or true }\n",
+    )
+    .expect("both see `note`");
 }
 
 /// A protocol `Sell` over `over_type`, with `w` the role on the whole model
-/// `M` and `Seller` a static role on the source `Order`.
+/// `M` and `Seller` a static role on the source `Order`; its `finish` reads
+/// `view.extra`, a field of the source `Order` only.
 fn sell(over_type: &str) -> String {
     format!(
         "protocol Sell using Pp over (view: {over_type}) on origin {{\n\
@@ -697,39 +965,110 @@ fn sell(over_type: &str) -> String {
            run sequence Main {{\n\
              attempt A by Seller on Order::bump contracts [] as (b: Boolean) {{ true }};\n\
            }}\n\
-           finish Done as (d: Boolean) {{ true }};\n\
+           finish Done as (d: Boolean) {{ view.extra >= 0 }};\n\
          }}\n"
     )
 }
 
-/// FR-218-AC-39, FR-383-AC-67 (S-M): `w` is the role on the whole model `M`
-/// and `Seller` a static role on the source `Order`; `over (view: Order)`
-/// has the source `Order` as its model context, and `over (view: M::Order)`
-/// the model's.
-#[trace("FR-218-AC-39", "FR-383-AC-67", "FR-569-AC-2", "TC-1408")]
+/// FR-218-AC-39 (S-M): `w` is the role on the whole model `M` and `Seller` a
+/// static role on the source `Order`. `over (view: Order)` has the source
+/// `Order` as its model context, so it reads the source-only field `extra`;
+/// `over (view: M::Order)` has the model's, which has none.
+#[trace("FR-218-AC-39", "FR-569-AC-2", "TC-1408")]
 #[test]
 fn a_protocol_roles_and_over_resolve_to_the_source_or_the_model_by_spelling() {
-    for over_type in ["Order", "M::Order"] {
-        let text = format!("{OBJECTS}{}", sell(over_type));
-        let graph =
-            finish(assemble_model(&text, model_package(false)).expect("the S-M unit assembles"))
-                .unwrap_or_else(|refusals| panic!("over {over_type}: {refusals:?}"));
-        let [protocol] = graph.protocols() else {
-            panic!("one protocol over {over_type}");
+    let objects = OBJECTS.replace(
+        "  total: Int[0, 9];",
+        "  total: Int[0, 9];\n  extra: Integer;",
+    );
+    let on_source = finish(
+        assemble_model(&format!("{objects}{}", sell("Order")), model_package(false))
+            .expect("the S-M unit assembles"),
+    )
+    .unwrap_or_else(|refusals| panic!("over Order: {refusals:?}"));
+    let [protocol] = on_source.protocols() else {
+        panic!("one protocol");
+    };
+    let role = |name: &str| {
+        protocol
+            .roles
+            .iter()
+            .find(|role| role.name == name)
+            .unwrap_or_else(|| panic!("role {name}"))
+    };
+    // `w` is on the whole model `M`: it names the model's package and no
+    // object type. `Seller` is on the source `Order`: an object type of the
+    // source package.
+    assert_eq!(role("w").model_selection.as_deref(), Some("test/orders"));
+    assert_eq!(role("w").context, None);
+    assert!(role("Seller").context.is_some());
+    assert_eq!(role("Seller").model_selection, None);
+
+    // The same protocol over the model's `Order` cannot read `extra`.
+    let refusals = finish(
+        assemble_model(
+            &format!("{objects}{}", sell("M::Order")),
+            model_package(false),
+        )
+        .expect("the S-M unit assembles"),
+    )
+    .map(|_| ())
+    .expect_err("M::Order has no `extra`");
+    assert!(!refusals.is_empty());
+    // And over the model's `Order` without reading `extra`, it checks: the
+    // two contexts differ only in what they see.
+    let without = sell("M::Order").replace("view.extra >= 0", "view.total >= 0");
+    finish(
+        assemble_model(&format!("{objects}{without}"), model_package(false))
+            .expect("the S-M unit assembles"),
+    )
+    .unwrap_or_else(|refusals| panic!("over M::Order: {refusals:?}"));
+}
+
+/// Source objects are unit-scoped: a clause in another unit of the package
+/// that names a source type refuses `missing-name`, whichever unit holds the
+/// declaration.
+#[trace("FR-569-AC-2", "TC-1408")]
+#[test]
+fn a_source_type_is_visible_only_in_the_unit_that_declares_it() {
+    let header = "profile P = \"quire.model.complete/v1\";\n";
+    let objects = format!("{header}{OBJECTS}");
+    let clause = format!("{header}invariant X using P on Order at current {{ self.total >= 0 }}\n");
+    // The declaring unit's own clause checks.
+    let alone = crate::model_operations::try_assemble_units(
+        &[(
+            "a",
+            &format!(
+                "{objects}{clause_body}",
+                clause_body = "invariant X using P on Order at current { self.total >= 0 }\n"
+            ),
+        )],
+        &[],
+    );
+    assert!(alone.is_ok(), "{:?}", alone.err());
+    // A clause in another unit, whichever order the units sort in.
+    for units in [
+        [("a", &objects), ("b", &clause)],
+        [("a", &clause), ("b", &objects)],
+    ] {
+        let refusal = crate::model_operations::try_assemble_units(
+            &[
+                (units[0].0, units[0].1.as_str()),
+                (units[1].0, units[1].1.as_str()),
+            ],
+            &[],
+        )
+        .expect_err("the other unit does not see the type");
+        let [error] = &refusal.errors[..] else {
+            panic!("one refusal: {refusal:?}");
         };
-        let role = |name: &str| {
-            protocol
-                .roles
-                .iter()
-                .find(|role| role.name == name)
-                .unwrap_or_else(|| panic!("role {name}"))
-        };
-        // `w` is on the whole model `M`: it names the model's package and no
-        // object type. `Seller` is on the source `Order`: an object type of
-        // the source package.
-        assert_eq!(role("w").model_selection.as_deref(), Some("test/orders"));
-        assert_eq!(role("w").context, None);
-        assert!(role("Seller").context.is_some());
-        assert_eq!(role("Seller").model_selection, None);
+        assert!(
+            matches!(&error.cause, AssemblyCause::UnresolvedTypeName { name } if name == "Order"),
+            "{error:?}"
+        );
+        assert_eq!(
+            (error.cause.code(), error.cause.catalog_code().cause()),
+            MISSING
+        );
     }
 }

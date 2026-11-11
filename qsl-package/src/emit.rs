@@ -4396,7 +4396,13 @@ fn encoding(error: impl std::fmt::Display) -> EmitRefusal {
     }
 }
 
+/// The refusals every emission entry point raises before it builds anything:
+/// a source object type has no node to write, which wins over a protocol
+/// refusal that would need results to emit.
 fn require_protocol_results_for_refusals(package: &CheckedPackage) -> Result<(), EmitRefusal> {
+    if let Some(span) = package.graph().first_source_object() {
+        return Err(EmitRefusal::SourceObjectEmission { span });
+    }
     if package.graph().protocol_refusals().is_empty() {
         Ok(())
     } else {

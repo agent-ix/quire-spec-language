@@ -963,6 +963,20 @@ fn assembly_message(refusal: &AssemblyRefusal) -> String {
             SourceObjectFault::NotAReference { name } => {
                 format!("`{name}` is not a reference the operation can delete")
             }
+            SourceObjectFault::MissingMember { name } => {
+                format!("no field or operation `{name}` is declared or inherited here")
+            }
+            SourceObjectFault::SupertypeCycle { edges } => format!(
+                "the object type `{}` is its own supertype",
+                edges.first().map_or("", |(subtype, _)| subtype.as_str())
+            ),
+            SourceObjectFault::ModelAliasAsType { alias } => format!(
+                "`{alias}` is a model alias; a context names `{alias}::Type` or a source type"
+            ),
+            SourceObjectFault::Normalization(refusal) => refusal.detail.clone(),
+            SourceObjectFault::Limit(_) => {
+                "normalizing the source object types reached a limit".to_owned()
+            }
             SourceObjectFault::UnsupportedType => {
                 "a source object member's type is not supported yet".to_owned()
             }

@@ -32,7 +32,7 @@ fn source_request(directory: &std::path::Path) -> Request {
 /// FR-569-AC-11: a unit that declares a source object type is refused with
 /// one `unsupported_construct`/`not-yet-implemented` naming
 /// `SourceObjectEmission`, and the handoff writer creates no directory.
-#[trace("FR-569-AC-11", "FR-390-AC-70", "FR-390-AC-73", "TC-1408")]
+#[trace("FR-569-AC-11", "TC-1408")]
 #[test]
 fn a_unit_with_a_source_object_is_refused_at_emission_and_writes_nothing() {
     let holder = tempfile::tempdir().unwrap();

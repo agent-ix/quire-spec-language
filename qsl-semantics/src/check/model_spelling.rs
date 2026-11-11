@@ -115,6 +115,11 @@ impl ModelSpellings {
         }
     }
 
+    /// Whether `name` is a model alias of some unit.
+    pub(crate) fn is_model_alias(&self, name: &str) -> bool {
+        self.model_aliases.contains(name)
+    }
+
     /// Add the selected package `selection` with no names yet, returning
     /// its position.
     pub(crate) fn add_package(&mut self, selection: DomainPackageRef) -> usize {
