@@ -814,23 +814,16 @@ impl Derive<'_, '_> {
         );
         self.edge(EdgeKind::AwaitTimeout, port(timeout, exit), port(id, exit));
 
-        let after = required(node, "after")?;
-        let kind = group_member(after, "kind")
-            .and_then(text)
-            .ok_or_else(|| malformed(id, "after"))?;
-        let target = group_member(after, "target")
-            .and_then(reference)
-            .ok_or_else(|| malformed(id, "after"))?;
-        match AwaitAnchor::from_wire(kind) {
-            Some(AwaitAnchor::Event) => {
+        let AwaitAnchor { kind, target } = await_anchor(node)?;
+        match kind {
+            AwaitAnchorKind::Event => {
                 self.edge(EdgeKind::AwaitAnchor, port(target, exit), port(id, enter));
             }
-            Some(AwaitAnchor::Compensation) => {
+            AwaitAnchorKind::Compensation => {
                 let template = self.index.target(id, "after", target)?;
                 let forward = single(template, "forward")?;
                 self.edge(EdgeKind::AwaitAnchor, port(forward, enter), port(id, enter));
             }
-            None => return Err(malformed(id, "after")),
         }
         Ok(())
     }
@@ -838,14 +831,14 @@ impl Derive<'_, '_> {
 
 /// What an `await` clause's `after` anchor names.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum AwaitAnchor {
+pub enum AwaitAnchorKind {
     /// An `event` control: the await follows it.
     Event,
     /// A `compensation` template: the await follows its forward body.
     Compensation,
 }
 
-impl AwaitAnchor {
+impl AwaitAnchorKind {
     /// The anchor a wire word names, `None` for any other word.
     #[ix_trace_rs::string_edge]
     fn from_wire(word: &str) -> Option<Self> {
@@ -855,6 +848,36 @@ impl AwaitAnchor {
             _ => None,
         }
     }
+}
+
+/// The `after` anchor of an `await` control: what kind of node it names and
+/// that node's id.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AwaitAnchor<'n> {
+    /// What the anchor names.
+    pub kind: AwaitAnchorKind,
+    /// The `event` control or `compensation` template the await follows.
+    pub target: &'n CheckedNodeId,
+}
+
+/// The `after` anchor of the `await` control `node`.
+///
+/// # Errors
+///
+/// [`ViewRefusal::MissingMember`] naming `after` when the node has none,
+/// [`ViewRefusal::MalformedMember`] when `after` is no `kind`/`target` group
+/// of a known kind and a reference.
+pub fn await_anchor(node: &CheckedSemanticNodeV2) -> Result<AwaitAnchor<'_>, ViewRefusal> {
+    let after = required(node, "after")?;
+    let wrong = || malformed(&node.node_id, "after");
+    let kind = group_member(after, "kind")
+        .and_then(text)
+        .and_then(AwaitAnchorKind::from_wire)
+        .ok_or_else(wrong)?;
+    let target = group_member(after, "target")
+        .and_then(reference)
+        .ok_or_else(wrong)?;
+    Ok(AwaitAnchor { kind, target })
 }
 
 /// The texts of the Group of texts `name` of `node`.
@@ -923,6 +946,33 @@ fn canonical_u64(value: &str) -> Option<u64> {
         return None;
     }
     value.parse().ok()
+}
+
+/// The endpoints and message type of a channel (QSpec FR-465 "Channel").
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ChannelEndpoints<'n> {
+    /// The `role` node that sends.
+    pub sender: &'n CheckedNodeId,
+    /// The `role` node that receives.
+    pub receiver: &'n CheckedNodeId,
+    /// The type node of the message the channel carries.
+    pub message_type: &'n CheckedNodeId,
+}
+
+/// The sender, receiver and message type the channel node `channel` carries.
+///
+/// # Errors
+///
+/// [`ViewRefusal::MissingMember`] naming `from`, `to` or `carries` when the
+/// node lacks it, [`ViewRefusal::MalformedMember`] when it is no reference.
+pub fn channel_endpoints(
+    channel: &CheckedSemanticNodeV2,
+) -> Result<ChannelEndpoints<'_>, ViewRefusal> {
+    Ok(ChannelEndpoints {
+        sender: single(channel, "from")?,
+        receiver: single(channel, "to")?,
+        message_type: single(channel, "carries")?,
+    })
 }
 
 /// A queue's capacity (QSpec FR-465 "Queue").

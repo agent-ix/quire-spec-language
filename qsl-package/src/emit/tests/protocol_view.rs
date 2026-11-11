@@ -13,10 +13,10 @@ use super::protocol_requirements::fixture_w::{
 };
 use super::*;
 use crate::protocol_view::{
-    attempts_maximum, attempts_over, binder, causal_relation, control_operation, declaration,
-    delivery, dependency, locus, operation_identity, owner_model, protocol_view, queue_capacity,
-    relation_over, selection, source, temporal_binding, ControlOperation, Delivery, QueueCapacity,
-    Scheduling, ViewRefusal,
+    attempts_maximum, attempts_over, await_anchor, binder, causal_relation, channel_endpoints,
+    control_operation, declaration, delivery, dependency, locus, operation_identity, owner_model,
+    protocol_view, queue_capacity, relation_over, selection, source, temporal_binding, AwaitAnchor,
+    AwaitAnchorKind, ControlOperation, Delivery, QueueCapacity, Scheduling, ViewRefusal,
 };
 
 /// The TC-134 workflow plus an `await` anchored at an event, so every edge
@@ -1649,4 +1649,178 @@ fn a_zero_or_non_integer_maximum_refuses_malformed_member() {
     }
     let nodes = nodes_with_maximum(package, &id, Some(&set(integer, "7")));
     assert_eq!(attempts_over(&nodes, &id), Ok(7));
+}
+
+/// A copy of `node` with the argument `name` removed from its body.
+fn without_argument(node: &CheckedSemanticNodeV2, name: &str) -> CheckedSemanticNodeV2 {
+    let mut copy = node.clone();
+    let CheckedTerm::Application { arguments, .. } = &mut copy.body else {
+        panic!("an application body");
+    };
+    arguments.retain(
+        |argument| !matches!(argument, CheckedTerm::Binding { name: bound, .. } if &**bound == name),
+    );
+    copy
+}
+
+/// FR-519-AC-18 (TC-1314 row 18): the await's `after` kind and target, and
+/// the refusals on a copy that lacks or garbles the anchor.
+#[trace("FR-519-AC-18", "TC-1314")]
+#[test]
+fn the_await_anchor_is_the_kind_and_target_the_node_carries() {
+    let fixture = fixture();
+    let package = &*fixture.admitted;
+    let wait = by_name(package, "WaitEvent");
+    let applied = by_name(package, "Applied").node_id.clone();
+    assert_eq!(
+        await_anchor(wait).unwrap(),
+        AwaitAnchor {
+            kind: AwaitAnchorKind::Event,
+            target: &applied
+        }
+    );
+
+    let text = source_text().replace(
+        "after Main::PaymentRetries::ChargeCycle::Applied",
+        "after Refund",
+    );
+    let after_template = fixture_over(&text);
+    let package = &*after_template.admitted;
+    let refund = by_name(package, "Refund").node_id.clone();
+    assert_eq!(
+        await_anchor(by_name(package, "WaitEvent")).unwrap(),
+        AwaitAnchor {
+            kind: AwaitAnchorKind::Compensation,
+            target: &refund
+        }
+    );
+
+    let wait = by_name(package, "WaitEvent");
+    assert_eq!(
+        await_anchor(&without_argument(wait, "after")).unwrap_err(),
+        ViewRefusal::MissingMember {
+            node: wait.node_id.clone(),
+            member: "after"
+        }
+    );
+    let malformed = |edit: &dyn Fn(&mut CheckedTerm)| {
+        let mut copy = wait.clone();
+        let CheckedTerm::Application { arguments, .. } = &mut copy.body else {
+            panic!("an application body");
+        };
+        for argument in arguments {
+            if let CheckedTerm::Binding { name, value } = argument {
+                if &**name == "after" {
+                    edit(value);
+                }
+            }
+        }
+        await_anchor(&copy).unwrap_err()
+    };
+    let expected = ViewRefusal::MalformedMember {
+        node: wait.node_id.clone(),
+        member: "after",
+    };
+    for member in ["kind", "target"] {
+        assert_eq!(
+            malformed(&|after| {
+                let CheckedTerm::Aggregate { members } = after else {
+                    panic!("after is a group");
+                };
+                members.retain(
+                    |m| !matches!(m, CheckedTerm::Binding { name, .. } if &**name == member),
+                );
+            }),
+            expected,
+            "{member} removed"
+        );
+    }
+    assert_eq!(
+        malformed(&|after| {
+            let CheckedTerm::Aggregate { members } = after else {
+                panic!("after is a group");
+            };
+            for m in members {
+                if let CheckedTerm::Binding { name, value } = m {
+                    if &**name == "kind" {
+                        if let CheckedTerm::Literal { value, .. } = &mut **value {
+                            *value = quire_contract_model::CheckedJson::from_serializable(&json!(
+                                "sink"
+                            ))
+                            .unwrap();
+                        }
+                    }
+                }
+            }
+        }),
+        expected,
+        "an unknown kind word"
+    );
+}
+
+/// FR-519-AC-19 (TC-1314 row 19): a channel's sender, receiver and message
+/// type, and the refusals on a copy that lacks one.
+#[trace("FR-519-AC-19", "TC-1314")]
+#[test]
+fn a_channels_ends_and_message_type_are_the_nodes_it_references() {
+    let fixture = fixture();
+    let package = &*fixture.admitted;
+    assert!(!fixture.protocol.channels.is_empty());
+    for held in &fixture.protocol.channels {
+        let channel = by_name(package, &held.name);
+        let ends = channel_endpoints(channel).unwrap();
+        assert_eq!(name(package, ends.sender).last(), Some(&held.from));
+        assert_eq!(name(package, ends.receiver).last(), Some(&held.to));
+        assert_eq!(&*node(package, ends.sender).semantic_form, "role");
+        assert_eq!(&*node(package, ends.receiver).semantic_form, "role");
+        let referenced = |member: &str| match channel_argument(channel, member) {
+            CheckedTerm::Reference { target } => target.clone(),
+            other => panic!("{member} is a reference, not {other:?}"),
+        };
+        assert_eq!(ends.sender, &referenced("from"));
+        assert_eq!(ends.receiver, &referenced("to"));
+        assert_eq!(ends.message_type, &referenced("carries"));
+    }
+    let charges = by_name(package, "Charges");
+    let mut texted = charges.clone();
+    let CheckedTerm::Application { arguments, .. } = &mut texted.body else {
+        panic!("an application body");
+    };
+    for argument in arguments {
+        if let CheckedTerm::Binding { name, value } = argument {
+            if &**name == "from" {
+                **value = channel_argument(charges, "delivery").clone();
+            }
+        }
+    }
+    assert_eq!(
+        channel_endpoints(&texted).unwrap_err(),
+        ViewRefusal::MalformedMember {
+            node: charges.node_id.clone(),
+            member: "from"
+        }
+    );
+    for (argument, member) in [("from", "from"), ("to", "to"), ("carries", "carries")] {
+        assert_eq!(
+            channel_endpoints(&without_argument(charges, argument)).unwrap_err(),
+            ViewRefusal::MissingMember {
+                node: charges.node_id.clone(),
+                member
+            }
+        );
+    }
+}
+
+/// The argument `name` of the channel node `channel`, read from its body.
+fn channel_argument<'n>(channel: &'n CheckedSemanticNodeV2, name: &str) -> &'n CheckedTerm {
+    let CheckedTerm::Application { arguments, .. } = &channel.body else {
+        panic!("an application body");
+    };
+    arguments
+        .iter()
+        .find_map(|argument| match argument {
+            CheckedTerm::Binding { name: bound, value } if &**bound == name => Some(&**value),
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("a {name} argument"))
 }
