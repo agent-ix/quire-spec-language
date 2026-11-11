@@ -4,7 +4,9 @@
 
 use ix_trace_rs::trace;
 use qsl_foundation::diagnostic::Code;
-use qsl_semantics::check::{AssemblyCause, AssemblyRefusal, CheckedGraph, PackageDeclarations};
+use qsl_semantics::check::{
+    AssemblyCause, AssemblyRefusal, CheckCause, CheckedGraph, PackageDeclarations,
+};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, Extent, FieldMemberRecord, Multiplicity,
@@ -13,13 +15,15 @@ use qsl_semantics::model::domain_package::{
     ScalarValueDomain, ValueTypeRef,
 };
 use qsl_semantics::model::intake::SelectedModels;
+use qsl_semantics::model::normalize::ModelRefusalCause;
 use quire_checked::key::DeclarationKey;
 use quire_exact::{Presence, TextProfile, TextType};
 use quire_semantic_value::checking::CheckingLimits;
 
 /// TC-1408 fixture S's header.
 const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
-    profile P = \"quire.model.complete/v1\";\n";
+    profile P = \"quire.model.complete/v1\";\n\
+    profile Pp = \"quire.protocol.finite-global/v1\";\n";
 
 /// TC-1408 fixture S: the three object declarations.
 const OBJECTS: &str = "\
@@ -118,8 +122,10 @@ fn offset(text: &str, needle: &str, occurrence: usize, skip: usize) -> usize {
 fn finish(
     mut declarations: PackageDeclarations,
 ) -> Result<CheckedGraph, Vec<qsl_semantics::check::CheckRefusal>> {
-    declarations.link_dispatch(ModelNormalizationLimits::default())?;
-    declarations.check(CheckingLimits::default())
+    let pending = declarations.link_dispatch(ModelNormalizationLimits::default())?;
+    declarations
+        .check(CheckingLimits::default())
+        .map_err(|refusals| pending.report(refusals))
 }
 
 fn check(declarations: &str) -> CheckedGraph {
@@ -598,4 +604,129 @@ fn a_supertype_cycle_is_one_definition_cycle_naming_both_edges() {
         (error.cause.code(), error.cause.catalog_code().cause()),
         (Code::InvalidPackage, "definition-cycle")
     );
+}
+
+/// The dispatch tables as `(body, precondition, precondition clauses)` per
+/// entry, which carry no package identity.
+fn table_shapes(graph: &CheckedGraph) -> Vec<Vec<(usize, Option<usize>, Vec<usize>)>> {
+    graph
+        .dispatch_tables()
+        .iter()
+        .map(|table| {
+            table
+                .entries()
+                .iter()
+                .map(|(_, c)| (c.body, c.precondition, c.precondition_clauses.clone()))
+                .collect()
+        })
+        .collect()
+}
+
+const CALL_SIZE: &str = "invariant Sized using P on Order at current { self.size() >= 0 }\n";
+const MODEL_CALL_SIZE: &str =
+    "invariant Sized using P on M::Order at current { self.size() >= 0 }\n";
+
+/// FR-569-AC-5, S-R: a clause on `Sub::size` joins `Sub.size`'s effective
+/// precondition as `Qs2 or Qs`, and the source and model twins link equal
+/// dispatch tables.
+#[trace("FR-569-AC-5", "TC-1408")]
+#[test]
+fn the_source_and_model_twins_link_equal_dispatch_tables() {
+    let source = check(&format!(
+        "{OBJECTS}{CLAUSES}{CALL_SIZE}pre Qs2 using P on Sub::size {{ self.total >= 1 }}\n"
+    ));
+    let model = finish(
+        assemble_model(
+            &format!(
+                "{MODEL_CLAUSES}{MODEL_CALL_SIZE}pre Qs2 using P on M::Sub::size {{ self.total >= 1 }}\n"
+            ),
+            model_package(false),
+        )
+        .expect("the model twin assembles"),
+    )
+    .expect("the model twin checks");
+    assert_eq!(table_shapes(&source), table_shapes(&model));
+    let [table] = source.dispatch_tables() else {
+        panic!("one table");
+    };
+    // `Sub.size` carries both clauses; `Order.size` only `Qs`.
+    let counts: Vec<usize> = table
+        .entries()
+        .iter()
+        .map(|(_, candidate)| candidate.precondition_clauses.len())
+        .collect();
+    assert_eq!(counts, [1, 2]);
+}
+
+/// FR-569-AC-5, S-R': a redefinition whose frame writes a field the
+/// redefined operation does not is refused once, at the field.
+#[trace("FR-569-AC-5", "TC-1408")]
+#[test]
+fn a_redefinition_that_widens_the_frame_refuses_effect_escape_at_the_field() {
+    let text = OBJECTS.replace(
+        "abstract object Shape",
+        "object Wide extends Order { operation bump(): Boolean redefines Order::bump modifies self.total, self.note; }\nabstract object Shape",
+    );
+    let text = format!("{text}{CLAUSES}{CALL_SIZE}");
+    let declarations = assemble(&text).expect("the unit assembles");
+    let refusals = finish(declarations).expect_err("the frame escapes");
+    let [refusal] = &refusals[..] else {
+        panic!("one refusal: {refusals:?}");
+    };
+    let CheckCause::ModelConformance(failure) = &refusal.cause else {
+        panic!("a conformance failure: {refusal:?}");
+    };
+    assert_eq!((failure.code, failure.axis), (Code::IllTyped, "effect"));
+    assert!(
+        matches!(&failure.cause, ModelRefusalCause::EffectEscape { field } if field.node.ends_with("/Order/note")),
+        "{failure:?}"
+    );
+    assert!(failure.member.node.ends_with("/Wide/bump"));
+}
+
+/// A protocol `Sell` over `over_type`, with `w` the role on the whole model
+/// `M` and `Seller` a static role on the source `Order`.
+fn sell(over_type: &str) -> String {
+    format!(
+        "protocol Sell using Pp over (view: {over_type}) on origin {{\n\
+           role w on M;\n\
+           role Seller on Order;\n\
+           run sequence Main {{\n\
+             attempt A by Seller on Order::bump contracts [] as (b: Boolean) {{ true }};\n\
+           }}\n\
+           finish Done as (d: Boolean) {{ true }};\n\
+         }}\n"
+    )
+}
+
+/// FR-218-AC-39, FR-383-AC-67 (S-M): `w` is the role on the whole model `M`
+/// and `Seller` a static role on the source `Order`; `over (view: Order)`
+/// has the source `Order` as its model context, and `over (view: M::Order)`
+/// the model's.
+#[trace("FR-218-AC-39", "FR-383-AC-67", "FR-569-AC-2", "TC-1408")]
+#[test]
+fn a_protocol_roles_and_over_resolve_to_the_source_or_the_model_by_spelling() {
+    for over_type in ["Order", "M::Order"] {
+        let text = format!("{OBJECTS}{}", sell(over_type));
+        let graph =
+            finish(assemble_model(&text, model_package(false)).expect("the S-M unit assembles"))
+                .unwrap_or_else(|refusals| panic!("over {over_type}: {refusals:?}"));
+        let [protocol] = graph.protocols() else {
+            panic!("one protocol over {over_type}");
+        };
+        let role = |name: &str| {
+            protocol
+                .roles
+                .iter()
+                .find(|role| role.name == name)
+                .unwrap_or_else(|| panic!("role {name}"))
+        };
+        // `w` is on the whole model `M`: it names the model's package and no
+        // object type. `Seller` is on the source `Order`: an object type of
+        // the source package.
+        assert_eq!(role("w").model_selection.as_deref(), Some("test/orders"));
+        assert_eq!(role("w").context, None);
+        assert!(role("Seller").context.is_some());
+        assert_eq!(role("Seller").model_selection, None);
+    }
 }
