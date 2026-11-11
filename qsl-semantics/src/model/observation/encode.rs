@@ -10,10 +10,10 @@ use quire_exact::{CollectionKind, EnumMember, FieldValue, NodeKey, Value, Varian
 use quire_semantic_value::declaration::{CompositeShape, TypeEnvironment};
 
 use super::{
-    collection_tag, fault, model_views, AdmissionFailure, ModelNormalizationLimits, NativeKind,
-    RawNativeKind, RawNode, SnapshotValue,
+    collection_tag, fault, model_views, AdmissionFailure, ModelNormalizationLimits,
+    ModelSelections, NativeKind, RawNativeKind, RawNode, SnapshotValue,
 };
-use crate::model::domain_package::DomainPackageRef;
+
 use crate::model::intake::PackageInput;
 
 /// Writes kernel values as snapshot value forms, naming each variant value by
@@ -33,8 +33,8 @@ impl ValueEncoder {
     ///
     /// The model re-admission and normalization refusals of
     /// [`super::admit_current_snapshot`].
-    pub fn over(
-        model_selections: &[DomainPackageRef],
+    pub fn over<'a>(
+        model_selections: impl Into<ModelSelections<'a>>,
         types: &TypeEnvironment,
         packages: &PackageInput,
         limits: ModelNormalizationLimits,

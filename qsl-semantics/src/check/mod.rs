@@ -866,6 +866,9 @@ pub struct CheckedGraph {
     /// FR-110: the header-selectable layers the unit's header profiles
     /// resolve to, ascending.
     header_layers: Vec<crate::value::layer::HeaderLayer>,
+    /// The synthetic domain packages the unit's `object` declarations build
+    /// (FR-569), which view admission normalizes in place of a document.
+    source_packages: Vec<crate::model::domain_package::DomainPackage>,
     /// The span of the unit's first source `object` declaration.
     first_source_object: Option<(
         qsl_foundation::source::provenance::RawSourceRef,
@@ -1066,6 +1069,7 @@ impl DebugWith for CheckedGraph {
             model_roots,
             header_layers,
             first_source_object,
+            source_packages,
             extension_selections,
             extension_definitions,
             time_sources,
@@ -1184,6 +1188,7 @@ impl DebugWith for CheckedGraph {
             .field("model_roots", &NodeList(model_roots.iter(), table))
             .field("header_layers", &header_layers)
             .field("first_source_object", &first_source_object)
+            .field("source_packages", &source_packages)
             .field("extension_selections", &extension_selections)
             .field("extension_definitions", &extension_definitions)
             .field("time_sources", &Seq(time_sources, table))
@@ -2718,6 +2723,11 @@ impl PackageDeclarations {
         let protocol_profile = self.protocol_profile;
         let header_layers = self.header_layers;
         let first_source_object = self.first_source_object;
+        let source_packages: Vec<_> = self
+            .models
+            .iter()
+            .filter_map(|model| model.source_package().cloned())
+            .collect();
         let mut held_extensions: Vec<_> = self.held_extensions.iter().collect();
         held_extensions.sort_by(|a, b| {
             let (a, b) = (a.definition(), b.definition());
@@ -7368,6 +7378,7 @@ impl PackageDeclarations {
             model_roots,
             header_layers,
             first_source_object,
+            source_packages,
             extension_selections,
             extension_definitions,
             time_sources: self.time_sources,
@@ -8157,6 +8168,23 @@ impl CheckedGraph {
     /// FR-380: every `bound` declaration of the unit, ascending by label.
     pub fn population_bounds(&self) -> &[CheckedPopulationBound] {
         &self.population_bounds
+    }
+
+    /// The synthetic packages of the unit's own `object` declarations
+    /// (FR-569), which have no document.
+    #[must_use]
+    pub fn source_packages(&self) -> &[crate::model::domain_package::DomainPackage] {
+        &self.source_packages
+    }
+
+    /// The packages an admission of this package's observations
+    /// re-normalizes: [`Self::model_selections`] and [`Self::source_packages`].
+    #[must_use]
+    pub fn model_inputs(&self) -> crate::model::observation::ModelSelections<'_> {
+        crate::model::observation::ModelSelections::new(
+            &self.model_selections,
+            &self.source_packages,
+        )
     }
 
     /// ADR-011 §2.4: the selection of each domain package this package was

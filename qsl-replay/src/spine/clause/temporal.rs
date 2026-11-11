@@ -798,7 +798,7 @@ pub(super) fn run_temporal(run: &CompiledRun<'_>, request: &TemporalRun<'_>) -> 
     let named = node.named_populations();
     for document in trace.documents() {
         match admit_trace_snapshot(
-            graph.model_selections(),
+            graph.model_inputs(),
             graph.scope().types(),
             run.packages,
             run.model_limits,
@@ -847,7 +847,7 @@ pub(super) fn run_temporal(run: &CompiledRun<'_>, request: &TemporalRun<'_>) -> 
         ));
     };
     let universe = match population_universe_for(
-        graph.model_selections(),
+        graph.model_inputs(),
         run.packages,
         run.model_limits,
         type_identity.clone(),

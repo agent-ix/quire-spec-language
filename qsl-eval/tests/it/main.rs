@@ -72,6 +72,7 @@ mod relationship_reachability;
 mod removal_filter_decrease;
 mod smt_query;
 mod source_call;
+mod source_objects;
 mod state_model_family;
 mod supplied_phases;
 mod tc235_business_meaning_runtime;

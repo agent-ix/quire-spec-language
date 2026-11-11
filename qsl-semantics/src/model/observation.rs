@@ -318,6 +318,52 @@ pub enum ContextSide {
     Post,
 }
 
+impl ClauseSelection {
+    /// The selection with every declaration name it spells rewritten to the
+    /// declaration it names (FR-106 "Document forms").
+    fn resolved(&self, views: &[ModelView]) -> Self {
+        let rename = |name: &str| declaration_name(views, name);
+        let object = |object: &Option<SelectedObject>| {
+            object.as_ref().map(|object| SelectedObject {
+                population: rename(&object.population),
+                key: object.key.clone(),
+            })
+        };
+        let input = match &self.input {
+            ClauseSelectionInput::Current {
+                snapshot,
+                anchor,
+                self_object,
+            } => ClauseSelectionInput::Current {
+                snapshot: snapshot.clone(),
+                anchor: anchor.clone(),
+                self_object: object(self_object),
+            },
+            ClauseSelectionInput::PreCall {
+                snapshot,
+                self_object,
+                parameters,
+            } => ClauseSelectionInput::PreCall {
+                snapshot: snapshot.clone(),
+                self_object: object(self_object),
+                parameters: parameters
+                    .iter()
+                    .map(|(name, value)| {
+                        let mut value = value.clone();
+                        value.rename_populations(&rename);
+                        (name.clone(), value)
+                    })
+                    .collect(),
+            },
+            other => other.clone(),
+        };
+        Self {
+            name: self.name.clone(),
+            input,
+        }
+    }
+}
+
 impl ClauseSelectionInput {
     /// Which of the four observation forms this input is.
     pub fn form(&self) -> ObservationForm {
@@ -901,6 +947,15 @@ pub struct RawItems<'v> {
 }
 
 impl SnapshotValue {
+    /// Rewrite the population every reference of this value names.
+    pub(super) fn rename_populations(&mut self, rename: &dyn Fn(&str) -> String) {
+        for node in &mut self.nodes {
+            if let RawNode::Reference(selected) = node {
+                selected.population = rename(&selected.population);
+            }
+        }
+    }
+
     /// A value over an arena of nodes the reader built, rooted at `root`.
     fn from_arena(nodes: Vec<RawNode>, root: usize) -> Self {
         Self { nodes, root }
@@ -1450,6 +1505,9 @@ impl<'v> RawItems<'v> {
 pub(crate) struct ModelView {
     pub(crate) view: EffectiveView,
     by_effective_id: BTreeMap<EffectiveId, DeclarationKey>,
+    /// Whether the view is the unit's own source package (FR-569), whose
+    /// declarations a snapshot names without an `ix://` scheme.
+    source: bool,
 }
 
 impl ModelView {
@@ -1463,7 +1521,27 @@ impl ModelView {
         Self {
             view,
             by_effective_id,
+            source: false,
         }
+    }
+
+    /// The view of the unit's own source package.
+    pub(crate) fn source(view: EffectiveView) -> Self {
+        Self {
+            source: true,
+            ..Self::new(view)
+        }
+    }
+
+    /// Whether this is the unit's own source package.
+    pub(crate) fn is_source(&self) -> bool {
+        self.source
+    }
+
+    /// The `ix://` identity of the declaration this view's source package
+    /// declares under `name`, as the unit writes it.
+    fn source_declaration(&self, name: &str) -> String {
+        format!("ix://{}/{name}", self.view.model_selection().identity)
     }
 
     fn type_name(&self, effective: EffectiveId) -> Option<&str> {
@@ -1498,26 +1576,86 @@ impl ModelView {
     }
 }
 
+/// The domain packages a checked package selects: their identities, whose
+/// documents the caller supplies, and the source packages the unit's own
+/// `object` declarations build (FR-569), which have no document.
+#[derive(Clone, Copy, Debug)]
+pub struct ModelSelections<'a> {
+    selections: &'a [DomainPackageRef],
+    sources: &'a [DomainPackage],
+}
+
+impl<'a> ModelSelections<'a> {
+    /// `selections`, of which those named by a package of `sources` are the
+    /// unit's own source packages.
+    #[must_use]
+    pub fn new(selections: &'a [DomainPackageRef], sources: &'a [DomainPackage]) -> Self {
+        Self {
+            selections,
+            sources,
+        }
+    }
+
+    /// The selected packages, source packages included.
+    #[must_use]
+    pub fn selections(&self) -> &'a [DomainPackageRef] {
+        self.selections
+    }
+
+    fn source(&self, identity: &str) -> Option<&'a DomainPackage> {
+        self.sources
+            .iter()
+            .find(|package| package.model_selection.identity == identity)
+    }
+}
+
+impl<'a> From<&'a [DomainPackageRef]> for ModelSelections<'a> {
+    fn from(selections: &'a [DomainPackageRef]) -> Self {
+        Self::new(selections, &[])
+    }
+}
+
+impl<'a> From<&'a Vec<DomainPackageRef>> for ModelSelections<'a> {
+    fn from(selections: &'a Vec<DomainPackageRef>) -> Self {
+        Self::new(selections, &[])
+    }
+}
+
+impl<'a, const N: usize> From<&'a [DomainPackageRef; N]> for ModelSelections<'a> {
+    fn from(selections: &'a [DomainPackageRef; N]) -> Self {
+        Self::new(selections, &[])
+    }
+}
+
 /// Re-admit and re-normalize every domain package `model_selections`
-/// names (the caller's own `CheckedGraph::model_selections()`), against the
-/// same package input a caller's `compile` already used. See the module
-/// doc's design note.
-pub(crate) fn model_views(
-    model_selections: &[DomainPackageRef],
+/// names (the caller's own `CheckedGraph::model_inputs()`), against the
+/// same package input a caller's `compile` already used; a source package
+/// has no document and normalizes from its records. See the module doc's
+/// design note.
+pub(crate) fn model_views<'a>(
+    model_selections: impl Into<ModelSelections<'a>>,
     packages: &PackageInput,
     limits: ModelNormalizationLimits,
 ) -> Result<Vec<ModelView>, AdmissionFailure> {
-    let identities: Vec<String> = model_selections
-        .iter()
-        .map(|selection| selection.identity.clone())
-        .collect();
-    let admitted = admit_selections(&identities, packages, limits.intake)
-        .map_err(|_| fault("model-reconsistent-admission"))?;
-    let mut views = Vec::with_capacity(admitted.len());
-    for (package_ref, document) in admitted {
-        let records = read_records(&package_ref.identity, &document)
-            .map_err(|_| fault("model-reconsistent-records"))?;
-        let view = match normalize(&DomainPackage::new(package_ref, records), limits) {
+    let model_selections = model_selections.into();
+    let mut views = Vec::with_capacity(model_selections.selections.len());
+    for selection in model_selections.selections {
+        let source = model_selections.source(&selection.identity);
+        let domain_package = match source {
+            Some(source) => source.clone(),
+            None => {
+                let identities = [selection.identity.clone()];
+                let admitted = admit_selections(&identities, packages, limits.intake)
+                    .map_err(|_| fault("model-reconsistent-admission"))?;
+                let Some((package_ref, document)) = admitted.into_iter().next() else {
+                    return Err(fault("model-reconsistent-admission"));
+                };
+                let records = read_records(&package_ref.identity, &document)
+                    .map_err(|_| fault("model-reconsistent-records"))?;
+                DomainPackage::new(package_ref, records)
+            }
+        };
+        let view = match normalize(&domain_package, limits) {
             NormalizeOutcome::Completed(view) => view,
             // A reached ceiling of `ModelNormalizationLimits` is the caller's
             // budget wherever it is read (ADR-014 section 1), so it refuses
@@ -1543,9 +1681,46 @@ pub(crate) fn model_views(
                     .unwrap_or_else(|| fault("model-reconsistent-normalize")))
             }
         };
-        views.push(ModelView::new(view));
+        views.push(if source.is_some() {
+            ModelView::source(view)
+        } else {
+            ModelView::new(view)
+        });
     }
     Ok(views)
+}
+
+/// FR-106 "Document forms": the declaration identity a snapshot's `name`
+/// stands for. A name with no `ix://` scheme names a declaration of the
+/// unit's own source package, written as the unit writes it; an `ix://` name
+/// names a model declaration only, so one that spells a source package's
+/// declaration names nothing.
+pub(crate) fn declaration_name(views: &[ModelView], name: &str) -> String {
+    if name.starts_with("ix://") {
+        let spells_source = views.iter().any(|view| {
+            view.is_source()
+                && name.starts_with(&format!("ix://{}/", view.view.model_selection().identity))
+        });
+        return if spells_source {
+            format!("unresolved:{name}")
+        } else {
+            name.to_owned()
+        };
+    }
+    views
+        .iter()
+        .filter(|view| view.is_source())
+        .map(|view| view.source_declaration(name))
+        .find(|candidate| {
+            views.iter().any(|view| {
+                view.view
+                    .domain_package()
+                    .records
+                    .iter()
+                    .any(|record| record.key().node == *candidate)
+            })
+        })
+        .unwrap_or_else(|| name.to_owned())
 }
 
 /// The one [`ModelView`] whose effective view names `effective`, and the
@@ -1746,8 +1921,8 @@ pub struct Provisions<'a> {
 /// [`ObjectEnvironment`], for the caller to resolve each object argument
 /// against (FR-109's own `wrong-role-mapping` refusal on an unresolved
 /// one).
-pub fn admit_current_snapshot(
-    model_selections: &[DomainPackageRef],
+pub fn admit_current_snapshot<'a>(
+    model_selections: impl Into<ModelSelections<'a>>,
     types: &TypeEnvironment,
     packages: &PackageInput,
     model_limits: ModelNormalizationLimits,
@@ -1776,8 +1951,8 @@ pub fn admit_current_snapshot(
 /// but not `complete` is `Incomplete` `incomplete_population`/
 /// `incomplete-scope`, as a state clause's observation is.
 #[allow(clippy::too_many_arguments)]
-pub fn admit_trace_snapshot(
-    model_selections: &[DomainPackageRef],
+pub fn admit_trace_snapshot<'a>(
+    model_selections: impl Into<ModelSelections<'a>>,
     types: &TypeEnvironment,
     packages: &PackageInput,
     model_limits: ModelNormalizationLimits,
@@ -1802,8 +1977,8 @@ pub fn admit_trace_snapshot(
 /// complete (FR-106 check 7), repeatedly through their reference fields and
 /// relationship ends.
 #[allow(clippy::too_many_arguments)]
-pub fn admit_object_environment(
-    model_selections: &[DomainPackageRef],
+pub fn admit_object_environment<'a>(
+    model_selections: impl Into<ModelSelections<'a>>,
     types: &TypeEnvironment,
     packages: &PackageInput,
     model_limits: ModelNormalizationLimits,
@@ -1824,8 +1999,8 @@ pub fn admit_object_environment(
 
 /// One current snapshot's object environment, with the populations holding
 /// `arguments` and the populations `required` required to be complete.
-fn admit_current_environment(
-    model_selections: &[DomainPackageRef],
+fn admit_current_environment<'a>(
+    model_selections: impl Into<ModelSelections<'a>>,
     types: &TypeEnvironment,
     (packages, model_limits): (&PackageInput, ModelNormalizationLimits),
     (provision, selected, limits): (
@@ -1837,7 +2012,7 @@ fn admit_current_environment(
     required: &[String],
 ) -> Result<(ObjectEnvironment, AdmissionUsage), AdmissionFailure> {
     let views = model_views(model_selections, packages, model_limits)?;
-    let read = read_document(DocumentKind::Snapshot, provision, selected, limits)?;
+    let read = read_document(DocumentKind::Snapshot, provision, selected, limits, &views)?;
     let snapshot = read
         .as_snapshot()
         .ok_or_else(|| fault("expected-snapshot-document"))?;
@@ -1872,8 +2047,8 @@ pub fn document_reference(bytes: &[u8]) -> Option<DocumentRef> {
 /// module doc's design note), for the caller to resolve an object
 /// argument's population into the exact same universe admission itself
 /// would assign that object.
-pub fn population_universe_for(
-    model_selections: &[DomainPackageRef],
+pub fn population_universe_for<'a>(
+    model_selections: impl Into<ModelSelections<'a>>,
     packages: &PackageInput,
     model_limits: ModelNormalizationLimits,
     type_identity: EffectiveId,
@@ -1886,8 +2061,8 @@ pub fn population_universe_for(
 /// [`UniverseId`], derived through `population_universe` exactly as
 /// [`population_universe_for`] resolves an object argument. `None` when no
 /// selected model declares `declaration`.
-pub fn declared_type_universe_for(
-    model_selections: &[DomainPackageRef],
+pub fn declared_type_universe_for<'a>(
+    model_selections: impl Into<ModelSelections<'a>>,
     packages: &PackageInput,
     model_limits: ModelNormalizationLimits,
     declaration: &DeclarationKey,
@@ -1914,8 +2089,8 @@ pub fn declared_type_universe_for(
 /// this call), into one [`AdmittedObservations`] value, or return exactly
 /// one [`AdmissionFailure`].
 #[allow(clippy::too_many_arguments)]
-pub fn admit_observations(
-    model_selections: &[DomainPackageRef],
+pub fn admit_observations<'a>(
+    model_selections: impl Into<ModelSelections<'a>>,
     types: &TypeEnvironment,
     clause: &ClauseFacts,
     packages: &PackageInput,
@@ -1957,6 +2132,7 @@ pub fn admit_observations(
     }
 
     let views = model_views(model_selections, packages, model_limits)?;
+    let selection = &selection.resolved(&views);
     let context_view =
         view_of(&views, clause.context.clone()).ok_or_else(|| fault("unresolved-context-type"))?;
     let context_name = context_view
@@ -2044,6 +2220,7 @@ pub fn admit_observations(
                 provisions.snapshots,
                 snapshot,
                 limits,
+                &views,
             )?;
             let parameters: Vec<(String, SnapshotValue)> = parameters
                 .iter()
@@ -2196,6 +2373,7 @@ fn admit_invariant(
         provisions.snapshots,
         selected,
         limits,
+        views,
     )?;
     let snapshot = read
         .as_snapshot()
@@ -2229,7 +2407,7 @@ fn admit_invariant(
     }
 
     // Check 4: model.
-    check_model(context_view, &snapshot.model)?;
+    check_model(views, context_view, &snapshot.model)?;
 
     // Check 6-8: populations and values, completeness, closure.
     let environment = document::admit_populations(
@@ -2282,34 +2460,43 @@ fn admit_invariant(
 /// `views` would wrongly admit a document bound to a different alias's
 /// model in a multi-alias unit).
 fn check_model(
+    views: &[ModelView],
     context_view: &ModelView,
     model: &document::ModelHeader,
 ) -> Result<(), AdmissionFailure> {
-    let selection = &context_view.view.model_selection();
-    let matches = selection.identity == model.identity;
-    if matches {
-        Ok(())
-    } else {
-        Err(refuse(admission_record(
+    let wrong = || {
+        refuse(admission_record(
             Code::InvalidModelBinding,
             "wrong-model-selection",
-        )))
+        ))
+    };
+    // A source type's context names no model of its own: its snapshot names
+    // one of the package's domain packages, or none when it selects none.
+    if context_view.is_source() {
+        return check_model_any(views, model);
+    }
+    let selection = &context_view.view.model_selection();
+    match &model.identity {
+        Some(identity) if selection.identity == *identity => Ok(()),
+        Some(_) | None => Err(wrong()),
     }
 }
 
-/// [`check_model`], over every view in `views`: FR-109's `Function`
+/// [`check_model`], over every domain package in `views`: FR-109's `Function`
 /// selection (`admit_current_snapshot`) carries no clause alias of its own
 /// to scope this check to -- a bare `Function` selection is not `on
 /// Alias::Type::op`-shaped -- so it stays scoped to the unit's whole model
-/// selection set, as before.
+/// selection set, as before. A package that selects no domain package
+/// admits a document with no `model` member.
 fn check_model_any(
     views: &[ModelView],
     model: &document::ModelHeader,
 ) -> Result<(), AdmissionFailure> {
-    let matches = views.iter().any(|view| {
-        let selection = &view.view.model_selection();
-        selection.identity == model.identity
-    });
+    let mut domain = views.iter().filter(|view| !view.is_source()).peekable();
+    let matches = match &model.identity {
+        None => domain.peek().is_none(),
+        Some(identity) => domain.any(|view| view.view.model_selection().identity == *identity),
+    };
     if matches {
         Ok(())
     } else {
@@ -2444,6 +2631,7 @@ fn admit_invocation_documents(
         provisions.invocations,
         selected,
         limits,
+        views,
     )?;
     let (pre_ref, post_ref) = {
         let invocation = invocation_read
@@ -2456,12 +2644,14 @@ fn admit_invocation_documents(
         provisions.snapshots,
         &pre_ref,
         limits,
+        views,
     )?;
     let post_read = read_document(
         DocumentKind::Snapshot,
         provisions.snapshots,
         &post_ref,
         limits,
+        views,
     )?;
     let documents = InvocationDocuments {
         invocation: invocation_read,
@@ -2484,9 +2674,9 @@ fn admit_invocation_documents(
     }
 
     // Check 4: model, for each document in the order it was read.
-    check_model(context_view, &invocation.call.model)?;
-    check_model(context_view, &pre_snapshot.model)?;
-    check_model(context_view, &post_snapshot.model)?;
+    check_model(views, context_view, &invocation.call.model)?;
+    check_model(views, context_view, &pre_snapshot.model)?;
+    check_model(views, context_view, &post_snapshot.model)?;
 
     // Check 5: operation, then the invocation each snapshot names.
     let state_machine = is_state_machine_context(context_view, context_name);
@@ -2844,6 +3034,7 @@ fn admit_pre_call_invocation(
         provisions.invocations,
         selected,
         limits,
+        context.views,
     )?;
     let call = invocation_read
         .as_invocation_call()
@@ -2853,6 +3044,7 @@ fn admit_pre_call_invocation(
         provisions.snapshots,
         &call.pre,
         limits,
+        context.views,
     )?;
     admit_pre_call(
         context,
@@ -2878,6 +3070,7 @@ fn admit_pre_call(
     input: PreCallInput<'_>,
 ) -> Result<AdmittedObservations, AdmissionFailure> {
     let call = input.call;
+    let views = context.views;
     let snapshot = input
         .pre
         .as_snapshot()
@@ -2893,9 +3086,9 @@ fn admit_pre_call(
 
     // Check 4: model, for each document in the order it was read.
     if let Some(call) = call {
-        check_model(context.context_view, &call.model)?;
+        check_model(views, context.context_view, &call.model)?;
     }
-    check_model(context.context_view, &snapshot.model)?;
+    check_model(views, context.context_view, &snapshot.model)?;
 
     // Check 5: operation.
     let operation = match (call, context.operation) {
@@ -3366,8 +3559,8 @@ impl AdmittedInvocation<'_> {
 /// `context` and `operation` to the selected ones. `self` is required in
 /// the pre snapshot only, since the operation may delete it.
 #[allow(clippy::too_many_arguments)]
-pub fn admit_frame_invocation<'t>(
-    model_selections: &[DomainPackageRef],
+pub fn admit_frame_invocation<'a, 't>(
+    model_selections: impl Into<ModelSelections<'a>>,
     types: &'t TypeEnvironment,
     frame: &FrameFacts,
     packages: &PackageInput,

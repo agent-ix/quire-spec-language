@@ -50,7 +50,9 @@ pub(super) enum DocumentKind {
 
 #[derive(Clone, Debug)]
 pub(super) struct ModelHeader {
-    pub(super) identity: String,
+    /// The `model` member's `identity`; `None` for a document with no `model`
+    /// member, which only a package that selects no domain package admits.
+    pub(super) identity: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -259,6 +261,51 @@ pub(super) struct ReadDocument {
 }
 
 impl ReadDocument {
+    /// Rewrite every declaration name the document spells to the identity
+    /// of the declaration it names (FR-106 "Document forms").
+    fn resolve_names(&mut self, views: &[ModelView]) {
+        if !views.iter().any(ModelView::is_source) {
+            return;
+        }
+        let rename = |name: &str| super::declaration_name(views, name);
+        let rename_object = |object: &mut SelectedObject| {
+            object.population = rename(&object.population);
+        };
+        let rename_fields = |fields: &mut Vec<(String, SnapshotValue)>| {
+            for (_, value) in fields {
+                value.rename_populations(&rename);
+            }
+        };
+        let rename_call = |call: &mut InvocationCall| {
+            call.context = rename(&call.context);
+            if let Some(object) = &mut call.self_object {
+                rename_object(object);
+            }
+            rename_fields(&mut call.parameters);
+        };
+        match &mut self.body {
+            Body::Snapshot(snapshot) => {
+                for population in &mut snapshot.populations {
+                    population.population = rename(&population.population);
+                    for object in &mut population.objects {
+                        object.type_identity =
+                            RawTypeIdentity(rename(object.type_identity.as_str()));
+                        rename_fields(&mut object.fields);
+                    }
+                }
+            }
+            Body::Invocation(invocation) => {
+                rename_call(&mut invocation.call);
+                if let ResultValue::Value(value) = &mut invocation.result {
+                    value.rename_populations(&rename);
+                }
+                invocation.created.iter_mut().for_each(rename_object);
+                invocation.deleted.iter_mut().for_each(rename_object);
+            }
+            Body::InvocationCall(call) => rename_call(call),
+        }
+    }
+
     pub(super) fn as_snapshot(&self) -> Option<&SnapshotDocument> {
         match &self.body {
             Body::Snapshot(snapshot) => Some(snapshot.as_ref()),
@@ -306,6 +353,7 @@ pub(super) fn read_document(
     provision: &BTreeMap<DocumentRef, Vec<u8>>,
     selected: &DocumentRef,
     limits: ObservationLimits,
+    views: &[ModelView],
 ) -> Result<ReadDocument, AdmissionFailure> {
     // 1.1
     let bytes = provision.get(selected).ok_or_else(|| {
@@ -416,7 +464,9 @@ pub(super) fn read_document(
         | DocumentKind::InvocationContext => INVOCATION_MEMBERS,
     };
     for member in always_required {
-        if !object.contains_key(member) {
+        // `model` is required exactly when the package selects a domain
+        // package, which `read_model` decides.
+        if *member != "model" && !object.contains_key(member) {
             return Err(refuse(
                 admission_record(Code::InvalidRuntimeInput, "missing-member")
                     .with("field", *member),
@@ -464,7 +514,8 @@ pub(super) fn read_document(
         ));
     }
 
-    let model = read_model(object)?;
+    let has_domain = views.iter().any(|view| !view.is_source());
+    let model = read_model(object, has_domain)?;
 
     let body = match kind {
         DocumentKind::Snapshot => {
@@ -480,7 +531,7 @@ pub(super) fn read_document(
             object, model, false, &mut meter,
         )?)),
     };
-    Ok(ReadDocument {
+    let mut read = ReadDocument {
         identity: document_identity,
         usage: super::AdmissionUsage {
             document_bytes,
@@ -488,7 +539,9 @@ pub(super) fn read_document(
             values: meter.values,
         },
         body,
-    })
+    };
+    read.resolve_names(views);
+    Ok(read)
 }
 
 /// Reads the document's own `model` member into a [`ModelHeader`]: a
@@ -498,12 +551,22 @@ pub(super) fn read_document(
 /// member refuses `invalid_runtime_input`/`missing-member` at that member
 /// (check 1.5's own cause, generalized to a nested member).
 #[ix_trace_rs::string_edge]
-fn read_model(object: Object<'_>) -> Result<ModelHeader, AdmissionFailure> {
-    let model = object
-        .member("model")
-        .ok_or_else(|| missing_member("model"))?
-        .as_object()
-        .ok_or_else(|| wrong_kind("model"))?;
+fn read_model(object: Object<'_>, has_domain: bool) -> Result<ModelHeader, AdmissionFailure> {
+    // FR-106: the member is required exactly when the checked package
+    // selects a domain package.
+    let Some(member) = object.member("model") else {
+        return if has_domain {
+            Err(missing_member("model"))
+        } else {
+            Ok(ModelHeader { identity: None })
+        };
+    };
+    if !has_domain {
+        return Err(refuse(
+            admission_record(Code::InvalidRuntimeInput, "unknown-member").with("field", "model"),
+        ));
+    }
+    let model = member.as_object().ok_or_else(|| wrong_kind("model"))?;
     let missing_member = |field: &'static str| {
         refuse(admission_record(Code::InvalidRuntimeInput, "missing-member").with("field", field))
     };
@@ -512,7 +575,9 @@ fn read_model(object: Object<'_>) -> Result<ModelHeader, AdmissionFailure> {
         .and_then(|value| value.as_str())
         .ok_or_else(|| missing_member("identity"))?
         .to_owned();
-    Ok(ModelHeader { identity })
+    Ok(ModelHeader {
+        identity: Some(identity),
+    })
 }
 
 fn wrong_kind(field: impl Into<String>) -> AdmissionFailure {

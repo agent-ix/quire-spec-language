@@ -17,14 +17,14 @@ use quire_semantic_value::declaration::TypeEnvironment;
 use quire_semantic_value::relationship_extent::RelationshipExtent;
 
 use crate::model::accounting::ModelNormalizationLimits;
-use crate::model::domain_package::{DomainPackageRecord, DomainPackageRef};
+use crate::model::domain_package::DomainPackageRecord;
 use crate::model::index::ModelIndex;
 use crate::model::intake::PackageInput;
 use crate::model::normalize::EffectiveView;
 use crate::model::observation::{
     admit_initial_state, model_views, observe_state, state_fields, state_reference,
-    AdmissionFailure, DocumentRef, ModelView, Observation, ObservationLimits, PathStep,
-    SelectedAnchor,
+    AdmissionFailure, DocumentRef, ModelSelections, ModelView, Observation, ObservationLimits,
+    PathStep, SelectedAnchor,
 };
 use quire_checked::key::DeclarationKey;
 
@@ -334,8 +334,8 @@ impl StateModel {
     ///
     /// An [`AdmissionFailure`] when the packages do not re-normalize within
     /// `limits`.
-    pub fn new(
-        model_selections: &[DomainPackageRef],
+    pub fn new<'a>(
+        model_selections: impl Into<ModelSelections<'a>>,
         types: &TypeEnvironment,
         packages: &PackageInput,
         limits: ModelNormalizationLimits,
