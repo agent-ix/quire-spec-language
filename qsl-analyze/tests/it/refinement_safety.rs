@@ -297,6 +297,35 @@ fn an_undefined_items_row_refutes_at_the_first_non_empty_queue() {
             row: row.clone()
         })
     );
+    let (node, origin, _) = world
+        .package()
+        .graph()
+        .occurrences()
+        .next()
+        .expect("the package holds an occurrence");
+    let claim = qsl_foundation::source::provenance::OccurrenceKey::new(node, origin);
+    let wire = qsl_replay::temporal_wire(&counterexample, None, Some(&claim))
+        .expect("the failure is spelled");
+    assert_eq!(wire["refinement_failure"]["kind"], "Undefined");
+    assert_eq!(wire["refinement_failure"]["position"], 1);
+    let row_text = wire["refinement_failure"]["row"]
+        .as_str()
+        .expect("FR-379's row is one string");
+    assert!(row_text.starts_with("field "), "{row_text}");
+    assert_eq!(wire["kind"]["type"], "undefined-evaluation");
+    // FR-364's `where`: the claim is the locus and FR-379's row its own member.
+    assert_eq!(
+        wire["kind"]["where"]["row"],
+        wire["refinement_failure"]["row"]
+    );
+    assert!(wire["kind"]["where"]["locus"]["node"].is_object());
+    assert_eq!(
+        wire["kind"]["where"]["locus"]["occurrence"],
+        serde_json::json!({
+            "role": claim.origin().role().to_string(),
+            "ordinal": claim.origin().ordinal(),
+        })
+    );
     let CounterexampleKind::UndefinedEvaluation(evaluation) = counterexample.kind else {
         panic!("the kind is an undefined evaluation");
     };

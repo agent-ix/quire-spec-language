@@ -4,7 +4,8 @@
 //! engine's layer-6 settlement map, or classifies its refusal by FR-281's
 //! "Engine refusals" table.
 
-use qsl_eval::simulation::model::{ClauseOutcome, DEFAULT_MAX_CLOCKS};
+use qsl_eval::model_subject::ModelInstance;
+use qsl_eval::simulation::model::{ClauseOutcome, ModelSystem, DEFAULT_MAX_CLOCKS};
 use qsl_eval::simulation::protocol::ProtocolTransition;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::RequestIndex;
@@ -21,13 +22,13 @@ use qsl_route::deadlock::{ItemObligation, ObligationKind};
 use qsl_route::request::{DerivedLimit, DerivedLimits, ItemKind, RequestItem, RequirementItem};
 use qsl_route::Mode;
 use qsl_semantics::check::{
-    Capability, DeclarationFamily, HyperForm, TerminalKeys, TerminalMismatch,
+    Capability, CheckedTemporalClause, DeclarationFamily, HyperForm, TerminalKeys, TerminalMismatch,
 };
 use qsl_semantics::family::UnsupportedItem;
 use qsl_semantics::model::observation::AdmissionFailure;
 use quire_semantic_value::catalog::CatalogCode;
 
-use quire_exact::Cancel;
+use quire_exact::{Cancel, ObjectReference, ValueType};
 
 use super::{AnalyzeItem, EngineReport, Refusal};
 use crate::claim_family::claim_family;
@@ -141,8 +142,44 @@ fn run_model_item(
         family,
         Mode::Bounded,
         en1::BACKEND_ID,
-        move |cancel| settle_model_item(item, cancel),
+        move |cancel| {
+            let clause = match &item.request.item {
+                ModelCheckItem::Clause { clause, .. } => Some(*clause),
+                ModelCheckItem::DeadlockFreedom | ModelCheckItem::RaceFreedom => None,
+            };
+            let simulation = item.request.subject.simulation.clone();
+            match settle_model_item(item, cancel) {
+                EngineReport::Model(model) => {
+                    // The model system is rebuilt only for a counterexample
+                    // that names its `over` instance.
+                    let over = model
+                        .counterexample
+                        .as_ref()
+                        .and_then(|found| found.over_binding.as_ref())
+                        .zip(clause)
+                        .and_then(|(instance, clause)| {
+                            let system = ModelSystem::new(simulation).ok()?;
+                            bound_over(&system, clause, instance)
+                        });
+                    EngineReport::Clause(model, over)
+                }
+                other => other,
+            }
+        },
     )
+}
+
+/// The reference `clause`'s `over` parameter reads as under `instance`
+/// (QSpec FR-364's `over_binding`), over `system`.
+fn bound_over(
+    system: &ModelSystem<'_>,
+    clause: &CheckedTemporalClause,
+    instance: &ModelInstance,
+) -> Option<ObjectReference> {
+    let ValueType::Reference(object_type) = &clause.over().1 else {
+        return None;
+    };
+    system.bound_reference(object_type.clone(), instance).ok()
 }
 
 /// The EN-1 run of `item` and its layer-6 settlement (FR-127).
@@ -225,14 +262,51 @@ fn run_protocol_item(
                 replay,
             } = item;
             let limits = request.limits;
+            let protocol = request.subject.protocol.clone();
+            let on_each = request
+                .subject
+                .model
+                .simulation
+                .package
+                .graph()
+                .protocol(&protocol)
+                .is_some_and(qsl_eval::simulation::protocol::activates_on_each);
+            let max_live_instances =
+                qsl_eval::simulation::protocol::live_instance_bound(request.max_live_instances);
+            let roles: Vec<_> = request
+                .subject
+                .roles
+                .iter()
+                .map(|binding| (binding.role.clone(), binding.model.clone()))
+                .collect();
+            let over = request.subject.over.clone();
+            let simulation = request.subject.model.simulation.clone();
             match check_protocol(request, cancel) {
-                Ok(outcome) => EngineReport::Protocol(Box::new(qsl_replay::settle_protocol_check(
-                    &outcome,
-                    &limits,
-                    &certificate,
-                    cancel,
-                    replay,
-                ))),
+                Ok(outcome) => {
+                    let record = qsl_replay::settle_protocol_check(
+                        &outcome,
+                        &limits,
+                        &certificate,
+                        cancel,
+                        replay,
+                    );
+                    // The model system is rebuilt only for a counterexample.
+                    let subject = record
+                        .counterexample
+                        .as_ref()
+                        .and_then(|_| {
+                            qsl_eval::simulation::protocol::over_reference(
+                                simulation, &protocol, &over,
+                            )
+                        })
+                        .map(|over| qsl_replay::ProtocolWire {
+                            protocol,
+                            over,
+                            roles,
+                            max_live_instances: on_each.then_some(max_live_instances),
+                        });
+                    EngineReport::Protocol(Box::new(record), subject)
+                }
                 Err(refusal) => EngineReport::Refused(model_refusal(&refusal)),
             }
         },
@@ -328,22 +402,38 @@ fn run_zone_item<'a, S: Clone + Eq + 'a>(
                 replay,
             } = item;
             let obligation = request.obligation.clone();
+            let subject = request.subject;
+            let clause = match &request.item {
+                ZoneCheckItem::Clause { clause, .. } => Some(*clause),
+                _ => None,
+            };
             match check_timed_model(request, cancel) {
-                Ok(outcome) => EngineReport::Zone(Box::new(settle_zone_check(
-                    ZoneItem::Outcome(&outcome),
-                    cancel,
-                    |proof| {
-                        check_zone_certificate(
-                            certificate,
-                            &obligation,
-                            certificate_item,
-                            proof,
-                            certificate_limits,
-                            cancel,
-                        )
-                    },
-                    replay,
-                ))),
+                Ok(outcome) => {
+                    let record = settle_zone_check(
+                        ZoneItem::Outcome(&outcome),
+                        cancel,
+                        |proof| {
+                            check_zone_certificate(
+                                certificate,
+                                &obligation,
+                                certificate_item,
+                                proof,
+                                certificate_limits,
+                                cancel,
+                            )
+                        },
+                        replay,
+                    );
+                    let over = record
+                        .counterexample
+                        .as_ref()
+                        .and_then(|found| found.over_binding.as_ref())
+                        .zip(clause)
+                        .and_then(|(instance, clause)| {
+                            bound_over(subject.system(), clause, instance)
+                        });
+                    EngineReport::Zone(Box::new(record), over)
+                }
                 Err(refusal) => EngineReport::Refused(zone_refusal(&refusal)),
             }
         },
@@ -772,21 +862,24 @@ pub fn timed_refinement_item<'a, S: Clone + Eq + 'a>(
             } = item;
             let obligation = request.obligation.clone();
             match check_timed_refinement(request, cancel) {
-                Ok(outcome) => EngineReport::Zone(Box::new(settle_timed_refinement(
-                    &outcome,
-                    cancel,
-                    |proof| {
-                        check_zone_certificate(
-                            certificate,
-                            &obligation,
-                            certificate_item,
-                            proof,
-                            certificate_limits,
-                            cancel,
-                        )
-                    },
-                    replay,
-                ))),
+                Ok(outcome) => EngineReport::Zone(
+                    Box::new(settle_timed_refinement(
+                        &outcome,
+                        cancel,
+                        |proof| {
+                            check_zone_certificate(
+                                certificate,
+                                &obligation,
+                                certificate_item,
+                                proof,
+                                certificate_limits,
+                                cancel,
+                            )
+                        },
+                        replay,
+                    )),
+                    None,
+                ),
                 Err(refusal) => EngineReport::Refused(timed_refinement_refusal(&refusal)),
             }
         },

@@ -157,6 +157,7 @@ impl<'a> ClauseSubject<'a> {
     /// counterexample through the production `replay_model_trace`.
     pub fn item(&self, index: RequestIndex) -> AnalyzeItem<'a> {
         let subject = self.clone();
+        let claim = OccurrenceKey::new(self.node.identity(), self.node.claim().clone());
         AnalyzeItem::new(
             index,
             Capability::TemporalSatisfaction,
@@ -184,7 +185,7 @@ impl<'a> ClauseSubject<'a> {
                     clause: subject.node.clause(),
                     letters: &letters,
                 };
-                settle_model_item(
+                let report = settle_model_item(
                     ModelItem {
                         request: ModelCheckRequest {
                             temporal_clock_selections: &[],
@@ -218,9 +219,21 @@ impl<'a> ClauseSubject<'a> {
                         replay: Box::new(|payload| subject.replay(payload, &letters)),
                     },
                     cancel,
-                )
+                );
+                match report {
+                    EngineReport::Model(model) => {
+                        let over = model
+                            .counterexample
+                            .as_ref()
+                            .and_then(|found| found.over_binding.as_ref())
+                            .and_then(|instance| letters.instance_reference(instance));
+                        EngineReport::Clause(model, over)
+                    }
+                    other => other,
+                }
             },
         )
+        .claimed(claim)
     }
 
     /// Replays `payload`, a counterexample of this clause, through

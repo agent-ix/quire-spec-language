@@ -1253,3 +1253,66 @@ fn nested_repeat_emission_reports_its_unavailable_wire_form() {
         "{refusals:?}"
     );
 }
+
+/// FR-286-AC-14: a `send` step of a protocol counterexample is written with
+/// the `send_record` it carries beside its transition identity and post-state,
+/// and `max_live_instances` only for an `on each` subject (QSpec FR-433).
+#[trace("TC-770", "FR-286-AC-14")]
+#[test]
+fn a_send_step_is_written_with_its_send_record() {
+    use qsl_replay::{CounterexampleKind, ModelStep, ProtocolWire, TemporalCounterexample};
+    let unit = case(
+        &channel(
+            "ch",
+            "ordering fifo by (m: Boolean) { true } delivery exactly-once-premise \
+             capacity 2 overflow reject",
+        ),
+        "sequence Main { send P1 via ch as (p1: Boolean) { p1 }; }",
+    );
+    let subject = unit.subject("P");
+    let system = sc_system(&subject);
+    let reached = reachable(&system);
+    let (first, after) = &reached[0].steps[0];
+    let (_, post_state) = system.state_key(&reached[*after].state).expect("a key");
+    let found = TemporalCounterexample::<ProtocolTransition> {
+        initial_state: 0,
+        prefix: vec![ModelStep {
+            transition: first.clone(),
+            post_state,
+            delay: None,
+        }],
+        over_binding: None,
+        fairness: Vec::new(),
+        kind: CounterexampleKind::Formula,
+        lasso: None,
+        blocked: Vec::new(),
+        refinement: None,
+        final_delay: None,
+    };
+    let over = qsl_eval::simulation::protocol::over_reference(
+        subject.model.simulation.clone(),
+        &subject.protocol,
+        &subject.over,
+    )
+    .expect("the clause's `over` parameter is bound");
+    let wire = |max_live_instances| {
+        qsl_replay::protocol_temporal_wire(
+            &found,
+            &ProtocolWire {
+                protocol: subject.protocol.clone(),
+                over: over.clone(),
+                roles: Vec::new(),
+                max_live_instances,
+            },
+            None,
+        )
+        .expect("the counterexample is spelled")
+    };
+    let written = wire(None);
+    assert_eq!(written["prefix"][0]["send_record"], send_record(first));
+    assert_eq!(written["prefix"][0]["send_record"]["outcome"], "accepted");
+    assert!(written["prefix"][0]["transition"].is_object());
+    assert!(written["prefix"][0]["post_state"]["key"].is_string());
+    assert!(written.get("max_live_instances").is_none());
+    assert_eq!(wire(Some(3))["max_live_instances"], 3);
+}

@@ -1017,6 +1017,34 @@ pub(crate) fn untyped_value_enc(value: &Value) -> Enc {
     value_enc(value, Typing::none())
 }
 
+/// A value's FR-181 typed canonical form as JSON, where no package
+/// declarations are at hand (a record, tuple or enum has none here).
+///
+/// `None` when the value is unencodable.
+pub fn value_json(value: &Value) -> Option<serde_json::Value> {
+    canonical_json(&untyped_value_enc(value))
+}
+
+/// A value's FR-181 typed canonical form as JSON, its records, tuples,
+/// unions and enums read from `types` and `variants`.
+///
+/// `None` when the value is unencodable.
+pub fn typed_value_json(
+    value: &Value,
+    types: &TypeEnvironment,
+    variants: &[VariantTypeDeclaration],
+) -> Option<serde_json::Value> {
+    canonical_json(&typed_value_enc(value, types, variants))
+}
+
+/// `value` through the one canonical writer, read back as JSON.
+///
+/// `None` when the value is unencodable.
+pub fn canonical_json<T: quire_canonical::Encode + ?Sized>(value: &T) -> Option<serde_json::Value> {
+    let bytes = quire_canonical::to_vec(value, Limits::new(u64::MAX)).ok()?;
+    serde_json::from_slice(&bytes).ok()
+}
+
 /// FR-181's `map`: `{"type":"map","entries":[{"key":..,"value":..}, ...]}`
 /// with the entries ascending by the key's RFC 8785 bytes.
 pub(crate) fn map_enc(entries: Vec<(Enc, Enc)>) -> Enc {
@@ -1052,6 +1080,12 @@ pub(super) fn object_enc(
     placeholder: &Placeholder<'_>,
 ) -> Enc {
     projection::object(model, object, typing, placeholder)
+}
+
+/// A declaration's identity text, or `None` when it has no canonical
+/// encoding.
+pub fn declaration_identity_text(key: &DeclarationKey) -> Option<String> {
+    declaration_text(key, Limits::new(u64::MAX)).ok()
 }
 
 /// FR-181's state key for a model state (FR-120 "State, state key and

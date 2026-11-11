@@ -8,8 +8,8 @@
 
 use ix_trace_rs::trace;
 use qsl_analyze::analyze::{
-    analyze, AnalyzeLimits, AnalyzeRequest, ClaimItem, ClauseLimits, Engines, ItemForm,
-    ItemOptions, NegotiatedItem, SubjectBinding, TemporalItem,
+    analyze, AnalyzeLimits, AnalyzeRequest, ClaimItem, ClauseLimits, Counterexample, Engines,
+    ItemCounterexample, ItemForm, ItemOptions, NegotiatedItem, SubjectBinding, TemporalItem,
 };
 use qsl_analyze::provider;
 use qsl_eval::simulation::Limits;
@@ -73,6 +73,13 @@ fn work(world: &World, backend: &str, run: ClauseLimits) -> NegotiatedItem {
 }
 
 fn through_analyze(world: &World, item: NegotiatedItem) -> TerminalRecord {
+    through_analyze_with_counterexamples(world, item).0
+}
+
+fn through_analyze_with_counterexamples(
+    world: &World,
+    item: NegotiatedItem,
+) -> (TerminalRecord, Vec<ItemCounterexample>) {
     let binding: SubjectBinding<'_> = world.binding(&["c"]);
     let outcome = analyze(
         &world.package,
@@ -88,11 +95,19 @@ fn through_analyze(world: &World, item: NegotiatedItem) -> TerminalRecord {
     .expect("the binding is admitted")
     .into_value();
     assert_eq!(outcome.records.len(), 1);
-    outcome.records.into_iter().next().expect("one record")
+    let record = outcome.records.into_iter().next().expect("one record");
+    (record, outcome.counterexamples)
 }
 
 fn through_run(world: &World, item: NegotiatedItem) -> TerminalRecord {
-    let mut records = provider::run(
+    through_run_with_counterexamples(world, item).0
+}
+
+fn through_run_with_counterexamples(
+    world: &World,
+    item: NegotiatedItem,
+) -> (TerminalRecord, Vec<ItemCounterexample>) {
+    let results = provider::run(
         &world.package,
         &world.binding(&["c"]),
         &world.provision,
@@ -100,29 +115,44 @@ fn through_run(world: &World, item: NegotiatedItem) -> TerminalRecord {
         &Engines::qsl().expect("the layer-A manifests register"),
         &AnalyzeLimits::unbounded(),
         &Cancel::new(),
-    )
-    .records;
+    );
+    let mut records = results.records;
     assert_eq!(records.len(), 1);
-    records.remove(0)
+    (records.remove(0), results.counterexamples)
 }
 
 /// FR-281-AC-2 through `analyze` and `provider::run`: the invariant a
 /// transition breaks settles `refuted` on EN-1. FR-281-AC-2 is split: the
 /// record settles `Refuted` here, through the real entries, while the
 /// assertion that replaying the counterexample reproduces it lives in
-/// `clause_item.rs` (a terminal record keeps no counterexample; the item
-/// settles `refuted` only after the production replay reproduced it).
+/// `clause_item.rs` (the item settles `refuted` only after the production
+/// replay reproduced it); the one `ItemCounterexample` is asserted here.
 #[trace("TC-762", "FR-281-AC-2")]
 #[test]
 fn analyze_routes_an_authored_clause_to_en1_and_settles_refuted_with_replay() {
     let world = world(model_world::counter());
-    for record in [
-        through_analyze(&world, work(&world, "en-1", ClauseLimits::default())),
-        through_run(&world, work(&world, "en-1", ClauseLimits::default())),
+    for (record, counterexamples) in [
+        through_analyze_with_counterexamples(&world, work(&world, "en-1", ClauseLimits::default())),
+        through_run_with_counterexamples(&world, work(&world, "en-1", ClauseLimits::default())),
     ] {
         assert_eq!(record.value(), &TerminalValue::Refuted);
         assert_eq!(record.value().category(), Category::Violation);
         assert_eq!(record.backend().map(BackendId::as_str), Some("en-1"));
+        // FR-281: exactly one ItemCounterexample per refuted record, the
+        // reproduced EN-1 formula counterexample.
+        let [found] = counterexamples.as_slice() else {
+            panic!("one counterexample: {counterexamples:?}");
+        };
+        assert_eq!(found.request_index, record.request_index());
+        assert_eq!(found.backend.as_str(), "en-1");
+        assert!(
+            matches!(
+                &found.counterexample,
+                Counterexample::Temporal { counterexample: temporal, .. }
+                    if matches!(temporal.kind, qsl_replay::CounterexampleKind::Formula)
+            ),
+            "{found:?}"
+        );
     }
 }
 

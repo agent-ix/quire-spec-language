@@ -174,10 +174,18 @@ fn a_refuted_clause_returns_the_reproduced_counterexample_through_both_entries()
     assert_eq!(outcome.records[0].value(), &TerminalValue::Refuted);
     assert_eq!(outcome.counterexamples.len(), 1);
     assert_eq!(served.counterexamples.len(), 1);
-    let Counterexample::Temporal(payload) = &outcome.counterexamples[0].counterexample else {
+    let Counterexample::Temporal {
+        counterexample: payload,
+        ..
+    } = &outcome.counterexamples[0].counterexample
+    else {
         panic!("a temporal counterexample")
     };
-    let Counterexample::Temporal(served_payload) = &served.counterexamples[0].counterexample else {
+    let Counterexample::Temporal {
+        counterexample: served_payload,
+        ..
+    } = &served.counterexamples[0].counterexample
+    else {
         panic!("a temporal counterexample")
     };
     assert_eq!(payload, served_payload);

@@ -4,7 +4,9 @@
 use ix_trace_rs::trace;
 use qsl_conformance::{OutcomeKind, Verb};
 
-use crate::support::{diagnostic, outcome_of, written};
+use crate::support::{
+    assert_no_counterexample, assert_one_formula_counterexample, diagnostic, outcome_of, written,
+};
 
 /// The one backend the case's one record names.
 fn backend_of(outcome: &qsl_conformance::CaseOutcome) -> String {
@@ -30,12 +32,14 @@ fn analyze_returns_each_reachable_kind() {
     let item = &written(&proved)["items"][0];
     assert_eq!(item["result"], "proved");
     assert_eq!(backend_of(&proved), "en-5");
+    assert_no_counterexample(&proved);
 
     let refuted = outcome_of(Verb::Analyze, OutcomeKind::Violation);
     assert_eq!(refuted.exit_code(), 10);
     let item = &written(&refuted)["items"][0];
     assert_eq!(item["result"], "refuted");
     assert_eq!(backend_of(&refuted), "en-1");
+    assert_one_formula_counterexample(&refuted);
 
     let incomplete = outcome_of(Verb::Analyze, OutcomeKind::Incomplete);
     assert_eq!(incomplete.exit_code(), 22);
@@ -43,6 +47,7 @@ fn analyze_returns_each_reachable_kind() {
     assert_eq!(item["result"], "incomplete");
     assert_eq!(backend_of(&incomplete), "en-1");
     assert_eq!(item["cause"]["limit"], "max_states");
+    assert_no_counterexample(&incomplete);
 
     let refusal = outcome_of(Verb::Analyze, OutcomeKind::Refusal);
     assert_eq!(refusal.exit_code(), 20);

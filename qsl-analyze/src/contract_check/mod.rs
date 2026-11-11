@@ -48,6 +48,10 @@ use quire_semantic_value::catalog::{CatalogCode, InternalFault};
 use crate::analyze::{AnalyzeItem, EngineReport, Refusal};
 use crate::claim_family::claim_family;
 
+/// A reproduced counterexample's FR-286 spelling, written where the item's
+/// system is at hand.
+pub type ContractWire = Result<serde_json::Value, qsl_replay::CounterexampleWireError>;
+
 /// What the arm found, before settlement.
 #[derive(Debug)]
 pub enum ContractOutcome {
@@ -57,7 +61,7 @@ pub enum ContractOutcome {
         cases: u64,
     },
     /// A violation the native replay reproduced.
-    Refuted(Box<ReproducedContractViolation>),
+    Refuted(Box<ReproducedContractViolation>, Box<ContractWire>),
     /// A candidate violation the native replay did not reproduce.
     ReplayParity,
     /// No case satisfied the premises: zero checks.
@@ -193,7 +197,10 @@ pub fn check_contract(
                         .replay(&counterexample)
                         .map_err(ContractRefusal::Fault)?
                     {
-                        Some(reproduced) => ContractOutcome::Refuted(Box::new(reproduced)),
+                        Some(reproduced) => {
+                            let wire = target.wire(reproduced.counterexample());
+                            ContractOutcome::Refuted(Box::new(reproduced), Box::new(wire))
+                        }
                         None => ContractOutcome::ReplayParity,
                     },
                 );
@@ -329,7 +336,10 @@ pub(crate) fn settle(
     report: ContractReport,
     index: RequestIndex,
     backend: qsl_foundation::BackendId,
-) -> (qsl_replay::TerminalRecord, Option<ContractCounterexample>) {
+) -> (
+    qsl_replay::TerminalRecord,
+    Option<(ContractCounterexample, ContractWire)>,
+) {
     use qsl_replay::{
         IncompleteCause, InconclusiveCause, ModelCheckLimit, TerminalRecord, UnavailabilityCause,
     };
@@ -355,9 +365,9 @@ pub(crate) fn settle(
     };
     match outcome {
         ContractOutcome::Proved { .. } => (TerminalRecord::exhaustive(index, backend), None),
-        ContractOutcome::Refuted(reproduced) => (
+        ContractOutcome::Refuted(reproduced, wire) => (
             TerminalRecord::refuted_by_contract(index, backend, &reproduced),
-            Some(reproduced.counterexample().clone()),
+            Some((reproduced.counterexample().clone(), *wire)),
         ),
         ContractOutcome::ReplayParity => (
             TerminalRecord::inconclusive(

@@ -2,9 +2,9 @@
 //! Running a case through QSL's library operation (FR-565).
 
 use qsl_analyze::analyze::{
-    analyze, AnalyzeLimits, AnalyzeRequest, ClaimItem, Diagnostic, Engines, ItemForm, ItemOptions,
-    NegotiatedItem, Payload, ProbabilisticItem, ProbabilisticLimits, SourceProvision,
-    SubjectBinding, TemporalItem,
+    analyze, analyze_item, AnalyzeLimits, AnalyzeRequest, ClaimItem, Diagnostic, Engines,
+    ItemCounterexample, ItemForm, ItemOptions, NegotiatedItem, Payload, ProbabilisticItem,
+    ProbabilisticLimits, SourceProvision, SubjectBinding, TemporalItem,
 };
 use qsl_analyze::exact_probabilistic::ExactProbLimits;
 use qsl_analyze::monitor::{monitor, MonitorClause, MonitorLimits, MonitorRequest, MonitorTrace};
@@ -24,7 +24,8 @@ use qsl_replay::spine::{
     SpineLimits,
 };
 use qsl_replay::{
-    IncompleteCause, ObjectEnvironment, Operation, OutcomeDocument, OutcomeItem, TerminalRecord,
+    IncompleteCause, ObjectEnvironment, Operation, OutcomeDocument, OutcomeItem, OutcomeItemError,
+    TerminalRecord,
 };
 use qsl_route::request::ExtentClassification;
 use qsl_route::routing::Disposition;
@@ -60,11 +61,12 @@ pub enum Report {
 /// The comparison surface between the library and the CLI is the typed
 /// document, which the driver encodes with its own canonical encoder
 /// (FR-565); this crate writes no bytes of its own.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct CaseOutcome {
     report: Report,
     records: Vec<TerminalRecord>,
     execution: Option<ExecuteResult>,
+    counterexamples: Vec<ItemCounterexample>,
     exit_code: u8,
 }
 
@@ -106,7 +108,12 @@ impl PartialEq for CaseOutcome {
 impl Eq for CaseOutcome {}
 
 impl CaseOutcome {
-    fn of(report: Report, records: Vec<TerminalRecord>, execution: Option<ExecuteResult>) -> Self {
+    fn of(
+        report: Report,
+        records: Vec<TerminalRecord>,
+        execution: Option<ExecuteResult>,
+        counterexamples: Vec<ItemCounterexample>,
+    ) -> Self {
         let category = match &report {
             Report::Document(document) => document.category(),
             Report::Item(item) => item.category(),
@@ -115,6 +122,7 @@ impl CaseOutcome {
             report,
             records,
             execution,
+            counterexamples,
             exit_code: category.exit_code(),
         }
     }
@@ -137,6 +145,13 @@ impl CaseOutcome {
     #[must_use]
     pub fn execution(&self) -> Option<&ExecuteResult> {
         self.execution.as_ref()
+    }
+
+    /// The one counterexample of each `refuted` record, in request order
+    /// (FR-281); empty for every other verb and outcome.
+    #[must_use]
+    pub fn counterexamples(&self) -> &[ItemCounterexample] {
+        &self.counterexamples
     }
 
     /// The O-16 category of the document or item.
@@ -180,16 +195,27 @@ pub enum CaseStage {
 /// Why a case could not be run to an outcome: the failure of running it as
 /// such, not an outcome of its operation, which is never an error whatever
 /// its category.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 #[error("running the case failed at stage {stage:?}")]
 pub struct CaseError {
     /// The stage that failed.
     pub stage: CaseStage,
+    /// Why a record was no item, when that is what failed.
+    #[source]
+    pub cause: Option<OutcomeItemError>,
 }
 
 impl CaseError {
     const fn at(stage: CaseStage) -> Self {
-        Self { stage }
+        Self { stage, cause: None }
+    }
+
+    /// A record that is no outcome item (FR-286).
+    const fn item(cause: OutcomeItemError) -> Self {
+        Self {
+            stage: CaseStage::Document,
+            cause: Some(cause),
+        }
     }
 }
 
@@ -224,17 +250,30 @@ pub fn run_case_with(
     let parameters = &case.parameters;
     let mut records = Vec::new();
     let mut execution = None;
+    let mut counterexamples = Vec::new();
     let report = match &case.input {
         CaseInput::Check(input) => front_end(input, false, parameters, &cancel)?,
         CaseInput::Package(input) => front_end(input, true, parameters, &cancel)?,
         CaseInput::Execute(input) => run_execute(input, parameters, &cancel, &mut execution)?,
-        CaseInput::Analyze(input) => {
-            run_analyze(input, parameters, engines, &cancel, &mut records)?
-        }
+        CaseInput::Analyze(input) => run_analyze(
+            input,
+            parameters,
+            engines,
+            &cancel,
+            &mut records,
+            &mut counterexamples,
+        )?,
         CaseInput::Monitor(input) => run_monitor(input, parameters, &cancel)?,
-        CaseInput::Prove(input) => run_prove(input, parameters, engines, &cancel, &mut records)?,
+        CaseInput::Prove(input) => run_prove(
+            input,
+            parameters,
+            engines,
+            &cancel,
+            &mut records,
+            &mut counterexamples,
+        )?,
     };
-    Ok(CaseOutcome::of(report, records, execution))
+    Ok(CaseOutcome::of(report, records, execution, counterexamples))
 }
 
 /// The handle the operation under test is called with: cancelled before the
@@ -654,6 +693,7 @@ fn run_analyze(
     engines: &Engines,
     cancel: &Cancel,
     settled: &mut Vec<TerminalRecord>,
+    refuted: &mut Vec<ItemCounterexample>,
 ) -> Result<Report, CaseError> {
     let document = match input {
         AnalyzeInput::Engine {
@@ -680,8 +720,11 @@ fn run_analyze(
                 cancel,
             ) {
                 Ok(staged) => {
-                    settled.extend(staged.value().records.iter().cloned());
-                    staged.value().document()
+                    let outcome = staged.into_value();
+                    let document = outcome.document().map_err(CaseError::item)?;
+                    settled.extend(outcome.records);
+                    refuted.extend(outcome.counterexamples);
+                    document
                 }
                 Err(failure) => {
                     stopped_document(Operation::Analyze, failure, |refusal| refusal.document())
@@ -740,8 +783,9 @@ fn run_prove(
     engines: &Engines,
     cancel: &Cancel,
     settled: &mut Vec<TerminalRecord>,
+    refuted: &mut Vec<ItemCounterexample>,
 ) -> Result<Report, CaseError> {
-    let record = match input {
+    let (record, item) = match input {
         ProveInput::Provider { subject, item } => {
             let subject = Subject::new(subject, parameters)?;
             let limits = AnalyzeLimits {
@@ -756,15 +800,19 @@ fn run_prove(
                 engines,
                 &limits,
                 cancel,
-            )
-            .records;
-            let [record] = <[TerminalRecord; 1]>::try_from(records)
+            );
+            let [record] = <[TerminalRecord; 1]>::try_from(records.records)
                 .map_err(|_| CaseError::at(CaseStage::Document))?;
-            record
+            let item = analyze_item(&record, &records.counterexamples).map_err(CaseError::item)?;
+            refuted.extend(records.counterexamples);
+            (record, item)
         }
-        ProveInput::Plugin(settlement) => plugin_record(*settlement),
+        ProveInput::Plugin(settlement) => {
+            let record = plugin_record(*settlement);
+            let item = OutcomeItem::from_terminal(&record);
+            (record, item)
+        }
     };
-    let item = OutcomeItem::from_terminal(&record);
     settled.push(record);
     Ok(Report::Item(Box::new(item)))
 }

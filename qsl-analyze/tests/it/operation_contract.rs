@@ -204,6 +204,58 @@ fn an_operation_that_breaks_an_invariant_from_a_satisfying_pre_state_is_refuted(
     assert!(execution.operation.is_some(), "the operation's anchor");
 }
 
+#[trace("TC-770", "FR-286-AC-14")]
+#[test]
+fn a_refuted_contract_item_is_spelled_and_its_counterexample_replays() {
+    let world = world(
+        "invariant Low using v on Config::ConfigVersion at current { self.versionNumber <= 1 }\n",
+        0,
+    );
+    let claim = clause(&world, "Low");
+    let selected = select_contract(&world.package, &claim).expect("selects");
+    let (records, counterexamples) =
+        qsl_analyze::analyze::split_records(vec![run(&world, &claim, None)], &world.package);
+    let [item] = counterexamples.as_slice() else {
+        panic!("one refuted item");
+    };
+    let wire = item
+        .wire
+        .as_ref()
+        .expect("a contract counterexample is spelled");
+    assert_eq!(wire["type"], "contract-counterexample");
+    assert_eq!(wire["obligation"], "preservation");
+    assert_eq!(wire["bound"], false);
+    assert!(wire["violated"]["node"].is_object() || wire["violated"]["node"].is_string());
+    assert_eq!(wire["violated"]["occurrence"]["ordinal"], 0);
+    let [execution] = wire["executions"]
+        .as_array()
+        .expect("executions")
+        .as_slice()
+    else {
+        panic!("one execution");
+    };
+    assert!(execution["operation"].is_object() || execution["operation"].is_string());
+    assert!(execution["pre_state"]["key"].is_string());
+    assert!(execution["post_state"]["key"].is_string());
+    assert_ne!(execution["pre_state"], execution["post_state"]);
+    assert!(execution["result"].is_null() || execution["result"].is_object());
+    assert!(execution["arguments"].is_array());
+    // The document carries it, and the recorded execution replays.
+    let document = qsl_analyze::analyze::analyze_document(&records, &counterexamples)
+        .expect("a refuted item with its counterexample");
+    let written = serde_json::to_value(&document).expect("serializes");
+    assert_eq!(written["items"][0]["counterexample"], *wire);
+    let qsl_analyze::analyze::Counterexample::Contract(counterexample) = &item.counterexample
+    else {
+        panic!("a contract counterexample");
+    };
+    let system = ModelSystem::new(world.subject(&["a"], UNLIMITED).simulation).expect("admits");
+    let target = ContractTarget::new(selected, &world.package, &system, None)
+        .expect("no fault")
+        .expect("decided");
+    assert!(target.replay(counterexample).unwrap().is_some());
+}
+
 #[trace("QSpec-TC-974", "QSpec-FR-485-AC-2")]
 #[test]
 fn an_initial_state_that_breaks_an_invariant_is_refuted_with_no_operation() {

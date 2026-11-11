@@ -1092,6 +1092,105 @@ fn a_protocol_deadlock_names_its_blocked_threads_and_settles_refuted() {
     assert!(derived_subjects(&written, ItemKind::DeadlockFreedom).is_empty());
 }
 
+/// FR-433-AC-1 through `analyze_items`: the `Fill` deadlock-freedom item runs
+/// as a derived item with FR-217's replay behind it, settles `refuted`, and
+/// its one counterexample is written with the steps `fork(Both)` and
+/// `attempt(A)` as protocol transition identities with post-state keys,
+/// `kind: deadlock`, the blocked list of FR-429 and FR-433's `subject`.
+#[trace("TC-387", "FR-433-AC-1")]
+#[test]
+fn a_protocol_deadlock_is_spelled_with_its_blocked_list_through_analyze() {
+    use crate::derived_request::items_of_kind;
+    use qsl_analyze::analyze::ProtocolItem;
+    use qsl_analyze::analyze::{analyze_items, derived_protocol_item, split_records, Engines};
+    use qsl_replay::ProtocolCertificateRequest;
+
+    let case = Case::new(&fill_unit("self.v = 0", ""), &[0]);
+    let protocol = case.checked.graph().protocol("Fill").expect("Fill");
+    let occurrence = protocol_anchor(&case.checked, "Fill").1;
+    let models: Vec<_> = case
+        .subject("Fill")
+        .memory
+        .parallels()
+        .iter()
+        .map(|resolved| (resolved.parallel.clone(), resolved.model))
+        .collect();
+    let subject = case.subject("Fill");
+    let items = [ProtocolTemporalItem {
+        occurrence: &occurrence,
+        subject: &subject.protocol,
+        protocol,
+        models: &models,
+        non_atomic_access: false,
+    }];
+    let written = protocol_request(&items);
+    let [(derived, obligation)] = &items_of_kind(&written, ItemKind::DeadlockFreedom)[..] else {
+        panic!("one deadlock-freedom item");
+    };
+    let item = ProtocolItem {
+        request: ProtocolCheckRequest {
+            temporal_clock_selections: &[],
+            subject: case.subject("Fill"),
+            item: ModelCheckItem::DeadlockFreedom,
+            max_depth: None,
+            max_store_buffer: None,
+            max_messages: None,
+            max_live_instances: None,
+            limits: ModelCheckLimits::default(),
+            ignore_memory_constraints: false,
+        },
+        certificate: ProtocolCertificateRequest {
+            temporal_clock_selections: &[],
+            subject: case.subject("Fill"),
+            item: ModelCheckItem::DeadlockFreedom,
+            max_store_buffer: None,
+            max_messages: None,
+            max_live_instances: None,
+        },
+        replay: Box::new(|payload| case.replay("Fill", payload.clone())),
+    };
+    let records = analyze_items(
+        &Engines::qsl().expect("the layer-A manifests register"),
+        vec![derived_protocol_item(derived, obligation, item).expect("the run")],
+        &Cancel::new(),
+    );
+    let (terminals, found) = split_records(records, &case.checked);
+    assert_eq!(terminals[0].value(), &qsl_replay::TerminalValue::Refuted);
+    let [found] = found.as_slice() else {
+        panic!("one counterexample: {found:?}");
+    };
+    let wire = found.wire.as_ref().expect("a deadlock is spelled");
+    assert_eq!(wire["kind"], "deadlock");
+    assert!(wire["trace_position"].is_null());
+    assert!(wire["over_binding"].is_null());
+    assert_eq!(wire["fairness"], json!([]));
+    let described: Vec<(&str, &str)> = wire["prefix"]
+        .as_array()
+        .expect("steps")
+        .iter()
+        .map(|step| {
+            assert!(step["post_state"]["key"].is_string());
+            assert_eq!(step["transition"]["type"], "protocol-transition");
+            (
+                step["transition"]["step"].as_str().expect("a step kind"),
+                step["transition"]["node"].as_str().expect("a node"),
+            )
+        })
+        .collect();
+    assert_eq!(
+        described,
+        [("fork", "Main/Both"), ("attempt", "Main/Both/left/A")]
+    );
+    let blocked = wire["blocked"].as_array().expect("the blocked list");
+    assert_eq!(blocked.len(), fill_blocked().len());
+    for thread in blocked {
+        assert!(thread["thread"].is_object());
+        assert!(thread["rest"].is_object());
+        assert!(thread["cause"]["type"].is_string());
+    }
+    assert_eq!(wire["subject"]["protocol"], "Fill");
+}
+
 /// Part of FR-211-AC-5 (TC-656, ADR-027 PD-4): each channel wait cause is reported
 /// for a thread blocked by exactly that condition, with the channel in its
 /// qualified name, in the model checker's deadlock counterexample, and

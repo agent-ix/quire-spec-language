@@ -864,6 +864,25 @@ fn a_timed_refinement_settles_on_en6_through_analyze() {
         terminal.backend().map(qsl_foundation::BackendId::as_str),
         Some(BACKEND_ID)
     );
+    // The refuted item is spelled with FR-379's `refinement_failure`, its
+    // timed steps carrying their delays, and `analyze` writes it.
+    let (terminals, counterexamples) =
+        qsl_analyze::analyze::split_records(vec![record], &violated.package);
+    let [item] = counterexamples.as_slice() else {
+        panic!("one refuted item");
+    };
+    let wire = item
+        .wire
+        .as_ref()
+        .expect("a timed refinement failure is spelled");
+    assert!(
+        wire["refinement_failure"]["kind"].is_string(),
+        "the failure kind: {wire}"
+    );
+    let document = qsl_analyze::analyze::analyze_document(&terminals, &counterexamples)
+        .expect("the refuted item carries its counterexample");
+    let written = serde_json::to_value(&document).expect("serializes");
+    assert_eq!(written["items"][0]["counterexample"], *wire);
 
     let holds = unit("self.inflight").unwrap_or_else(|refusals| panic!("{refusals:?}"));
     let record = analyzed(&holds);

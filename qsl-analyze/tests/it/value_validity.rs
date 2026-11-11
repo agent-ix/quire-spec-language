@@ -29,6 +29,7 @@ use qsl_analyze::value_check::{manifest, ValueRequest};
 use qsl_foundation::RequestIndex;
 use qsl_package::CheckedPackage;
 use qsl_replay::value_check::{ParameterDomain, Selection, ValueTarget, Verdict, Violation};
+use qsl_replay::OutcomeItem;
 use qsl_replay::{
     Certification, DisagreementCause, IncompleteCause, InconclusiveCause, ModelCheckLimit,
     OccurrenceKey, ProofBasis, TerminalValue,
@@ -518,9 +519,20 @@ fn terminal(record: &AnalyzeRecord) -> &TerminalValue {
         .value()
 }
 
+/// The item `record` writes over `package`.
+fn item_of(record: &AnalyzeRecord, package: &CheckedPackage) -> OutcomeItem {
+    record
+        .outcome_item(package)
+        .expect("a terminal item")
+        .expect("the counterexample is spelled")
+}
+
 /// The item's FR-331 result label, as the outcome writer renders it.
-fn label(record: &AnalyzeRecord) -> String {
-    let item = record.outcome_item().expect("a terminal item");
+fn label(record: &AnalyzeRecord, package: &CheckedPackage) -> String {
+    let item = record
+        .outcome_item(package)
+        .expect("a terminal item")
+        .expect("the counterexample is spelled");
     serde_json::to_value(&item).unwrap()["result"]
         .as_str()
         .unwrap()
@@ -575,11 +587,17 @@ const NATIVE_ZERO_DIVISOR_CAUSE: &str = "division-by-zero";
 
 /// Compare one run against the vector's stated outcome: result, cause,
 /// locus and counterexample.
-fn assert_matches_vector(case: &Json, model: &Json, record: &AnalyzeRecord, claim_node: &str) {
+fn assert_matches_vector(
+    case: &Json,
+    model: &Json,
+    record: &AnalyzeRecord,
+    package: &CheckedPackage,
+    claim_node: &str,
+) {
     let id = id_of(case);
     let expected = &case["outcome"]["results"][0];
     let result = expected["result"].as_str().unwrap();
-    assert_eq!(label(record), result, "{id}: the result");
+    assert_eq!(label(record, package), result, "{id}: the result");
     let found = violations(model);
     match terminal(record) {
         TerminalValue::Proved {
@@ -616,7 +634,7 @@ fn assert_matches_vector(case: &Json, model: &Json, record: &AnalyzeRecord, clai
                         claim_node,
                         "{id}: not the claim"
                     );
-                    let item = serde_json::to_value(record.outcome_item().unwrap()).unwrap();
+                    let item = serde_json::to_value(item_of(record, package)).unwrap();
                     assert_eq!(
                         item["cause"]["kind"], "undefined-evaluation",
                         "{id}: {item}"
@@ -715,7 +733,7 @@ fn the_clause_vectors_settle_as_the_vectors_state() {
                     reported: None,
                 },
             );
-            assert_matches_vector(&case, model, &record, &node);
+            assert_matches_vector(&case, model, &record, &package, &node);
         }
         // The vector's candidate reaches the arm as an engine's report, and
         // the native replay settles it.
@@ -730,7 +748,7 @@ fn the_clause_vectors_settle_as_the_vectors_state() {
                     reported: Some(candidate.clone()),
                 },
             );
-            assert_matches_vector(&case, model, &record, &node);
+            assert_matches_vector(&case, model, &record, &package, &node);
             if candidate_violates {
                 let found = record.value_check.as_ref().unwrap();
                 assert_eq!(found.reproduced.assignment().len(), candidate.len(), "{id}");
@@ -778,7 +796,7 @@ fn scalar_operation_vectors_use_occurrence_reach_and_undefinedness() {
         let package = package_of(&declarations_of(model));
         let key = marked_scalar_key(&package, model);
         let record = run(&package, &key, "subject", None);
-        let outcome = label(&record);
+        let outcome = label(&record, &package);
         match id {
             "VV-05" => {
                 assert_eq!(outcome, "refuted");
@@ -798,7 +816,7 @@ fn scalar_operation_vectors_use_occurrence_reach_and_undefinedness() {
                         reported: Some(candidate),
                     },
                 );
-                assert_eq!(label(&replayed), "refuted");
+                assert_eq!(label(&replayed, &package), "refuted");
                 let again = replayed.value_check.as_ref().unwrap();
                 assert_eq!(again.reproduced.violation(), found.reproduced.violation());
             }
@@ -827,7 +845,7 @@ fn scalar_operation_vectors_use_occurrence_reach_and_undefinedness() {
                         reported: Some(candidate),
                     },
                 );
-                assert_eq!(label(&replayed), "refuted");
+                assert_eq!(label(&replayed, &package), "refuted");
                 let again = replayed.value_check.as_ref().unwrap();
                 assert_eq!(again.reproduced.violation(), found.reproduced.violation());
             }
@@ -971,7 +989,7 @@ fn an_undefined_subexpression_is_located_at_its_own_occurrence() {
     assert_eq!(package_location, &expected);
     assert_ne!(at.locus, key);
     assert_eq!(at.reason, NATIVE_ZERO_DIVISOR_CAUSE);
-    let written = serde_json::to_value(record.outcome_item().expect("a proof result item"))
+    let written = serde_json::to_value(item_of(&record, &package))
         .expect("the item has a wire representation");
     assert_eq!(written["cause"]["kind"], "undefined-evaluation");
     assert_eq!(written["cause"]["cause"], NATIVE_ZERO_DIVISOR_CAUSE);
@@ -1057,7 +1075,7 @@ fn an_unsatisfiable_domain_is_inconclusive_with_the_value_check_vacuity_cause() 
         "{:?}",
         record.settlement
     );
-    let item = serde_json::to_value(record.outcome_item().unwrap()).unwrap();
+    let item = serde_json::to_value(item_of(&record, &package)).unwrap();
     assert_eq!(item["result"], "inconclusive", "{item}");
     assert_eq!(item["category"], "inconclusive", "{item}");
     assert_eq!(item["cause"]["kind"], "kani-vacuous-proof", "{item}");
@@ -1172,7 +1190,7 @@ fn a_claim_that_selects_no_form_is_declined_without_a_check() {
         panic!("declined, not {:?}", record.settlement)
     };
     assert_eq!(cause.as_str(), "invalid-input");
-    assert_eq!(label(&record), "declined");
+    assert_eq!(label(&record, &package), "declined");
 }
 
 // ---- the budget ----
@@ -1376,7 +1394,7 @@ fn a_parameter_the_arm_does_not_enumerate_is_unsupported_not_proved() {
         "{:?}",
         record.settlement
     );
-    assert_eq!(label(&record), "unsupported");
+    assert_eq!(label(&record, &package), "unsupported");
 }
 
 #[trace("QSpec-TC-972", "QSpec-FR-483-AC-7")]
@@ -1860,6 +1878,17 @@ fn a_provider_counterexample_that_replays_settles_refuted_and_a_proof_settles_pr
         "the integers are not narrowed"
     );
     assert_eq!(kept.claim, key);
+    // The replay reproduced the division by zero at those integers, and the
+    // counterexample is written as the canonical assignments.
+    assert!(kept.reproduced.violation().undefined.is_some());
+    let item = serde_json::to_value(item_of(&record, &package)).unwrap();
+    let wire = &item["counterexample"];
+    assert_eq!(wire["type"], "assignments");
+    assert_eq!(
+        wire["values"][0]["value"]["value"],
+        (1_i128 << 100).to_string()
+    );
+    assert_eq!(wire["values"][1]["value"]["value"], "0");
 
     let package = package_of(GUARDED);
     let key = only_scalar_key(&package, "q");

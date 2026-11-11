@@ -56,10 +56,17 @@ pub struct ExactProbabilityEvidence {
     pub side: ProbabilityBoundSide,
 }
 
+/// A reproduced path set's FR-286 spelling, written where the subject's system
+/// is at hand.
+pub type ProbabilityWire = Result<serde_json::Value, qsl_replay::CounterexampleWireError>;
+
+/// A reproduced path set with its spelling.
+pub(crate) type SpelledWitness = (Box<ReproducedProbabilityWitness>, ProbabilityWire);
+
 /// What EN-5 reports for one item.
 pub(crate) enum ExactReport {
     /// Only independently reproduced path evidence can settle refuted.
-    Refuted(Box<ReproducedProbabilityWitness>),
+    Refuted(Box<ReproducedProbabilityWitness>, Box<ProbabilityWire>),
     /// A semantic replay disagreed with the produced path evidence.
     ReplayParity,
     /// Replay refused the witness's semantic content.
@@ -96,10 +103,10 @@ impl ExactReport {
     ) -> (
         TerminalRecord,
         Option<Box<ExactProbabilityEvidence>>,
-        Option<Box<ReproducedProbabilityWitness>>,
+        Option<SpelledWitness>,
     ) {
         let (record, evidence) = match self {
-            Self::Refuted(reproduced) => {
+            Self::Refuted(reproduced, wire) => {
                 return (
                     TerminalRecord::refuted_by_probability_witness(
                         index,
@@ -109,7 +116,7 @@ impl ExactReport {
                     )
                     .expect("the token's own claim matches"),
                     None,
-                    Some(reproduced),
+                    Some((reproduced, *wire)),
                 )
             }
             Self::ReplayParity => (
@@ -1533,7 +1540,32 @@ fn replay_refutation(
     }
     match replay_probabilistic_witness(system.package(), system, &item, &witness, limits, cancel) {
         Ok(ProbabilityWitnessReplay::Reproduced(token)) => {
-            EngineReport::Exact(Box::new(ExactReport::Refuted(token)))
+            let scope = system.package().graph().scope();
+            // FR-413: each entry is keyed by its product state key.
+            let spelled: Vec<_> = witness
+                .scheduler
+                .iter()
+                .map(|(key, choice)| {
+                    (
+                        qsl_eval::simulation::StateKey::from_canonical_bytes(
+                            key.as_bytes().to_vec(),
+                        ),
+                        choice.clone(),
+                    )
+                })
+                .collect();
+            let wire = qsl_replay::probabilistic_wire(
+                &witness,
+                match &claim.form {
+                    ProbForm::Reach { bound, .. } | ProbForm::Probability { bound, .. } => bound,
+                    _ => return not_yet(),
+                },
+                scope.types(),
+                scope.variant_types(),
+                &|state| system.state_key(state).ok().map(|(_, key)| key),
+                &spelled,
+            );
+            EngineReport::Exact(Box::new(ExactReport::Refuted(token, Box::new(wire))))
         }
         Ok(ProbabilityWitnessReplay::Parity) => {
             EngineReport::Exact(Box::new(ExactReport::ReplayParity))

@@ -391,7 +391,13 @@ fn a_mixed_package_routes_each_record_by_its_own_subject() {
 fn an_undefined_timed_evaluation_settles_refuted_through_analyze() {
     use qsl_replay::{CounterexampleKind, TerminalValue};
     use quire_semantic_value::catalog::Category;
-    let record = analyzed(&crate::zone_search::ticker(false));
+    let world = crate::zone_search::ticker(false);
+    let mut record = analyzed(&world);
+    let node = &world.package.graph().temporal_clauses()[0];
+    record.claim = Some(qsl_foundation::source::provenance::OccurrenceKey::new(
+        node.identity(),
+        node.claim().clone(),
+    ));
     let terminal = record.terminal().expect("a terminal record");
     assert_eq!(*terminal.value(), TerminalValue::Refuted);
     assert_eq!(
@@ -405,7 +411,10 @@ fn an_undefined_timed_evaluation_settles_refuted_through_analyze() {
         panic!("an undefined evaluation: {:?}", counterexample.kind);
     };
     assert_eq!(undefined.site.position, 2);
-    let item = record.outcome_item().expect("an item");
+    let item = record
+        .outcome_item(&world.package)
+        .expect("an item")
+        .expect("the counterexample is spelled");
     assert_eq!(item.category(), Category::Violation);
     let written = serde_json::to_value(&item).expect("writes");
     assert_eq!(written["result"], "refuted");

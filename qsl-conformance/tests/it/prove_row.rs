@@ -7,7 +7,9 @@ use qsl_foundation::RequestIndex;
 use qsl_replay::{OutcomeItem, TerminalValue, UnavailabilityCause};
 use quire_semantic_value::catalog::CatalogCode;
 
-use crate::support::{outcome_of, written};
+use crate::support::{
+    assert_no_counterexample, assert_one_formula_counterexample, outcome_of, written,
+};
 
 /// Each applicable cell of `prove` (QSL half) yields one FR-286 item of its
 /// kind. FR-564-AC-6 is not tagged here: the `refuted` item's counterexample
@@ -25,6 +27,11 @@ fn prove_yields_an_item_of_each_reachable_kind() {
         assert!(matches!(outcome.report(), Report::Item(_)), "{kind:?}");
         assert_eq!(outcome.exit_code(), exit, "{kind:?}");
         assert_eq!(written(&outcome)["result"], result, "{kind:?}");
+        if kind == OutcomeKind::Violation {
+            assert_one_formula_counterexample(&outcome);
+        } else {
+            assert_no_counterexample(&outcome);
+        }
     }
     let unsupported_outcome = outcome_of(Verb::Prove, OutcomeKind::Unsupported);
     let [record] = unsupported_outcome.records() else {
@@ -97,5 +104,22 @@ fn prove_yields_an_item_of_each_reachable_kind() {
         let item = written(&outcome);
         assert_eq!(item["result"], result, "{kind:?}");
         assert_eq!(item["cause"], cause, "{kind:?}");
+    }
+}
+
+/// FR-286-AC-14: the item `analyze` writes and the item `provider::run`'s
+/// `prove` writes for the same record, `proved` or `refuted`, serialize to
+/// equal bytes.
+#[trace("TC-770", "FR-286-AC-14")]
+#[test]
+fn analyze_and_prove_write_the_same_item() {
+    for kind in [OutcomeKind::Success, OutcomeKind::Violation] {
+        let analyzed = written(&outcome_of(Verb::Analyze, kind));
+        let proved = written(&outcome_of(Verb::Prove, kind));
+        assert_eq!(
+            serde_json::to_vec(&analyzed["items"][0]).expect("JSON"),
+            serde_json::to_vec(&proved).expect("JSON"),
+            "{kind:?}"
+        );
     }
 }

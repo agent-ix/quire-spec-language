@@ -318,10 +318,9 @@ pub(crate) fn analyze_bound(
         .iter()
         .map(super::AnalyzeItem::requirement)
         .collect::<Vec<_>>();
-    let mut settled = super::analyze_items(engines, items, cancel);
+    let settled = super::analyze_items(engines, items, cancel);
     let aggregate = super::aggregate(&requirements, &settled);
-    let counterexamples = counterexamples(&mut settled);
-    let records = super::terminal_records(settled);
+    let (records, counterexamples) = super::split_records(settled, package);
     Ok(Staged::new(super::AnalyzeOutcome {
         records,
         counterexamples,
@@ -585,6 +584,7 @@ fn work<'a>(
     }
     built.kind = item.kind;
     built.family = family;
+    built.claim = Some(item.claim.clone());
     built.mode = match item.extent {
         ExtentClassification::Bounded => qsl_route::Mode::Bounded,
         ExtentClassification::Unbounded { .. } => qsl_route::Mode::Unbounded,
@@ -593,58 +593,4 @@ fn work<'a>(
         negotiated.disposition.clone(),
         negotiated.diagnostic.clone(),
     )
-}
-
-fn counterexamples(records: &mut [super::AnalyzeRecord]) -> Vec<super::ItemCounterexample> {
-    use super::{Counterexample, ItemCounterexample};
-    let mut result = Vec::new();
-    for record in records {
-        let Some(terminal) = record.terminal() else {
-            continue;
-        };
-        if !matches!(terminal.value(), qsl_replay::TerminalValue::Refuted) {
-            continue;
-        }
-        let Some(backend) = terminal.backend().cloned() else {
-            continue;
-        };
-        let counterexample = record
-            .model_check
-            .as_mut()
-            .and_then(|model| model.counterexample.take())
-            .map(Box::new)
-            .map(Counterexample::Temporal)
-            .or_else(|| {
-                record
-                    .zone_check
-                    .as_mut()
-                    .and_then(|zone| zone.counterexample.take())
-                    .map(Box::new)
-                    .map(Counterexample::Temporal)
-            })
-            .or_else(|| {
-                record
-                    .protocol_check
-                    .as_mut()
-                    .and_then(|protocol| protocol.counterexample.take())
-                    .map(Box::new)
-                    .map(Counterexample::Protocol)
-            })
-            .or_else(|| record.value_check.take().map(Counterexample::Assignments))
-            .or_else(|| record.contract_check.take().map(Counterexample::Contract))
-            .or_else(|| {
-                record
-                    .probabilistic_counterexample
-                    .take()
-                    .map(Counterexample::Probabilistic)
-            });
-        if let Some(counterexample) = counterexample {
-            result.push(ItemCounterexample {
-                request_index: record.request_index,
-                backend,
-                counterexample,
-            });
-        }
-    }
-    result
 }
