@@ -22,3 +22,9 @@ QSL-1872 asked for four facts. The PR delivers sender, receiver and message type
 ## Verdict
 
 PASS WITH FINDINGS for coverage: both new ACs have tagged tests and every new public item has an owning requirement. FND-001 is tracker hygiene for the deliberate partial, which is itself correct and documented in the spec.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | QSL-1872 is kept open and rescoped to the internality residue (code lead comment on QSL-1872, 2026-11-11), and the PR body at b7e563872 carries `Remaining work: QSL-1872 role internality` with no closing keyword. |

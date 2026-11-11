@@ -26,3 +26,11 @@ GitHub reports the PR as CONFLICTING with main. Main moved to 91ada09a7, which m
 FAIL. FND-001 blocks merge: the PR conflicts with main and its API differs from FR-519 as merged. FND-002 and FND-003 should be fixed in the same round.
 
 What is sound: `await_anchor` and `causal_relation` now share one read of `after`, so the `AwaitAnchor` edge and the public view cannot disagree, and the removed `None => malformed` arm is now covered by `from_wire` inside `await_anchor`. Both functions reuse the module's `required`/`single`/`group_member` helpers and refuse with the same `ViewRefusal` shapes as `delivery` and `queue_capacity`. Doc comments match the behaviour. No panics on input, no unsafe, no new dependencies. The AC-18 test covers both kinds and the missing `after`, missing `kind`, missing `target` and unknown-word refusals. Both tests carry `#[trace]` tags. Not checking `semantic_form` matches the sibling node readers. Focused `cargo test -p qsl-package --lib protocol_view` passed on the head: 23 passed, 0 failed.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Verified in b7e563872: rebased on main, PR spec edits dropped, `await_anchor` returns public `AwaitAnchor<'n> { kind, target }`, channel view renamed `channel_endpoints` / `ChannelEndpoints`; PR is MERGEABLE. |
+| FND-002 | fixed | Verified in b7e563872: the AC-19 test sets `from` to the text `delivery` term and asserts `MalformedMember` naming `from`. |
+| FND-003 | fixed | Verified in b7e563872: the AC-19 test asserts `message_type` (and sender, receiver) equal the channel node's `carries` (`from`, `to`) reference. |
