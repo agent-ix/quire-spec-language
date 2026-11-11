@@ -1008,7 +1008,7 @@ mod tests {
     #[trace("FR-518-AC-5", "TC-1313")]
     #[test]
     fn a_case_that_leaves_the_base_bytes_unchanged_is_a_mismatch() {
-        let base = json!({ "temporal_bindings": [{ "clock": { "kind": EVENT } }] });
+        let base = json!({ "semantic_graph": { "nodes": [], "operand_rows": [] }, "temporal_bindings": [{ "clock": { "kind": EVENT } }] });
         let base_bytes = serde_json::to_vec(&base).expect("the base encodes");
         let cases = vec![Case {
             identity: "unchanged-case",

@@ -1519,6 +1519,39 @@ mod tests {
         );
     }
 
+    /// FR-298-AC-4 by variation: the same outcome rendered as text under two
+    /// source sets reads differently (the path label changes), while its JSON
+    /// is the same bytes both times and the document's own.
+    #[trace("TC-783", "FR-298-AC-4")]
+    #[test]
+    fn outcome_json_does_not_change_when_the_text_rendering_does() {
+        let under_a = source_under("ref-same", "a.qsl", "same\n");
+        let under_b = source_under("ref-same", "b.qsl", "same\n");
+        let region = under_a.region(Span { start: 0, end: 1 }).unwrap();
+        let document = refusal_over(&region, 1, "m");
+        let with_a = RenderSources::from_sources([under_a]);
+        let with_b = RenderSources::from_sources([under_b]);
+        assert_ne!(text_of(&document, &with_a), text_of(&document, &with_b));
+        let json = |sources: &RenderSources| {
+            render_outcome(
+                &document,
+                RenderForm::Json,
+                sources,
+                RenderLimits::default(),
+                &Cancel::new(),
+            )
+            .expect("outcome JSON renders")
+            .value()
+            .bytes()
+            .to_vec()
+        };
+        assert_eq!(json(&with_a), json(&with_b));
+        assert_eq!(
+            json(&with_a),
+            document.to_bytes().expect("document serializes")
+        );
+    }
+
     /// The JSON of every AC-1 to AC-3 outcome and view is pinned to exact
     /// bytes. Text and DOT are rendered from the same values first, so a JSON
     /// that began to depend on either renderer (or on `Debug` text) would

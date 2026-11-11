@@ -115,6 +115,15 @@ pub struct Lane {
     pub name: &'static str,
     /// The suites that legitimately run no tests in this invocation.
     pub empty: &'static [EmptySuite],
+    /// Further empty suites of this lane alone, declared after `empty`.
+    pub extra: &'static [EmptySuite],
+}
+
+impl Lane {
+    /// Every suite the lane declares empty: `empty`, then `extra`.
+    pub fn declared(&self) -> Vec<EmptySuite> {
+        self.empty.iter().chain(self.extra).copied().collect()
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -179,10 +188,9 @@ fn feature_argument(argument: &str) -> FeatureArgument {
 
 const NO_DOC_EXAMPLE: &str = "no executable doc example in the library";
 
-/// The zero-pass suites of the retained `make ci` log of the QSL#670 gate
-/// (its default-feature and all-feature workspace runs listed the same
-/// suites). That log is from an older head; the guard's own first run at a
-/// new head is what checks this list against the tree.
+/// The zero-pass suites every lane's workspace run shares. The default-feature
+/// lane adds [`ROOT_DOCTESTS_EMPTY`] through its `extra` slice; the guard's own
+/// run at a head is what checks this list against the tree.
 const WORKSPACE_EMPTY: &[EmptySuite] = &[
     EmptySuite {
         source: "qsl-bench/src/bin/qsl-bench-probe.rs",
@@ -245,11 +253,6 @@ const WORKSPACE_EMPTY: &[EmptySuite] = &[
         reason: NO_DOC_EXAMPLE,
     },
     EmptySuite {
-        source: "src/lib.rs",
-        kind: SuiteKind::Doctests,
-        reason: NO_DOC_EXAMPLE,
-    },
-    EmptySuite {
         source: "qsl-route/src/lib.rs",
         kind: SuiteKind::Doctests,
         reason: NO_DOC_EXAMPLE,
@@ -286,24 +289,36 @@ const WORKSPACE_EMPTY: &[EmptySuite] = &[
     },
 ];
 
+/// The root library's doctests sit in the `checked-handoff` feature, so the
+/// default-feature workspace lane runs none and the all-features lane does.
+const ROOT_DOCTESTS_EMPTY: &[EmptySuite] = &[EmptySuite {
+    source: "src/lib.rs",
+    kind: SuiteKind::Doctests,
+    reason: "no doc example without the `checked-handoff` feature",
+}];
+
 /// The `cargo test` invocations of `make ci`, one lane each. The two `-p`
 /// lanes declare nothing: every suite they run has tests.
 pub const LANES: &[Lane] = &[
     Lane {
         name: "default-workspace",
         empty: WORKSPACE_EMPTY,
+        extra: ROOT_DOCTESTS_EMPTY,
     },
     Lane {
         name: "default-qsl-semantics",
         empty: &[],
+        extra: &[],
     },
     Lane {
         name: "default-qsl-cst",
         empty: &[],
+        extra: &[],
     },
     Lane {
         name: "all-features-workspace",
         empty: WORKSPACE_EMPTY,
+        extra: &[],
     },
 ];
 
@@ -1088,7 +1103,7 @@ pub fn evaluate(
     suites: &[SuiteOutcome],
     findings: Vec<Finding>,
 ) -> Vec<Finding> {
-    evaluate_declared(lane.empty, expected, suites, findings)
+    evaluate_declared(&lane.declared(), expected, suites, findings)
 }
 
 /// [`evaluate`] with the empty suites given directly, for a run that leaves
@@ -1548,7 +1563,12 @@ pub fn run_lane(
         .doctests
         .then(|| workspace.select(&selection.packages))
         .transpose()?;
-    let empty = in_scope(lane.empty, Some(&workspace), workspace_root, &selection);
+    let empty = in_scope(
+        &lane.declared(),
+        Some(&workspace),
+        workspace_root,
+        &selection,
+    );
     let mut parser = RunParser::new(&artifacts, workspace_root);
     run_tests(workspace_root, cargo_args, target_dir, &mut parser, echo)?;
     let (suites, findings) = parser.finish();
@@ -1797,6 +1817,7 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
     fn lane(empty: &'static [EmptySuite]) -> Lane {
         Lane {
             name: "test",
+            extra: &[],
             empty,
         }
     }
@@ -3255,12 +3276,10 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
     #[trace("TC-950", "NFR-014-AC-5")]
     fn every_lane_names_each_empty_suite_once_with_a_reason() {
         for lane in LANES {
-            let ids: BTreeSet<SuiteId> = lane.empty.iter().map(EmptySuite::id).collect();
-            assert_eq!(ids.len(), lane.empty.len(), "{}", lane.name);
-            assert!(lane
-                .empty
-                .iter()
-                .all(|empty| !empty.reason.trim().is_empty()));
+            let declared = lane.declared();
+            let ids: BTreeSet<SuiteId> = declared.iter().map(EmptySuite::id).collect();
+            assert_eq!(ids.len(), declared.len(), "{}", lane.name);
+            assert!(declared.iter().all(|empty| !empty.reason.trim().is_empty()));
         }
     }
 
