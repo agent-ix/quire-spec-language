@@ -392,6 +392,8 @@ pub use ir::{
     EqualityUnitIdentityFact, EqualityUnitOperandRole, EqualityUnitTypeFact, Node, NodeId, Slot,
 };
 
+#[cfg(any(test, feature = "test-support"))]
+pub use assemble::model_type_environment;
 pub use assemble::{
     AdmittedImport, AssemblyCause, AssemblyError, AssemblyLimits, AssemblyRefusal, AssemblyRun,
     ClockReadingDeclaration, ClockSite, ClockSlot, ClockTypePosition, ClockUse,

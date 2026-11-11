@@ -220,8 +220,8 @@ pub mod meaning {
     pub const VALUE_TYPE: &str = "quire.meaning.model.value-type/v1";
     /// A record value type: a `TypeDefinition` whose fields carry no
     /// identity of their own (model-complete.md's grouped "Record value
-    /// type, event type, ..." row) -- a known FR-208 meaning with no QSL
-    /// record shape yet, refused as `unsupported_construct`.
+    /// type, event type, ..." row), read into a
+    /// [`super::super::domain_package::RecordValueTypeRecord`].
     pub const RECORD_VALUE_TYPE: &str = "quire.meaning.model.record-value-type/v1";
     /// An identity-free tuple value type with ordered ordinal positions.
     pub const TUPLE_VALUE_TYPE: &str = "quire.meaning.model.tuple-value-type/v1";
@@ -229,24 +229,22 @@ pub mod meaning {
     /// `variant` case per member.
     pub const VARIANT_TYPE: &str = "quire.meaning.model.variant-type/v1";
     /// A domain event type: a `TypeDefinition` declaring the shape of one
-    /// event -- a known FR-208 meaning with no QSL record shape yet,
-    /// refused as `unsupported_construct`.
+    /// event, read into a [`super::super::domain_package::EventTypeRecord`].
     pub const EVENT_TYPE: &str = "quire.meaning.model.event-type/v1";
     /// A state machine: a `TypeDefinition` declaring a type's states and
-    /// transitions -- a known FR-208 meaning with no QSL record shape yet,
-    /// refused as `unsupported_construct`.
+    /// transitions, read into a
+    /// [`super::super::domain_package::StateMachineRecord`].
     pub const STATE_MACHINE: &str = "quire.meaning.model.state-machine/v1";
     /// A process: a `TypeDefinition` declaring a behavioural, non-object
-    /// participant -- a known FR-208 meaning with no QSL record shape yet,
-    /// refused as `unsupported_construct`.
+    /// participant, read into a [`super::super::domain_package::ProcessRecord`].
     pub const PROCESS: &str = "quire.meaning.model.process/v1";
     /// A persistence interface: a `TypeDefinition` declaring a storage
-    /// contract for a domain type -- a known FR-208 meaning with no QSL
-    /// record shape yet, refused as `unsupported_construct`.
+    /// contract for a domain type, read into a
+    /// [`super::super::domain_package::PersistenceInterfaceRecord`].
     pub const PERSISTENCE_INTERFACE: &str = "quire.meaning.model.persistence-interface/v1";
     /// A namespace: a `TypeDefinition` declaring a naming scope rather than
-    /// an instantiable type -- a known FR-208 meaning with no QSL record
-    /// shape yet, refused as `unsupported_construct`.
+    /// an instantiable type, read into a
+    /// [`super::super::domain_package::NamespaceRecord`].
     pub const NAMESPACE: &str = "quire.meaning.model.namespace/v1";
     /// A population declaration: a `populations[]` node naming the member
     /// types and the object-closure extent a domain package instantiates,

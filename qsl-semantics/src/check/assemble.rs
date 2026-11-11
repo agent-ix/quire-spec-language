@@ -3160,6 +3160,45 @@ fn admit_types(
     )
 }
 
+/// The environment unit assembly admits for the one `model` declaration
+/// `alias` over `view`: the same object-type declarations and admission as
+/// [`AssemblyRun`]'s, under the default environment limits.
+#[cfg(any(test, feature = "test-support"))]
+pub fn model_type_environment(
+    alias: &str,
+    view: &crate::model::normalize::EffectiveView,
+) -> Result<TypeEnvironment, AssemblyRefusal> {
+    let span = Span { start: 0, end: 0 };
+    let model = crate::model::intake::SelectedModel {
+        alias: alias.to_owned(),
+        span,
+        view: view.clone(),
+        operation_clauses: Vec::new(),
+        type_invariants: Vec::new(),
+    };
+    let types = model_object_types(
+        alias,
+        &model,
+        span,
+        &mut OperationTable::default(),
+        &BTreeMap::new(),
+    )
+    .map_err(|errors| AssemblyRefusal { errors })?;
+    let spans = types
+        .objects
+        .iter()
+        .map(|declaration| (declaration.name().to_owned(), span))
+        .collect();
+    admit_types(
+        types.composites,
+        &types.objects,
+        &spans,
+        TypeEnvironmentLimits::default(),
+        &Cancel::new(),
+    )
+    .map(|admitted| admitted.types)
+}
+
 /// The type environment the unit's clauses are typed against, with the staged
 /// model admission whose completion waits for the conformance stage.
 pub(crate) struct AdmittedTypes {

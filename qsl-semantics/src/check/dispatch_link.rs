@@ -3,7 +3,7 @@
 //! call names.
 //!
 //! [`PackageDeclarations::link_dispatch`] is the production caller of
-//! [`checked_dispatch_operation`], the S3 seam. For every distinct member
+//! [`checked_dispatch_core`], the S3 seam. For every distinct member
 //! name a `receiver.member(args)` call in the unit's state clauses (or kept
 //! operation clauses) names, it picks the family roots of that name in the
 //! selected model views, supplies the bridge the data it asks for, keyed by
@@ -30,7 +30,7 @@ use quire_semantic_value::location::{ExpressionLocation as Location, ExpressionO
 
 use super::check::DispatchOperation;
 use super::checked_dispatch::{
-    checked_dispatch_operation, rename_names, DispatchBridgeRefusal, DispatchRoot, OperationClauses,
+    checked_dispatch_core, rename_names, DispatchBridgeRefusal, DispatchRoot, OperationClauses,
 };
 use super::ir::{DispatchCandidate, DispatchTable};
 use super::refusal::{DispatchLinkCause, DispatchSubtypeFailure};
@@ -167,7 +167,7 @@ impl PackageDeclarations {
                         key: family.root.clone(),
                         closure: GeneralizationClosure::Closed,
                     };
-                    checked_dispatch_operation(
+                    checked_dispatch_core(
                         view,
                         &root,
                         clauses,

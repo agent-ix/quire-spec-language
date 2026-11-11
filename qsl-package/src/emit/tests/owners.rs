@@ -326,6 +326,7 @@ fn acme_dispatch_package(root: &str) -> CheckedPackage {
     let mut meter = Meter::new(ModelNormalizationLimits::UNLIMITED);
     let mut declarations = checked_dispatch_operation(
         &view,
+        qsl_semantics::check::model_type_environment("fixture", &view).unwrap(),
         &DispatchRoot {
             key: model_key(root),
             closure: GeneralizationClosure::Closed,

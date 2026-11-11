@@ -122,6 +122,7 @@ use qsl_forms::{
 use qsl_foundation::diagnostic::Code;
 use quire_exact::EffectiveId;
 use quire_exact::ValueType;
+use quire_semantic_value::declaration::TypeEnvironment;
 
 /// One dispatch candidate's own clause `Expression`s and signature, supplied
 /// by the caller since [`DomainPackage`] carries no `Expression` payload. Every
@@ -345,9 +346,7 @@ pub struct DispatchRoot {
 /// ([`EffectiveView::domain_package`]) from [`DeclarationKey`]s into
 /// their [`EffectiveId`]s through `view`'s [`EffectiveView::type_identities`] --
 /// the exact shape [`quire_semantic_value::declaration::ObjectTypeDeclaration::with_supertypes`]
-/// needs (ADR-013 O-05). No production code builds a
-/// [`quire_semantic_value::declaration::TypeEnvironment`]'s object types yet (only
-/// test scaffolding does); a real model intake calls it exactly as tests do.
+/// needs (ADR-013 O-05).
 ///
 /// The re-key must be injective: two object-type records that map to one
 /// [`EffectiveId`] refuse [`DispatchBridgeRefusal::DuplicateObjectKey`]
@@ -903,8 +902,32 @@ fn substitute_names(expression: &Expression, rename: &BTreeMap<String, String>) 
 /// for an effective precondition and a body. The returned package admits
 /// `view`'s own domain package with `view` ([`AdmittedModel::from_view`]),
 /// whose selection those owners name. The package is read from the view,
-/// so it always corresponds to the view.
+/// so it always corresponds to the view. `types` is the unit's assembled
+/// environment, which the returned package carries as its own.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "each argument is a distinct input the caller owns"
+)]
 pub fn checked_dispatch_operation(
+    view: &EffectiveView,
+    types: TypeEnvironment,
+    root: &DispatchRoot,
+    clauses: &OperationClauses,
+    source: qsl_foundation::source::provenance::RawSourceRef,
+    package_name: String,
+    meter: &mut Meter,
+    identity: qsl_foundation::IdentityLimits,
+) -> Result<PackageDeclarations, DispatchBridgeRefusal> {
+    let mut declarations =
+        checked_dispatch_core(view, root, clauses, source, package_name, meter, identity)?;
+    declarations.types = types;
+    Ok(declarations)
+}
+
+/// [`checked_dispatch_operation`] without an environment: the returned
+/// package's `types` is empty, for a caller that already holds the unit's
+/// environment and merges only the linked family.
+pub(crate) fn checked_dispatch_core(
     view: &EffectiveView,
     root: &DispatchRoot,
     clauses: &OperationClauses,
@@ -1228,6 +1251,7 @@ pub fn checked_dispatch_operation(
 #[cfg(any(test, feature = "test-support"))]
 pub fn checked_dispatch_selected_operation(
     selected: crate::model::intake::SelectedModels,
+    types: TypeEnvironment,
     root: &DispatchRoot,
     clauses: &OperationClauses,
     source: qsl_foundation::source::provenance::RawSourceRef,
@@ -1243,6 +1267,7 @@ pub fn checked_dispatch_selected_operation(
     };
     let mut declarations = checked_dispatch_operation(
         &entries[ordinal].view,
+        types,
         root,
         clauses,
         source,
