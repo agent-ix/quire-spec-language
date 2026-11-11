@@ -169,6 +169,7 @@ impl PackageDeclarations {
                     };
                     checked_dispatch_operation(
                         view,
+                        self.types.clone(),
                         &root,
                         clauses,
                         self.source.clone(),
@@ -635,8 +636,7 @@ fn link_causes(
         | DispatchBridgeRefusal::UnknownCandidate(model) => vec![model_cause(operation, model)],
         DispatchBridgeRefusal::MissingClauseData { .. }
         | DispatchBridgeRefusal::MissingObjectKey { .. }
-        | DispatchBridgeRefusal::DuplicateObjectKey { .. }
-        | DispatchBridgeRefusal::TypeEnvironment(_) => vec![invariant(operation)],
+        | DispatchBridgeRefusal::DuplicateObjectKey { .. } => vec![invariant(operation)],
     }
 }
 

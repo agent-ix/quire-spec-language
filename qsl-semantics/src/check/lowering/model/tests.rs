@@ -377,6 +377,7 @@ fn dispatch_with(acme: &Acme, root: &str, clauses: &OperationClauses) -> Package
     let mut meter = Meter::new(ModelNormalizationLimits::UNLIMITED);
     let mut declarations = checked_dispatch_operation(
         &acme.view,
+        crate::check::model_type_environment("fixture", &acme.view).unwrap(),
         &DispatchRoot {
             key: key(root),
             closure: GeneralizationClosure::Closed,

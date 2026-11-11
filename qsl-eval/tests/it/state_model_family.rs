@@ -200,6 +200,7 @@ fn declarations_over(
     );
     let bridge = checked_dispatch_operation(
         &view,
+        qsl_semantics::check::model_type_environment("fixture", &view).unwrap(),
         &DispatchRoot {
             key: key(READY),
             closure: GeneralizationClosure::Closed,

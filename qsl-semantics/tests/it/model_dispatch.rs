@@ -688,6 +688,7 @@ fn a_dispatch_family_with_more_than_128_redefinition_steps_passes_the_checked_br
     }
     let declarations = checked_dispatch_operation(
         &view,
+        qsl_semantics::check::model_type_environment("fixture", &view).unwrap(),
         &DispatchRoot {
             key: root,
             closure: GeneralizationClosure::Closed,
@@ -764,6 +765,7 @@ fn the_checked_bridge_counts_every_walk_against_one_family_steps() {
     let run = |family_steps: u64| {
         checked_dispatch_operation(
             &view,
+            qsl_semantics::check::model_type_environment("fixture", &view).unwrap(),
             &DispatchRoot {
                 key: root.clone(),
                 closure: GeneralizationClosure::Closed,
