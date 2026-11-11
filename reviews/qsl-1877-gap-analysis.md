@@ -21,3 +21,10 @@ Ticket: QSL-1877. Planless gap analysis of PR 2681 at 86b647a77 against main 91a
 ## Verdict
 
 FAIL. The ticket's governing criterion (FR-057-AC-15) is unbacked. The PR's own FR-075-AC-23 is backed by one test for its per-outcome mapping. No test asserts its single-source clause, and that clause is false (code-review SR-2026111117463800000001 FND-002). Binding `qsl-route/tests/it/cause.rs::each_outcome_settles_its_typed_cause_and_catalog_code` to FR-075-AC-23 is correct for the mapping it asserts.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Verified at 80f74e3ec: qsl-route/tests/it/negotiation_cause.rs has two `#[trace("TC-155", "FR-057-AC-15")]` tests that cover every code, `outcome()`, and every settlement row, including two candidates with a named backend giving `Inconsistent`. |
+| FND-002 | fixed | Verified at 80f74e3ec: the TC-195/FR-075-AC-23 test and AC-23 are removed. |

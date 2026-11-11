@@ -23,3 +23,12 @@ Ticket: QSL-1877. Code review with the rust-review lane folded in, over `git dif
 ## Verdict
 
 FAIL. `cargo fmt --check` passes. The focused `qsl-route` `it cause` test was not run by this reviewer: it was queued behind the shared luna build lock and cancelled, because the verdict does not depend on it. The change is small and consistent with what it tests, but it implements a design that main's merged FR-057 (#2679) has superseded, and its new AC states a single-source property the code does not have. Fix: drop FR-075-AC-23 and `qsl_route::cause`. Implement FR-057-AC-15 as specified (`NegotiationOutcome` and `NegotiationCause` in `qsl_semantics::check::capability`, re-exported by qsl-route, with `NegotiationSettlement` and `settle_candidates`). Move every remaining literal site in qsl-analyze, qsl-conformance and qsl-replay onto them, and test them under TC-155 step 8. Code with no finding: lib.rs `pub mod cause`, model_request.rs const swap, tests/it/main.rs registration.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Verified at 80f74e3ec: `NegotiationOutcome` and `NegotiationCause` are in `qsl_semantics::check::capability` and re-exported at the qsl-route root. `NegotiationSettlement` and `settle_candidates` are at the qsl-route root. `qsl_route::cause` and FR-075-AC-23 are removed. |
+| FND-002 | fixed | Verified at 80f74e3ec: qsl-analyze request.rs, qsl-conformance run.rs, qsl-replay witness.rs and proof_result.rs `as_str`/`unsupported` all build from `NegotiationOutcome::...code()`. The remaining literals are test oracles only. |
+| FND-003 | fixed | Verified at 80f74e3ec: `settle_candidates` gives `Inconsistent` for 2+ candidates with a named backend, and `Single(BackendId)` for one candidate. |
+| FND-004 | fixed | Verified at 80f74e3ec: payload-free sites use `NegotiationOutcome`, and the made-up payloads are gone. `settle_candidates` has no production caller, but FR-057 requires it at the crate root and TC-155 tests it. |
