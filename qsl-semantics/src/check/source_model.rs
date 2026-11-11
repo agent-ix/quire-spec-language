@@ -72,6 +72,21 @@ pub(super) struct Context<'a> {
     /// unions, enums and aliases), which an `extends` entry may name by
     /// mistake.
     pub declared_types: &'a BTreeSet<String>,
+    /// The selected domain packages, by the alias that selects each, whose
+    /// value types and object types a field, parameter or result may name.
+    pub foreign: &'a [(&'a str, &'a DomainPackage)],
+}
+
+impl<'a> Context<'a> {
+    /// The record the model-qualified `name` (`M::Total`) names.
+    fn foreign_record(&self, name: &str) -> Option<&'a DomainPackageRecord> {
+        let (alias, member) = name.split_once("::")?;
+        let (_, package) = self.foreign.iter().find(|(held, _)| *held == alias)?;
+        package.records.iter().find(|record| {
+            let key = record.key();
+            crate::model::intake::type_identity_segment(&key.package, &key.node) == Some(member)
+        })
+    }
 }
 
 /// One member's position: the declaring object and the index in its forms.
@@ -237,12 +252,31 @@ pub(super) fn build(
         return Err(errors);
     }
     records.extend(scalars);
-    Ok(DomainPackage::new(
+    let defined: BTreeSet<&DeclarationKey> = records.iter().map(DomainPackageRecord::key).collect();
+    let foreign: BTreeSet<DeclarationKey> = records
+        .iter()
+        .flat_map(|record| match record {
+            DomainPackageRecord::FieldMember(field) => vec![&field.value_type],
+            DomainPackageRecord::OperationMember(operation) => operation
+                .parameters
+                .iter()
+                .map(|parameter| &parameter.value_type)
+                .chain(operation.result.iter().map(|result| &result.value_type))
+                .collect(),
+            _ => Vec::new(),
+        })
+        .filter_map(ValueTypeRef::as_package)
+        .filter(|key| !defined.contains(key))
+        .cloned()
+        .collect();
+    let mut package = DomainPackage::new(
         DomainPackageRef {
             identity: context.identity.to_owned(),
         },
         records,
-    ))
+    );
+    package.foreign = foreign;
+    Ok(package)
 }
 
 /// Each object's `extends` entries resolved to source object types, the
@@ -498,15 +532,21 @@ fn records_of(
                 let key = member_key(identity, &object.name.name, &field.name.name);
                 match value_type(
                     model,
-                    identity,
+                    context,
                     &object.name.name,
                     &field.name.name,
                     &field.type_form,
                     scalars,
                 ) {
-                    Ok(value_type) => records.push(DomainPackageRecord::FieldMember(field_record(
-                        field, key, &owner, value_type, position,
-                    ))),
+                    Ok((value_type, multiplicity)) => {
+                        records.push(DomainPackageRecord::FieldMember(field_record(
+                            field,
+                            key,
+                            &owner,
+                            (value_type, multiplicity),
+                            position,
+                        )))
+                    }
                     Err(error) => errors.push(error),
                 }
                 position += 1;
@@ -533,14 +573,14 @@ fn field_record(
     field: &ObjectFieldForm,
     key: DeclarationKey,
     owner: &DeclarationKey,
-    value_type: ValueTypeRef,
+    (value_type, multiplicity): (ValueTypeRef, Multiplicity),
     position: usize,
 ) -> FieldMemberRecord {
     FieldMemberRecord {
         key,
         owner: owner.clone(),
         value_type,
-        multiplicity: one(),
+        multiplicity,
         presence: if field.optional {
             Presence::Optional
         } else {
@@ -569,20 +609,20 @@ fn operation_record(
         let site = format!("{}-{}", operation.name.name, parameter.name.name);
         match value_type(
             model,
-            identity,
+            context,
             &object.name.name,
             &site,
             &parameter.value_type,
             scalars,
         ) {
-            Ok(value_type) => parameters.push(OperationParameterRecord {
+            Ok((value_type, multiplicity)) => parameters.push(OperationParameterRecord {
                 key: member_key(
                     identity,
                     &format!("{}/{}", object.name.name, operation.name.name),
                     &parameter.name.name,
                 ),
                 value_type,
-                multiplicity: one(),
+                multiplicity,
             }),
             Err(error) => errors.push(error),
         }
@@ -591,10 +631,10 @@ fn operation_record(
         None => None,
         Some(form) => {
             let site = format!("{}-result", operation.name.name);
-            match value_type(model, identity, &object.name.name, &site, form, scalars) {
-                Ok(value_type) => Some(OperationResult {
+            match value_type(model, context, &object.name.name, &site, form, scalars) {
+                Ok((value_type, multiplicity)) => Some(OperationResult {
                     value_type,
-                    multiplicity: one(),
+                    multiplicity,
                 }),
                 Err(error) => {
                     errors.push(error);
@@ -697,16 +737,65 @@ impl TypeNames for NoNames {
     }
 }
 
-/// The package value type of `form`, adding the scalar record a bounded
-/// type needs under an artifact name no source name can spell.
+/// The package value type of `form` and the multiplicity it gives its member
+/// (a collection type's bounds), adding the scalar record a bounded type
+/// needs under an artifact name no source name can spell.
 fn value_type(
     model: &Model<'_>,
-    identity: &str,
+    context: &Context<'_>,
+    owner: &str,
+    site: &str,
+    form: &TypeForm,
+    scalars: &mut Vec<DomainPackageRecord>,
+) -> Result<(ValueTypeRef, Multiplicity), AssemblyError> {
+    if let TypeFormHead::Collection(kind) = &form.head {
+        let unsupported = || fault(SourceObjectFault::UnsupportedType, form.span);
+        let [element] = form.arguments.as_slice() else {
+            return Err(unsupported());
+        };
+        if matches!(element.head, TypeFormHead::Collection(_)) {
+            return Err(unsupported());
+        }
+        let (element, _) = value_type(model, context, owner, site, element, scalars)?;
+        let bound = |at: usize| {
+            form.bounds
+                .get(at)
+                .and_then(|text| text.parse::<u64>().ok())
+        };
+        let (lower, upper) = match (bound(0), bound(1)) {
+            (Some(lower), Some(upper)) if lower <= upper => (lower, Some(upper)),
+            (None, None) if form.bounds.is_empty() => (0, None),
+            _ => return Err(unsupported()),
+        };
+        return Ok((
+            element,
+            Multiplicity {
+                lower,
+                upper,
+                ordered: matches!(
+                    kind,
+                    quire_exact::CollectionKind::Sequence | quire_exact::CollectionKind::OrderedSet
+                ),
+                unique: matches!(
+                    kind,
+                    quire_exact::CollectionKind::Set | quire_exact::CollectionKind::OrderedSet
+                ),
+            },
+        ));
+    }
+    scalar_type(model, context, owner, site, form, scalars).map(|ty| (ty, one()))
+}
+
+/// The package value type of a single-valued `form`.
+fn scalar_type(
+    model: &Model<'_>,
+    context: &Context<'_>,
     owner: &str,
     site: &str,
     form: &TypeForm,
     scalars: &mut Vec<DomainPackageRecord>,
 ) -> Result<ValueTypeRef, AssemblyError> {
+    let identity = context.identity;
     let unsupported = || fault(SourceObjectFault::UnsupportedType, form.span);
     match &form.head {
         TypeFormHead::Builtin(BuiltinType::Boolean) => {
@@ -722,13 +811,30 @@ fn value_type(
             let TypeFormHead::Name(name) = &target.head else {
                 return Err(unsupported());
             };
-            match (name.is_qualified(), model.named(&name.name)) {
-                (false, Some(object)) => {
-                    Ok(ValueTypeRef::Package(model.type_key(identity, object)))
-                }
-                _ => Err(missing(&name.name, target.span)),
+            if name.is_qualified() {
+                return match context.foreign_record(&name.name) {
+                    Some(DomainPackageRecord::ObjectType(object)) => {
+                        Ok(ValueTypeRef::Package(object.key.clone()))
+                    }
+                    _ => Err(missing(&name.name, target.span)),
+                };
+            }
+            match model.named(&name.name) {
+                Some(object) => Ok(ValueTypeRef::Package(model.type_key(identity, object))),
+                None => Err(missing(&name.name, target.span)),
             }
         }
+        TypeFormHead::Name(name) if name.is_qualified() => match context.foreign_record(&name.name)
+        {
+            Some(
+                record @ (DomainPackageRecord::ScalarType(_)
+                | DomainPackageRecord::AliasType(_)
+                | DomainPackageRecord::RecordValueType(_)
+                | DomainPackageRecord::TupleValueType(_)),
+            ) => Ok(ValueTypeRef::Package(record.key().clone())),
+            Some(_) => Err(unsupported()),
+            None => Err(missing(&name.name, form.span)),
+        },
         TypeFormHead::Builtin(BuiltinType::Int | BuiltinType::Text) => {
             let resolved = resolve_form(&NoNames, form).map_err(|error| AssemblyError {
                 cause: AssemblyCause::IllFormedBounds(error.fault),

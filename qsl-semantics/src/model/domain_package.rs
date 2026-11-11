@@ -9,7 +9,7 @@
 //! 2.0.0 document bytes against a selection and reads an admitted
 //! document's IR nodes into these records.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::model::normalize::ModelRefusal;
 use crate::model::origin::JsonValue;
@@ -1036,6 +1036,10 @@ pub struct DomainPackage {
     pub dimensions: Vec<PackageDimensionRecord>,
     /// Package-owned units from the admitted FCD unit graph.
     pub units: Vec<PackageUnitRecord>,
+    /// Declarations another package owns that this package's members name:
+    /// a source package's field, parameter or result of a model-owned type
+    /// (FR-569). Their definitions are not this package's records.
+    pub foreign: BTreeSet<DeclarationKey>,
     /// Original intake provenance, separate from normalized identities.
     pub(crate) originals: BTreeMap<DeclarationKey, OriginalDeclaration>,
     /// FR-154 intake refusals retained until normalization has charged every
@@ -1071,6 +1075,7 @@ impl DomainPackage {
             records,
             dimensions: Vec::new(),
             units: Vec::new(),
+            foreign: BTreeSet::new(),
             originals: BTreeMap::new(),
             intake_refusals: Vec::new(),
             declared_record_count: None,

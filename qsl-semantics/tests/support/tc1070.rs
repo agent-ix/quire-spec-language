@@ -213,3 +213,40 @@ pub(crate) fn document_ep() -> Json {
     ]);
     doc
 }
+
+/// TC-1407 fixture E-S: TC-1070's fixture E with the object type `Node`
+/// declared by the unit's own source (FR-569) instead of by the domain
+/// package `M`, whose document keeps every other declaration. The unit adds
+/// `object Node identity (total) { total: M::Total; population nodes;
+/// operation step(): M::Flag; }` after its `model M` selection, and its
+/// protocol `Refunds` names `Node` and `Node::step` where fixture E names
+/// `M::Node` and `M::Node::step`. Returns the unit's source and `M`'s
+/// document.
+#[allow(
+    dead_code,
+    reason = "consumed by the E-S tests of qsl-package and qsl-eval"
+)]
+pub(crate) fn source_node() -> (String, Json) {
+    let mut document = document();
+    document["types"]
+        .as_array_mut()
+        .expect("types")
+        .retain(|declared| declared["displayName"] != "Node");
+    document["populations"] = json!([]);
+    // `Node` was the only `thing`: no declaration is of that kind now.
+    document["constructs"]
+        .as_array_mut()
+        .expect("constructs")
+        .retain(|construct| construct["kind"]["name"] != "thing");
+    let refunds = &SOURCE[..SOURCE.find("protocol Pipeline").expect("fixture L follows")];
+    let refunds = refunds
+        .replace("M::Node::step", "Node::step")
+        .replace("M::Node", "Node");
+    let selection = "model M = \"test/orders\";\n";
+    let object = "object Node identity (total) {\n  total: M::Total;\n  population nodes;\n  \
+         operation step(): M::Flag;\n}\n";
+    (
+        refunds.replacen(selection, &format!("{selection}{object}"), 1),
+        document,
+    )
+}

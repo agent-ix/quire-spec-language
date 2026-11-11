@@ -616,7 +616,7 @@ impl<'a> ModelSystem<'a> {
     ///
     /// FR-106's [`AdmissionFailure`]: `Refused` or `Incomplete`, one record.
     pub fn new(request: ModelSimulationRequest<'a>) -> Result<Self, AdmissionFailure> {
-        let selections = request.package.graph().model_selections();
+        let selections = request.package.graph().model_inputs();
         Self::over(request, selections, None)
     }
 
@@ -630,7 +630,7 @@ impl<'a> ModelSystem<'a> {
         request: ModelSimulationRequest<'a>,
         cancel: &quire_exact::Cancel,
     ) -> Result<Self, AdmissionFailure> {
-        let selections = request.package.graph().model_selections();
+        let selections = request.package.graph().model_inputs();
         Self::over(request, selections, Some(cancel))
     }
 
@@ -669,16 +669,22 @@ impl<'a> ModelSystem<'a> {
                 &[("model", model.to_owned())],
             ));
         }
-        Self::over(request, &selected, None)
+        let sources = request.package.graph().source_packages();
+        Self::over(
+            request,
+            qsl_semantics::model::observation::ModelSelections::new(&selected, sources),
+            None,
+        )
     }
 
     fn over(
         request: ModelSimulationRequest<'a>,
-        selections: &[qsl_semantics::model::domain_package::DomainPackageRef],
+        selections: qsl_semantics::model::observation::ModelSelections<'_>,
         cancel: Option<&quire_exact::Cancel>,
     ) -> Result<Self, AdmissionFailure> {
         let graph = request.package.graph();
         let types = graph.scope().types();
+        let only = selections.selections();
         let model = StateModel::new(selections, types, request.packages, request.normalization)?;
         let populations = model.populations();
 
@@ -922,7 +928,7 @@ impl<'a> ModelSystem<'a> {
                 .any(|field| field.key == bound.member)
         });
         let system = Self {
-            over: match selections {
+            over: match only {
                 [only] => Some(only.identity.clone()),
                 _ => None,
             },

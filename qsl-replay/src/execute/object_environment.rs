@@ -204,7 +204,7 @@ pub(super) fn admit(
         .map(|(_, reference)| reference.clone())
         .collect();
     let (environment, _usage) = admit_object_environment(
-        package.graph().model_selections(),
+        package.graph().model_inputs(),
         package.graph().scope().types(),
         &compiled.packages,
         compiled.model_limits,

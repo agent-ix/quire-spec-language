@@ -28,7 +28,6 @@
 
 use qsl_package::CheckedPackage;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
-use qsl_semantics::model::domain_package::DomainPackageRef;
 use qsl_semantics::model::observation::population_universe_for;
 use qsl_semantics::value::enumeration::mint_variant_id;
 use quire_exact::{
@@ -235,7 +234,7 @@ struct Converter<'a, 'r> {
 /// The selected models a reference argument's universe is read from
 /// (FR-098: the universe of the declared `Reference<T>`'s object type).
 pub(crate) struct ReferenceModel<'a> {
-    selections: &'a [DomainPackageRef],
+    selections: qsl_semantics::model::observation::ModelSelections<'a>,
     packages: &'a qsl_semantics::model::intake::PackageInput,
     limits: ModelNormalizationLimits,
 }
@@ -249,7 +248,7 @@ impl<'a> ReferenceModel<'a> {
         limits: ModelNormalizationLimits,
     ) -> Self {
         Self {
-            selections: package.graph().model_selections(),
+            selections: package.graph().model_inputs(),
             packages,
             limits,
         }
@@ -261,7 +260,9 @@ impl<'a> ReferenceModel<'a> {
         const NONE: &qsl_semantics::model::intake::PackageInput =
             &std::collections::BTreeMap::new();
         Self {
-            selections: &[],
+            selections: qsl_semantics::model::observation::ModelSelections::from(
+                &[] as &[qsl_semantics::model::domain_package::DomainPackageRef]
+            ),
             packages: NONE,
             limits: crate::spine::SpineLimits::default().model,
         }

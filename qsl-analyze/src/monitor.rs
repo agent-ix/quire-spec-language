@@ -497,7 +497,7 @@ impl Runs<'_> {
             for (position, document) in input.documents().enumerate() {
                 self.cancelled()?;
                 let admitted = admit_trace_snapshot(
-                    graph.model_selections(),
+                    graph.model_inputs(),
                     graph.scope().types(),
                     self.request.packages,
                     self.limits.normalization,

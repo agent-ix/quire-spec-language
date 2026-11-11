@@ -145,3 +145,41 @@ fn fixture_s_m_refuses_at_the_first_object() {
         (Code::UnsupportedConstruct, Some("not-yet-implemented"))
     );
 }
+
+use super::protocol_controls::tc1070 as tc1070_source;
+
+/// TC-1407 fixture E-S and its domain package's input.
+fn fixture_e_s() -> (String, qsl_semantics::model::intake::PackageInput) {
+    let (text, document) = tc1070_source::source_node();
+    let bytes = crate::emit::tests::wire_bytes(&document).expect("the document encodes");
+    let packages = qsl_semantics::model::intake::package_input([bytes.as_slice()])
+        .expect("E-S's domain package admits");
+    (text, packages)
+}
+
+/// TC-1407 step 0 and FR-569-AC-11: E-S checks (its protocol is over the
+/// source-declared `Node`, whose field and result name `M`'s types) and S4
+/// refuses it once, at `object Node`, writing no package.
+#[trace("FR-569-AC-11", "FR-383-AC-67", "TC-1407")]
+#[test]
+fn fixture_e_s_checks_and_refuses_at_object_node() {
+    let (text, packages) = fixture_e_s();
+    let mut declarations = assemble_with_models(text.as_bytes(), &packages).expect("E-S assembles");
+    let pending = declarations
+        .link_dispatch(Default::default())
+        .unwrap_or_else(|refusals| panic!("{refusals:?}"));
+    let graph = declarations
+        .check(CheckingLimits::default())
+        .unwrap_or_else(|refusals| panic!("E-S checks: {:?}", pending.report(refusals)));
+    let package = CheckedPackage::link(graph);
+    let at = text.find("object Node").unwrap();
+    let refusal = emit_checked(&package).expect_err("emission refuses");
+    let EmitRefusal::SourceObjectEmission { span } = &refusal else {
+        panic!("{refusal:?}");
+    };
+    assert_eq!(span.start, at, "the first object declaration");
+    assert_eq!(
+        (refusal.code(), refusal.cause()),
+        (Code::UnsupportedConstruct, Some("not-yet-implemented"))
+    );
+}

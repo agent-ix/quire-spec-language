@@ -1070,7 +1070,7 @@ fn replay_observed_temporal(
     let mut environments = Vec::with_capacity(documents.len());
     for document in &documents {
         let (environment, _) = admit_trace_snapshot(
-            graph.model_selections(),
+            graph.model_inputs(),
             graph.scope().types(),
             &compiled.packages,
             compiled.model_limits,
@@ -1093,7 +1093,7 @@ fn replay_observed_temporal(
         )));
     };
     let universe = population_universe_for(
-        graph.model_selections(),
+        graph.model_inputs(),
         &compiled.packages,
         compiled.model_limits,
         type_identity.clone(),

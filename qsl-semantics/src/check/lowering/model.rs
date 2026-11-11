@@ -1069,6 +1069,13 @@ impl AdmittedModel {
         self.types.get(&id)
     }
 
+    /// The synthetic package of a unit's `object` declarations, for the
+    /// source model.
+    pub(crate) fn source_package(&self) -> Option<&DomainPackage> {
+        (self.alias.as_deref() == Some(super::super::source_model::ALIAS))
+            .then(|| self.index.package())
+    }
+
     /// The alias of the `model` declaration this package is admitted for,
     /// if any.
     pub(crate) fn alias(&self) -> Option<&str> {

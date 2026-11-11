@@ -57,7 +57,7 @@ pub(crate) fn admit_initial_state(
     limits: ObservationLimits,
     ancestor_steps: u64,
 ) -> Result<(ModelState, SelectedAnchor), AdmissionFailure> {
-    let read = read_document(DocumentKind::Snapshot, provision, selected, limits)?;
+    let read = read_document(DocumentKind::Snapshot, provision, selected, limits, views)?;
     let snapshot = read
         .as_snapshot()
         .ok_or_else(|| fault("expected-snapshot-document"))?;

@@ -2278,6 +2278,7 @@ fn check_node<'a>(
             for (position, parameter) in op.parameters.iter().enumerate() {
                 if let Some(value_type) = parameter.value_type.as_package() {
                     if !is_ordinary_object_type(domain_package, value_type)
+                        && !domain_package.foreign.contains(value_type)
                         && !index.is_scalar_type(value_type)
                         && !index.is_variant_type(value_type)
                         && !index.is_record_value_type(value_type)
@@ -2296,6 +2297,7 @@ fn check_node<'a>(
             if let Some(result) = &op.result {
                 if let Some(value_type) = result.value_type.as_package() {
                     if !is_ordinary_object_type(domain_package, value_type)
+                        && !domain_package.foreign.contains(value_type)
                         && !index.is_scalar_type(value_type)
                         && !index.is_variant_type(value_type)
                         && !index.is_record_value_type(value_type)

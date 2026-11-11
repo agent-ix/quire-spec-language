@@ -1038,7 +1038,7 @@ pub(crate) fn admit_clause_observations(
         named_populations: clause.named_reads(),
     };
     admit_observations(
-        graph.model_selections(),
+        graph.model_inputs(),
         graph.scope().types(),
         &clause_facts,
         packages,
@@ -1586,7 +1586,7 @@ pub(crate) fn check_frame(
         },
     };
     let admitted = match admit_frame_invocation(
-        graph.model_selections(),
+        graph.model_inputs(),
         graph.scope().types(),
         &facts,
         run.packages,
@@ -1743,7 +1743,7 @@ fn run_function(
     }
 
     let (environment, admission_usage) = match admit_current_snapshot(
-        package.graph().model_selections(),
+        package.graph().model_inputs(),
         package.graph().scope().types(),
         packages,
         model_limits,
@@ -1799,7 +1799,7 @@ fn run_function(
                 ValueType::Reference(type_identity),
             ) => {
                 let universe = match population_universe_for(
-                    package.graph().model_selections(),
+                    package.graph().model_inputs(),
                     packages,
                     model_limits,
                     type_identity.clone(),
