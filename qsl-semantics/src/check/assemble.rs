@@ -1878,7 +1878,7 @@ fn model_object_types(
         declarations.push(
             ObjectTypeDeclaration::new(
                 identity.clone(),
-                super::source_model::qualified(alias, &artifact),
+                super::source_model::qualified(alias, artifact),
                 fields.remove(key).unwrap_or_default(),
             )
             .with_supertypes(effective_supertypes),
@@ -2003,7 +2003,7 @@ fn model_object_types(
         composites.push(
             CompositeDeclaration::new(
                 handle.clone(),
-                super::source_model::qualified(alias, &artifact),
+                super::source_model::qualified(alias, artifact),
                 CompositeShape::Record(declared_fields),
             )
             .with_supertypes(composite_supertypes),
@@ -2078,7 +2078,7 @@ fn model_object_types(
         }
         composites.push(CompositeDeclaration::new(
             handle,
-            super::source_model::qualified(alias, &artifact),
+            super::source_model::qualified(alias, artifact),
             CompositeShape::Tuple(elements),
         ));
     }
@@ -2206,7 +2206,7 @@ fn model_object_types(
                 units,
             )
             .ok()?;
-            Some((super::source_model::qualified(alias, &artifact), value_type))
+            Some((super::source_model::qualified(alias, artifact), value_type))
         })
         .collect();
     if errors.is_empty() {

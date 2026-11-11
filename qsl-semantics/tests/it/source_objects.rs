@@ -606,9 +606,12 @@ fn a_supertype_cycle_is_one_definition_cycle_naming_both_edges() {
     );
 }
 
-/// The dispatch tables as `(body, precondition, precondition clauses)` per
-/// entry, which carry no package identity.
-fn table_shapes(graph: &CheckedGraph) -> Vec<Vec<(usize, Option<usize>, Vec<usize>)>> {
+/// One dispatch entry's candidate without its receiver's package identity:
+/// body, precondition and precondition clauses.
+type CandidateShape = (usize, Option<usize>, Vec<usize>);
+
+/// The dispatch tables as their candidates' shapes.
+fn table_shapes(graph: &CheckedGraph) -> Vec<Vec<CandidateShape>> {
     graph
         .dispatch_tables()
         .iter()

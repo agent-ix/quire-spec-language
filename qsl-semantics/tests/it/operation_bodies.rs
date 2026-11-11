@@ -411,18 +411,22 @@ fn refusals(source: &str) -> Vec<AssemblyCause> {
         .collect()
 }
 
-/// A target with other than `model-alias::Type::operation` segments names no
-/// operation and refuses `missing_declaration`.
+/// A target that is neither `model-alias::Type::operation` nor a source
+/// `Type::operation` names no operation and refuses `missing_declaration`;
+/// the two-segment form reads its first segment as a source type.
 #[trace("TC-986", "FR-302-AC-7")]
 #[test]
 fn a_target_with_the_wrong_segment_count_refuses() {
-    for target in [
-        "Config::ConfigVersion",
-        "Config::ConfigVersion::size::extra",
+    for (target, unresolved) in [
+        ("Config::ConfigVersion", "Config"),
+        (
+            "Config::ConfigVersion::size::extra",
+            "Config::ConfigVersion::size::extra",
+        ),
     ] {
         let causes = refusals(&format!("body b using v on {target}() {{ 1 }}\n"));
         assert!(
-            matches!(causes.as_slice(), [AssemblyCause::UnresolvedTypeName { name }] if name == target),
+            matches!(causes.as_slice(), [AssemblyCause::UnresolvedTypeName { name }] if name == unresolved),
             "{target}: {causes:?}"
         );
     }

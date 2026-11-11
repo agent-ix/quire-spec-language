@@ -2381,7 +2381,7 @@ impl NamedScope {
                 ambiguous.push(alias.to_owned());
             }
             populations.extend(model.named_populations().map(|record| NamedPopulation {
-                name: super::source_model::qualified(alias, &record.name),
+                name: super::source_model::qualified(alias, record.name),
                 key: record.key.clone(),
                 members: record.members,
                 domain: super::state_clause::PopulationDomain {
