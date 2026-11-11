@@ -364,6 +364,70 @@ artifact. Complete aggregate success over settled dispositions is the FR-331
 accounting record's result, joined on the request index (quire-specification
 AD-016).
 
+### One negotiation cause type
+
+QSL SHALL have exactly one source for the codes of three negotiation outcomes of
+the table above, which QSL's own refusal and settlement sites also report. It is
+two types:
+
+- `NegotiationOutcome`, a fieldless enum with the members `UnknownBackend`,
+  `AmbiguousBackend` and `UnsupportedRequestedCapability`, whose `code()`
+  returns the outcome's `CatalogCode`: `invalid_capability`/`unknown-backend`,
+  `invalid_capability`/`ambiguous-backend` and
+  `unsupported_projection`/`unsupported-requested-capability`. It is the only
+  definition of those three spellings in QSL.
+- `NegotiationCause`, the same three outcomes with their payloads:
+  `UnknownBackend` carrying the named `BackendId`; `AmbiguousBackend` carrying
+  every candidate's `BackendId` in candidate order; and
+  `UnsupportedRequestedCapability` carrying the item's `Capability` and any
+  named `BackendId`. Its `outcome()` returns its `NegotiationOutcome`, and its
+  `code()` is that outcome's `code()`.
+
+The codes, their spelling and their meaning are quire-specification FR-290's and
+FR-272's.
+
+Both types are defined in `qsl_semantics::check::capability`, beside
+`Capability`, which `UnsupportedRequestedCapability` carries. They are not in
+`qsl-foundation`, because layer F cannot name the layer-3 `Capability` and a
+string kind would be a second carrier of FR-290 labels (FR-057-AC-7). They are not
+in `qsl-route`, because `qsl-replay` does not depend on `qsl-route` (ADR-011
+X-10). `qsl-route`, `qsl-replay`, `qsl-analyze` and `qsl-conformance` each
+depend on `qsl-semantics`.
+
+`qsl-route` SHALL re-export both types at its crate root. It SHALL also define,
+at its crate root, the settlement enum and the conversion from a
+`CandidateOutcome` to the settlement the table above gives:
+
+```rust
+pub enum NegotiationSettlement {
+    Cause(NegotiationCause),
+    Inconsistent,
+    Single(BackendId),
+}
+
+pub fn settle_candidates(
+    outcome: &CandidateOutcome,
+    kind: Capability,
+    named: Option<&BackendId>,
+) -> NegotiationSettlement;
+```
+
+| Candidate outcome | `settle_candidates` result |
+| --- | --- |
+| the unknown-backend mark | `NegotiationSettlement::Cause(NegotiationCause::UnknownBackend)`, naming the identity |
+| an empty set | `NegotiationSettlement::Cause(NegotiationCause::UnsupportedRequestedCapability)`, naming `kind` and `named` |
+| more than one candidate, `named` absent | `NegotiationSettlement::Cause(NegotiationCause::AmbiguousBackend)`, naming every candidate in candidate order |
+| more than one candidate, `named` present | `NegotiationSettlement::Inconsistent`: no cause; the caller settles `invalid_capability`/`inconsistent-candidates` |
+| exactly one candidate | `NegotiationSettlement::Single`, naming that candidate: no cause; its arm settles the item |
+
+A consumer imports the types and does not copy the spellings.
+
+Each refusal, settlement or unavailability cause in QSL's shipped source that
+carries one of the three codes SHALL build it from `NegotiationCause::code()`
+when it holds the payload, and from `NegotiationOutcome::code()` when it does
+not, such as the `qsl-replay` unavailability causes that hold no item kind or
+named backend.
+
 ### One capability type
 
 QSL SHALL have exactly one type that carries capability-kind labels: the
@@ -392,6 +456,7 @@ checker's definition permissions. Their ownership is decided in #211.
 | FR-057-AC-12 | A registration whose `domains` is present but empty, holds `quantity`, `loop`, `infinite-trace` or a label not byte-equal to an FR-331 domain kind (such as `Collection`), or repeats a kind, is refused `invalid_capability`/`invalid-domains`, keyed by backend identity, both when it advertises a `bounded` pair and when it advertises only `unbounded` pairs; a refusal for an unknown or non-boundable label names the received bytes. A registration with no `domains` is refused `invalid-domains` when it advertises a `bounded` pair and is admitted when it advertises only `unbounded` pairs. A registration with both a pair defect and a `domains` defect refuses with the pair's cause. A registration whose `domains` holds each of `collection`, `population`, `integer` and `recursive` once is admitted, and its descriptor's `domains()` returns those four kinds. | Test (TC-155) |
 | FR-057-AC-13 | The family projection for each capability label equals the FR-290 family column in this requirement's table, including `probabilistic-satisfaction` → `probabilistic` and `schedulability` → `real-time`; it introduces no QSL alias. | Test (TC-971) |
 | FR-057-AC-14 | **RETIRED in #2518 (the composed linker is deleted); historical only. Spine stage ownership is FR-057-AC-5 and FR-057-AC-11.** The composed admission stage projection preserves this requirement's stage ownership for every kind: requested labels are admitted by the composed linker without registry input; advertised labels are admitted by `descriptor_from_manifest`; and candidate sets are computed by the registry only after descriptor admission. | Test (TC-973) |
+| FR-057-AC-15 | `NegotiationOutcome::code()` returns `invalid_capability`/`unknown-backend` for `UnknownBackend`, `invalid_capability`/`ambiguous-backend` for `AmbiguousBackend` and `unsupported_projection`/`unsupported-requested-capability` for `UnsupportedRequestedCapability`, and each `NegotiationCause` returns its outcome and that outcome's code with the payload it carries. `qsl_route::settle_candidates` returns `NegotiationSettlement::Cause` of `NegotiationCause::UnknownBackend` naming the identity for the unknown-backend mark, of `NegotiationCause::UnsupportedRequestedCapability` naming the kind and the named backend for an empty candidate set, and of `NegotiationCause::AmbiguousBackend` naming both in candidate order for two candidates with no named backend; it returns `NegotiationSettlement::Inconsistent` for two candidates with a named backend, and `NegotiationSettlement::Single` naming the candidate for one candidate. | Test (TC-155) |
 
 ## Dependencies
 
@@ -405,7 +470,11 @@ checker's definition permissions. Their ownership is decided in #211.
   the single negotiation point, the four dispositions and the FR-331 accounting
   join. FR-331 carries the per-item `candidates`.
 - quire-specification FR-271 and FR-272 own
-  `invalid_capability` and the `unsupported_projection` causes.
+  `invalid_capability` and the `unsupported_projection` causes, including the
+  three spellings the negotiation cause type carries (FR-057-AC-15).
+- ADR-011 places `Capability` in layer-3 `check` (§6.1) and fixes
+  `qsl-replay`'s dependency set without `qsl-route` (X-10), which together
+  place the negotiation cause types in `qsl_semantics::check::capability`.
 - [FR-036](FR-036-link-composed-native-packages.md) consumes the admitted pairs.
 - #213 implements the canonical `Capability` value type, the admission rules
   and the removal of backend reading from `requests::report`. #185 implements
