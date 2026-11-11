@@ -2836,6 +2836,13 @@ pub(super) fn admit_population_values<'t>(
                         .with("object", object.key.clone()),
                 ));
             }
+            // D05: an object whose type is abstract is no direct instance.
+            if population_view.view.model_index().is_abstract(&object_key) {
+                return Err(refuse(
+                    admission_record(Code::InvalidRuntimeInput, "abstract-instance")
+                        .with("object", object.key.clone()),
+                ));
+            }
             let effective_type = population_view
                 .view
                 .type_identities()

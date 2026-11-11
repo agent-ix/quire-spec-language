@@ -272,6 +272,8 @@ enum Twin {
     Source,
     /// Fixture D: the unit selects the domain package that declares them.
     Model,
+    /// Variant S-M: fixture S, which also selects D's package as `M`.
+    Mixed,
 }
 
 /// A checked twin, its packages and the documents its tests add.
@@ -295,6 +297,12 @@ impl Unit {
     fn new(twin: Twin, extra: &str) -> Self {
         let (packages, selection, objects, ty) = match twin {
             Twin::Source => (PackageInput::new(), "", OBJECTS, ""),
+            Twin::Mixed => (
+                package_input([document().as_slice()]).expect("fixture D admits"),
+                "model M = \"test/orders\";\n",
+                OBJECTS,
+                "",
+            ),
             Twin::Model => (
                 package_input([document().as_slice()]).expect("fixture D admits"),
                 "model M = \"test/orders\";\n",
@@ -350,14 +358,14 @@ impl Unit {
     /// How a snapshot of this twin names a declaration.
     fn name(&self, declaration: &str) -> String {
         match self.twin {
-            Twin::Source => declaration.to_owned(),
+            Twin::Source | Twin::Mixed => declaration.to_owned(),
             Twin::Model => ident(declaration),
         }
     }
 
     /// The `model` member a snapshot of this twin carries, if it does.
     fn model(&self, document: &mut Json) {
-        if self.twin == Twin::Model {
+        if self.twin != Twin::Source {
             document["model"] = json!({"identity": MODEL});
         }
     }
@@ -680,4 +688,313 @@ fn v5_a_dispatched_query_matches_its_model_twin() {
             "self.size() = 7 over {key}"
         );
     }
+}
+
+/// `text` with the owner of each twin's declarations removed: the one thing
+/// the twins' values do not share is who owns the type.
+fn neutral(text: &str) -> String {
+    text.replace("source/qsl-eval-integration-tests", "P")
+        .replace("test/orders", "P")
+}
+
+/// V6 helper: the frame check of the invocation `invocation` of `Order::bump`:
+/// the verdict, the witness and the ordered charge log.
+fn frame_check(unit: &Unit, invocation: &DocumentRef) -> (String, Option<String>, Vec<String>) {
+    use qsl_eval::value::FrameEvaluation;
+    use qsl_semantics::model::observation::{admit_frame_invocation, FrameFacts};
+    use quire_exact::Identifier;
+
+    let name = |text: &str| Identifier::new(text).expect("an identifier");
+    let graph = unit.graph();
+    let selection = match unit.twin {
+        Twin::Source | Twin::Mixed => graph.resolve_source_operation(&name("Order"), &name("bump")),
+        Twin::Model => graph.resolve_operation(&name("M"), &name("Order"), &name("bump")),
+    }
+    .expect("the operation resolves");
+    let (context, operation_frame) = graph.operation_frame(&selection).expect("the frame node");
+    let frame = operation_frame.frame();
+    let facts = FrameFacts {
+        context,
+        frame: frame.clone(),
+        operation: OperationFacts {
+            declaring: operation_frame.operation().declaring.clone(),
+            declaration: operation_frame.operation().declaration.clone(),
+        },
+    };
+    let admitted = admit_frame_invocation(
+        graph.model_inputs(),
+        graph.scope().types(),
+        &facts,
+        &unit.packages,
+        ModelNormalizationLimits::default(),
+        &Provisions {
+            snapshots: &unit.snapshots,
+            invocations: &unit.invocations,
+        },
+        invocation,
+        ObservationLimits::default(),
+    )
+    .expect("the invocation admits");
+    let mut meter = Meter::new(UNLIMITED);
+    let FrameEvaluation {
+        evaluation,
+        witness,
+    } = unit
+        .package
+        .evaluate_frame(frame, &admitted, &mut meter)
+        .expect("the frame evaluates");
+    let log = meter
+        .admitted_charges()
+        .iter()
+        .map(|charge| format!("{charge:?}"))
+        .collect();
+    (
+        format!("{:?}", evaluation.outcome),
+        witness.map(|witness| neutral(&format!("{witness:?}"))),
+        log,
+    )
+}
+
+/// V6: an invocation of `bump` on `o1` that also changes `o2.total` violates
+/// the frame, which grants `o1.total` only; one that changes `o1.total`
+/// alone does not. S and D give the same verdict, witness and charge log.
+#[trace("FR-569-AC-10", "TC-1408")]
+#[test]
+fn v6_a_frame_check_matches_its_model_twin() {
+    let mut results = Vec::new();
+    for twin in [Twin::Source, Twin::Model] {
+        let mut unit = Unit::new(twin, "");
+        let pre = unit.snapshot("pre", "pre", &POPULATION);
+        let ok = unit.snapshot("ok", "post", &[("o1", "Order", 4), ("o2", "Sub", 4)]);
+        let bad = unit.snapshot("bad", "post", &[("o1", "Order", 4), ("o2", "Sub", 5)]);
+        let allowed = unit.invocation("allowed", &pre, &ok);
+        let violating = unit.invocation("violating", &pre, &bad);
+        let allowed = frame_check(&unit, &allowed);
+        let violating = frame_check(&unit, &violating);
+        assert!(
+            allowed.1.is_none(),
+            "o1.total alone is granted: {allowed:?}"
+        );
+        let witness = violating.1.clone().expect("o2.total is not granted");
+        assert!(witness.contains("o2"), "the witness names o2: {witness}");
+        assert!(
+            witness.contains("total"),
+            "the witness names total: {witness}"
+        );
+        results.push((allowed, violating));
+    }
+    assert_eq!(results[0], results[1], "S and D agree on the frame check");
+}
+
+/// The refusal of `admitted` as its catalog code and cause.
+fn refusal_of(admitted: Result<AdmittedObservations, AdmissionFailure>) -> (String, String) {
+    match admitted {
+        Err(AdmissionFailure::Refused(record)) => (
+            record.catalog.code().to_owned(),
+            record.catalog.cause().to_owned(),
+        ),
+        other => panic!("a refused admission: {other:?}"),
+    }
+}
+
+impl Unit {
+    /// A current snapshot `label` holding exactly `populations`.
+    fn snapshot_of(&mut self, label: &str, populations: Json) -> DocumentRef {
+        let mut document = json!({
+            "format": "quire.state.snapshot/v1",
+            "identity": {"authority": "test", "identity": label},
+            "observation": "current",
+            "anchor": {"kind": "handler", "name": "validate"},
+            "populations": populations,
+        });
+        self.model(&mut document);
+        self.provide(label, document)
+    }
+}
+
+fn order(key: &str, ty: &str, total: i64) -> Json {
+    json!({"key": key, "type": ty, "fields": {
+        "total": {"integer": total.to_string()}, "note": {"absent": {}}}})
+}
+
+/// AC-9: a snapshot of S names `orders` and its objects' types by their
+/// source identities. An object typed with an `ix://` name, which names a
+/// model declaration only, and an object of the abstract `Shape` are refused
+/// as the model twin refuses them.
+#[trace("FR-569-AC-9", "TC-1408")]
+#[test]
+fn a_snapshot_names_source_declarations_by_their_source_identity() {
+    let mut unit = Unit::new(Twin::Source, "");
+    let listed = |objects: Vec<Json>, shapes: Vec<Json>| {
+        json!([
+            {"population": "orders", "complete": true, "objects": objects},
+            {"population": "shapes", "complete": true, "objects": shapes},
+        ])
+    };
+    let ok = unit.snapshot_of(
+        "ok",
+        listed(vec![order("o1", "Order", 3), order("o2", "Sub", 4)], vec![]),
+    );
+    unit.current("I", &ok, "o1")
+        .expect("Order and Sub objects admit");
+
+    let foreign = unit.snapshot_of(
+        "foreign",
+        listed(vec![order("o1", "ix://test/orders/Order", 3)], vec![]),
+    );
+    assert_eq!(
+        refusal_of(unit.current("I", &foreign, "o1")),
+        (
+            "invalid_runtime_input".to_owned(),
+            "wrong-role-mapping".to_owned()
+        ),
+        "an ix:// type names no source declaration"
+    );
+
+    let abstract_instance = unit.snapshot_of(
+        "abstract",
+        listed(
+            vec![order("o1", "Order", 3)],
+            vec![json!({"key": "s1", "type": "Shape", "fields": {}})],
+        ),
+    );
+    assert_eq!(
+        refusal_of(unit.current("I", &abstract_instance, "o1")),
+        (
+            "invalid_runtime_input".to_owned(),
+            "abstract-instance".to_owned()
+        )
+    );
+
+    let unnamed = unit.snapshot_of(
+        "unnamed",
+        json!([{"population": "ghosts", "complete": true, "objects": []}]),
+    );
+    assert_eq!(
+        refusal_of(unit.current("I", &unnamed, "o1")).1,
+        "wrong-role-mapping",
+        "a population the package does not declare"
+    );
+}
+
+/// AC-9: a package that selects no domain package admits no `model` member;
+/// one that does requires it.
+#[trace("FR-569-AC-9", "TC-1408")]
+#[test]
+fn the_model_member_is_required_exactly_when_a_domain_package_is_selected() {
+    let populations = json!([
+        {"population": "orders", "complete": true, "objects": [order("o1", "Order", 3)]},
+        {"population": "shapes", "complete": true, "objects": []},
+    ]);
+    let mut source = Unit::new(Twin::Source, "");
+    let mut with_model = json!({
+        "format": "quire.state.snapshot/v1",
+        "identity": {"authority": "test", "identity": "with-model"},
+        "observation": "current",
+        "anchor": {"kind": "handler", "name": "validate"},
+        "model": {"identity": MODEL},
+        "populations": populations,
+    });
+    let snapshot = source.provide("with-model", with_model.clone());
+    let refused = source.current("I", &snapshot, "o1");
+    let Err(AdmissionFailure::Refused(record)) = refused else {
+        panic!("a refusal: {refused:?}");
+    };
+    assert_eq!(
+        (record.catalog.code(), record.catalog.cause()),
+        ("invalid_runtime_input", "unknown-member")
+    );
+    assert_eq!(
+        record.fields.get("field").map(String::as_str),
+        Some("model")
+    );
+
+    // S-M selects a domain package, so the member is required.
+    let mut mixed = Unit::new(Twin::Mixed, "");
+    with_model["populations"][0]["objects"] = json!([order("o1", "Order", 3)]);
+    let admitted = mixed.provide("with-model", with_model.clone());
+    mixed
+        .current("I", &admitted, "o1")
+        .expect("the model member is admitted");
+    let mut without = with_model.clone();
+    without.as_object_mut().expect("an object").remove("model");
+    let missing = mixed.provide("without-model", without);
+    let refused = mixed.current("I", &missing, "o1");
+    let Err(AdmissionFailure::Refused(record)) = refused else {
+        panic!("a refusal: {refused:?}");
+    };
+    assert_eq!(
+        (record.catalog.code(), record.catalog.cause()),
+        ("invalid_runtime_input", "missing-member")
+    );
+}
+
+/// AC-9, variant S-M: a name with no scheme names the source `Order` and
+/// `orders`, an `ix://` name the model's, and an object of one placed in the
+/// other's population is refused.
+#[trace("FR-569-AC-9", "TC-1408")]
+#[test]
+fn a_name_without_a_scheme_is_the_source_declaration_and_an_ix_name_the_model_s() {
+    let mut unit = Unit::new(Twin::Mixed, "");
+    let source = unit.snapshot_of(
+        "source",
+        json!([
+            {"population": "orders", "complete": true, "objects": [order("o1", "Order", 3)]},
+            {"population": "shapes", "complete": true, "objects": []},
+        ]),
+    );
+    unit.current("I", &source, "o1")
+        .expect("source objects admit");
+
+    let model = ident("orders");
+    let model_snapshot = unit.snapshot_of(
+        "model",
+        json!([
+            {"population": model, "complete": true,
+             "objects": [order("m1", &ident("Order"), 3)]},
+            {"population": ident("shapes"), "complete": true, "objects": []},
+            {"population": "orders", "complete": true, "objects": [order("o1", "Order", 3)]},
+            {"population": "shapes", "complete": true, "objects": []},
+        ]),
+    );
+    unit.current("I", &model_snapshot, "o1")
+        .expect("model M::Order objects admit beside the source populations");
+
+    let crossed = unit.snapshot_of(
+        "crossed",
+        json!([
+            {"population": ident("orders"), "complete": true,
+             "objects": [order("o1", "Order", 3)]},
+            {"population": ident("shapes"), "complete": true, "objects": []},
+            {"population": "orders", "complete": true, "objects": []},
+            {"population": "shapes", "complete": true, "objects": []},
+        ]),
+    );
+    assert_eq!(
+        refusal_of(unit.current("I", &crossed, "o1")),
+        (
+            "invalid_runtime_input".to_owned(),
+            "wrong-role-mapping".to_owned()
+        ),
+        "a source Order is no member type of the model's orders"
+    );
+
+    // The model's abstract `Shape` is refused as the source's is.
+    let abstract_model = unit.snapshot_of(
+        "abstract-model",
+        json!([
+            {"population": ident("orders"), "complete": true, "objects": []},
+            {"population": ident("shapes"), "complete": true,
+             "objects": [json!({"key": "s1", "type": ident("Shape"), "fields": {}})]},
+            {"population": "orders", "complete": true, "objects": [order("o1", "Order", 3)]},
+            {"population": "shapes", "complete": true, "objects": []},
+        ]),
+    );
+    assert_eq!(
+        refusal_of(unit.current("I", &abstract_model, "o1")),
+        (
+            "invalid_runtime_input".to_owned(),
+            "abstract-instance".to_owned()
+        )
+    );
 }

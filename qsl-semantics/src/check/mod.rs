@@ -8762,6 +8762,20 @@ impl CheckedGraph {
         })
     }
 
+    /// [`Self::resolve_operation`] over the unit's own source object types
+    /// (FR-569), which are written without a model alias.
+    pub fn resolve_source_operation(
+        &self,
+        object: &Identifier,
+        operation: &Identifier,
+    ) -> Option<OperationSelection> {
+        let object = self.model_owners.get(source_model::ALIAS)?.get(object)?;
+        Some(OperationSelection {
+            object: object.clone(),
+            operation: operation.clone(),
+        })
+    }
+
     /// FR-116, FR-121: whether `object` names a declaration of the `model`
     /// alias's package that is no operation owner (a value type, an enum, a
     /// record, ...), as against naming nothing or an object type, a process
