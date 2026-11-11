@@ -31,3 +31,19 @@ The four author decisions, judged against the code (qsl-*/Cargo.toml, qsl-route/
 ## Verdict
 
 FAIL. FND-001 must be fixed: the type is placed in a layer that cannot name its own payload. FND-002 to FND-004 should be fixed in the same round. FR-206-AC-12, PS-7, ST-3 and FR-519-AC-18/19 are sound in substance.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-006 | low | The conversion's result type is not named. FR-057, AC-15 and TC-155 step 8 call its non-cause results `Inconsistent` and `Single`, but they never name the enum that holds them, its home crate (qsl-route, by the re-export sentence?), or the conversion's function name and signature. Two implementers will name these differently, and step 8 can't name them in a test. Fix: name the result type (for example `NegotiationSettlement { Cause(NegotiationCause), Inconsistent, Single(BackendId) }`) and the conversion function, in qsl-route. | spec/functional/FR-057-admit-shared-capability-kinds.md:400-407 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Verified in 626c658b9. |
+| FND-002 | fixed | Verified in 626c658b9. |
+| FND-003 | fixed | Verified in 626c658b9. |
+| FND-004 | fixed | Verified in 626c658b9. |
+| FND-005 | fixed | Verified in 626c658b9. |

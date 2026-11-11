@@ -22,3 +22,11 @@ Ticket: QSL-1877. Structural and cross-document consistency of the 7 changed fil
 ## Verdict
 
 FAIL. FND-001 (the text spliced into attempts_maximum) and FND-002 (the TC-1314 row shape) are mechanical fixes.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Verified in 626c658b9. |
+| FND-002 | fixed | Verified in 626c658b9. |
+| FND-003 | fixed | Verified in 626c658b9. |

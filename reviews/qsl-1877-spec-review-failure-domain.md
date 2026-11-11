@@ -21,3 +21,10 @@ Ticket: QSL-1877 (QSL-1868 G7d). Failure modes of the PS-7 amendment and the ST-
 ## Verdict
 
 PASS WITH FINDINGS. FND-001 should be fixed with the PR, because it decides the size of the state space. FND-002 is a coverage nit.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Verified in 626c658b9. |
+| FND-002 | fixed | Verified in 626c658b9. |

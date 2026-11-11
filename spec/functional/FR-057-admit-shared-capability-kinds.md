@@ -394,17 +394,31 @@ in `qsl-route`, because `qsl-replay` does not depend on `qsl-route` (ADR-011
 X-10). `qsl-route`, `qsl-replay`, `qsl-analyze` and `qsl-conformance` each
 depend on `qsl-semantics`.
 
-`qsl-route` SHALL re-export both types at its crate root, with a conversion from
-a `CandidateOutcome` and the request's named backend, if any, to the settlement
-the table above gives:
+`qsl-route` SHALL re-export both types at its crate root. It SHALL also define,
+at its crate root, the settlement enum and the conversion from a
+`CandidateOutcome` to the settlement the table above gives:
 
-| Candidate outcome | Conversion result |
+```rust
+pub enum NegotiationSettlement {
+    Cause(NegotiationCause),
+    Inconsistent,
+    Single(BackendId),
+}
+
+pub fn settle_candidates(
+    outcome: &CandidateOutcome,
+    kind: Capability,
+    named: Option<&BackendId>,
+) -> NegotiationSettlement;
+```
+
+| Candidate outcome | `settle_candidates` result |
 | --- | --- |
-| the unknown-backend mark | cause `UnknownBackend`, naming the identity |
-| an empty set | cause `UnsupportedRequestedCapability`, naming the kind and any named backend |
-| more than one candidate, no named backend | cause `AmbiguousBackend`, naming every candidate in candidate order |
-| more than one candidate, a named backend | `Inconsistent`: no cause of this type; the caller settles `invalid_capability`/`inconsistent-candidates` |
-| exactly one candidate | `Single`, naming that candidate: no cause; its arm settles the item |
+| the unknown-backend mark | `NegotiationSettlement::Cause(NegotiationCause::UnknownBackend)`, naming the identity |
+| an empty set | `NegotiationSettlement::Cause(NegotiationCause::UnsupportedRequestedCapability)`, naming `kind` and `named` |
+| more than one candidate, `named` absent | `NegotiationSettlement::Cause(NegotiationCause::AmbiguousBackend)`, naming every candidate in candidate order |
+| more than one candidate, `named` present | `NegotiationSettlement::Inconsistent`: no cause; the caller settles `invalid_capability`/`inconsistent-candidates` |
+| exactly one candidate | `NegotiationSettlement::Single`, naming that candidate: no cause; its arm settles the item |
 
 A consumer imports the types and does not copy the spellings.
 
@@ -442,7 +456,7 @@ checker's definition permissions. Their ownership is decided in #211.
 | FR-057-AC-12 | A registration whose `domains` is present but empty, holds `quantity`, `loop`, `infinite-trace` or a label not byte-equal to an FR-331 domain kind (such as `Collection`), or repeats a kind, is refused `invalid_capability`/`invalid-domains`, keyed by backend identity, both when it advertises a `bounded` pair and when it advertises only `unbounded` pairs; a refusal for an unknown or non-boundable label names the received bytes. A registration with no `domains` is refused `invalid-domains` when it advertises a `bounded` pair and is admitted when it advertises only `unbounded` pairs. A registration with both a pair defect and a `domains` defect refuses with the pair's cause. A registration whose `domains` holds each of `collection`, `population`, `integer` and `recursive` once is admitted, and its descriptor's `domains()` returns those four kinds. | Test (TC-155) |
 | FR-057-AC-13 | The family projection for each capability label equals the FR-290 family column in this requirement's table, including `probabilistic-satisfaction` → `probabilistic` and `schedulability` → `real-time`; it introduces no QSL alias. | Test (TC-971) |
 | FR-057-AC-14 | **RETIRED in #2518 (the composed linker is deleted); historical only. Spine stage ownership is FR-057-AC-5 and FR-057-AC-11.** The composed admission stage projection preserves this requirement's stage ownership for every kind: requested labels are admitted by the composed linker without registry input; advertised labels are admitted by `descriptor_from_manifest`; and candidate sets are computed by the registry only after descriptor admission. | Test (TC-973) |
-| FR-057-AC-15 | `NegotiationOutcome::code()` returns `invalid_capability`/`unknown-backend` for `UnknownBackend`, `invalid_capability`/`ambiguous-backend` for `AmbiguousBackend` and `unsupported_projection`/`unsupported-requested-capability` for `UnsupportedRequestedCapability`, and each `NegotiationCause` returns its outcome and that outcome's code with the payload it carries. Imported through `qsl_route`, the conversion maps the unknown-backend mark to `UnknownBackend` naming the identity, an empty candidate set to `UnsupportedRequestedCapability` naming the kind and the named backend, two candidates with no named backend to `AmbiguousBackend` naming both in candidate order, two candidates with a named backend to `Inconsistent`, and one candidate to `Single` naming it. | Test (TC-155) |
+| FR-057-AC-15 | `NegotiationOutcome::code()` returns `invalid_capability`/`unknown-backend` for `UnknownBackend`, `invalid_capability`/`ambiguous-backend` for `AmbiguousBackend` and `unsupported_projection`/`unsupported-requested-capability` for `UnsupportedRequestedCapability`, and each `NegotiationCause` returns its outcome and that outcome's code with the payload it carries. `qsl_route::settle_candidates` returns `NegotiationSettlement::Cause` of `NegotiationCause::UnknownBackend` naming the identity for the unknown-backend mark, of `NegotiationCause::UnsupportedRequestedCapability` naming the kind and the named backend for an empty candidate set, and of `NegotiationCause::AmbiguousBackend` naming both in candidate order for two candidates with no named backend; it returns `NegotiationSettlement::Inconsistent` for two candidates with a named backend, and `NegotiationSettlement::Single` naming the candidate for one candidate. | Test (TC-155) |
 
 ## Dependencies
 

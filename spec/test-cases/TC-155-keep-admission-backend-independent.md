@@ -49,11 +49,12 @@ FR-057-AC-6, FR-057-AC-8, FR-057-AC-12 and FR-057-AC-15.
    empty `domains`. Register one advertising a `bounded` pair with
    `domains` [`collection`, `population`, `integer`, `recursive`] and read its
    descriptor's `domains()`.
-8. Read `code()` of each `NegotiationOutcome` member. Through `qsl_route`,
-   convert step 4's four candidate outcomes (two candidates unnamed, one
-   named candidate, the empty set, the unregistered name), and step 4's
-   two-candidate set paired with a named backend, and read the `outcome()`
-   and `code()` of each resulting cause.
+8. Read `code()` of each `NegotiationOutcome` member. Call
+   `qsl_route::settle_candidates` with kind `operation-contract` on step 4's
+   four candidate outcomes (two candidates unnamed, one named candidate, the
+   empty set, the unregistered name), and on step 4's two-candidate set
+   paired with a named backend, and read the `outcome()` and `code()` of each
+   `NegotiationSettlement::Cause`.
 
 ## Expected Results
 
@@ -89,10 +90,14 @@ FR-057-AC-6, FR-057-AC-8, FR-057-AC-12 and FR-057-AC-15.
   `invalid_capability`/`unknown-backend`,
   `invalid_capability`/`ambiguous-backend` and
   `unsupported_projection`/`unsupported-requested-capability`. The two
-  unnamed candidates give `AmbiguousBackend` naming both in identity order;
-  the named candidate gives `Single` naming it, with no cause; the empty set
-  gives `UnsupportedRequestedCapability` naming `operation-contract` and the
-  named backend; the unregistered name gives `UnknownBackend` naming it; the
-  two candidates with a named backend give `Inconsistent`, with no cause.
+  unnamed candidates give `NegotiationSettlement::Cause` of
+  `NegotiationCause::AmbiguousBackend` naming both in identity order; the
+  named candidate gives `NegotiationSettlement::Single` naming it; the empty
+  set gives `NegotiationSettlement::Cause` of
+  `NegotiationCause::UnsupportedRequestedCapability` naming
+  `operation-contract` and the named backend; the unregistered name gives
+  `NegotiationSettlement::Cause` of `NegotiationCause::UnknownBackend` naming
+  it; the two candidates with a named backend give
+  `NegotiationSettlement::Inconsistent`.
   Each cause's `outcome()` is its member and its `code()` that member's code.
 - Assertions compare typed codes, causes and identities, never message text.
