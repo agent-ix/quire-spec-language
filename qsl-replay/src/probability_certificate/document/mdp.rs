@@ -282,6 +282,7 @@ impl<'a, 'control> Context<'a, 'control> {
     }
 }
 
+#[ix_trace_rs::string_edge]
 pub(super) fn member_shapes(
     document: &quire_canonical::Document,
     cancel: &Cancel,

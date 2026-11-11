@@ -420,6 +420,7 @@ pub(super) fn admit_encoding(
     Ok(())
 }
 
+#[ix_trace_rs::string_edge]
 pub(super) fn read(
     records: &[Box<serde_json::value::RawValue>],
     limits: ProbabilityDocumentLimits,

@@ -149,6 +149,7 @@ pub fn read_weighted_long_run_probability_certificate(
     })
 }
 
+#[ix_trace_rs::string_edge]
 fn read(bytes: &[u8], cx: &mut Context<'_>) -> Result<Decoded, ProbabilityDocumentError> {
     #[cfg(feature = "test-support")]
     cx.phase(LongRunProbabilityPhase::Admission)?;

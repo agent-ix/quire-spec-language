@@ -613,6 +613,7 @@ fn read_document(
 }
 
 #[allow(clippy::too_many_arguments)]
+#[ix_trace_rs::string_edge]
 fn read_document_profile(
     bytes: &[u8],
     limits: ProbabilityDocumentLimits,
