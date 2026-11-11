@@ -1,12 +1,12 @@
 ---
-id: SR-2026111015000000000003
+id: SR-2026111015000000000008
 title: "gap analysis of QSL PR 2675 checked dispatch bridge TypeEnvironment"
 type: SpecReview
 analysis: gap-analysis
 scope: "agent-ix/quire-spec-language; PR #2675 @ 1724d1035; qsl-semantics/src/check/checked_dispatch.rs, qsl-semantics/src/check/dispatch_link.rs, qsl-eval/tests/it/dispatch_calls.rs"
 review_set: subset
 ---
-# SR-2026111015000000000003: gap analysis of QSL PR 2675
+# SR-2026111015000000000008: gap analysis of QSL PR 2675
 
 ## Summary
 
@@ -25,6 +25,17 @@ QSpec-TC-196 and QSpec-FR-151. It asserts a check result, and a mutation that dr
 
 ## Verdict
 
-Two gaps. The code-change gaps are recorded in SR-2026111015000000000002 (FND-001 high). Neither
+Two gaps. The code-change gaps are recorded in SR-2026111015000000000007 (FND-001 high). Neither
 gap here blocks on its own, but FND-001 should land with that fix, as a test of the process-supertype
 input.
+
+## Dispositions
+
+Renumbered in disposition pass 1 from SR-2026111015000000000003 to SR-2026111015000000000008: SR-2026111015000000000003 collided with QSL-1400's spec reviews (#2674, on main). The review-pass Linear comment carries SR-2026111015000000000003.
+
+Disposition pass 1, against fix commit 662c24b80.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | `DispatchBridgeRefusal::TypeEnvironment` and its `link_causes` arm are deleted, so no untested refusal path remains. The reachable input that motivated it (an object type under a process supertype) has a test, `bridge_links_an_object_type_specializing_a_process`. |
+| FND-002 | deferred | The lead re-scopes AGE-1959 after merge. The intended-equivalence design statement is not this PR's deliverable. |

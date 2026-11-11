@@ -918,6 +918,24 @@ pub fn checked_dispatch_operation(
     meter: &mut Meter,
     identity: qsl_foundation::IdentityLimits,
 ) -> Result<PackageDeclarations, DispatchBridgeRefusal> {
+    let mut declarations =
+        checked_dispatch_core(view, root, clauses, source, package_name, meter, identity)?;
+    declarations.types = types;
+    Ok(declarations)
+}
+
+/// [`checked_dispatch_operation`] without an environment: the returned
+/// package's `types` is empty, for a caller that already holds the unit's
+/// environment and merges only the linked family.
+pub(crate) fn checked_dispatch_core(
+    view: &EffectiveView,
+    root: &DispatchRoot,
+    clauses: &OperationClauses,
+    source: qsl_foundation::source::provenance::RawSourceRef,
+    package_name: String,
+    meter: &mut Meter,
+    identity: qsl_foundation::IdentityLimits,
+) -> Result<PackageDeclarations, DispatchBridgeRefusal> {
     let mut steps = FamilySteps::new(&root.key, meter.limits().family_steps);
     let domain_package = view.domain_package();
     let model = AdmittedModel::from_view(view);
@@ -1218,7 +1236,6 @@ pub fn checked_dispatch_operation(
         .collect();
 
     Ok(PackageDeclarations {
-        types,
         functions,
         dispatch_operations,
         dispatch_tables: vec![checked_table],

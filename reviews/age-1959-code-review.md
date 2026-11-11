@@ -1,12 +1,12 @@
 ---
-id: SR-2026111015000000000002
+id: SR-2026111015000000000007
 title: "code-review (with rust-review lane) of QSL PR 2675 checked dispatch bridge TypeEnvironment"
 type: SpecReview
 analysis: code-review
 scope: "agent-ix/quire-spec-language; PR #2675 @ 1724d1035; qsl-semantics/src/check/checked_dispatch.rs, qsl-semantics/src/check/dispatch_link.rs, qsl-semantics/src/model/intake.rs, qsl-eval/tests/it/dispatch_calls.rs, spec/decisions/ADR-013-canonical-type-package-conversion-ownership.md"
 review_set: subset
 ---
-# SR-2026111015000000000002: code-review of QSL PR 2675
+# SR-2026111015000000000007: code-review of QSL PR 2675
 
 ## Summary
 
@@ -51,3 +51,36 @@ Not mergeable: FND-001 is a reproduced regression on a valid model. The boxing o
 note, not a finding. The new test's oracle is real: it asserts a check result, and dropping the
 supertype edge fails it. Its red-on-old-code reason is the empty environment (`TypeMismatch` at
 `check()`), not the subtype edge alone. The intake.rs doc fixes match the record types that exist.
+
+## Dispositions
+
+Renumbered in disposition pass 1 from SR-2026111015000000000002 to SR-2026111015000000000007: SR-2026111015000000000002 collided with QSL-1400's spec reviews (#2674, on main). The review-pass Linear comment carries SR-2026111015000000000002.
+
+Disposition pass 1, against fix commit 662c24b80. The lead's design is applied: the bridge takes `types` from its caller,
+`link_dispatch` passes the unit's assembled environment, and test callers use the test-support
+`model_type_environment` (assemble.rs), which runs the same `model_object_types`/`admit_types` as assembly.
+`object_type_environment` and `DispatchBridgeRefusal::TypeEnvironment` are deleted.
+
+Focused gates on the worktree target:
+- qsl-eval `dispatch_calls::` + `state_model_family::`: 51 passed.
+- qsl-semantics lib `dispatch` + `lowering::model`: 57 passed.
+- qsl-semantics `it` `model_dispatch::`: 13 passed, **2 failed** (FND-009).
+- qsl-package `owners`: 5 passed.
+- clippy (`-D warnings`, all targets and features) and fmt: clean.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | The bridge carries the caller's environment; `link_dispatch` passes the assembled one, which declares Process as an object type. `bridge_links_an_object_type_specializing_a_process` checks the family over an environment admitted by assembly's own builder. |
+| FND-002 | fixed | The bridge builds no environment and has no second builder; `model_type_environment` reuses `model_object_types`/`admit_types`. The remaining per-family clone is FND-008. |
+| FND-003 | fixed | The bridge's admission refusal is deleted; environment failures now arise only in assembly, mapped by `environment_cause`. |
+| FND-004 | fixed | `object_type_environment` and its doc are deleted; the bridge doc says `types` is the unit's assembled environment. |
+| FND-005 | fixed | D01 reads `declarations_a.types`; the hand-built overrides at the four cited sites are removed. One leftover, at a site not cited, is FND-007. |
+| FND-006 | fixed | The S-1 row drops the QSL-copy clause and the "directs S-1b to add" sentence. T-6, O-13 and QC-21 now state `PopulationId` as the population node's `NodeId`, matching QSpec FR-201:64 and quire-exact `PopulationId(NodeKey)`. |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-007 | low | The money-bridge fixture passes `model_type_environment(..)` to the bridge, then overwrites `declarations.types` with a hand-built environment that adds the unit composites. The environment it passes is built and discarded. Pass the hand-built `types` as the argument instead. | qsl-eval/tests/it/dispatch_calls.rs:3037-3057 |
+| FND-008 | medium | `link_dispatch` passes `self.types.clone()` into each called family's bridge call. `merge_linked` then drops it (`..`, dispatch_link.rs:362-369), and the bridge never reads `types` itself. `TypeEnvironment` has no shared storage: the clone deep-copies composites, object types, the ancestor closure (up to O(N²)) and every effective attribute set. Cost is O(families × environment size), charged to no meter. `mem::take` around the loop does not fit: each call consumes the value, and a refusal does not return it. A borrow alone cannot fill an owned field. Right shape: a crate-private bridge core that takes no environment, used by `link_dispatch`, and a public wrapper that takes an owned `TypeEnvironment` and sets `types` for standalone callers. That also removes the `too_many_arguments` allow from the production function. | qsl-semantics/src/check/dispatch_link.rs:173-175, qsl-semantics/src/check/checked_dispatch.rs:905-914 |
+| FND-009 | high | Two qsl-semantics integration tests fail on the PR head. `a_dispatch_family_with_more_than_128_redefinition_steps_passes_the_checked_bridge` (model_dispatch.rs:691) and `the_checked_bridge_counts_every_walk_against_one_family_steps` (model_dispatch.rs:768) both panic at `model_type_environment(..).unwrap()` with `AssemblyRefusal { ModelType { alias: "fixture", node: "model.A" } }`. Their `chain_package` fixture still uses `model.A` keys, which assembly's builder refuses; the fixture keys were rewritten in dispatch_calls.rs but not here. These are the TC-225 / FR-083-AC-4 tests. Reproduced twice on the worktree target, with a deterministic assertion message. | qsl-semantics/tests/it/model_dispatch.rs:691, qsl-semantics/tests/it/model_dispatch.rs:768 |

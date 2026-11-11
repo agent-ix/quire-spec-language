@@ -3034,17 +3034,6 @@ fn money_bridge(root_at_b: bool) -> MoneyBridge {
     };
     let mut meter =
         qsl_semantics::model::accounting::Meter::new(ModelNormalizationLimits::UNLIMITED);
-    let mut declarations = checked_dispatch_operation(
-        &view,
-        qsl_semantics::check::model_type_environment("fixture", &view).unwrap(),
-        &root,
-        &clauses,
-        qsl_semantics::check::fixture_source(),
-        "fixture".to_owned(),
-        &mut meter,
-        qsl_foundation::IdentityLimits::default(),
-    )
-    .unwrap_or_else(|refusal| panic!("expected a linked dispatch family, got {refusal:?}"));
     let types = TypeEnvironment::new(
         composites,
         [
@@ -3054,7 +3043,17 @@ fn money_bridge(root_at_b: bool) -> MoneyBridge {
         ],
     )
     .unwrap();
-    declarations.types = types.clone();
+    let declarations = checked_dispatch_operation(
+        &view,
+        types.clone(),
+        &root,
+        &clauses,
+        qsl_semantics::check::fixture_source(),
+        "fixture".to_owned(),
+        &mut meter,
+        qsl_foundation::IdentityLimits::default(),
+    )
+    .unwrap_or_else(|refusal| panic!("expected a linked dispatch family, got {refusal:?}"));
     let package = CheckedPackage::link(declarations.check(CheckingLimits::default()).unwrap());
     MoneyBridge {
         package,
