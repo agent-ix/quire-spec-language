@@ -669,7 +669,7 @@ impl From<CompileRefusal> for CallSiteRefusal {
             | CompileRefusal::Assembly { .. }
             | CompileRefusal::Check { .. }
             | CompileRefusal::Link(_)
-            | CompileRefusal::Emit(_)
+            | CompileRefusal::Emit(..)
             | CompileRefusal::Limit(_)
             | CompileRefusal::Omitted(_)) => Self::Compile {
                 code,

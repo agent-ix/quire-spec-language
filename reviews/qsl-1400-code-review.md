@@ -34,3 +34,23 @@ Ticket: QSL-1400. First code slice of FR-569: grammar and reserved words, `Objec
 ## Verdict
 
 The approach is sound for single-unit packages: names never cross between source and model, and S4 refuses first. FND-001 (an AC-3 case is missing) must be fixed. FND-002 needs a decision: support multi-unit, or refuse it explicitly.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-008 | medium | Spec and code disagree on identity. FR-569 now says "The assembler checks the list and keeps it beside the source model". The code validates `identity` and then drops it: nothing outside `check_object` reads `ObjectForm.identity`, the synthetic records have no identity slot, and no side table exists. Carry it now, as the lead asked, or reword the spec. | qsl-semantics/src/check/source_model.rs:334 |
+| FND-009 | low | FR-569 now scopes source object *types* to their declaring unit, but `NamedScope::of` collects every model's populations under the empty alias across the whole package. A clause in unit B can therefore name unit A's population `orders`. The spec does not say whether populations are unit-scoped, and the scoping is enforced only through `object_type()`. | qsl-semantics/src/check/check.rs:2411 |
+| FND-010 | low | `SourceObjectEmission` carries its span, but `CompileRefusal::region()` maps every `Emit(_)` to None, so the replay and handoff outcome diagnostic has no locus for "at the span of the unit's first `object` declaration". AC-11's span is asserted only on `EmitRefusal` in qsl-package. | qsl-replay/src/spine.rs:610 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | `named_population` refuses `AmbiguousName` when the source population name is the binder or a local in scope (typing.rs:3412, 3484). `a_binder_named_like_a_population_is_ambiguous` asserts one refusal for `orders`, and a differently named binder still checks. Both loci sit at the use (location and child 0), not at the binder declaration, which is acceptable. |
+| FND-002 | fixed | The fix chose unit scoping: each declaring unit gets its own source model, bound to that unit (assemble.rs:3992-4023), and the FR-569 spec states the rule. `a_source_type_is_visible_only_in_the_unit_that_declares_it` covers both unit orders. Populations are not scoped this way (FND-009). |
+| FND-003 | fixed | A function now always contributes a span, an empty span when it has none (assemble.rs:1481). The spec says "A function contributes its declaration span", and the AC-3 test asserts the function's offset. |
+| FND-004 | fixed | `SourceObjectFault::Normalization` and `Limit` carry the normalizer's own code and cause (assemble.rs:1560-1577). |
+| FND-005 | fixed | The ancestor walk uses `VecDeque` plus a seen set, and the shadow checks use `own_field` and `own_operation`, so neither re-walks the chain. The work is bounded by declaration count; no meter was added, which is acceptable at this size. |
+| FND-006 | fixed | The `first_source_object` check moved into `require_protocol_results_for_refusals`, ahead of the protocol-results check (emit.rs:4402). The qsl-package test `a_source_object_refusal_wins_over_a_refused_protocol` passes. |
+| FND-007 | fixed | New faults `SupertypeCycle`, `MissingMember` and `ModelAliasAsType`, with messages in spine.rs:966-979. |

@@ -33,3 +33,21 @@ Ticket: QSL-1400. `quoin matrix --repo .` (quoin 0.30.0) reports 4559 of 4676 cr
 ## Verdict
 
 Several AC tests would pass against a wrong implementation, mostly through unchecked spans and source-versus-model identity. Trace tags claim criteria that the tests do not exercise.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-006 | low | AC-11 names fixtures S, S-R, S-P, S-M and TC-1407 E-S, but the S4 tests run only S, S-R and S-P. The model-plus-object-plus-protocol shape is covered by `a_source_object_refusal_wins_over_a_refused_protocol`, but literal S-M and E-S never reach S4. | qsl-package/src/emit/tests/source_objects.rs:37 |
+| FND-007 | low | TC-1408's S-M fixture writes `over (view: M::Order)`, while FR-218-AC-39, which says it runs "in TC-1408 variant S-M", checks `over (view: Order)`. The test covers both spellings, but TC-1408 states only one. Fix TC-1408's S-M text to name both `over` spellings. | spec/test-cases/TC-1408-declare-object-types-populations-and-operations-in-source.md:58 |
+| FND-008 | low | The new unit-scoping rule covers "a clause, role or `over`", but the test covers only a state clause. Nothing checks that a secondary unit's own clause resolves the type that unit declares; that unit only appears as the one that fails to resolve. | qsl-semantics/tests/it/source_objects.rs:1033 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | FR-390-AC-70 and FR-390-AC-73 were dropped from the emission test, and FR-383-AC-67 from the protocol test. AC-11's span is now asserted exactly for S, S-R and S-P (qsl-package source_objects.rs). S-M and E-S remain (FND-006). |
+| FND-002 | fixed | All 8 cases assert exactly one refusal at the exact offset. `extending_a_model_type_is_refused_at_the_entry` and `a_redefinition_with_a_narrower_parameter_refuses_variance_parameter` were added. The spec now says "on the member `Sub.scaled`". |
+| FND-003 | fixed | `over (view: Order)` reads `view.extra`, a field only the source type has, while `over (view: M::Order)` refuses on it and checks without it. The source and model contexts are now distinguished. |
+| FND-004 | fixed | The test compares receiver names, the own-first `Qs2 or Qs` shape, and the checked types of Cap, Every, SizedSub and totalOf on both routes. D-R' runs. AC-2 has its field-set test. `self.size()` replaces `r.size()`, matching the spec edit. |
+| FND-005 | fixed | The dead line and the model-twin smoke test are gone. R reads `self.total > pre(self.total)`, matching the edited TC-1408. |

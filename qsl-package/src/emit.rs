@@ -4400,7 +4400,7 @@ fn encoding(error: impl std::fmt::Display) -> EmitRefusal {
 /// a source object type has no node to write, which wins over a protocol
 /// refusal that would need results to emit.
 fn require_protocol_results_for_refusals(package: &CheckedPackage) -> Result<(), EmitRefusal> {
-    if let Some(span) = package.graph().first_source_object() {
+    if let Some((_, span)) = package.graph().first_source_object() {
         return Err(EmitRefusal::SourceObjectEmission { span });
     }
     if package.graph().protocol_refusals().is_empty() {
@@ -6049,7 +6049,7 @@ fn emit_package_inner(
         .map(|relation| graph.abstraction_nodes(relation))
         .transpose()
         .map_err(EmitRefusal::Abstraction)?;
-    if let Some(span) = graph.first_source_object() {
+    if let Some((_, span)) = graph.first_source_object() {
         return Err(EmitRefusal::SourceObjectEmission { span });
     }
     if let Some((feature, declaration)) = graph.probabilistic_model().first_declaration() {

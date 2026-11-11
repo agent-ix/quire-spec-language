@@ -85,7 +85,9 @@ Variants, each one change to S (or D):
 - **S-M**: S with `model M = "test/orders";` selecting D's package (whose
   `Order` and population `orders` are then `M::Order` and `M::orders`), and a
   protocol `protocol Sell using Pp over (view: M::Order) on origin { role w on
-  M; role Seller on Order; ... }` with `Pp` the protocol profile.
+  M; role Seller on Order; ... }` with `Pp` the protocol profile, and the same
+  protocol with `over (view: Order)` (FR-218-AC-39), whose model context is
+  the source `Order`.
 
 1. Parse S; parse each malformed variant of AC-1. (FR-569-AC-1)
 2. Check S with the clauses of AC-2, alone and as S-M. (FR-569-AC-2,

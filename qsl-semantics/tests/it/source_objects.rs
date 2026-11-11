@@ -9,16 +9,9 @@ use qsl_semantics::check::{
     SourceObjectFault,
 };
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
-use qsl_semantics::model::domain_package::{
-    DomainPackage, DomainPackageRecord, DomainPackageRef, Extent, FieldMemberRecord, Multiplicity,
-    NativeValueType, ObjectTypeRecord, OperationEffect, OperationMemberRecord,
-    OperationParameterRecord, OperationResult, PopulationRecord, ScalarTypeRecord,
-    ScalarValueDomain, ValueTypeRef,
-};
+use qsl_semantics::model::domain_package::DomainPackage;
 use qsl_semantics::model::intake::SelectedModels;
 use qsl_semantics::model::normalize::ModelRefusalCause;
-use quire_checked::key::DeclarationKey;
-use quire_exact::{Presence, TextProfile, TextType};
 use quire_semantic_value::checking::CheckingLimits;
 
 /// TC-1408 fixture S's header.
@@ -176,176 +169,10 @@ fn an_unresolved_context_refuses_missing_name_at_the_name() {
     );
 }
 
-// ---------------------------------------------------------------------------
-// Fixture D: the model twin of fixture S, a domain package `test/orders`.
-// ---------------------------------------------------------------------------
-
-fn key(node: &str) -> DeclarationKey {
-    DeclarationKey::fixture(format!("ix://test/orders/{node}"))
+mod orders_model {
+    include!("../fixtures/orders_model.rs");
 }
-
-fn one() -> Multiplicity {
-    Multiplicity {
-        lower: 1,
-        upper: Some(1),
-        ordered: false,
-        unique: true,
-    }
-}
-
-fn object(name: &str, supertypes: &[&str], abstract_type: bool) -> DomainPackageRecord {
-    DomainPackageRecord::ObjectType(ObjectTypeRecord {
-        key: key(name),
-        interface_features: None,
-        abstract_type,
-        supertypes: supertypes.iter().map(|name| key(name)).collect(),
-    })
-}
-
-fn field(
-    owner: &str,
-    name: &str,
-    value_type: ValueTypeRef,
-    presence: Presence,
-    position: usize,
-) -> DomainPackageRecord {
-    DomainPackageRecord::FieldMember(FieldMemberRecord {
-        key: key(&format!("{owner}/{name}")),
-        owner: key(owner),
-        value_type,
-        multiplicity: one(),
-        presence,
-        subsets: Vec::new(),
-        redefines: None,
-        position,
-    })
-}
-
-/// `owner::name(parameter: Integer): Integer` or `(): Integer`, a query.
-fn query(
-    owner: &str,
-    name: &str,
-    parameter: Option<&str>,
-    redefines: Option<&str>,
-) -> DomainPackageRecord {
-    operation(
-        owner,
-        name,
-        parameter,
-        Some(ValueTypeRef::Native(NativeValueType::Integer)),
-        redefines,
-        OperationEffect::default(),
-    )
-}
-
-fn operation(
-    owner: &str,
-    name: &str,
-    parameter: Option<&str>,
-    result: Option<ValueTypeRef>,
-    redefines: Option<&str>,
-    effect: OperationEffect,
-) -> DomainPackageRecord {
-    DomainPackageRecord::OperationMember(OperationMemberRecord {
-        key: key(&format!("{owner}/{name}")),
-        owner: key(owner),
-        parameters: parameter
-            .map(|parameter| OperationParameterRecord {
-                key: key(&format!("{owner}/{name}/{parameter}")),
-                value_type: ValueTypeRef::Native(NativeValueType::Integer),
-                multiplicity: one(),
-            })
-            .into_iter()
-            .collect(),
-        result: result.map(|value_type| OperationResult {
-            value_type,
-            multiplicity: one(),
-        }),
-        effect,
-        requires: Vec::new(),
-        ensures: Vec::new(),
-        has_body: false,
-        redefines: redefines.map(key),
-    })
-}
-
-fn bump(owner: &str, redefines: Option<&str>, fields: &[&str]) -> DomainPackageRecord {
-    operation(
-        owner,
-        "bump",
-        None,
-        Some(ValueTypeRef::Native(NativeValueType::Boolean)),
-        redefines,
-        OperationEffect {
-            receiver_modifies: fields
-                .iter()
-                .map(|name| key(&format!("Order/{name}")))
-                .collect(),
-            ..OperationEffect::default()
-        },
-    )
-}
-
-/// Fixture D's records; `redefine_bump` adds D-R' (`Sub` redefines `bump`,
-/// also modifying `note`).
-fn model_records(redefine_bump: bool) -> Vec<DomainPackageRecord> {
-    let mut records = vec![
-        object("Order", &[], false),
-        object("Sub", &["Order"], false),
-        object("Shape", &[], true),
-        DomainPackageRecord::ScalarType(ScalarTypeRecord {
-            key: key("Total"),
-            domain: ScalarValueDomain::Integer { lower: 0, upper: 9 },
-        }),
-        DomainPackageRecord::ScalarType(ScalarTypeRecord {
-            key: key("Note"),
-            domain: ScalarValueDomain::Text(TextType::new(0, 8, TextProfile::Nfc).unwrap()),
-        }),
-        field(
-            "Order",
-            "total",
-            ValueTypeRef::Package(key("Total")),
-            Presence::Required,
-            0,
-        ),
-        field(
-            "Order",
-            "note",
-            ValueTypeRef::Package(key("Note")),
-            Presence::Optional,
-            1,
-        ),
-        DomainPackageRecord::Population(PopulationRecord {
-            key: key("orders"),
-            member_types: vec![key("Order")],
-            extent: Extent::Closed,
-            symmetric: false,
-        }),
-        DomainPackageRecord::Population(PopulationRecord {
-            key: key("shapes"),
-            member_types: vec![key("Shape")],
-            extent: Extent::Closed,
-            symmetric: false,
-        }),
-        query("Order", "size", None, None),
-        query("Order", "count", None, None),
-        query("Order", "scaled", Some("n"), None),
-        bump("Order", None, &["total"]),
-        query("Sub", "size", None, Some("Order/size")),
-        query("Sub", "scaled", Some("m"), Some("Order/scaled")),
-    ];
-    if redefine_bump {
-        records.push(bump("Sub", Some("Order/bump"), &["total", "note"]));
-    }
-    records
-}
-
-fn model_package(redefine_bump: bool) -> DomainPackage {
-    DomainPackage::new(
-        DomainPackageRef::fixture("test/orders"),
-        model_records(redefine_bump),
-    )
-}
+use orders_model::model_package;
 
 /// The unit that selects fixture D as `M`, with `declarations`.
 fn assemble_model(
@@ -1071,4 +898,130 @@ fn a_source_type_is_visible_only_in_the_unit_that_declares_it() {
             MISSING
         );
     }
+}
+
+/// The profile selections both units of the two-unit tests write.
+const UNIT_PROFILES: &str = "profile P = \"quire.model.complete/v1\";\n\
+    profile Pp = \"quire.protocol.finite-global/v1\";\n";
+
+/// A protocol `Sell` over `over_type` with the role `Seller` on `role_type`,
+/// acting through `operation`.
+fn unit_protocol(over_type: &str, role_type: &str, operation: &str) -> String {
+    format!(
+        "protocol Sell using Pp over (view: {over_type}) on origin {{\n\
+           role Seller on {role_type};\n\
+           run sequence Main {{\n\
+             attempt A by Seller on {operation} contracts [] as (b: Boolean) {{ true }};\n\
+           }}\n\
+           finish Done as (d: Boolean) {{ true }};\n\
+         }}\n"
+    )
+}
+
+/// A source population is named in the unit that declares it only: another
+/// unit's clause naming it refuses `missing-name`.
+#[trace("FR-569-AC-2", "TC-1408")]
+#[test]
+fn a_source_population_is_visible_only_in_the_unit_that_declares_it() {
+    let declaring = format!("{UNIT_PROFILES}{OBJECTS}");
+    let other = format!(
+        "{UNIT_PROFILES}object Other {{ }}\n\
+         invariant X using P on Other at current {{ forall(o in orders : true) }}\n"
+    );
+    let units = [("a", declaring.as_str()), ("b", other.as_str())];
+    let declarations =
+        crate::model_operations::try_assemble_units(&units, &[]).expect("the units assemble");
+    let refusals = finish(declarations).expect_err("`orders` is not visible in unit b");
+    let [refusal] = &refusals[..] else {
+        panic!("one refusal: {refusals:?}");
+    };
+    // It is refused as a name nothing declares is.
+    assert!(
+        matches!(&refusal.cause, CheckCause::MissingName(name) if name == "orders"),
+        "{refusal:?}"
+    );
+
+    // The declaring unit's own clause over the population checks.
+    let own = format!(
+        "{declaring}invariant Y using P on Order at current {{ forall(o in orders : true) }}\n"
+    );
+    let stub = format!("{UNIT_PROFILES}object Stub {{ }}\n");
+    let units = [("a", own.as_str()), ("b", stub.as_str())];
+    finish(crate::model_operations::try_assemble_units(&units, &[]).expect("assembles"))
+        .expect("the declaring unit sees its population");
+}
+
+/// A role and an `over` of another unit cannot name a unit's source type;
+/// a secondary unit's own clause and protocol resolve the type it declares.
+#[trace("FR-569-AC-2", "FR-218-AC-39", "TC-1408")]
+#[test]
+fn a_role_and_an_over_see_only_their_own_units_source_types() {
+    let local = "object Local { operation go(): Boolean; }\n";
+    let declaring = format!("{UNIT_PROFILES}{OBJECTS}");
+    for (variant, protocol) in [
+        ("over", unit_protocol("Order", "Local", "Local::go")),
+        ("role", unit_protocol("Local", "Order", "Local::go")),
+    ] {
+        let user = format!("{UNIT_PROFILES}{local}{protocol}");
+        // `a` uses the type `b` declares, whichever way they sort.
+        let assembled = crate::model_operations::try_assemble_units(
+            &[("a", user.as_str()), ("b", declaring.as_str())],
+            &[],
+        );
+        // The unit that does not declare `Order` cannot name it, whether
+        // the refusal is the assembler's or the check's.
+        match assembled {
+            Err(refusal) => {
+                assert!(!refusal.errors.is_empty(), "{variant}");
+                for error in &refusal.errors {
+                    assert!(
+                        matches!(&error.cause, AssemblyCause::UnresolvedTypeName { name } if name == "Order"),
+                        "{variant}: {error:?}"
+                    );
+                    assert_eq!(
+                        (error.cause.code(), error.cause.catalog_code().cause()),
+                        MISSING,
+                        "{variant}"
+                    );
+                }
+            }
+            Ok(declarations) => {
+                let refusals = finish(declarations).expect_err(variant);
+                assert!(
+                    refusals.iter().all(|refusal| match &refusal.cause {
+                        CheckCause::MissingName(name) => name == "Order",
+                        CheckCause::ProtocolAnchor(anchor) => {
+                            {
+                                let text = format!("{anchor:?}");
+                                text.contains("MissingName(\"Order\")")
+                                    || text.contains(
+                                        "MissingRoleType { role: \"Seller\", context: \"Order\"",
+                                    )
+                            }
+                        }
+                        _ => false,
+                    }),
+                    "{variant}: {refusals:?}"
+                );
+            }
+        }
+    }
+
+    // The secondary unit `b` declares `Order` and uses it in a clause and a
+    // protocol of its own.
+    let unit_stub = format!("{UNIT_PROFILES}object Stub {{ }}\n");
+    let own = format!(
+        "{declaring}invariant Y using P on Order at current {{ self.total >= 0 }}\n{}",
+        unit_protocol("Order", "Order", "Order::bump")
+    );
+    let graph = finish(
+        crate::model_operations::try_assemble_units(
+            &[("a", unit_stub.as_str()), ("b", own.as_str())],
+            &[],
+        )
+        .expect("the secondary unit assembles"),
+    )
+    .unwrap_or_else(|refusals| panic!("{refusals:?}"));
+    assert!(graph.state_clause("Y").is_some());
+    assert_eq!(graph.protocols().len(), 1);
 }

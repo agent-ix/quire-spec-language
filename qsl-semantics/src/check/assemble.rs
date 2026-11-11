@@ -4155,7 +4155,11 @@ impl PackageDeclarations {
                 });
                 continue;
             };
-            admitted.push(AdmittedModel::from_view(&model.view).with_alias(&selection.alias));
+            let mut declared = AdmittedModel::from_view(&model.view).with_alias(&selection.alias);
+            if selection.alias == super::source_model::ALIAS {
+                declared = declared.declared_in(unit_source);
+            }
+            admitted.push(declared);
             // Model declarations select package-owned records by identity.
             // Several aliases may name that same package, but its type and
             // population declarations contribute to the environment once,
@@ -5440,7 +5444,13 @@ impl PackageDeclarations {
             .collect::<BTreeSet<_>>()
             .into_iter()
             .collect();
-        package.first_source_object = unit.objects.first().map(|object| object.span);
+        package.first_source_object = unit.objects.first().map(|object| {
+            let declaring = package
+                .source_owners
+                .get(&object.name.name)
+                .unwrap_or(&package.source);
+            (declaring.clone(), object.span)
+        });
         package.protocols = unit.protocols;
         package.temporal_clauses = unit.temporal_clauses;
         package.timed_forms = unit.timed;

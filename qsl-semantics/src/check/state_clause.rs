@@ -558,6 +558,9 @@ pub struct ClauseDeclarations<'a> {
     /// immediate parents while the conformance stage has not yet judged them.
     pub(crate) staged:
         Option<&'a std::cell::RefCell<quire_semantic_value::declaration::PendingTypeEnvironment>>,
+    /// The unit that declares the clause, for a unit-level state clause: a
+    /// source population is named in its own unit only.
+    pub(crate) unit: Option<&'a qsl_foundation::source::provenance::RawSourceRef>,
 }
 
 impl<'a> ClauseDeclarations<'a> {
@@ -574,6 +577,7 @@ impl<'a> ClauseDeclarations<'a> {
             nodes_used: self.nodes_used,
             cancel: self.cancel,
             staged: self.staged,
+            unit: self.unit,
         }
     }
 }
@@ -839,7 +843,11 @@ impl FamilyContract for ProtocolClauseFamily {
     ) -> CheckOutcome<TypedStateClause, CheckRefusal> {
         let declarations = cx.declarations();
         // FR-391: a unit-level state clause's body is a population position.
-        let named = super::check::NamedScope::of(declarations.models, declarations.scope);
+        let named = super::check::NamedScope::of(
+            declarations.models,
+            declarations.scope,
+            declarations.unit,
+        );
         check_clause_in(
             &form.view(),
             declarations,

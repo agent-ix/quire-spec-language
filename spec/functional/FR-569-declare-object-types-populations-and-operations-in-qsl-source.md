@@ -163,8 +163,9 @@ The parts of an object declaration mean:
 - `identity`: the type's identity fields, own or inherited, in source order;
   without it the type declares none of its own and its identity fields are
   its supertypes' (the first supertype's that has any, in `extends` order).
-  The assembler checks the list and keeps it beside the source model, for the
-  identity rows of "Source-object identity rows".
+  The assembler checks the list (the refusals below stand); emission's
+  source-object identity rows read it from the source declaration once
+  emission lands.
 - a `field`: a field member; `?` makes its presence optional. Its type is the
   written type, a collection type for a many-valued field, exactly as a
   source record field.
@@ -229,8 +230,9 @@ source-declared operation supplies its query body as for a model operation.
   alias of the unit SHALL be refused `ambiguous_declaration`/`ambiguous-name`
   at every declaration of that name, naming each. A function contributes its
   declaration span.
-- A source object type is scoped to the unit that declares it: a clause,
-  role or `over` of another unit of the package that names it SHALL be
+- A source object type and its populations are scoped to the unit that
+  declares them: a clause, role or `over` of another unit of the package
+  that names the type, or a clause that names the population, SHALL be
   refused `missing_declaration`/`missing-name` at the name.
 - A one-segment type name SHALL resolve only to a source object type and a
   two-segment one only to a model type; neither falls back to the other.

@@ -413,7 +413,7 @@ pub struct PackageDeclarations {
     pub header_layers: Vec<crate::value::layer::HeaderLayer>,
     /// The span of the unit's first source `object` declaration, which the
     /// package emitter refuses until it can write source object types.
-    pub first_source_object: Option<qsl_foundation::Span>,
+    pub first_source_object: Option<(RawSourceRef, qsl_foundation::Span)>,
     /// Record, tuple and model object-type declarations.
     pub types: TypeEnvironment,
     /// Where each record keeps the fields its ancestors name (FR-359).
@@ -1355,6 +1355,11 @@ impl ScopeIndex {
             }
         }
         for declaration in types.object_types() {
+            // A bare-named object type is a source object type, which only
+            // the unit that declares it names (`ModelSpellings`).
+            if !declaration.name().contains("::") {
+                continue;
+            }
             index.named_type(declaration.name(), ValueType::Reference(declaration.key()));
             index
                 .object_types
@@ -2368,7 +2373,11 @@ pub(crate) struct NamedPopulation {
 
 impl NamedScope {
     /// The scope over `models`, with `scope`'s enums for the ambiguity rule.
-    pub(crate) fn of(models: &[super::lowering::AdmittedModel], scope: &Scope) -> Self {
+    pub(crate) fn of(
+        models: &[super::lowering::AdmittedModel],
+        scope: &Scope,
+        unit: Option<&RawSourceRef>,
+    ) -> Self {
         let mut populations = Vec::new();
         let mut ambiguous = Vec::new();
         let mut aliases = Vec::new();
@@ -2376,6 +2385,10 @@ impl NamedScope {
             let Some(alias) = model.alias() else {
                 continue;
             };
+            // A source model's populations are visible in its own unit only.
+            if !model.visible_in(unit) {
+                continue;
+            }
             aliases.push(alias.to_owned());
             if scope.names_enum(alias) {
                 ambiguous.push(alias.to_owned());

@@ -499,6 +499,7 @@ impl Checker<'_, '_> {
             SlotOwner::Clause => None,
         };
         let declarations = ClauseDeclarations {
+            unit: None,
             location: site_location.as_ref().unwrap_or(self.declarations.location),
             ..*self.declarations
         };

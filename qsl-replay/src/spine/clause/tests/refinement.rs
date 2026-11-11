@@ -285,9 +285,12 @@ fn an_implementation_gap_is_unsupported() {
         class_of(&CompileRefusal::Omitted(Vec::new())),
         RefinementClass::Unsupported
     );
-    let projection = CompileRefusal::Emit(EmitRefusal::NothingToEmit {
-        omitted: Vec::new(),
-    });
+    let projection = CompileRefusal::Emit(
+        EmitRefusal::NothingToEmit {
+            omitted: Vec::new(),
+        },
+        None,
+    );
     assert_eq!(
         projection.causes(),
         [cause(Code::UnsupportedProjection, None)]

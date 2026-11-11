@@ -79,3 +79,69 @@ fn fixtures_s_s_r_and_s_p_refuse_at_the_first_object() {
         );
     }
 }
+
+mod orders_model {
+    include!("../../../../qsl-semantics/tests/fixtures/orders_model.rs");
+}
+
+/// TC-1408 variant S-M: S with `model M = "test/orders";` selecting fixture
+/// D's package and the protocol `Sell`, whose roles and `over` name the model
+/// and the source `Order`. It checks, and emission refuses once at the first
+/// `object`.
+#[trace("FR-569-AC-11", "TC-1408")]
+#[test]
+fn fixture_s_m_refuses_at_the_first_object() {
+    let text = format!(
+        "{HEADER}profile Pp = \"quire.protocol.finite-global/v1\";\n\
+         model M = \"test/orders\";\n{S}\
+         protocol Sell using Pp over (view: M::Order) on origin {{\n\
+           role w on M;\n\
+           role Seller on Order;\n\
+           run sequence Main {{\n\
+             attempt A by Seller on Order::bump contracts [] as (b: Boolean) {{ true }};\n\
+           }}\n\
+           finish Done as (d: Boolean) {{ true }};\n\
+         }}\n"
+    );
+    let parsed = qsl_cst::parse(
+        qsl_foundation::SourceIdentity::new("agent-ix", "test:s-m"),
+        "program.native",
+        text.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .expect("S1 admits the unit");
+    assert_eq!(parsed.diagnostics(), []);
+    let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
+    let selected = qsl_semantics::model::intake::SelectedModels::fixture(
+        "M",
+        qsl_foundation::Span { start: 0, end: 1 },
+        orders_model::model_package(false),
+        qsl_semantics::model::accounting::ModelNormalizationLimits::UNLIMITED,
+    )
+    .expect("the model admits");
+    let mut declarations = PackageDeclarations::assemble(
+        parsed.source().reference().clone(),
+        "pkg".to_owned(),
+        unit,
+        selected,
+        Vec::new(),
+    )
+    .expect("S-M assembles");
+    let pending = declarations
+        .link_dispatch(Default::default())
+        .unwrap_or_else(|refusals| panic!("{refusals:?}"));
+    let graph = declarations
+        .check(CheckingLimits::default())
+        .unwrap_or_else(|refusals| panic!("{:?}", pending.report(refusals)));
+    let package = CheckedPackage::link(graph);
+    let at = text.find("object Order").unwrap();
+    let refusal = emit_checked(&package).expect_err("emission refuses");
+    let EmitRefusal::SourceObjectEmission { span } = &refusal else {
+        panic!("{refusal:?}");
+    };
+    assert_eq!(span.start, at);
+    assert_eq!(
+        (refusal.code(), refusal.cause()),
+        (Code::UnsupportedConstruct, Some("not-yet-implemented"))
+    );
+}

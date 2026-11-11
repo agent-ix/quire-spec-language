@@ -47,6 +47,16 @@ fn a_unit_with_a_source_object_is_refused_at_emission_and_writes_nothing() {
         "{refusal}"
     );
 
+    // The diagnostic locates the refusal at the first `object` declaration.
+    let qsl_replay::ReplayRefusal::Recompile(inner) = &*refusal else {
+        panic!("a recompile refusal: {refusal:?}");
+    };
+    let region = inner.region().expect("the refusal has a region");
+    let at = UNIT.find("object Order").unwrap();
+    let end = at
+        + "object Order { total: Int[0, 9]; population orders; operation size(): Integer; }".len();
+    assert_eq!((region.start(), region.end()), (at as u64, end as u64));
+
     let out = holder.path().join("handoff");
     let mut handoff = request("event_position", Corpus::None);
     handoff.emit = source;

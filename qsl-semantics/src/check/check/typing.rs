@@ -1311,6 +1311,7 @@ impl<'a> Typer<'a> {
             // anywhere else outside a refinement `M::P` names nothing.
             ExprNode::Name(name)
                 if self.populations.is_none()
+                    && !self.population_hidden(&name.name)
                     && self
                         .scope
                         .known_populations
@@ -3388,6 +3389,16 @@ impl<'a> Typer<'a> {
             )),
             location,
         ))
+    }
+
+    /// Whether `name` is an unqualified population this clause's unit does
+    /// not see: a source population of another unit.
+    fn population_hidden(&self, name: &str) -> bool {
+        !name.contains("::")
+            && self
+                .named
+                .as_ref()
+                .is_some_and(|named| named.named(name).is_none())
     }
 
     /// Whether `name`, an unqualified source population, is also a local

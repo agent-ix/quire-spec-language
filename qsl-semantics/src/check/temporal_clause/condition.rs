@@ -168,7 +168,7 @@ fn check_conditions_into(
 ) -> Result<(TypedConditions, u64), CheckRefusal> {
     let mut nodes = input.nodes_used;
     let mut conditions = TypedConditions::default();
-    let named = crate::check::check::NamedScope::of(input.models, input.scope);
+    let named = crate::check::check::NamedScope::of(input.models, input.scope, None);
     // FR-337: the activation precedes the body, so its guard is typed first
     // and a defect in both refuses at the guard. The guard reads the `over`
     // parameter at slot 0 and the trigger binder at slot 1.
@@ -417,7 +417,7 @@ pub(crate) fn guard_refusal(
         (form.over.name.name.clone(), over),
         (parameter.name.name.clone(), trigger),
     ];
-    let named = crate::check::check::NamedScope::of(input.models, input.scope);
+    let named = crate::check::check::NamedScope::of(input.models, input.scope, None);
     let mut nodes = input.nodes_used;
     let location = temporal_location(clause, TemporalSite::Guard);
     type_condition(

@@ -2158,7 +2158,10 @@ fn aggregate_package_accepts_temporal_selection_from_later_source() {
     let refusal = refusal_or_fault(refusal).expect("the surplus selection is a refusal");
     assert!(matches!(
         &*refusal,
-        CompileRefusal::Emit(qsl_package::EmitRefusal::SurplusTemporalClockSelection { .. })
+        CompileRefusal::Emit(
+            qsl_package::EmitRefusal::SurplusTemporalClockSelection { .. },
+            _
+        )
     ));
 }
 

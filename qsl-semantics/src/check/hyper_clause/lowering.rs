@@ -310,7 +310,7 @@ fn typer<'a>(
     hyper: HyperTyping,
     location: &Location,
 ) -> Result<Typer<'a>, CheckRefusal> {
-    let named = NamedScope::of(typing.models, typing.scope);
+    let named = NamedScope::of(typing.models, typing.scope, None);
     let mut typer = Typer::new(
         typing.scope,
         typing.signatures,

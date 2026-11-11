@@ -416,6 +416,7 @@ impl Keys<'_, '_, '_> {
     ) -> Result<CheckedBody, CheckRefusal> {
         let mut nodes = self.nodes;
         let declarations = ClauseDeclarations {
+            unit: None,
             location,
             ..*self.declarations
         };
