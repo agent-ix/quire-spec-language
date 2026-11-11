@@ -31,6 +31,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-400
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-569
+    type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-091
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-141
@@ -655,8 +657,9 @@ can resolve that anchor. This is the construct this section calls an operation
 call. An operation is model-owned when a selected domain package document
 declares it (FR-056, FR-094: its anchor's context is the package's `model`
 node) and source-declared when the unit's own source declares the type and the
-operation (FR-105: the `state`/`operation_anchor` node's context is a
-source-declared type). Evaluating a slot of a protocol node that reaches a
+operation with an `object` declaration (FR-569: the `state`/`operation_anchor`
+node's context is a `model`/`object_type` node that carries a `declaration` and
+the unit's `SourceOwner`, FR-105). Evaluating a slot of a protocol node that reaches a
 source-declared operation anchor is supported on the reader route and the bytes
 route (FR-533) exactly as on the source route: the slot gives the value and
 the charge log the source route gives. It is not a typed refusal.
@@ -681,7 +684,10 @@ identity file", FR-517). No row is derived from package bytes, decoded nodes,
 display names or source text.
 
 **View creation and order of refusals.** After I2 admits the package, view
-creation SHALL join each source-operation row to its anchor node by `anchor_id`
+creation SHALL admit the source-object rows of the package's source-declared
+object types (FR-569 "Source-object identity rows") with the source-operation
+rows, in the one `Package`-locus step and with the same three reasons, and
+SHALL join each source-operation row to its anchor node by `anchor_id`
 and `structural_node`, and SHALL project the anchor to the callable and dispatch
 closure the source route reaches. Refusals follow FR-390-AC-67's order, package
 locus before node locus. At the `Package` locus, a row of another package or
@@ -963,7 +969,7 @@ value; check 6 does not apply to it.
 | FR-390-AC-67 | View creation reports the first unsupported projection by package identity, then locus (`Package` before `Node`), then node key, then reason. A package with a `MissingTypeRepresentation` at a `Node` locus and a `ForeignIdentityWitness` reports `ForeignIdentityWitness`; with `MissingLiteralProjection` at a `Node` locus and `MissingEqualityWitness` reports `MissingEqualityWitness`; with `ForeignIdentityWitness` and `MissingEqualityWitness` (both `Package`) reports `ForeignIdentityWitness`, the reason order breaking the tie; with `MissingIdentityWitness` and `MissingEqualityWitness` reports `MissingIdentityWitness`. The three equality-witness reasons never co-occur over one supply: over a slot that reaches an equality application, a supply with no equality rows reports `MissingEqualityWitness` alone; rows of another package report `ForeignEqualityWitness` alone, also when those rows hold no row of the application; and the package's own rows with the row of the reached application removed report `UnknownEqualityWitness` alone. The equality-witness reasons are at the `Package` locus and charge nothing. | Test (TC-1070) |
 | FR-390-AC-68 | Over recipe **R**'s `Full` recovery predicate (`sum(receipt in recovered.receipts: receipt) = target and not activated`), the slot lists the sources `target`, `activated` and `recovered` and not `receipt`, on the bare route; the same holds with the `sum` replaced by a `let` binder bound to it, with two nested collection queries of distinct names, with each of `forall`, `exists`, `filter` and `map`, and with a binder the body never reads (alone and nested), none of those binders being a source. The genuine `case Shape::Circle(sum<M::Total>(receipt in recoveredFull.receipts: receipt)) { Empty: targetFull; Circle(r): r; }` form in `Full`'s recovery predicate is admitted by the strict reader, its arm binder `r` is not a source on either route, and source and bare routes return equal Boolean outcomes and ordered charge logs for matching, mismatching, empty and activated supplies. A supply that adds a key for the introduced binder refuses `invalid_runtime_input`/`unknown-member` before any charge, and the predicate evaluates to the value its text states over a supply of the three sources. A query binder named as a readable source is refused by the checker as `AmbiguousName`. | Test (TC-1071, TC-1333) |
 | FR-390-AC-69 | Over the emitted-and-admitted package of TC-1070 fixture E, a supplier that returns no identities gives `MissingIdentityWitness`; a supplier that returns the identities of a different admitted package, whether a second read of the same bytes or another fixture's package, gives `ForeignIdentityWitness`; a supplier that returns the package's own identities with a field row removed gives `UnknownIdentityWitness`; each at the `Package` locus of `UnsupportedView`. | Test (TC-1070) |
-| FR-390-AC-70 | Source-operation identity rows. Over fixture E-S of TC-1407 (TC-1070's fixture E with `Node` and its operation `step` declared by the unit's own source instead of a domain package document), the emission carries one source-operation row for the `step` anchor: `source_authority` the unit's, `source_identity` `Node::step`, `anchor_id` the full id of the `state`/`operation_anchor` node, `structural_node` that node. Fixture E, whose `step` is model-owned, carries none, and the `step` row is not among the selected-declaration rows. The row is written to `identities.json` `source_operations` and read back equal (FR-531-AC-8). | Test (TC-1407) |
+| FR-390-AC-70 | Source-operation identity rows. Over fixture E-S of TC-1407 (TC-1070's fixture E with `Node` and its operation `step` declared by the unit's own `object Node` source declaration, FR-569, instead of a domain package document), the emission carries one source-operation row for the `step` anchor: `source_authority` the unit's, `source_identity` `Node::step`, `anchor_id` the full id of the `state`/`operation_anchor` node, `structural_node` that node. Fixture E, whose `step` is model-owned, carries none, and the `step` row is not among the selected-declaration rows. The row is written to `identities.json` `source_operations` and read back equal (FR-531-AC-8). | Test (TC-1407) |
 | FR-390-AC-71 | Reader evaluation of a slot of a protocol node that reaches a source-declared operation anchor. With a witness kind from IR for the anchor (the dependency above), the slots `Refund.retry` and `Refund.recover` of E-S, evaluated with the supplies of TC-1407 vectors S1 to S3, give on the in-process reader route and on the bytes route the value and the charge log the source route gives; the slots of fixture E give the results they gave before. | Test (TC-1407) |
 | FR-390-AC-72 | Witness refusals for source-operation rows, each at the `Package` locus of `UnsupportedView` with no partial view and no meter charge: in E-S, a supplier that omits the `step` row gives `MissingIdentityWitness`; a row whose `source_identity` is `Node::halt`, or whose `structural_node` is a `state_clause` node, gives `UnknownIdentityWitness` and no other reason; the `step` row of a second emission of E-S under another source authority gives `ForeignIdentityWitness` and no other reason. When a row is both foreign and unresolvable the reason is `ForeignIdentityWitness`. A refusal of this AC precedes any `MissingSelectedJoin` of AC-73. | Test (TC-1407) |
 | FR-390-AC-73 | With every row admitted and no IR witness kind in the lock, view creation over E-S returns `ViewFailure::Unsupported` with `MissingSelectedJoin` at the `Node` locus of the `step` anchor reference of `Refund` and creates no view, so no slot of E-S evaluates on the reader or bytes route, and the source route evaluates every slot of E-S; view creation over fixture E is unaffected and its slots evaluate. | Test (TC-1407) |
@@ -999,4 +1005,8 @@ value; check 6 does not apply to it.
   join; QSL edits no IR file. QSL-852 AC-11 does not depend on it.
 - [FR-531](FR-531-evaluate-from-a-checked-package-read-from-its-bytes-alone.md)
   and [FR-517](FR-517-write-a-checked-package-handoff-directory-from-source-in-process.md):
-  the `source_operations` member of `identities.json` (`identities/4`).
+  the `source_operations` and `source_objects` members of `identities.json`
+  (`identities/4`).
+- [FR-569](FR-569-declare-object-types-populations-and-operations-in-qsl-source.md):
+  the source `object` declaration that declares a source-declared operation,
+  and the source-object identity rows.

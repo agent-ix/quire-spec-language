@@ -20,16 +20,34 @@ FR-352 witness kind exists view creation reports the typed
 
 ## Test Procedure
 
-Fixture E-S is TC-1070's fixture E, text unchanged, in a unit whose own source
-declares the object type `Node` (with the field `total: Total`, the population
-`nodes` and the operation `step`) instead of a domain package document. The
-operation call is the operation reference `by Service on Node::step` of its
-`compensate Refund` and `compensate Partial` nodes and the `attempt Tried`
-node; the slots are the ones TC-1070 lists for those nodes. Fixture E, with
-`step` model-owned, is the control.
+Fixture **E-S** is real QSL source: TC-1070's fixture E with the object type
+`Node` declared by the unit's own source (FR-569) instead of by the domain
+package `M`. Its domain package is fixture E's `M` without the object type
+`Node` (and its `owns` relationship, which only fixture L reads) and without
+the population `nodes`, and keeps every other declaration of fixture E's `M`. The unit adds this declaration after its `model M` selection:
 
-1. Emit E-S and E. Read the `source_operations` rows of the emission and of
-   `identities.json` (`identities/4`). (AC-70)
+```
+object Node identity (total) {
+  total: M::Total;
+  population nodes;
+  operation step(): M::Flag;
+}
+```
+
+and its protocol `Refunds` is fixture E's text with every `M::Node` written
+`Node` and every `M::Node::step` written `Node::step`: `over (view: Node)`,
+`role Service on Node`, the operation references `by Service on Node::step`
+of `compensate Refund` and `compensate Partial`, and `attempt Tried by Service
+on Node::step`. Those three are the operation call; the slots are the ones
+TC-1070 lists for those nodes. The checked graph's `Node` node is the
+`model`/`object_type` node S4 emits for the declaration, with `declaration`
+`["Node"]` and the unit's `SourceOwner`, and the `step` anchor's `context` is
+that node; no node of the graph is edited after S4. The observation is
+TC-1070's, with `nodes` and `Node` named by their source identities (FR-106).
+Fixture E, with `Node` and `step` model-owned, is the control.
+
+1. Emit E-S and E. Read the `source_operations` and `source_objects` rows of
+   the emission and of `identities.json` (`identities/4`). (AC-70)
 2. Vector S1: evaluate `Refund.retry` of E-S with the supply of TC-1070's retry
    row; S2: `Refund.recover` with the supply of TC-1070's recover row; S3:
    `Refund.recover` with the supply of TC-1072 that makes `target`
@@ -43,13 +61,15 @@ node; the slots are the ones TC-1070 lists for those nodes. Fixture E, with
 4. With every row admitted and no IR witness kind in the lock, create the view
    over E-S and over E; evaluate a slot of each on the source route. (AC-73)
 
-Tag the test `#[trace("FR-390-AC-70", "FR-390-AC-71", "FR-390-AC-72", "FR-390-AC-73", "TC-1407")]`.
+Tag the test `#[trace("FR-390-AC-70", "FR-390-AC-71", "FR-390-AC-72", "FR-390-AC-73", "TC-1407")]`,
+each test with the criteria it asserts.
 Vectors reference TC-1070 and TC-1072 rows, never copy them.
 
 ## Expected Results
 
-- Step 1: E-S has one row (`Node::step`, the unit's authority, the anchor's
-  full id); E has none; the file round-trips equal.
+- Step 1: E-S has one source-operation row (`Node::step`, the unit's
+  authority, the anchor's full id) and one source-object row (`Node`); E has
+  neither; the file round-trips equal.
 - Step 2: S1 to S3 give equal values and equal charge logs on all three
   routes; E's slots are unchanged.
 - Step 3: R1 `MissingIdentityWitness`; R2 and R4 `UnknownIdentityWitness`

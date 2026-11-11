@@ -126,6 +126,13 @@ body is typed, so S3 resolves and refuses it (see "Requirements").
 - If `M` names no `model` declaration of the unit, or `T` no object type,
   state machine or process of its package, then the assembler SHALL refuse
   `missing_declaration`/`missing-name` at the name.
+- A one-segment context `T` or operation `T::op` names an object type the
+  unit's own source declares (FR-569). The assembler SHALL resolve it among
+  the unit's source object types only, and `M::T` among the selected domain
+  packages only; neither falls back to the other. A one-segment `T` that names
+  no source object type SHALL be refused `missing_declaration`/`missing-name`
+  at the name. Every other rule of this section applies to a source-declared
+  context and operation as written for `M::T` and `M::T::op`.
 - The context `M::T` of a clause is the declaration `T` names, whichever of
   the three it is, and a process is a context as an object type is. The
   `self` of a clause on a process is one run of it (QSpec FR-208): a
