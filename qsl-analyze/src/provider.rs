@@ -21,12 +21,12 @@ pub struct ProviderResults {
 }
 
 impl ProviderResults {
-    /// The FR-286 document of these results: the one [`analyze_document`]
+    /// The FR-286 document of these results: the one [`crate::analyze::analyze_document`]
     /// writes for the same records.
     ///
     /// # Errors
     ///
-    /// As [`analyze_document`].
+    /// As [`crate::analyze::analyze_document`].
     pub fn document(&self) -> Result<qsl_replay::OutcomeDocument, qsl_replay::OutcomeItemError> {
         crate::analyze::analyze_document(&self.records, &self.counterexamples)
     }

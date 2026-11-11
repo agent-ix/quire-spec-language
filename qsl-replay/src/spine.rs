@@ -2487,7 +2487,7 @@ impl Default for DependencyLimits {
 
 impl crate::outcome::OutcomeDiagnostic {
     /// The public entry to the source-diagnostic projection in
-    /// [`OutcomeDiagnostic::project_source_diagnostic`]. It lives in the
+    /// the crate-private `project_source_diagnostic`. It lives in the
     /// spine because it takes S1's pre-check diagnostic, which ADR-032 CK-3
     /// keeps out of stage-entry parameters.
     pub fn from_source_diagnostic(diagnostic: &CompleteDiagnostic) -> Self {
