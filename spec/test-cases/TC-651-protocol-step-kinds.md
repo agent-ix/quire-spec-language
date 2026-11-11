@@ -46,6 +46,14 @@ Scope: FR-206-AC-1 to FR-206-AC-12.
     `overflow loss head` and once under `overflow loss tail`; repeat with
     `P2` sent before `P1`. Read each third send's record and the queue, and
     explore each `receive` of the remaining entries.
+13. Over an `unordered` channel of capacity 3 with delivery
+    `exactly-once-premise` and `overflow loss head`, send `A`, `B`, `A`
+    (equal payloads from one send node and thread), then explore every
+    `receive` of `A`.
+14. Over an `unordered` channel of capacity 3 with delivery `at-least-once`,
+    send `P1` then `P2`, take `duplicate` of `P1`, then send `P3`; once under
+    `overflow loss tail` and once under `overflow loss head`. Read the third
+    send's record and the queue.
 
 Tag the tests `#[trace("TC-651", "FR-206-AC-n")]`.
 
@@ -78,3 +86,8 @@ Tag the tests `#[trace("TC-651", "FR-206-AC-n")]`.
   `accepted` displacing the first-sent entry, under `loss tail` displacing
   the second-sent entry, as FR-206-AC-12 states; both remaining entries are
   each receivable.
+- Step 13: the two `receive` steps of `A` reach two distinct states, `[B, A]`
+  and `[A, B]` (FR-206-AC-12).
+- Step 14: under `loss tail` the send of `P3` is `accepted` displacing the
+  duplicate copy of `P1`, leaving `[P1, P2, P3]`; under `loss head` it
+  displaces the original `P1`, leaving `[P2, P1, P3]`.
