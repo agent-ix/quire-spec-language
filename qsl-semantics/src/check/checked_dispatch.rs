@@ -122,6 +122,9 @@ use qsl_forms::{
 use qsl_foundation::diagnostic::Code;
 use quire_exact::EffectiveId;
 use quire_exact::ValueType;
+use quire_semantic_value::declaration::{
+    EnvironmentFailure, ObjectTypeDeclaration, TypeEnvironment,
+};
 
 /// One dispatch candidate's own clause `Expression`s and signature, supplied
 /// by the caller since [`DomainPackage`] carries no `Expression` payload. Every
@@ -206,6 +209,12 @@ pub enum DispatchBridgeRefusal {
         /// The later record's key.
         second: Box<DeclarationKey>,
     },
+    /// The domain package's object types, with the supertypes
+    /// [`object_type_supertypes`] re-keyed, are not an admissible
+    /// [`TypeEnvironment`]: a generalization cycle, a duplicate key or an
+    /// unknown declaration. Boxed: the failure is far larger than the other
+    /// variants.
+    TypeEnvironment(Box<EnvironmentFailure>),
     /// The effective-precondition ancestor walk followed more `redefines`
     /// edges than the caller's `family_steps` ceiling
     /// ([`crate::model::accounting::ModelNormalizationLimits::family_steps`]),
@@ -345,9 +354,8 @@ pub struct DispatchRoot {
 /// ([`EffectiveView::domain_package`]) from [`DeclarationKey`]s into
 /// their [`EffectiveId`]s through `view`'s [`EffectiveView::type_identities`] --
 /// the exact shape [`quire_semantic_value::declaration::ObjectTypeDeclaration::with_supertypes`]
-/// needs (ADR-013 O-05). No production code builds a
-/// [`quire_semantic_value::declaration::TypeEnvironment`]'s object types yet (only
-/// test scaffolding does); a real model intake calls it exactly as tests do.
+/// needs (ADR-013 O-05). [`checked_dispatch_operation`] admits these edges
+/// into the [`PackageDeclarations::types`] it returns.
 ///
 /// The re-key must be injective: two object-type records that map to one
 /// [`EffectiveId`] refuse [`DispatchBridgeRefusal::DuplicateObjectKey`]
@@ -356,6 +364,35 @@ pub fn object_type_supertypes(
     view: &EffectiveView,
 ) -> Result<BTreeMap<EffectiveId, Vec<EffectiveId>>, DispatchBridgeRefusal> {
     rekey_object_types(view.domain_package(), view.type_identities())
+}
+
+/// The [`TypeEnvironment`] declaring every object type of `view`'s domain
+/// package under its [`EffectiveId`], named by its declaration node and
+/// carrying the supertypes [`object_type_supertypes`] re-keys. The bridge's
+/// clauses name no attributes, so none are declared.
+fn object_type_environment(view: &EffectiveView) -> Result<TypeEnvironment, DispatchBridgeRefusal> {
+    let mut supertypes = object_type_supertypes(view)?;
+    let declarations = view
+        .domain_package()
+        .records
+        .iter()
+        .filter_map(|record| match record {
+            DomainPackageRecord::ObjectType(object_type) => {
+                let identity = view.type_identities().get(&object_type.key)?;
+                let supertypes = supertypes.remove(identity)?;
+                Some(
+                    ObjectTypeDeclaration::new(
+                        identity.clone(),
+                        object_type.key.node.clone(),
+                        Vec::new(),
+                    )
+                    .with_supertypes(supertypes),
+                )
+            }
+            _ => None,
+        });
+    TypeEnvironment::new([], declarations)
+        .map_err(|failure| DispatchBridgeRefusal::TypeEnvironment(Box::new(failure)))
 }
 
 /// [`object_type_supertypes`] over its two inputs. Normalization refuses
@@ -1213,6 +1250,7 @@ pub fn checked_dispatch_operation(
         .collect();
 
     Ok(PackageDeclarations {
+        types: object_type_environment(view)?,
         functions,
         dispatch_operations,
         dispatch_tables: vec![checked_table],

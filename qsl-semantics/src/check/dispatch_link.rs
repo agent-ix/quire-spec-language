@@ -635,7 +635,8 @@ fn link_causes(
         | DispatchBridgeRefusal::UnknownCandidate(model) => vec![model_cause(operation, model)],
         DispatchBridgeRefusal::MissingClauseData { .. }
         | DispatchBridgeRefusal::MissingObjectKey { .. }
-        | DispatchBridgeRefusal::DuplicateObjectKey { .. } => vec![invariant(operation)],
+        | DispatchBridgeRefusal::DuplicateObjectKey { .. }
+        | DispatchBridgeRefusal::TypeEnvironment(_) => vec![invariant(operation)],
     }
 }
 

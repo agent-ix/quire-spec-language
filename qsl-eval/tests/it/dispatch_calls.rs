@@ -2056,7 +2056,7 @@ fn bridge_links_a_real_family_and_evaluates_through_the_built_table() {
         key: DeclarationKey::fixture("model.A/size"),
         closure: GeneralizationClosure::Closed,
     };
-    let mut declarations = checked_dispatch_operation(
+    let declarations = checked_dispatch_operation(
         &view,
         &root,
         &clauses,
@@ -2068,18 +2068,7 @@ fn bridge_links_a_real_family_and_evaluates_through_the_built_table() {
     .unwrap_or_else(|refusal| {
         panic!("expected a linked, checked dispatch family, got {refusal:?}")
     });
-    // The bridge is pure and builds no `TypeEnvironment` of its own (see its
-    // module docs): the caller declares the object types its own clauses'
-    // parameter/result `ValueType`s name.
-    let types = TypeEnvironment::new(
-        [],
-        [
-            ObjectTypeDeclaration::new(a_type.clone(), "A", vec![]),
-            ObjectTypeDeclaration::new(b_type.clone(), "B", vec![]),
-        ],
-    )
-    .unwrap();
-    declarations.types = types.clone();
+    let types = declarations.types.clone();
     let package = declarations.check(CheckingLimits::default()).unwrap();
 
     let objects = ObjectEnvironment::new(
@@ -2127,6 +2116,66 @@ fn bridge_links_a_real_family_and_evaluates_through_the_built_table() {
     // table (already covered by this file's `d06_*`/`d07_*`/`d08_*` tests
     // against a hand-built package).
     assert_eq!(meter_a.consumed(LimitKind::ValueOccurrences), 2);
+}
+
+/// The environment the bridge returns declares the domain package's object
+/// types with their supertypes, so a call whose argument is a subtype
+/// reference admits at a supertype-typed parameter at check time.
+#[trace("QSpec-TC-196", "QSpec-FR-151")]
+#[test]
+fn bridge_environment_admits_a_subtype_argument_at_a_supertype_parameter() {
+    let domain_package = bridge_bundle();
+    let view = bridge_view(&domain_package);
+    let a_type = view_type(&view, "model.A");
+    let b_type = view_type(&view, "model.B");
+    let mut clauses = bridge_clauses(a_type.clone());
+    for operation in ["model.A/size", "model.B/size"] {
+        clauses
+            .parameters
+            .get_mut(&DeclarationKey::fixture(operation))
+            .expect("bridge_clauses declares every operation")
+            .push(("other".to_owned(), ValueType::Reference(a_type.clone())));
+    }
+    let mut meter =
+        qsl_semantics::model::accounting::Meter::new(ModelNormalizationLimits::UNLIMITED);
+    let declarations = checked_dispatch_operation(
+        &view,
+        &DispatchRoot {
+            key: DeclarationKey::fixture("model.A/size"),
+            closure: GeneralizationClosure::Closed,
+        },
+        &clauses,
+        qsl_semantics::check::fixture_source(),
+        "fixture".to_owned(),
+        &mut meter,
+        qsl_foundation::IdentityLimits::default(),
+    )
+    .unwrap_or_else(|refusal| panic!("expected a linked dispatch family, got {refusal:?}"));
+    let conforms = declarations.types.conforms(b_type.clone(), a_type.clone());
+    let package = declarations.check(CheckingLimits::default()).unwrap();
+    let call = Expression::dispatch(
+        Expression::name("self".to_owned()),
+        "size".to_owned(),
+        vec![Expression::name("other".to_owned())],
+    );
+    let parameters = vec![
+        ("self".to_owned(), ValueType::Reference(a_type.clone())),
+        ("other".to_owned(), ValueType::Reference(b_type)),
+    ];
+    package
+        .check_clause_expression(
+            parameters,
+            &call,
+            None,
+            ClauseKind::Invariant,
+            CheckMode::Kernel,
+            CheckingLimits::default(),
+        )
+        .expect("a B reference admits at the Reference<A> parameter");
+    assert!(
+        conforms,
+        "the bridge's environment must record B as a subtype of A"
+    );
 }
 
 fn expression_spans(expression: &Expression) -> DeclarationSpans {
