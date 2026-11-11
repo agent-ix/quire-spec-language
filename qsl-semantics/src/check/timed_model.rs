@@ -4848,7 +4848,7 @@ pub(crate) fn check(
         let named = NamedScope::of(
             checking.declarations.models,
             checking.declarations.scope,
-            None,
+            checking.declarations.unit,
         )
         .of_alias(&draft.model);
         let mut sites = Vec::new();
@@ -4870,7 +4870,6 @@ pub(crate) fn check(
                 }
                 let location = site_location(&site);
                 let declarations = ClauseDeclarations {
-                    unit: None,
                     location: &location,
                     ..checking.declarations.at()
                 };
@@ -4925,7 +4924,6 @@ pub(crate) fn check(
                     sites.push((site.clone(), alternative.predicate.predicate.spans.clone()));
                     let location = site_location(&site);
                     let declarations = ClauseDeclarations {
-                        unit: None,
                         location: &location,
                         ..checking.declarations.at()
                     };
@@ -4980,7 +4978,6 @@ pub(crate) fn check(
                         let location = site_location(&site);
                         sites.push((site, alternative.predicate.predicate.spans.clone()));
                         let declarations = ClauseDeclarations {
-                            unit: None,
                             location: &location,
                             ..checking.declarations.at()
                         };

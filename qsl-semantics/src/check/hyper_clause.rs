@@ -1385,6 +1385,7 @@ fn check_behaviours<'a>(
         models: declarations.models,
         limits: declarations.checking_limits,
         cancel: declarations.cancel,
+        unit: cx.source_owner().cloned(),
     };
     let trace_names: Vec<&str> = quantifiers
         .iter()

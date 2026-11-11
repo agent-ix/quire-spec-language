@@ -951,6 +951,49 @@ fn a_source_population_is_visible_only_in_the_unit_that_declares_it() {
         .expect("the declaring unit sees its population");
 }
 
+const UNIT_TEMPORAL_PROFILE: &str = "profile t = \"quire.temporal.infinite-trace/v1\";\n";
+
+/// A temporal clause over `over_type` whose body names the population `orders`.
+fn unit_temporal(over_type: &str) -> String {
+    format!(
+        "temporal C using t over (w: {over_type}) clock \"model-steps\" \
+         on origin {{ eventually holds(forall(x in orders : true)) }}\n"
+    )
+}
+
+/// A temporal clause names a source population in the unit that declares it
+/// only: another unit's clause naming it refuses `missing-name`, and the
+/// declaring unit's own clause checks.
+#[trace("FR-569-AC-2", "TC-1408")]
+#[test]
+fn a_temporal_clause_sees_only_its_own_units_populations() {
+    let declaring = format!("{UNIT_PROFILES}{OBJECTS}");
+    let other = format!(
+        "{UNIT_PROFILES}{UNIT_TEMPORAL_PROFILE}object Watch {{ }}\n{}",
+        unit_temporal("Watch")
+    );
+    let units = [("a", declaring.as_str()), ("b", other.as_str())];
+    let declarations =
+        crate::model_operations::try_assemble_units(&units, &[]).expect("the units assemble");
+    let refusals = finish(declarations).expect_err("`orders` is not visible in unit b");
+    assert!(
+        refusals.iter().any(|refusal| matches!(
+            &refusal.cause,
+            CheckCause::MissingName(name) if name == "orders"
+        )),
+        "{refusals:?}"
+    );
+    // The declaring unit's own temporal clause over the population checks.
+    let own = format!(
+        "{UNIT_PROFILES}{UNIT_TEMPORAL_PROFILE}{OBJECTS}{}",
+        unit_temporal("Order")
+    );
+    let stub = format!("{UNIT_PROFILES}object Stub {{ }}\n");
+    let units = [("a", own.as_str()), ("b", stub.as_str())];
+    finish(crate::model_operations::try_assemble_units(&units, &[]).expect("assembles"))
+        .expect("the declaring unit sees its population in a temporal clause");
+}
+
 /// A role and an `over` of another unit cannot name a unit's source type;
 /// a secondary unit's own clause and protocol resolve the type it declares.
 #[trace("FR-569-AC-2", "FR-218-AC-39", "TC-1408")]

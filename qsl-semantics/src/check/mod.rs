@@ -2555,7 +2555,6 @@ impl PackageDeclarations {
             model_function_bodies[index] = true;
             model_context_calls.extend(layer::called_functions(&self.functions[index].body));
         }
-        let model_scope = check::NamedScope::of(&self.models, &scope, None);
         let symmetric_objects = self
             .models
             .iter()
@@ -3050,7 +3049,9 @@ impl PackageDeclarations {
                     .get(index)
                     .copied()
                     .unwrap_or(false)
-                    .then(|| model_scope.clone()),
+                    .then(|| {
+                        check::NamedScope::of(&models, &scope, self.function_sources.get(index))
+                    }),
                 // A model operation in the body selects the model family's
                 // typing for that body, whether the function's declared
                 // profile is value-complete or model-complete.
@@ -3870,7 +3871,7 @@ impl PackageDeclarations {
             // stage may read.
             let obligation_location = root(Origin::Expression);
             let obligation_declarations = state_clause::ClauseDeclarations {
-                unit: None,
+                unit: self.source_owners.get(&protocol.name.name),
                 scope: &scope,
                 signatures: &signatures,
                 dispatch_tables: &dispatch_tables,
@@ -3956,7 +3957,6 @@ impl PackageDeclarations {
                     // over the binders readable at it, after the
                     // obligations' node total.
                     let slot_declarations = state_clause::ClauseDeclarations {
-                        unit: None,
                         nodes_used,
                         ..obligation_declarations
                     };
@@ -3995,7 +3995,6 @@ impl PackageDeclarations {
                     // FR-218: the protocol's channels, joins and
                     // `terminal`/`scheduling` members.
                     let control_declarations = state_clause::ClauseDeclarations {
-                        unit: None,
                         nodes_used,
                         ..obligation_declarations
                     };
@@ -4333,7 +4332,7 @@ impl PackageDeclarations {
             if body_refused {
                 let location = lowering::temporal_location(index, lowering::TemporalSite::Claim);
                 let condition_declarations = state_clause::ClauseDeclarations {
-                    unit: None,
+                    unit: self.source_owners.get(&clause.form.name.name),
                     scope: &scope,
                     signatures: &signatures,
                     dispatch_tables: &dispatch_tables,
@@ -4370,7 +4369,7 @@ impl PackageDeclarations {
                     let location =
                         lowering::temporal_location(index, lowering::TemporalSite::Claim);
                     let condition_declarations = state_clause::ClauseDeclarations {
-                        unit: None,
+                        unit: self.source_owners.get(&clause.form.name.name),
                         scope: &scope,
                         signatures: &signatures,
                         dispatch_tables: &dispatch_tables,
@@ -4509,7 +4508,7 @@ impl PackageDeclarations {
         for claim in &self.state_graph_claims {
             let location = root(Origin::Expression);
             let declarations = state_clause::ClauseDeclarations {
-                unit: None,
+                unit: self.source_owners.get(&claim.form.name.name),
                 scope: &scope,
                 signatures: &signatures,
                 dispatch_tables: &dispatch_tables,
@@ -6652,7 +6651,6 @@ impl PackageDeclarations {
                 over.node = over_node;
             }
         }
-        let named_scope = NamedScope::of(&models, &scope, None);
         let lowered_temporal = lowered_temporal
             .into_iter()
             .collect::<Option<Vec<_>>>()
@@ -6673,6 +6671,8 @@ impl PackageDeclarations {
                         *at == location
                     })
                     .ok_or_else(unkeyable)?;
+                let named_scope =
+                    NamedScope::of(&models, &scope, self.source_owners.get(checked.name()));
                 let objects: std::collections::BTreeSet<_> = conditions
                     .all()
                     .flat_map(|condition| references::body_objects(condition.body.root()))

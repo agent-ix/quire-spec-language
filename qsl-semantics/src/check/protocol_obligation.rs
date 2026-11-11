@@ -1209,7 +1209,6 @@ impl Checker<'_, '_> {
     ) -> Option<(CheckedBody, Vec<String>)> {
         let mut nodes = self.nodes;
         let declarations = ClauseDeclarations {
-            unit: None,
             location: site.location.as_ref().unwrap_or(self.input.location),
             ..*self.input
         };

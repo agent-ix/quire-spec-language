@@ -999,15 +999,18 @@ impl AdmittedModel {
         self
     }
 
-    /// Whether `unit` sees this model's source declarations: a model that
-    /// is no source model is seen by every unit.
+    /// Whether `unit` sees this model's source declarations. A model that
+    /// is no source model, or a source model of a single-unit package, is
+    /// seen by every unit; a unit-scoped source model is seen only by its
+    /// declaring unit, so a caller that names no unit sees none of it.
     pub(crate) fn visible_in(
         &self,
         unit: Option<&qsl_foundation::source::provenance::RawSourceRef>,
     ) -> bool {
         match (&self.source_unit, unit) {
             (Some(declaring), Some(unit)) => declaring == unit,
-            (Some(_), None) | (None, _) => true,
+            (Some(_), None) => false,
+            (None, _) => true,
         }
     }
 
