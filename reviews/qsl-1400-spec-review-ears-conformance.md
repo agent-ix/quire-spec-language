@@ -42,3 +42,5 @@ Disposition pass 1, checked against fix commit ba4ea0fcd.
 Disposition pass 2, checked against fix commit b3e72440c: no finding of this SR is outstanding, so this round adds no rows. The round-2 re-split checks (honest "now" cases, no remaining claim that IR admits anything now, the three old refusals removed everywhere, and the cross-AC consistency of FR-390-AC-70 to AC-73, FR-105-AC-18, FR-383-AC-67, FR-218-AC-39, TC-1407 and TC-1408) are clean.
 
 Disposition pass 3, checked against fix commit 3ef786bab: no finding of this SR is outstanding, so this round adds no rows.
+
+Disposition pass 4, checked against fix commit e9821eeed: no finding of this SR is outstanding, so this round adds no rows.
