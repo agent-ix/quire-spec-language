@@ -1068,3 +1068,103 @@ fn a_role_and_an_over_see_only_their_own_units_source_types() {
     assert!(graph.state_clause("Y").is_some());
     assert_eq!(graph.protocols().len(), 1);
 }
+
+/// Fixture D with the record value type `Flag { ready: Boolean }` beside its
+/// own declarations.
+fn model_with_flag() -> DomainPackage {
+    use orders_model::{field, key};
+    use qsl_semantics::model::domain_package::{
+        DomainPackageRecord, NativeValueType, RecordValueTypeRecord, ValueTypeRef,
+    };
+    let mut package = model_package(false);
+    package.records.push(DomainPackageRecord::RecordValueType(
+        RecordValueTypeRecord {
+            key: key("Flag"),
+            identity_fields: Vec::new(),
+            supertypes: Vec::new(),
+        },
+    ));
+    package.records.push(field(
+        "Flag",
+        "ready",
+        ValueTypeRef::Native(NativeValueType::Boolean),
+        quire_exact::Presence::Required,
+        0,
+    ));
+    package
+}
+
+/// FR-569 "Declaration checks": a field, parameter or result of a source
+/// object type may name a model-owned value type, a reference to a model
+/// object type, or a collection of either; each checks, and a clause over the
+/// type reads the model-typed field.
+#[trace("FR-569-AC-2", "TC-1408")]
+#[test]
+fn a_source_member_may_have_a_model_owned_type() {
+    let declarations = "\
+object Z {
+  total: M::Total;
+  flag: M::Flag?;
+  link: Reference<M::Order>;
+  totals: Set<M::Total>[0, 3];
+  population zs;
+  operation step(): M::Flag;
+  operation add(x: M::Total, o: Reference<M::Order>): M::Total;
+}
+invariant X using P on Z at current { self.total >= 0 }
+invariant Y using P on Z at current { forall(z in zs : deref(z).total <= 9) }
+";
+    let declarations =
+        assemble_model(declarations, model_with_flag()).expect("the member types resolve");
+    finish(declarations).expect("the clauses over the model-typed fields check");
+}
+
+/// A model type that does not exist, and a model-owned type a field cannot
+/// hold, refuse at the type.
+#[trace("FR-569-AC-2", "TC-1408")]
+#[test]
+fn a_model_typed_member_that_names_nothing_is_refused_at_the_name() {
+    let text = "object Z { total: M::Ghost; }\n";
+    let refused = assemble_model(text, model_package(false)).expect_err("M::Ghost names nothing");
+    let [error] = &refused.errors[..] else {
+        panic!("one refusal: {refused:?}");
+    };
+    assert_eq!(
+        (error.cause.code(), error.cause.catalog_code().cause()),
+        MISSING
+    );
+    let source = model_text(text);
+    assert_eq!(&source[error.span.start..error.span.end], "M::Ghost");
+}
+
+/// FR-105-AC-18 (the source route's part): `pre Q` and `post R` on
+/// `Order::bump` check against one operation whose declaring type is the
+/// source-declared `Order`, and a clause on `Sub::bump` resolves to `Order`'s
+/// `bump`, which `Sub` inherits.
+#[trace("FR-105-AC-18", "TC-1408")]
+#[test]
+fn clauses_on_a_source_operation_share_the_declaring_type() {
+    let graph = check(&format!(
+        "{OBJECTS}{CLAUSES}pre Qsub using P on Sub::bump {{ self.total < 9 }}\n"
+    ));
+    let order = graph.state_clause("I").expect("I is checked").context();
+    let operation = |name: &str| {
+        graph
+            .state_clause(name)
+            .and_then(|clause| clause.operation())
+            .unwrap_or_else(|| panic!("{name} names an operation"))
+    };
+    let (q, r, qsub) = (operation("Q"), operation("R"), operation("Qsub"));
+    for (name, clause) in [("Q", q), ("R", r), ("Qsub", qsub)] {
+        assert_eq!(
+            clause.declaring, order,
+            "{name}'s operation is declared by the source-declared Order"
+        );
+    }
+    assert_eq!(q.declaration, r.declaration, "Q and R share one operation");
+    assert_eq!(
+        q.declaration, qsub.declaration,
+        "a clause on Sub::bump resolves to Order's bump"
+    );
+    assert_eq!(q.declaration.name(), "bump");
+}

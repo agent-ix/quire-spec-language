@@ -145,3 +145,66 @@ fn fixture_s_m_refuses_at_the_first_object() {
         (Code::UnsupportedConstruct, Some("not-yet-implemented"))
     );
 }
+
+#[path = "../../../../qsl-semantics/tests/support/tc1070.rs"]
+mod tc1070_source;
+
+/// TC-1407 fixture E-S: TC-1070's fixture E with the object type `Node`
+/// declared by the unit's source instead of by the domain package `M`, whose
+/// document keeps every other declaration. The unit adds
+/// `object Node identity (total) { total: M::Total; population nodes;
+/// operation step(): M::Flag; }` and its protocol `Refunds` names `Node` and
+/// `Node::step` where fixture E names `M::Node` and `M::Node::step`.
+fn fixture_e_s() -> (String, qsl_semantics::model::intake::PackageInput) {
+    let mut document = tc1070_source::document();
+    document["types"]
+        .as_array_mut()
+        .expect("types")
+        .retain(|declared| declared["displayName"] != "Node");
+    document["populations"] = serde_json::json!([]);
+    // `Node` was the only `thing`: no declaration is of that kind now.
+    document["constructs"]
+        .as_array_mut()
+        .expect("constructs")
+        .retain(|construct| construct["kind"]["name"] != "thing");
+    let bytes = crate::emit::tests::wire_bytes(&document).expect("the document encodes");
+    let packages = qsl_semantics::model::intake::package_input([bytes.as_slice()])
+        .expect("E-S's domain package admits");
+    let source = tc1070_source::SOURCE;
+    let refunds = &source[..source.find("protocol Pipeline").expect("fixture L follows")];
+    let refunds = refunds
+        .replace("M::Node::step", "Node::step")
+        .replace("M::Node", "Node");
+    let selection = "model M = \"test/orders\";\n";
+    let object = "object Node identity (total) {\n  total: M::Total;\n  population nodes;\n  \
+         operation step(): M::Flag;\n}\n";
+    let text = refunds.replacen(selection, &format!("{selection}{object}"), 1);
+    (text, packages)
+}
+
+/// TC-1407 step 0 and FR-569-AC-11: E-S checks (its protocol is over the
+/// source-declared `Node`, whose field and result name `M`'s types) and S4
+/// refuses it once, at `object Node`, writing no package.
+#[trace("FR-569-AC-11", "FR-383-AC-67", "TC-1407")]
+#[test]
+fn fixture_e_s_checks_and_refuses_at_object_node() {
+    let (text, packages) = fixture_e_s();
+    let mut declarations = assemble_with_models(text.as_bytes(), &packages).expect("E-S assembles");
+    let pending = declarations
+        .link_dispatch(Default::default())
+        .unwrap_or_else(|refusals| panic!("{refusals:?}"));
+    let graph = declarations
+        .check(CheckingLimits::default())
+        .unwrap_or_else(|refusals| panic!("E-S checks: {:?}", pending.report(refusals)));
+    let package = CheckedPackage::link(graph);
+    let at = text.find("object Node").unwrap();
+    let refusal = emit_checked(&package).expect_err("emission refuses");
+    let EmitRefusal::SourceObjectEmission { span } = &refusal else {
+        panic!("{refusal:?}");
+    };
+    assert_eq!(span.start, at, "the first object declaration");
+    assert_eq!(
+        (refusal.code(), refusal.cause()),
+        (Code::UnsupportedConstruct, Some("not-yet-implemented"))
+    );
+}

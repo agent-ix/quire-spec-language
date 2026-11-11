@@ -1539,6 +1539,7 @@ fn source_name_collisions(
 fn source_model(
     objects: &[qsl_forms::ObjectForm],
     declared_types: &BTreeSet<String>,
+    foreign: &[(&str, &DomainPackage)],
     identity: String,
     meter: &mut crate::model::accounting::Meter,
     errors: &mut Vec<AssemblyError>,
@@ -1549,6 +1550,7 @@ fn source_model(
         &super::source_model::Context {
             identity: &identity,
             declared_types,
+            foreign,
         },
     ) {
         Ok(package) => package,
@@ -1610,6 +1612,7 @@ fn model_object_types(
     span: Span,
     table: &mut OperationTable,
     units: &BTreeMap<String, quire_exact::UnitId>,
+    foreign: &[&SelectedModel],
 ) -> Result<ModelTypes, Vec<AssemblyError>> {
     let package = model.view.domain_package();
     let identities = model.view.type_identities();
@@ -1626,7 +1629,7 @@ fn model_object_types(
             node: node.to_owned(),
         })
     };
-    let records: BTreeMap<&DeclarationKey, &DomainPackageRecord> = package
+    let mut records: BTreeMap<&DeclarationKey, &DomainPackageRecord> = package
         .records
         .iter()
         .map(|record| (record.key(), record))
@@ -1689,6 +1692,49 @@ fn model_object_types(
             }
         }
     }
+    // The record handles of this model's own declarations, which its record
+    // renames and events read.
+    let own_handles = meaning_handles.clone();
+    // A member of the unit's source model may name a type of a selected
+    // domain package: those types resolve here as that package resolves them.
+    let foreign_identities;
+    let identities = if foreign.is_empty() {
+        identities
+    } else {
+        let mut merged = identities.clone();
+        for other in foreign {
+            let other_package = other.view.domain_package();
+            records.extend(
+                other_package
+                    .records
+                    .iter()
+                    .map(|record| (record.key(), record)),
+            );
+            merged.extend(
+                other
+                    .view
+                    .type_identities()
+                    .iter()
+                    .map(|(key, id)| (key.clone(), id.clone())),
+            );
+            for record in &other_package.records {
+                let form = match record {
+                    DomainPackageRecord::RecordValueType(_) => "record_value_type",
+                    DomainPackageRecord::TupleValueType(_) => "tuple_value_type",
+                    DomainPackageRecord::EventType(_) => "event_type",
+                    _ => continue,
+                };
+                let key = record.key();
+                if let Ok(handle) =
+                    model_declaration_key(&key.package, NodeTag::Model, form, &key.node)
+                {
+                    meaning_handles.insert(key.clone(), handle);
+                }
+            }
+        }
+        foreign_identities = merged;
+        &foreign_identities
+    };
     for record in &package.records {
         match record {
             DomainPackageRecord::FieldMember(field) => {
@@ -2215,8 +2261,8 @@ fn model_object_types(
             CompositeShape::Union(members),
         ));
     }
-    let mut model_records = record_renames(model, &records, &meaning_handles);
-    for (key, handle) in &meaning_handles {
+    let mut model_records = record_renames(model, &records, &own_handles);
+    for (key, handle) in &own_handles {
         if matches!(records.get(key), Some(DomainPackageRecord::EventType(_))) {
             model_records.declare_event(handle.clone());
         }
@@ -3400,6 +3446,7 @@ pub fn model_type_environment(
         span,
         &mut OperationTable::default(),
         &BTreeMap::new(),
+        &[],
     )
     .map_err(|errors| AssemblyRefusal { errors })?;
     let spans = types
@@ -4034,6 +4081,24 @@ impl PackageDeclarations {
                 // An object type is visible only in the unit that declares
                 // it: each declaring unit gets its own source model.
                 let declared_types: BTreeSet<String> = unit.declared.keys().cloned().collect();
+                // The selected domain packages, whose types a source field,
+                // parameter or result may name.
+                let foreign_packages: Vec<(String, DomainPackage)> = selections
+                    .models
+                    .iter()
+                    .filter_map(|selection| {
+                        let model = models.iter().find(|model| {
+                            model.alias == selection.alias
+                                && model.view.domain_package().model_selection.identity
+                                    == selection.identity
+                        })?;
+                        Some((selection.alias.clone(), model.view.domain_package().clone()))
+                    })
+                    .collect();
+                let foreign: Vec<(&str, &DomainPackage)> = foreign_packages
+                    .iter()
+                    .map(|(alias, package)| (alias.as_str(), package))
+                    .collect();
                 let mut by_unit: BTreeMap<usize, Vec<qsl_forms::ObjectForm>> = BTreeMap::new();
                 for object in &unit.objects {
                     let declaring = source_owners
@@ -4051,6 +4116,7 @@ impl PackageDeclarations {
                     if let Some((selection, model)) = source_model(
                         objects,
                         &declared_types,
+                        &foreign,
                         identity,
                         &mut model_meter,
                         &mut errors,
@@ -4196,12 +4262,32 @@ impl PackageDeclarations {
                 }
                 None => model_units.clone(),
             };
+            // The source model's members may name the other selected models'
+            // types; a domain package's own never do.
+            let foreign_models: Vec<&SelectedModel> =
+                if selection.alias == super::source_model::ALIAS {
+                    selections
+                        .models
+                        .iter()
+                        .filter(|other| other.alias != super::source_model::ALIAS)
+                        .filter_map(|other| {
+                            models.iter().find(|candidate| {
+                                candidate.alias == other.alias
+                                    && candidate.view.domain_package().model_selection.identity
+                                        == other.identity
+                            })
+                        })
+                        .collect()
+                } else {
+                    Vec::new()
+                };
             match model_object_types(
                 &selection.alias,
                 model,
                 selection.span,
                 &mut operations,
                 &package_units,
+                &foreign_models,
             ) {
                 Ok(types) => {
                     model_spellings.set_names(package, types.package_names(&selection.alias));

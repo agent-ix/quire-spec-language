@@ -6188,6 +6188,7 @@ pub fn read_domain_package(
         records,
         dimensions,
         units,
+        foreign: std::collections::BTreeSet::new(),
         originals,
         intake_refusals,
         declared_record_count: Some(source_record_count(&document.tree)),
