@@ -17,6 +17,8 @@ relationships:
     type: traces_to
   - target: ix://agent-ix/quire-spec-language/FR-104
     type: traces_to
+  - target: ix://agent-ix/quire-spec-language/FR-569
+    type: traces_to
   - target: ix://agent-ix/quire-specification/FR-322
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-340
@@ -134,7 +136,14 @@ source map (FR-095).
   An operation inherited from `M::Base` and named as `M::Sub::op` anchors at
   `M::Base`. The anchor's context is the node of the declaring type: a
   `model`/`object_type` node for an object type, a `model`/`process` node for
-  a process and a `model`/`state_machine` node for a state machine. An
+  a process and a `model`/`state_machine` node for a state machine. The
+  declaring object type may be one a selected domain package declares (its
+  node carries a `ModelOwner`, FR-094) or one the unit's own source declares
+  (its node carries a `declaration` and the unit's `SourceOwner`, FR-569). A
+  source-declared anchor is built exactly as a model-owned one: an operation
+  inherited from `Base` and named as `Sub::op` anchors at `Base`, its frame
+  node and frame record come from the source `OperationEffect`, and its
+  `operation` literal is the operation name as the source declares it. An
   operation that a process declares and a clause or attempt names gets its
   anchor, its frame node and its frame record as any operation does, built
   from its `OperationEffect` (FR-103, FR-154), and the frame's
@@ -296,6 +305,7 @@ the `requirements` hook, and no source clause refers to it.
 | FR-105-AC-15 | The conjunction is structurally exact: in AC-14's unit the derived `pre` condition is `quire.op.boolean.and` over `ref(P1's condition)` and `ref(P2's condition)` and the derived `post` condition is `quire.op.boolean.and` over `ref(Q1's condition)` and `ref(Q2's condition)`, in that order, with no other operand; with a third clause the fold is left-nested. The authored clauses' nodes, names, occurrences and `requirements` records are the same with and without the transition. | Test (TC-1271); covered |
 | FR-105-AC-16 | Each of these gives no `state`/`transition` node, no derived node and no refusal, and leaves every authored clause node as before, and each carries a postcondition that would constrain the field were the variant eligible: `Switch.set2(n: Integer)` (a non-Boolean parameter) with `post { self.on }`; an operation whose frame does not modify `on`, with `post { self.on }`; `armed: Option<Boolean>`, a `Sequence<Boolean>` field `seq` and an `Integer` field `count`, each with a postcondition that reads it; a postcondition `{ self.peer.on }`, `{ let s = self in s.on }` or `{ result.on }`, or `{ pre(self.on) }`, alone (not constraining `on`); a `pre` or `post` of the operation carrying an execution point; a postcondition `post QS on M::SubSwitch::set { self.on }` on a proper subtype (AC-13's unit gains no transition for `on` once `QS` is added); a package whose header selects no protocol profile. FR-105-AC-1's ConfigVersion package (no Boolean field) holds no `state`/`transition` node. | Test (TC-1271); covered |
 | FR-105-AC-17 | Compiling AC-14's unit twice gives identical bytes; two eligible subjects `on` and `lit` with the same preconditions share one derived `precondition` node and give two transitions with different `post` and `subject`; each transition occurrence carries the region of a contributing postcondition declaration. A fault injected on the transition node or a derived node refuses the compile and emits no state node. | Test (TC-1271); covered |
+| FR-105-AC-18 | Passes now: over TC-1408 fixture S, `pre Q using P on Order::bump` and `post R using P on Order::bump` check against one operation whose declaring type is the source-declared `Order`, a clause on `Sub::bump` resolves to `Order`'s `bump`, the source route evaluates `Q` and `R` (TC-1408 V2, V3), and S4 refuses S `SourceObjectEmission` (FR-569-AC-11). Waits on QC-30 (target emission): `Q` and `R` share one `state`/`operation_anchor` whose `context` is the source-declared `Order` node (`declaration` `["Order"]`, the unit's `SourceOwner`, body binding `total` and `note`), whose `operation` is `"bump"` and whose frame node has `semantic_type` `Order`'s node and the `receiver` `modifies` entry for `total`; a clause on `Sub::bump` anchors at `Order`; IR's strict reader admits the package. Over fixture D the anchor's context is the model-owned `Order` node and the anchor is otherwise the same in shape | Test (TC-1408) |
 
 ## Dependencies
 

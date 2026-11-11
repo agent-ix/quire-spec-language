@@ -3,6 +3,8 @@ id: FR-218
 title: "Check every protocol control construct the protocol system runs at S3"
 type: FR
 relationships:
+  - target: ix://agent-ix/quire-spec-language/FR-569
+    type: traces_to
   - target: ix://agent-ix/quire-spec-language/US-024
     type: implements
   - target: ix://agent-ix/quire-spec-language/ADR-027
@@ -277,6 +279,14 @@ FR-464 requires the clause's `owner_model` edge (FR-383). Any other `over`
 (a scalar, an `Option`, a collection) is refused at S4 as
 `unsupported_construct`/`not-yet-implemented` naming `NoOwnerModel` (planner
 ruling STD-498, QSL-1147); QSL-1165 tracks the follow-up.
+
+A one-segment `M` in `role w on M` resolves to the model alias `M` and never
+to a source-declared object type; a source object type cannot share a model
+alias's name (FR-569). S3 SHALL admit `role w on T` and `over (input: T)` for a
+source-declared object type `T` exactly as for a model object type, and the
+clause's model context is then `T` (FR-383 defines its `owner_model`). Until
+ADR-013 QC-30 lands, S4 emits no unit that declares a source object type
+(FR-569 `SourceObjectEmission`).
 
 A role on a whole model is static only (QSpec FR-465: a replicated role draws
 its instances from a population of a model type, so its `model` is a
@@ -617,6 +627,7 @@ one protocol declared in the same unit. It carries no package selector.
 | FR-218-AC-36 | A protocol is charged `s3.nodes` and `s3.work_units` only for its own controls. A protocol of three `check` controls spends the same `s3.nodes` and `s3.work_units` beside a neighbour of sixty `check` controls, declared before or after it, as beside no neighbour, and a package of `k` equal protocols spends exactly `k` times one protocol's spend for `k` of 2 and 8 protocols of twenty `check` controls each, so the spend of a package does not grow faster than linearly in its protocols. | Test (TC-1172) |
 | FR-218-AC-37 | A model type written in a temporal clause's binder, trigger or capture resolves to that model's own type: over a model whose scalar `Total` is the integer interval 0 to 1000 and whose scalar `Tally` is the interval 0 to 3, a clause `over (view: M::Node)` `on each (started: M::Node)` with `capture saved: M::Total` and `capture level: M::Tally` checks, and its captures are `saved` of `Int[0, 1000]` and `level` of `Int[0, 3]` in source order, its `over` binder and its trigger have the type of the model's object `Node`, and that type is not `Int[0, 1000]`. | Test (TC-1056) |
 | FR-218-AC-38 | A predicate, a temporal clause that calls it and a protocol that requires that clause and calls the predicate, written in three units of one package, check in every request order of the units. The protocol's requirement is bound to the clause's position among the package's temporal clauses, which is the clause's own position, 1, when another unit declares a clause that sorts before it. Without the clause's unit the same package refuses `missing_declaration`/`missing-name` at the name `Due` in `requires temporal Due;`. | Test (TC-1056) |
+| FR-218-AC-39 | Passes now (S3). In TC-1408 variant S-M, which selects `M` and declares the source object type `Order`, a protocol with `role w on M` and `role Seller on Order` checks: `w` is the role on the whole model `M`, recording `M`'s package identity, and `Seller` a static role on the source-declared `Order`. A protocol `over (view: Order)` checks with model context the source `Order`. Neither role nor `over` resolves to the other kind of declaration. | Test (TC-1408) |
 
 ## Dependencies
 
