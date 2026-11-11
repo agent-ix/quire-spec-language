@@ -36,3 +36,5 @@ Disposition pass 1, checked against fix commit ba4ea0fcd.
 | FND | outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | QC-30 now covers (2a) field bindings and field member resolution, (2d) clause-function declaration, id and occurrence, and (3) FR-464/FR-465 `owner_model` and role `model`. Its interim column states each refusal. Further IR refusals that the interim list misses are recorded as new findings in the failure-domain SR (FND-003 to FND-005). |
+
+Disposition pass 2, checked against fix commit b3e72440c: no finding of this SR is outstanding, so this round adds no rows. The round-2 re-split checks (honest "now" cases, no remaining claim that IR admits anything now, the three old refusals removed everywhere, and the cross-AC consistency of FR-390-AC-70 to AC-73, FR-105-AC-18, FR-383-AC-67, FR-218-AC-39, TC-1407 and TC-1408) are clean.

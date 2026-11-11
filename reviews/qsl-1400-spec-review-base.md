@@ -42,6 +42,14 @@ Direct review. Native quire 0.40.0 (engine 0.56.0) validates the ten changed fil
 - TC-1408 (examined): Scope lists AC-1 to AC-10 and FR-105-AC-18. TC-1407 (examined).
 - No ceremony, tracking or digest identity was added (clean).
 
+## New findings (disposition pass 2)
+
+Found against fix commit b3e72440c.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | medium | FR-569-AC-6's target expectations name nodes fixture S cannot contain. (1) FR-094 builds clause functions only for a dispatch-eligible operation, which `checked_dispatch.rs:979` defines as a query: it has a result and an empty effect. `bump` has `modifies self.total`, so it is not a query, and none of `["Order","bump","precondition","Q"]`, `["Sub","bump","effective-precondition"]` or `["Sub","bump","precondition","Q2"]` (S-R) exists. (2) The "`r.size()` dispatch-table row" needs an `r.size()` application in a checked node, and fixture S has none; `r.size()` appears only as evaluation vector V5. The target test cannot pass as written, and the sibling-name case of FND-004 has no fixture. | spec/functional/FR-569-declare-object-types-populations-and-operations-in-qsl-source.md:489; spec/test-cases/TC-1408-declare-object-types-populations-and-operations-in-source.md:42-61 |
+
 ## Dispositions
 
 Disposition pass 1, checked against fix commit ba4ea0fcd.
@@ -52,3 +60,4 @@ Disposition pass 1, checked against fix commit ba4ea0fcd.
 | FND-002 | fixed | FR-569 now defines `identity_fields` as the effective identity, inherited when the type declares none, and `members` as the effective-view fields. AC-8 states `Sub`'s `identity_fields`, `members` and `populations` in full. |
 | FND-003 | fixed | AC-9 adds variant S-M, with D selected as `M`. In it, bare names admit as source objects, `ix://` names admit as model objects, and a bare type in an `ix://` population is refused `wrong-role-mapping`. |
 | FND-004 | fixed | AC-1 now gives `invalid_syntax`/`unexpected-token` for a reserved-word parameter. AC-7 no longer has the digest clause. AC-6 no longer names a forall, and the variant is renamed S-P. |
+| FND-005 | still-open: new this round, routed to the coder | AC-6 names `bump` clause functions (but `bump` is not a query) and an `r.size()` dispatch row (but S has no such application). |

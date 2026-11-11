@@ -60,7 +60,12 @@ pre Q using P on Order::bump { self.total < 9 }
 post R using P on Order::bump { self.total = pre(self.total) + 1 }
 body B using P on Sub::size() { 7 }
 body C using P on Order::size() { 1 }
+pre Qs using P on Order::size { self.total >= 0 }
+function sized using P (r: Reference<Order>): Integer pure { r.size() }
 ```
+
+`size` is a query (a result and an empty frame), so FR-094 builds its clause
+functions; `bump` writes `total`, so it has none.
 
 Fixture **D**, its model twin, is a domain package `test/orders` selected as
 `M` that declares the same object types, fields, identity, supertypes,
@@ -70,10 +75,10 @@ bodies written `on M::Order`, `on M::Order::bump`, `on M::Sub::size()` and
 
 Variants, each one change to S (or D):
 
-- **S-R** (and **D-R**): `Sub` adds `operation bump(): Boolean redefines
-  Order::bump modifies self.total;` and the unit adds `pre Q2 using P on
-  Sub::bump { self.total < 5 }`; **S-R'** (D-R') frames that `bump` `modifies
-  self.total, self.note` instead.
+- **S-R** (and **D-R**): the unit adds `pre Qs2 using P on Sub::size {
+  self.total >= 1 }`, so `Sub.size`'s effective precondition is `Qs2 or Qs`.
+- **S-R'** (and **D-R'**): `Sub` adds `operation bump(): Boolean redefines
+  Order::bump modifies self.total, self.note;`.
 - **S-P**: S with V4's invariant `invariant V4 using P on Order at current {
   forall o in orders: deref(o).total >= 0 }`.
 - **S-M**: S with `model M = "test/orders";` selecting D's package (whose
@@ -89,9 +94,11 @@ Variants, each one change to S (or D):
 4. Check S and D, S-R and D-R, S-R' and D-R'; compare their effective views,
    dispatch tables, effective preconditions and the checked types of AC-5's
    expressions. (FR-569-AC-5)
-5. **waits on QC-30.** Emit S, S-R and D. Read the object, anchor, frame,
-   clause-function, `operation_effects` and dispatch-table rows, emit the
-   AC-7 variants of S, and read every package with IR's strict reader.
+5. **waits on QC-30.** Emit S, S-R and D. Read the object, anchor and frame
+   nodes; the clause functions of `size` (`Qs`, `C`, `B`, and in S-R `Qs2` and
+   `Sub.size`'s effective precondition); the six `operation_effects` rows;
+   and the dispatch-table row of the `r.size()` application in `sized`. Emit
+   the AC-7 variants of S, and read every package with IR's strict reader.
    (FR-569-AC-6, FR-569-AC-7, FR-105-AC-18, FR-383-AC-67)
 6. **waits on QC-30.** Read the `source_objects` and `source_operations` rows
    of S's and D's emissions and of `identities.json`; run the refusal
@@ -121,19 +128,23 @@ Tag each test with the criteria it asserts and `TC-1408`, for example
   on the whole model `M` and `Seller` a role on the source `Order`.
 - Step 3: each variant refuses with the code, cause and spans AC-3 or AC-4
   states, and no checked package.
-- Step 4: equal views, dispatch tables and types; `Sub.bump`'s effective
-  precondition is `Q2 or Q` in S-R and in D-R; S-R' and D-R' each refuse
+- Step 4: equal views, dispatch tables and types; `Sub.size`'s effective
+  precondition is `Qs2 or Qs` in S-R and in D-R; S-R' and D-R' each refuse
   `ill_typed`/`effect-escape` once, at `self.note`.
 - Step 5: the node shapes of AC-6 and FR-105-AC-18, including `Order`'s and
-  `Sub`'s field bindings, the distinct clause-function names
-  (`["Order", "bump", "precondition", "Q"]`, `["Sub", "size", "body"]`,
-  `["Order", "size", "body"]`, and in S-R
-  `["Sub", "bump", "effective-precondition"]` and
-  `["Sub", "bump", "precondition", "Q2"]`), `bump`'s `operation_effects`
-  row and `r.size()`'s dispatch-table row; S's `Order` id is unchanged by the
-  field addition, the operation rename and the move, and changed by the
-  rename of `Order`; S's and D's `Order` ids differ; IR's strict reader admits
-  every package.
+  `Sub`'s field bindings; the clause functions
+  `["Order", "size", "precondition", "Qs"]`, `["Order", "size", "body"]` and
+  `["Sub", "size", "body"]`, and in S-R `["Sub", "size", "precondition",
+  "Qs2"]` and `["Sub", "size", "effective_precondition"]`, with no clause
+  function for `bump`; six `operation_effects` rows with origin
+  `source_declaration_operation_frame`, `member` `<type>::<operation>` and
+  `document` the unit's source identity, in `(document, declaring,
+  operation)` order, `bump`'s holding the receiver `modifies` of `total`; the
+  `r.size()` dispatch row with context `Order` and candidates `Order.size`
+  and `Sub.size` carrying `C`'s and `B`'s body ids; S's `Order` id is
+  unchanged by the field addition, the operation rename and the move, and
+  changed by the rename of `Order`; S's and D's `Order` ids differ; IR's
+  strict reader admits every package.
 - Step 6: three source-object rows over S with the members, identity fields
   and populations AC-8 states, and none over D; one source-operation row
   (`Order::bump`) over S and none over D; the file round-trips equal; each

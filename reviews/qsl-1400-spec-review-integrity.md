@@ -45,3 +45,5 @@ Disposition pass 1, checked against fix commit ba4ea0fcd.
 | FND-001 | fixed | FR-383 and FR-218 are amended. S4 now refuses a protocol over a source type typed, naming `SourceOwnerModel` (FR-383-AC-67, FR-569 interim table, QC-30 item 3). FR-390-AC-70 to AC-73 are split into "now" and "waits" parts, and the "now" parts run over fixture S. |
 | FND-002 | fixed | FR-569:152-156 and 234-237 add the `role w on M` exception. FR-218 is amended, and FR-218-AC-39 tests both kinds of role in S-M. |
 | FND-003 | fixed | FR-569:375-391 and FR-390 now classify rows in order: Foreign by an authority of no `SourceOwner`, then Unknown, then Missing for a type no admitted row names. AC-8's foreign case supplies S's complete rows plus the foreign row, so it gives Foreign only. |
+
+Disposition pass 2, checked against fix commit b3e72440c: no finding of this SR is outstanding, so this round adds no rows. The round-2 re-split checks (honest "now" cases, no remaining claim that IR admits anything now, the three old refusals removed everywhere, and the cross-AC consistency of FR-390-AC-70 to AC-73, FR-105-AC-18, FR-383-AC-67, FR-218-AC-39, TC-1407 and TC-1408) are clean.

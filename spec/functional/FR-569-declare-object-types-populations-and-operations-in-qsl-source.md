@@ -321,18 +321,33 @@ the source object type that declares it, and its `operation` text (FR-105).
 The anchor's frame node is built from the source `OperationEffect` as for a
 model operation.
 
-**Operation effects.** For every operation a source object type declares,
-the target emission SHALL write one FR-496 `operation_effects` row
-`{document, declaring, operation, effect, provenance}` with `document` the
-declaring node's `SourceOwner` (`{kind: "source", authority, identity}`, the
-unit's source identity in place of a selected document identity),
-`declaring` the local `NodeRef` of the source-declared `model`/`object_type`
-node, `operation` the operation name as the source declares it, and `effect`
-and `provenance` exactly as FR-496 states for a model operation (all four
-effect members, the same entry shapes, scopes and order). An operation only
-inherited has no row under the subtype. A reader joins such a row to its
-declaring node through that node's `SourceOwner` and its source-object
-identity row, not through a selected model row (QC-30 items (2e) and (4)).
+**Operation effects.** For every operation a source object type declares
+(a query included, whose effect is four empty arrays), the target emission
+SHALL write one FR-496 `operation_effects` row
+`{document, declaring, operation, effect, provenance}`:
+
+- `document`: a string, as FR-496 types it: the `identity` of the declaring
+  node's `SourceOwner` (the unit's source identity), in place of a selected
+  document identity. Its type is unchanged, so FR-496's sort key
+  `(document, declaring, operation)` and its byte order are unchanged; a
+  source row and a model row whose `document` strings are equal still have
+  distinct `declaring` nodes, so the order stays total and no two rows share
+  a key.
+- `declaring`: the local `NodeRef` of the source-declared `model`/`object_type`
+  node.
+- `operation`: the operation name as the source declares it.
+- `effect`: exactly as FR-496 states for a model operation (all four effect
+  members, the same entry shapes, scopes and order).
+- `provenance`: `origin` the new variant `source_declaration_operation_frame`
+  (a model row keeps `model_document_operation_frame`), and `member` the
+  operation's source identity `<type>::<operation>` (`Order::bump`), the
+  `source_identity` of its source-operation row (FR-390).
+
+An operation only inherited has no row under the subtype. A reader joins a
+`source_declaration_operation_frame` row to its declaring node through that
+node's `SourceOwner` (whose `identity` equals `document`) and its
+source-object identity row, and checks `effect` against the source frame,
+not through a selected model row (QC-30 items (2e) and (4)).
 
 **Dispatch tables.** For every dispatched application whose receiver context
 is a source-declared object type, the target emission SHALL write the FR-494
@@ -346,17 +361,23 @@ joins the context and each candidate's declaring family through the nodes'
 `SourceOwner` and source-object identity rows, not through a selected model
 row (QC-30 items (2f) and (4)).
 
-S4 SHALL build the clause functions of a source-declared operation as
-FR-094 builds a model operation's (authored precondition, effective
-precondition, body), with these differences:
+S4 SHALL build the clause functions of a source-declared operation exactly
+when FR-094 builds them for a model operation, that is for a
+dispatch-eligible query (a result and an empty effect), and of the same kinds
+(authored precondition, effective precondition, body), with these
+differences:
 
 - `declaration`: a qualified name distinct for every clause function of the
   package, so that a reader's declaration-name rule (one holder per
   qualified name) admits sibling clause functions with no change:
   `[<type>, <operation>, "precondition", <label>]` for an authored
   precondition, `<label>` the label of the `pre` declaration it lowers;
-  `[<type>, <operation>, "effective-precondition"]` for an effective
-  precondition; and `[<type>, <operation>, "body"]` for a body. `<type>` is
+  `[<type>, <operation>, "effective_precondition"]` for an effective
+  precondition; and `[<type>, <operation>, "body"]` for a body. Every segment
+  matches the identifier pattern `[A-Za-z_][A-Za-z0-9_]*` that a reader
+  requires of a qualified-name segment: `<type>` and `<operation>` are source
+  identifiers, `<label>` is the identifier the grammar requires of a `pre`
+  label, and the three fixed segments are identifiers. `<type>` is
   the declaring type of the operation member whose clause it is, as FR-094
   chooses it (the authoring operation for an authored precondition, the
   candidate for an effective precondition and a body). Clause labels are
@@ -485,8 +506,8 @@ lands, as FR-390 states.
 | FR-569-AC-2 | Passes now (source route). Over fixture S, `invariant I using P on Order at current { self.total >= 0 }`, `pre Q using P on Order::bump { self.total < 9 }`, `body B using P on Sub::size() { 7 }`, `forall o in orders: deref(o).total >= 0` and `Reference<Sub>` resolve to the source declarations; `on Order::reset` refuses `missing_declaration`/`missing-name` at `reset`; `on Receipt` naming a source record and `on Nothing` refuse `missing_declaration`/`missing-name` at the name. With a domain package that also declares `Order` selected as `M`, `on Order` checks against the source fields and `on M::Order` against the model's, and no name resolves to the other; in a protocol of that unit, `role w on M` checks as FR-218's role on the whole model `M`. | Test (TC-1408) |
 | FR-569-AC-3 | Passes now (source route). Each refuses `ambiguous_declaration`/`ambiguous-name` at the stated spans and yields no checked package: a source `record Order` beside `object Order` (both declarations); `object M` in a unit with `model M` (both); population `orders` beside a function `orders` (both); a quantifier binder `orders` over `orders` (the use, naming both); two fields `total` in one type (the second); a field of `Sub` named `total` (the field); an operation `size` in `Sub` without `redefines` (the operation); `deletes Order` in an operation whose parameter is also named `Order` (the entry). | Test (TC-1408) |
 | FR-569-AC-4 | Passes now (source route). Each refuses with the code and cause stated, at the offending name: `extends M::Order` and `extends Receipt` (a source record) `invalid_model_binding`/`malformed-declaration`; `extends Ghost` `missing_declaration`/`missing-name`; `A extends B` with `B extends A` `invalid_package`/`definition-cycle` naming both edges; `identity (ghost)`, `redefines Order::reset`, `modifies self.ghost` and `creates Ghost` `missing_declaration`/`missing-name`; `deletes n` with `n: Integer` `invalid_model_binding`/`malformed-declaration`; `Sub`'s `scaled` redeclared `scaled(m: Text[0, 8; nfc]): Integer redefines Order::scaled` `ill_typed`/`variance-parameter` at the parameter, as QSpec FR-151 refuses it in D. | Test (TC-1408) |
-| FR-569-AC-5 | Passes now (source route). Over fixture S and its model twin D (TC-1408), the checked effective views, the dispatch tables and the checked types agree member for member: `r.size()` over `r: Reference<Sub>` dispatches to `Sub.size` and over `Reference<Order>` has candidates `Order.size` and `Sub.size`; `deref(s).total` over `s: Reference<Sub>` names `Sub`'s node and `total`; `allInstances<Order>(orders)` has type `Set<Reference<Order>>`, and `Set<Reference<Order>>[0, 3]` with `bound b on orders [3]`. `Q` is `bump`'s `requires`. In variant S-R, where `Sub` adds `operation bump(): Boolean redefines Order::bump modifies self.total;` and the unit `pre Q2 using P on Sub::bump { self.total < 5 }`, `Sub.bump`'s effective precondition is `Q2 or Q`, own clause first, as in D-R; with `Sub.bump` framed `modifies self.total, self.note` instead, both S-R and D-R refuse `ill_typed`/`effect-escape` at the `self.note` entry, one refusal. | Test (TC-1408) |
-| FR-569-AC-6 | Waits on QC-30 (target emission). S4 over fixture S emits `Order`, `Sub` and `Shape` as `model`/`object_type` nodes with `declaration` `["Order"]`, `["Sub"]` and `["Shape"]`, the unit's `SourceOwner`, self `semantic_type` and one `declaration` occurrence each; `Order`'s body binds `total` then `note` (with its `optional` group), `Sub`'s binds the inherited `total` and `note`, and `Shape`'s is `aggregate{[]}`; `Shape`, which nothing names, is emitted. No node is emitted for a field, operation or population member. `Q`'s anchor has `context` `Order`'s node, `operation` `"bump"` and a frame node whose `semantic_type` is `Order`'s node and whose `modifies` holds (`Order`'s node, `total`, `receiver`). Clause functions: `Q`'s authored precondition has `declaration` `["Order", "bump", "precondition", "Q"]`, `B`'s body `["Sub", "size", "body"]` and `C`'s body `["Order", "size", "body"]`, each with the `SourceOwner`, its declaration as id path, ordinal `0`, one `declaration` occurrence at the authoring declaration's span and its `clause` binding; in S-R, `Sub.bump`'s effective precondition is `["Sub", "bump", "effective-precondition"]` with its occurrence at the redefining `operation` member, and `Q2`'s is `["Sub", "bump", "precondition", "Q2"]`; no two clause functions share a qualified name. `bump` has one `operation_effects` row with `document` the unit's `SourceOwner`, `declaring` `Order`'s node and the receiver `modifies` entry for `total`; `r.size()` over `Reference<Order>` has a dispatch-table row whose context is `Order`'s node and whose candidates `Order.size` and `Sub.size` carry the body identities of `C` and `B`. IR's strict reader admits the package | Test (TC-1408) |
+| FR-569-AC-5 | Passes now (source route). Over fixture S and its model twin D (TC-1408), the checked effective views, the dispatch tables and the checked types agree member for member: `r.size()` over `r: Reference<Sub>` dispatches to `Sub.size` and over `Reference<Order>` has candidates `Order.size` and `Sub.size`; `deref(s).total` over `s: Reference<Sub>` names `Sub`'s node and `total`; `allInstances<Order>(orders)` has type `Set<Reference<Order>>`, and `Set<Reference<Order>>[0, 3]` with `bound b on orders [3]`. `Q` is `bump`'s `requires` and `Qs` is `size`'s. In variant S-R, where the unit adds `pre Qs2 using P on Sub::size { self.total >= 1 }`, `Sub.size`'s effective precondition is `Qs2 or Qs`, own clause first, as in D-R; in variant S-R', where `Sub` adds `operation bump(): Boolean redefines Order::bump modifies self.total, self.note;`, both S-R' and D-R' refuse `ill_typed`/`effect-escape` at the `self.note` entry, one refusal. | Test (TC-1408) |
+| FR-569-AC-6 | Waits on QC-30 (target emission). S4 over fixture S emits `Order`, `Sub` and `Shape` as `model`/`object_type` nodes with `declaration` `["Order"]`, `["Sub"]` and `["Shape"]`, the unit's `SourceOwner`, self `semantic_type` and one `declaration` occurrence each; `Order`'s body binds `total` then `note` (with its `optional` group), `Sub`'s binds the inherited `total` and `note`, and `Shape`'s is `aggregate{[]}`; `Shape`, which nothing names, is emitted. No node is emitted for a field, operation or population member. `Q`'s anchor has `context` `Order`'s node, `operation` `"bump"` and a frame node whose `semantic_type` is `Order`'s node and whose `modifies` holds (`Order`'s node, `total`, `receiver`). Clause functions, built for the queries only: `Qs`'s authored precondition has `declaration` `["Order", "size", "precondition", "Qs"]`, `C`'s body `["Order", "size", "body"]` and `B`'s body `["Sub", "size", "body"]`, each with the `SourceOwner`, its declaration as id path, ordinal `0`, one `declaration` occurrence at the authoring declaration's span and its `clause` binding; `bump`, which is not a query, has none. In S-R, `Qs2`'s is `["Sub", "size", "precondition", "Qs2"]` and `Sub.size`'s effective precondition `["Sub", "size", "effective_precondition"]`, with its occurrence at `Sub`'s `size` member; no two clause functions share a qualified name, and every segment is an identifier. `operation_effects` has one row per own operation (four of `Order`, two of `Sub`), each with `document` the unit's source identity string, `declaring` the declaring node and `provenance` `{origin: "source_declaration_operation_frame", member: "<type>::<operation>"}`; `bump`'s (`member` `Order::bump`) holds the receiver `modifies` entry for `total`, the others four empty arrays, and the rows are in `(document, declaring, operation)` byte order. The `r.size()` application in `sized` has a dispatch-table row whose context is `Order`'s node and whose candidates `Order.size` and `Sub.size` carry the body identities of `C` and `B` and the effective-precondition identity of `Qs`'s authored function (in S-R, `Sub.size`'s is its `effective_precondition` function). IR's strict reader admits the package | Test (TC-1408) |
 | FR-569-AC-7 | Waits on QC-30 (target emission). `Order`'s node id is unchanged when a field is added to `Order`, an operation is renamed or the declaration is moved within the unit, and changes when `Order` is renamed; its body changes with the added field. D's `Order` node is `{<domain package>, [model, object_type, <IR node>], 0}` with a `ModelOwner` and S's is `{<checked package>, ["Order"], 0}` with the `SourceOwner`; the two differ | Test (TC-1408) |
 | FR-569-AC-8 | Waits on QC-30 (target emission). The emission over S carries one source-object row per type: `Order` with `abstract` false, no supertypes, `identity_fields` `["total"]`, members `total` then `note` (optional) and populations `[{name: "orders", symmetric: false}]`; `Sub` with `abstract` false, `supertypes` `[Order's node]`, `identity_fields` `["total"]` (inherited), members `total` then `note` and populations `[]`; `Shape` with `abstract` true, no member, `identity_fields` `[]` and populations `[{name: "shapes", symmetric: false}]`. D's emission has none. The rows are written to `identities.json` `source_objects` and read back equal. Over S: a supplier with the `Order` row removed gives `MissingIdentityWitness`; one whose `Order` row has `source_identity` `Ghost`, or `structural_node` a frame node, gives `UnknownIdentityWitness` only; one that supplies S's complete rows plus the `Order` row of an emission of S under another source authority gives `ForeignIdentityWitness` only; each at the `Package` locus with no view and no charge. | Test (TC-1408) |
 | FR-569-AC-9 | Passes now (source route). A snapshot of S naming population `orders` and objects of type `Order` and `Sub` admits. The same snapshot with an object of `orders` typed `ix://test/orders/Order` refuses `invalid_runtime_input`/`wrong-role-mapping`. An object of type `Shape` in population `shapes` refuses `invalid_runtime_input`/`abstract-instance`. S selects no domain package: a snapshot with no `model` member admits and one with a `model` member refuses `invalid_runtime_input`/`unknown-member` naming `model`. In variant S-M, S with `model M = "test/orders"` selecting D's package: a snapshot with `"population": "orders"`, `"type": "Order"` admits its objects as source `Order` objects, one with `"population": "ix://test/orders/orders"`, `"type": "ix://test/orders/Order"` admits them as model `M::Order` objects, `I` reads only the first, and one placing a `"type": "Order"` object in `ix://test/orders/orders` refuses `invalid_runtime_input`/`wrong-role-mapping`. | Test (TC-1408) |
