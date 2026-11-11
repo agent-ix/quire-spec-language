@@ -1355,11 +1355,6 @@ impl ScopeIndex {
             }
         }
         for declaration in types.object_types() {
-            // A bare-named object type is a source object type, which only
-            // the unit that declares it names (`ModelSpellings`).
-            if !declaration.name().contains("::") {
-                continue;
-            }
             index.named_type(declaration.name(), ValueType::Reference(declaration.key()));
             index
                 .object_types
@@ -1915,6 +1910,8 @@ impl Scope {
     ) -> Option<EffectiveId> {
         match self.model_spellings.spelled(source, name) {
             Spelled::Model(found) => found?.object.clone(),
+            // A source object type is seen in the unit that declares it only.
+            Spelled::Other if self.model_spellings.is_source_type(name) => None,
             Spelled::Other => self.index.object_types.get(name).cloned(),
         }
     }

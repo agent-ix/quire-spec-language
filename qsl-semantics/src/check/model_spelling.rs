@@ -296,8 +296,21 @@ impl ModelSpellings {
     ) -> &'a [ValueType] {
         match self.spelled(unit, name) {
             Spelled::Model(found) => found.map_or(&[], |found| found.types.as_slice()),
+            // A source object type is seen in the unit that declares it only.
+            Spelled::Other if self.is_source_type(name) => &[],
             Spelled::Other => table.get(name).map_or(&[], Vec::as_slice),
         }
+    }
+
+    /// Whether some unit declares the source object type `name`.
+    pub(crate) fn is_source_type(&self, name: &str) -> bool {
+        !name.contains("::")
+            && self.units.values().any(|aliases| {
+                aliases
+                    .get(super::source_model::ALIAS)
+                    .and_then(|index| self.packages.get(*index))
+                    .is_some_and(|package| package.names.contains_key(name))
+            })
     }
 
     /// The object type `name`, written in `unit`, names through the unit's
