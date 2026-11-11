@@ -30,3 +30,11 @@ Direct review.
 - FR-105 amendment (examined, clean).
 - FR-390 view-creation amendment (examined, clean: SHALL admit).
 - FR-106 amendment (examined): FND-001.
+
+## Dispositions
+
+Disposition pass 1, checked against fix commit ba4ea0fcd.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | The reserved-word, segment-resolution and snapshot rules now carry SHALL: FR-569:136-145 and 395-404, and FR-106's amended snapshot paragraph. |

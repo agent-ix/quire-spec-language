@@ -20,13 +20,14 @@ relationships:
 
 Verify that a unit's own source declares object types with fields, identity,
 supertypes, populations and operations; that they resolve, refuse
-collisions and check as a domain package's object types do; that S4 emits
-them as source-owned `model`/`object_type` nodes with source-object identity
-rows; and that every evaluation over them equals the evaluation over the same
-types declared by a domain package. Scope: FR-569-AC-1 to FR-569-AC-11,
-FR-105-AC-18, FR-218-AC-39, FR-383-AC-67 and the fixture-S parts of
-FR-390-AC-70 and FR-390-AC-72. Every step runs and passes now, except where
-it states the ADR-013 QC-30 interim refusal it expects instead.
+collisions, check and evaluate on the source route as a domain package's
+object types do; that S4 refuses such a unit with the single
+`SourceObjectEmission` refusal until ADR-013 QC-30 lands; and, once it lands,
+that S4 emits the target emission (source-owned `model`/`object_type` nodes,
+clause functions, effects, dispatch tables and identity rows). Scope:
+FR-569-AC-1 to FR-569-AC-11, FR-105-AC-18, FR-218-AC-39, FR-383-AC-67 and the
+fixture-S parts of FR-390-AC-70 and FR-390-AC-72. Steps 1 to 4, 7, 8 and 9 run
+and pass now; steps 5 and 6 wait on QC-30.
 
 Catches a source type that silently resolves to a model type of the same
 name, a redefinition that skips conformance, a node id derived from member
@@ -88,13 +89,14 @@ Variants, each one change to S (or D):
 4. Check S and D, S-R and D-R, S-R' and D-R'; compare their effective views,
    dispatch tables, effective preconditions and the checked types of AC-5's
    expressions. (FR-569-AC-5)
-5. Emit S and D. Read the object, anchor, frame and clause-function nodes,
-   emit the AC-7 variants of S, and read S's and D's packages with IR's
-   strict reader. (FR-569-AC-6, FR-569-AC-7, FR-105-AC-18)
-6. Read the `source_objects` and `source_operations` rows of S's and D's
-   emissions and of `identities.json`; run the refusal suppliers of
-   FR-569-AC-8 and the fixture-S suppliers of FR-390-AC-72. (FR-569-AC-8,
-   FR-390-AC-70, FR-390-AC-72)
+5. **waits on QC-30.** Emit S, S-R and D. Read the object, anchor, frame,
+   clause-function, `operation_effects` and dispatch-table rows, emit the
+   AC-7 variants of S, and read every package with IR's strict reader.
+   (FR-569-AC-6, FR-569-AC-7, FR-105-AC-18, FR-383-AC-67)
+6. **waits on QC-30.** Read the `source_objects` and `source_operations` rows
+   of S's and D's emissions and of `identities.json`; run the refusal
+   suppliers of FR-569-AC-8 and the fixture-S suppliers of FR-390-AC-72.
+   (FR-569-AC-8, FR-390-AC-70, FR-390-AC-72)
 7. Admit the snapshots of AC-9 over S and over S-M. (FR-569-AC-9)
 8. Evaluate vectors V1 to V6 over S and D on the source route, with the
    current snapshot `orders` = {`o1` (`Order`, `total` 3), `o2` (`Sub`,
@@ -103,8 +105,8 @@ Variants, each one change to S (or D):
    V4 the S-P invariant (over S-P and D's twin of it); V5 `r.size()` with `r`
    the reference to `o2`; V6 the same invocation with `o2.total` also changed
    in the post snapshot (a frame violation). (FR-569-AC-10)
-9. Run S4 over S-P and over S-M's protocol; read every package S4 writes in
-   this procedure with IR's strict reader. (FR-569-AC-11, FR-383-AC-67)
+9. Run S4 over S, S-R, S-P, S-M and D. (FR-569-AC-11, FR-105-AC-18,
+   FR-383-AC-67, FR-390-AC-70)
 
 Tag each test with the criteria it asserts and `TC-1408`, for example
 `#[trace("FR-569-AC-8", "TC-1408")]`.
@@ -123,10 +125,15 @@ Tag each test with the criteria it asserts and `TC-1408`, for example
   precondition is `Q2 or Q` in S-R and in D-R; S-R' and D-R' each refuse
   `ill_typed`/`effect-escape` once, at `self.note`.
 - Step 5: the node shapes of AC-6 and FR-105-AC-18, including `Order`'s and
-  `Sub`'s field bindings and `B`'s and `C`'s clause-function ids and
-  occurrences; S's `Order` id is unchanged by the field addition, the
-  operation rename and the move, and changed by the rename of `Order`; S's
-  and D's `Order` ids differ; IR's strict reader admits S and D.
+  `Sub`'s field bindings, the distinct clause-function names
+  (`["Order", "bump", "precondition", "Q"]`, `["Sub", "size", "body"]`,
+  `["Order", "size", "body"]`, and in S-R
+  `["Sub", "bump", "effective-precondition"]` and
+  `["Sub", "bump", "precondition", "Q2"]`), `bump`'s `operation_effects`
+  row and `r.size()`'s dispatch-table row; S's `Order` id is unchanged by the
+  field addition, the operation rename and the move, and changed by the
+  rename of `Order`; S's and D's `Order` ids differ; IR's strict reader admits
+  every package.
 - Step 6: three source-object rows over S with the members, identity fields
   and populations AC-8 states, and none over D; one source-operation row
   (`Order::bump`) over S and none over D; the file round-trips equal; each
@@ -136,7 +143,7 @@ Tag each test with the criteria it asserts and `TC-1408`, for example
 - Step 8: V1 true, V2 true, V3 true, V4 true, V5 `7`, V6 `frame_violation`/
   `unauthorized-change` naming `o2.total` (FR-154), each with equal
   outcomes and equal ordered charge logs over S and D.
-- Step 9: S-P refused `unsupported_construct`/`not-yet-implemented` naming
-  `SourcePopulationReference` at `orders` in `V4`; S-M refused naming
-  `SourceRoleModel` at `role Seller on Order`; neither writes a package. IR's
-  strict reader refuses none of the packages S4 wrote in steps 5 and 6.
+- Step 9: S, S-R, S-P and S-M are each refused with exactly one refusal,
+  `unsupported_construct`/`not-yet-implemented` naming
+  `SourceObjectEmission` at `object Order`, and none writes a package,
+  `identities.json` or handoff directory; D emits as before.

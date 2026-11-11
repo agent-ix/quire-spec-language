@@ -95,9 +95,10 @@ source-declared one. Each of those stays a domain package construct.
   population records below.
 - S4: the `model`/`object_type` nodes, the `state`/`operation_anchor` and
   `state`/`frame` nodes of its named operations, its clause functions, and one
-  source-object identity row per emitted source-declared object type; or,
-  for a construct that waits on QC-30, the typed interim refusal and no
-  package.
+  source-object identity row per emitted source-declared object type, its
+  `operation_effects` rows and dispatch-table rows (the target emission); or,
+  until ADR-013 QC-30 lands, the one typed `SourceObjectEmission` refusal and
+  no package.
 - Or a located refusal and no checked package.
 
 ## Behavior
@@ -280,8 +281,13 @@ model-owned value types (`M::Total`) and `Reference<M::Order>` included.
 
 ### Lowering and identity
 
-S4 SHALL emit, for every source-declared object type, whether or not a
-checked node names it, one `model`/`object_type` node with:
+This section, "Source-object identity rows" and FR-383's `owner_model` state
+the target emission: what S4 produces for a unit that declares a source object
+type once ADR-013 QC-30 is adopted by QSpec and IR. Until then S4 refuses such
+a unit as "Interim behavior" below states and writes none of it.
+
+In the target emission, S4 SHALL emit, for every source-declared object type,
+whether or not a checked node names it, one `model`/`object_type` node with:
 
 - `node_id`: QSpec FR-322's structural id of a declared node, as FR-092
   keys every declared node: `package` the checked package's name, `path` the
@@ -299,13 +305,8 @@ checked node names it, one `model`/`object_type` node with:
 - one `declaration` occurrence at the object declaration's span.
 
 The body names the fields so that a reader resolves a field member on the
-node from the package alone: IR's strict reader on main (quire-contract-ir
-a156efda, `checked_package/v2/operations.rs` `check_field_member`) admits a
-`field` member whose declaring node carries a `declaration` exactly when
-that node's body aggregate holds a binding of the member's name, and refuses
-`ill_typed`/`operator-ineligible` otherwise. Its empty-body rule for model
-declaration nodes applies to `ModelOwner` nodes only (`owner.rs`,
-`model_members.rs` `check_declaration_node`).
+node from the package alone, by the binding of the member's name (QC-30 item
+(2a)).
 
 The node id is a structural id. Changing a field, an operation or a
 population leaves the type's node id unchanged; renaming the type changes
@@ -317,22 +318,54 @@ for a model-owned type (FR-094): an FR-322 member names it by the node of the
 receiver's static source object type and its name, and a
 `state`/`operation_anchor` names an operation by its `context`, the node of
 the source object type that declares it, and its `operation` text (FR-105).
-The anchor's frame node and its `operation_effects` row (FR-496) are built
-from the source `OperationEffect` as for a model operation.
+The anchor's frame node is built from the source `OperationEffect` as for a
+model operation.
+
+**Operation effects.** For every operation a source object type declares,
+the target emission SHALL write one FR-496 `operation_effects` row
+`{document, declaring, operation, effect, provenance}` with `document` the
+declaring node's `SourceOwner` (`{kind: "source", authority, identity}`, the
+unit's source identity in place of a selected document identity),
+`declaring` the local `NodeRef` of the source-declared `model`/`object_type`
+node, `operation` the operation name as the source declares it, and `effect`
+and `provenance` exactly as FR-496 states for a model operation (all four
+effect members, the same entry shapes, scopes and order). An operation only
+inherited has no row under the subtype. A reader joins such a row to its
+declaring node through that node's `SourceOwner` and its source-object
+identity row, not through a selected model row (QC-30 items (2e) and (4)).
+
+**Dispatch tables.** For every dispatched application whose receiver context
+is a source-declared object type, the target emission SHALL write the FR-494
+`checked_term_data.dispatch_tables` row exactly as FR-494 states, with the
+receiver context the source-declared `model`/`object_type` node, each
+candidate's `EffectiveId` the source declaration key the check selected it
+by, its declaring type the candidate's source-declared node, and its
+operation-body and effective-precondition identities the source clause
+function nodes below. Candidate order and witnesses are FR-494's. A reader
+joins the context and each candidate's declaring family through the nodes'
+`SourceOwner` and source-object identity rows, not through a selected model
+row (QC-30 items (2f) and (4)).
 
 S4 SHALL build the clause functions of a source-declared operation as
 FR-094 builds a model operation's (authored precondition, effective
 precondition, body), with these differences:
 
-- `declaration`: `{qualified_name: [<declaring type name>, <operation
-  name>]}`, the declaring type being the operation member whose clause it is
-  as FR-094 chooses it (the authoring operation for an authored
-  precondition, the candidate for an effective precondition and a body);
+- `declaration`: a qualified name distinct for every clause function of the
+  package, so that a reader's declaration-name rule (one holder per
+  qualified name) admits sibling clause functions with no change:
+  `[<type>, <operation>, "precondition", <label>]` for an authored
+  precondition, `<label>` the label of the `pre` declaration it lowers;
+  `[<type>, <operation>, "effective-precondition"]` for an effective
+  precondition; and `[<type>, <operation>, "body"]` for a body. `<type>` is
+  the declaring type of the operation member whose clause it is, as FR-094
+  chooses it (the authoring operation for an authored precondition, the
+  candidate for an effective precondition and a body). Clause labels are
+  unique in the unit's source namespace and an operation has at most one
+  effective precondition and one body, so no two clause functions share a
+  name, and none shares one with an object type (`[<type>]`);
 - `owner`: the unit's `SourceOwner`;
 - `node_id`: `package` the checked package's name, `path` the declaration
-  path `[<declaring type name>, <operation name>]`, and the ordinal FR-094
-  assigns among one owner's clause functions: authored precondition `0`,
-  effective precondition `1`, body `2`;
+  path above, and ordinal `0`;
 - one `declaration` occurrence: for an authored precondition, the span of the
   `pre` declaration it lowers; for a body, the span of the `body`
   declaration; for an effective precondition, the span of the redefining
@@ -348,13 +381,12 @@ A source population that a checked node names (FR-391) is lowered as a
 `relation`/`population` population reference node with `declaration`
 `{qualified_name: [<population name>]}` and the unit's `SourceOwner`, keyed
 as a declared node; a source population no checked node names has no node.
-That shape is ADR-013 QC-30's proposal to QSpec FR-322, and S4 emits it only
-under the "Interim behavior" below.
+That shape is ADR-013 QC-30's proposal to QSpec FR-322 (item (2c)).
 
 ### Source-object identity rows
 
 A bytes-only consumer has no domain package document for a source-declared
-type, so S4 SHALL produce, at the model-selection identity stage with the
+type, so in the target emission S4 SHALL produce, at the model-selection identity stage with the
 source-record and source-operation rows (FR-390), one source-object identity
 row for each emitted source-declared `model`/`object_type` node:
 `structural_node` (the node), `source_authority`, `source_identity` (the
@@ -422,46 +454,44 @@ owners and identity rows differ.
 
 ### Interim behavior until QSpec and IR adopt QC-30
 
-The source route (S1 to S3 and in-process evaluation, which read no emitted
-wire) SHALL support every construct above now. S4 SHALL never write a package
-that IR's strict reader on main refuses for a construct of this requirement.
-Until QSpec adopts ADR-013 QC-30 and IR's reader admits the form, S4 SHALL
-instead refuse the unit typed, `unsupported_construct`/`not-yet-implemented`,
-at the span of the first offending construct in source order, naming the
-construct, write no package, no `identities.json` and no handoff directory,
-and keep the per-protocol results of protocols that emitted readable as FR-503
-states:
+IR's strict reader assumes model ownership in many joins, so no part of the
+target emission is claimed admissible before ADR-013 QC-30 lands. Until QSpec
+adopts QC-30 items (1) to (3) and IR adopts every change of item (4) other
+than the FR-352 witness kind:
 
-| Construct | When | Named construct | QC-30 item |
-| --- | --- | --- | --- |
-| a protocol whose `over` input is a reference to a source-declared object type (its `owner_model`, FR-383) | always, until QSpec FR-464 admits a source-declared `owner_model` and IR's protocol-body reader joins it to the node's `SourceOwner` | `SourceOwnerModel` | (3) |
-| a static or replicated role on a source-declared object type (`role R on Node`; its `model` node, FR-465) | always, until QSpec FR-465 admits it and IR's reader joins it | `SourceRoleModel` | (3) |
-| a source population reference node (FR-391 over a source population) | always, until QSpec FR-322's `DeclarationTagRules` admits it and IR's reader does | `SourcePopulationReference` | (2c) |
+- The source route (S1 parse, S2 forms, assembly, S3 check, and in-process
+  evaluation of state clauses, protocol slots, dispatched calls, frames,
+  temporal claims and monitors, none of which reads an emitted wire) SHALL
+  support every construct of this requirement.
+- S4 SHALL refuse to emit any unit that declares a source object type, with
+  one typed refusal, `unsupported_construct`/`not-yet-implemented` naming the
+  construct `SourceObjectEmission`, at the span of the unit's first `object`
+  declaration in source order. It SHALL write no package, no
+  `identities.json` and no handoff directory, and SHALL report no other
+  refusal for the unit's source object types, operations, populations,
+  protocols or rows.
+- A unit that declares no source object type is emitted as before.
 
-Every other node of this requirement (the object type node with its field
-bindings, field members over it, its operation anchors and frames, its clause
-functions and the source-object and source-operation rows) S4 emits now. A
-protocol that S4 emits and that reaches a source-declared operation anchor
-(one over a model type with roles on model types, or any protocol once the
-first two rows lift) gets the typed `MissingSelectedJoin` view refusal on its
-reader and bytes routes until IR's FR-352 witness kind lands, as FR-390
-states.
+Once QC-30 lands, S4 emits the target emission above; a protocol that reaches
+a source-declared operation anchor then gets the typed `MissingSelectedJoin`
+view refusal on its reader and bytes routes until IR's FR-352 witness kind
+lands, as FR-390 states.
 
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-569-AC-1 | TC-1408 fixture S parses: one `ObjectForm` per object declaration, `Order` with fields `total: Int[0, 9]` (required) and `note: Text[0, 8; nfc]?` (optional), identity `(total)`, population `orders`, operations `size(): Integer`, `count(): Integer`, `scaled(n: Integer): Integer` and `bump(): Boolean modifies self.total`; `Sub extends Order` with `size(): Integer redefines Order::size` and `scaled(m: Integer): Integer redefines Order::scaled`; `abstract object Shape { population shapes; }` with one population and no field or operation; each part in source order with its span. `operation step()` with no `;`, `modifies self.` with no field name and `object Node extends {}` each give one `invalid_syntax` diagnostic at the offending token and no `ObjectForm`. A parameter named `extends`, and one named `modifies`, each give one `invalid_syntax`/`unexpected-token` diagnostic at the word. | Test (TC-1408) |
-| FR-569-AC-2 | Over fixture S, `invariant I using P on Order at current { self.total >= 0 }`, `pre Q using P on Order::bump { self.total < 9 }`, `body B using P on Sub::size() { 7 }`, `forall o in orders: deref(o).total >= 0` and `Reference<Sub>` resolve to the source declarations; `on Order::reset` refuses `missing_declaration`/`missing-name` at `reset`; `on Receipt` naming a source record and `on Nothing` refuse `missing_declaration`/`missing-name` at the name. With a domain package that also declares `Order` selected as `M`, `on Order` checks against the source fields and `on M::Order` against the model's, and no name resolves to the other; in a protocol of that unit, `role w on M` checks as FR-218's role on the whole model `M`. | Test (TC-1408) |
-| FR-569-AC-3 | Each refuses `ambiguous_declaration`/`ambiguous-name` at the stated spans and yields no checked package: a source `record Order` beside `object Order` (both declarations); `object M` in a unit with `model M` (both); population `orders` beside a function `orders` (both); a quantifier binder `orders` over `orders` (the use, naming both); two fields `total` in one type (the second); a field of `Sub` named `total` (the field); an operation `size` in `Sub` without `redefines` (the operation); `deletes Order` in an operation whose parameter is also named `Order` (the entry). | Test (TC-1408) |
-| FR-569-AC-4 | Each refuses with the code and cause stated, at the offending name: `extends M::Order` and `extends Receipt` (a source record) `invalid_model_binding`/`malformed-declaration`; `extends Ghost` `missing_declaration`/`missing-name`; `A extends B` with `B extends A` `invalid_package`/`definition-cycle` naming both edges; `identity (ghost)`, `redefines Order::reset`, `modifies self.ghost` and `creates Ghost` `missing_declaration`/`missing-name`; `deletes n` with `n: Integer` `invalid_model_binding`/`malformed-declaration`; `Sub`'s `scaled` redeclared `scaled(m: Text[0, 8; nfc]): Integer redefines Order::scaled` `ill_typed`/`variance-parameter` at the parameter, as QSpec FR-151 refuses it in D. | Test (TC-1408) |
-| FR-569-AC-5 | Over fixture S and its model twin D (TC-1408), the checked effective views, the dispatch tables and the checked types agree member for member: `r.size()` over `r: Reference<Sub>` dispatches to `Sub.size` and over `Reference<Order>` has candidates `Order.size` and `Sub.size`; `deref(s).total` over `s: Reference<Sub>` names `Sub`'s node and `total`; `allInstances<Order>(orders)` has type `Set<Reference<Order>>`, and `Set<Reference<Order>>[0, 3]` with `bound b on orders [3]`. `Q` is `bump`'s `requires`. In variant S-R, where `Sub` adds `operation bump(): Boolean redefines Order::bump modifies self.total;` and the unit `pre Q2 using P on Sub::bump { self.total < 5 }`, `Sub.bump`'s effective precondition is `Q2 or Q`, own clause first, as in D-R; with `Sub.bump` framed `modifies self.total, self.note` instead, both S-R and D-R refuse `ill_typed`/`effect-escape` at the `self.note` entry, one refusal. | Test (TC-1408) |
-| FR-569-AC-6 | S4 over fixture S emits `Order`, `Sub` and `Shape` as `model`/`object_type` nodes with `declaration` `["Order"]`, `["Sub"]` and `["Shape"]`, the unit's `SourceOwner`, self `semantic_type` and one `declaration` occurrence each; `Order`'s body binds `total` then `note` (with its `optional` group), `Sub`'s binds the inherited `total` and `note`, and `Shape`'s is `aggregate{[]}`; `Shape`, which nothing names, is emitted. No node is emitted for a field, operation or population member. `Q`'s anchor has `context` `Order`'s node, `operation` `"bump"` and a frame node whose `semantic_type` is `Order`'s node and whose `modifies` holds (`Order`'s node, `total`, `receiver`). `B`'s clause function has `declaration` `["Sub", "size"]`, the `SourceOwner`, id path `["Sub", "size"]` with ordinal `2`, one `declaration` occurrence at `body B`'s span and the `clause` binding `body`; `C`'s has `["Order", "size"]`, ordinal `2`. IR's strict reader admits S's package, its field members over `Order` and `Sub` (in `I` and `Q`) included. | Test (TC-1408) |
-| FR-569-AC-7 | `Order`'s node id is unchanged when a field is added to `Order`, an operation is renamed or the declaration is moved within the unit, and changes when `Order` is renamed; its body changes with the added field. D's `Order` node is `{<domain package>, [model, object_type, <IR node>], 0}` with a `ModelOwner` and S's is `{<checked package>, ["Order"], 0}` with the `SourceOwner`; the two differ. | Test (TC-1408) |
-| FR-569-AC-8 | The emission over S carries one source-object row per type: `Order` with `abstract` false, no supertypes, `identity_fields` `["total"]`, members `total` then `note` (optional) and populations `[{name: "orders", symmetric: false}]`; `Sub` with `abstract` false, `supertypes` `[Order's node]`, `identity_fields` `["total"]` (inherited), members `total` then `note` and populations `[]`; `Shape` with `abstract` true, no member, `identity_fields` `[]` and populations `[{name: "shapes", symmetric: false}]`. D's emission has none. The rows are written to `identities.json` `source_objects` and read back equal. Over S: a supplier with the `Order` row removed gives `MissingIdentityWitness`; one whose `Order` row has `source_identity` `Ghost`, or `structural_node` a frame node, gives `UnknownIdentityWitness` only; one that supplies S's complete rows plus the `Order` row of an emission of S under another source authority gives `ForeignIdentityWitness` only; each at the `Package` locus with no view and no charge. | Test (TC-1408) |
-| FR-569-AC-9 | A snapshot of S naming population `orders` and objects of type `Order` and `Sub` admits. The same snapshot with an object of `orders` typed `ix://test/orders/Order` refuses `invalid_runtime_input`/`wrong-role-mapping`. An object of type `Shape` in population `shapes` refuses `invalid_runtime_input`/`abstract-instance`. S selects no domain package: a snapshot with no `model` member admits and one with a `model` member refuses `invalid_runtime_input`/`unknown-member` naming `model`. In variant S-M, S with `model M = "test/orders"` selecting D's package: a snapshot with `"population": "orders"`, `"type": "Order"` admits its objects as source `Order` objects, one with `"population": "ix://test/orders/orders"`, `"type": "ix://test/orders/Order"` admits them as model `M::Order` objects, `I` reads only the first, and one placing a `"type": "Order"` object in `ix://test/orders/orders` refuses `invalid_runtime_input`/`wrong-role-mapping`. | Test (TC-1408) |
-| FR-569-AC-10 | For each TC-1408 vector V1 to V6 (`I`, `Q`, a `post` on `bump` over a pre and post snapshot, `forall o in orders`, `r.size()` dispatched to `Sub.size`, and the frame check of an invocation of `bump` that writes `total` of a second object), S and D give equal outcomes and equal ordered charge logs on the source route. | Test (TC-1408) |
-| FR-569-AC-11 | Interim refusals. S4 over TC-1407 fixture E-S refuses `unsupported_construct`/`not-yet-implemented` naming `SourceOwnerModel` at `over (view: Node)` of `Refunds`, and writes no package, `identities.json` or handoff directory; a protocol of TC-1408 variant S-M over `M::Order` that declares `role Seller on Order`, it names `SourceRoleModel` at the role; over TC-1408 variant S-P (S with V4's invariant) it names `SourcePopulationReference` at `orders` in the invariant. The source route checks and evaluates each of these units (TC-1407 vectors S1 to S3 over E-S, V4 over S-P). No package S4 writes for S, S-R or S-M is refused by IR's strict reader. | Test (TC-1408, TC-1407) |
+| FR-569-AC-1 | Passes now (source route). TC-1408 fixture S parses: one `ObjectForm` per object declaration, `Order` with fields `total: Int[0, 9]` (required) and `note: Text[0, 8; nfc]?` (optional), identity `(total)`, population `orders`, operations `size(): Integer`, `count(): Integer`, `scaled(n: Integer): Integer` and `bump(): Boolean modifies self.total`; `Sub extends Order` with `size(): Integer redefines Order::size` and `scaled(m: Integer): Integer redefines Order::scaled`; `abstract object Shape { population shapes; }` with one population and no field or operation; each part in source order with its span. `operation step()` with no `;`, `modifies self.` with no field name and `object Node extends {}` each give one `invalid_syntax` diagnostic at the offending token and no `ObjectForm`. A parameter named `extends`, and one named `modifies`, each give one `invalid_syntax`/`unexpected-token` diagnostic at the word. | Test (TC-1408) |
+| FR-569-AC-2 | Passes now (source route). Over fixture S, `invariant I using P on Order at current { self.total >= 0 }`, `pre Q using P on Order::bump { self.total < 9 }`, `body B using P on Sub::size() { 7 }`, `forall o in orders: deref(o).total >= 0` and `Reference<Sub>` resolve to the source declarations; `on Order::reset` refuses `missing_declaration`/`missing-name` at `reset`; `on Receipt` naming a source record and `on Nothing` refuse `missing_declaration`/`missing-name` at the name. With a domain package that also declares `Order` selected as `M`, `on Order` checks against the source fields and `on M::Order` against the model's, and no name resolves to the other; in a protocol of that unit, `role w on M` checks as FR-218's role on the whole model `M`. | Test (TC-1408) |
+| FR-569-AC-3 | Passes now (source route). Each refuses `ambiguous_declaration`/`ambiguous-name` at the stated spans and yields no checked package: a source `record Order` beside `object Order` (both declarations); `object M` in a unit with `model M` (both); population `orders` beside a function `orders` (both); a quantifier binder `orders` over `orders` (the use, naming both); two fields `total` in one type (the second); a field of `Sub` named `total` (the field); an operation `size` in `Sub` without `redefines` (the operation); `deletes Order` in an operation whose parameter is also named `Order` (the entry). | Test (TC-1408) |
+| FR-569-AC-4 | Passes now (source route). Each refuses with the code and cause stated, at the offending name: `extends M::Order` and `extends Receipt` (a source record) `invalid_model_binding`/`malformed-declaration`; `extends Ghost` `missing_declaration`/`missing-name`; `A extends B` with `B extends A` `invalid_package`/`definition-cycle` naming both edges; `identity (ghost)`, `redefines Order::reset`, `modifies self.ghost` and `creates Ghost` `missing_declaration`/`missing-name`; `deletes n` with `n: Integer` `invalid_model_binding`/`malformed-declaration`; `Sub`'s `scaled` redeclared `scaled(m: Text[0, 8; nfc]): Integer redefines Order::scaled` `ill_typed`/`variance-parameter` at the parameter, as QSpec FR-151 refuses it in D. | Test (TC-1408) |
+| FR-569-AC-5 | Passes now (source route). Over fixture S and its model twin D (TC-1408), the checked effective views, the dispatch tables and the checked types agree member for member: `r.size()` over `r: Reference<Sub>` dispatches to `Sub.size` and over `Reference<Order>` has candidates `Order.size` and `Sub.size`; `deref(s).total` over `s: Reference<Sub>` names `Sub`'s node and `total`; `allInstances<Order>(orders)` has type `Set<Reference<Order>>`, and `Set<Reference<Order>>[0, 3]` with `bound b on orders [3]`. `Q` is `bump`'s `requires`. In variant S-R, where `Sub` adds `operation bump(): Boolean redefines Order::bump modifies self.total;` and the unit `pre Q2 using P on Sub::bump { self.total < 5 }`, `Sub.bump`'s effective precondition is `Q2 or Q`, own clause first, as in D-R; with `Sub.bump` framed `modifies self.total, self.note` instead, both S-R and D-R refuse `ill_typed`/`effect-escape` at the `self.note` entry, one refusal. | Test (TC-1408) |
+| FR-569-AC-6 | Waits on QC-30 (target emission). S4 over fixture S emits `Order`, `Sub` and `Shape` as `model`/`object_type` nodes with `declaration` `["Order"]`, `["Sub"]` and `["Shape"]`, the unit's `SourceOwner`, self `semantic_type` and one `declaration` occurrence each; `Order`'s body binds `total` then `note` (with its `optional` group), `Sub`'s binds the inherited `total` and `note`, and `Shape`'s is `aggregate{[]}`; `Shape`, which nothing names, is emitted. No node is emitted for a field, operation or population member. `Q`'s anchor has `context` `Order`'s node, `operation` `"bump"` and a frame node whose `semantic_type` is `Order`'s node and whose `modifies` holds (`Order`'s node, `total`, `receiver`). Clause functions: `Q`'s authored precondition has `declaration` `["Order", "bump", "precondition", "Q"]`, `B`'s body `["Sub", "size", "body"]` and `C`'s body `["Order", "size", "body"]`, each with the `SourceOwner`, its declaration as id path, ordinal `0`, one `declaration` occurrence at the authoring declaration's span and its `clause` binding; in S-R, `Sub.bump`'s effective precondition is `["Sub", "bump", "effective-precondition"]` with its occurrence at the redefining `operation` member, and `Q2`'s is `["Sub", "bump", "precondition", "Q2"]`; no two clause functions share a qualified name. `bump` has one `operation_effects` row with `document` the unit's `SourceOwner`, `declaring` `Order`'s node and the receiver `modifies` entry for `total`; `r.size()` over `Reference<Order>` has a dispatch-table row whose context is `Order`'s node and whose candidates `Order.size` and `Sub.size` carry the body identities of `C` and `B`. IR's strict reader admits the package | Test (TC-1408) |
+| FR-569-AC-7 | Waits on QC-30 (target emission). `Order`'s node id is unchanged when a field is added to `Order`, an operation is renamed or the declaration is moved within the unit, and changes when `Order` is renamed; its body changes with the added field. D's `Order` node is `{<domain package>, [model, object_type, <IR node>], 0}` with a `ModelOwner` and S's is `{<checked package>, ["Order"], 0}` with the `SourceOwner`; the two differ | Test (TC-1408) |
+| FR-569-AC-8 | Waits on QC-30 (target emission). The emission over S carries one source-object row per type: `Order` with `abstract` false, no supertypes, `identity_fields` `["total"]`, members `total` then `note` (optional) and populations `[{name: "orders", symmetric: false}]`; `Sub` with `abstract` false, `supertypes` `[Order's node]`, `identity_fields` `["total"]` (inherited), members `total` then `note` and populations `[]`; `Shape` with `abstract` true, no member, `identity_fields` `[]` and populations `[{name: "shapes", symmetric: false}]`. D's emission has none. The rows are written to `identities.json` `source_objects` and read back equal. Over S: a supplier with the `Order` row removed gives `MissingIdentityWitness`; one whose `Order` row has `source_identity` `Ghost`, or `structural_node` a frame node, gives `UnknownIdentityWitness` only; one that supplies S's complete rows plus the `Order` row of an emission of S under another source authority gives `ForeignIdentityWitness` only; each at the `Package` locus with no view and no charge. | Test (TC-1408) |
+| FR-569-AC-9 | Passes now (source route). A snapshot of S naming population `orders` and objects of type `Order` and `Sub` admits. The same snapshot with an object of `orders` typed `ix://test/orders/Order` refuses `invalid_runtime_input`/`wrong-role-mapping`. An object of type `Shape` in population `shapes` refuses `invalid_runtime_input`/`abstract-instance`. S selects no domain package: a snapshot with no `model` member admits and one with a `model` member refuses `invalid_runtime_input`/`unknown-member` naming `model`. In variant S-M, S with `model M = "test/orders"` selecting D's package: a snapshot with `"population": "orders"`, `"type": "Order"` admits its objects as source `Order` objects, one with `"population": "ix://test/orders/orders"`, `"type": "ix://test/orders/Order"` admits them as model `M::Order` objects, `I` reads only the first, and one placing a `"type": "Order"` object in `ix://test/orders/orders` refuses `invalid_runtime_input`/`wrong-role-mapping`. | Test (TC-1408) |
+| FR-569-AC-10 | Passes now (source route). For each TC-1408 vector V1 to V6 (`I`, `Q`, a `post` on `bump` over a pre and post snapshot, `forall o in orders`, `r.size()` dispatched to `Sub.size`, and the frame check of an invocation of `bump` that writes `total` of a second object), S and D give equal outcomes and equal ordered charge logs on the source route. | Test (TC-1408) |
+| FR-569-AC-11 | Passes now (interim). S4 over TC-1408 fixture S, over its variants S-R, S-P and S-M, and over TC-1407 fixture E-S refuses with exactly one refusal, `unsupported_construct`/`not-yet-implemented` naming `SourceObjectEmission` at the span of the unit's first `object` declaration (`object Order` in S and its variants, `object Node` in E-S), and writes no package, no `identities.json` and no handoff directory. The same units check, and the source route evaluates TC-1408 vectors V1 to V6 and TC-1407 vectors S1 to S3 over them. Fixture D and TC-1070's fixture E, which declare no source object type, emit as before | Test (TC-1408, TC-1407) |
 
 ## Dependencies
 
@@ -495,9 +525,6 @@ states.
   references), FR-342 (operation anchors), FR-464 and FR-465 (protocol owner
   and role model).
 - [ADR-013](../decisions/ADR-013-canonical-type-package-conversion-ownership.md)
-  QC-30: the QSpec changes, and the IR reader changes they imply, with the
-  interim refusals above. QSL implements this requirement by its proposal now.
-  IR's strict reader on main (a156efda) already admits a source-declared
-  `model`/`object_type` context of an operation anchor (`state.rs`), a source
-  frame field entry (`frame.rs`) and a field member resolved through the
-  node's body bindings (`operations.rs` `check_field_member`).
+  QC-30: the QSpec changes and the IR changes the target emission needs.
+  Until they land, S4 gives the single `SourceObjectEmission` refusal above;
+  the source route is complete now.

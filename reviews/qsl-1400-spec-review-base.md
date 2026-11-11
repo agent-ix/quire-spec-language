@@ -41,3 +41,14 @@ Direct review. Native quire 0.40.0 (engine 0.56.0) validates the ten changed fil
 - FR-390-AC-70 (examined, clean). FR-517-AC-23 (examined, clean).
 - TC-1408 (examined): Scope lists AC-1 to AC-10 and FR-105-AC-18. TC-1407 (examined).
 - No ceremony, tracking or digest identity was added (clean).
+
+## Dispositions
+
+Disposition pass 1, checked against fix commit ba4ea0fcd.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | AC-5 now has variant S-R, where `Sub.bump` redefines `Order::bump`. It expects the effective precondition `Q2 or Q`, and S-R' refuses `ill_typed`/`effect-escape` at `self.note`, the same as in D-R'. |
+| FND-002 | fixed | FR-569 now defines `identity_fields` as the effective identity, inherited when the type declares none, and `members` as the effective-view fields. AC-8 states `Sub`'s `identity_fields`, `members` and `populations` in full. |
+| FND-003 | fixed | AC-9 adds variant S-M, with D selected as `M`. In it, bare names admit as source objects, `ix://` names admit as model objects, and a bare type in an `ix://` population is refused `wrong-role-mapping`. |
+| FND-004 | fixed | AC-1 now gives `invalid_syntax`/`unexpected-token` for a reserved-word parameter. AC-7 no longer has the digest clause. AC-6 no longer names a forall, and the variant is renamed S-P. |

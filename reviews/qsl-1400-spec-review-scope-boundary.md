@@ -28,3 +28,11 @@ Direct review. QSpec origin/main `proposals/quire-v1/shared-grammar.md:275` hold
 - ADR-013 QC-30 (examined).
 - FR-569 Description, Out of scope and Dependencies (examined). The out-of-scope list names constructs that remain domain-package constructs and that the grammar does not admit. It names no unsupported alternative path (clean).
 - FR-390 "Dependency on IR; behavior until it lands" (context_only).
+
+## Dispositions
+
+Disposition pass 1, checked against fix commit ba4ea0fcd.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | QC-30 now covers (2a) field bindings and field member resolution, (2d) clause-function declaration, id and occurrence, and (3) FR-464/FR-465 `owner_model` and role `model`. Its interim column states each refusal. Further IR refusals that the interim list misses are recorded as new findings in the failure-domain SR (FND-003 to FND-005). |

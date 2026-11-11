@@ -36,3 +36,25 @@ Direct review. The IR code read is quire-contract-ir origin/main a156efda:
 - FR-390-AC-71 to AC-73 (examined): unreachable under FND-001.
 - TC-1408 step 5 and TC-1407 step 1 (examined).
 - No digest-based identity is introduced. FR-569 states structural ids explicitly (examined, clean).
+
+## New findings (disposition pass 1)
+
+These are found against fix commit ba4ea0fcd. IR evidence is quire-contract-ir origin/main a156efda, by code reading. FR-569:426-427 says S4 SHALL never write a package IR's strict reader refuses. FR-569:441-443 and QC-30 say the following are emitted now, but IR refuses each of them.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-003 | high | FR-569:320-321 builds a source operation's `operation_effects` row (FR-496) "as for a model operation". IR's `operation_effects::validate` (operation_effects.rs:718-750) requires `document` and `declaring.package` to be selected models and `declaring` to resolve via `owner_by_key`. A source row therefore refuses `missing_declaration`/`missing-selection` or `invalid_package`. Fixture S selects no domain package, and its `bump` has a frame. So S's package is refused, and FR-569-AC-6, AC-11, FR-105-AC-18 and FR-390-AC-70's "passes now" parts fail. | spec/functional/FR-569-declare-object-types-populations-and-operations-in-qsl-source.md:320-321; spec/functional/FR-569-declare-object-types-populations-and-operations-in-qsl-source.md:441-443; spec/functional/FR-496-emit-model-operation-effects-into-checked-packages.md:53-55 |
+| FND-004 | high | Every clause function of one source operation carries the same `declaration` `[<type>, <operation>]` and the same path, and only the ordinal differs (FR-569:327-335). IR's `validate_declaration_names` (mod.rs:3138-3200) keys holders by `qualified_name` alone and refuses a repeat as `ambiguous_declaration`/`ambiguous-name`. So a source query with both a `pre` and a `body`, or a redefinition with an effective precondition, yields a package IR refuses. The interim list says clause functions emit now, and fixture S never exercises the case. | spec/functional/FR-569-declare-object-types-populations-and-operations-in-qsl-source.md:323-345; spec/functional/FR-569-declare-object-types-populations-and-operations-in-qsl-source.md:441-443 |
+| FND-005 | medium | A dispatched call to a source operation (FR-569 equates dispatch with a model's, FR-094 dispatch tables) leaves its `checked_term_data.dispatch_tables` row undefined for a source context. IR's `validate_checked_term_data` (dispatch_projection.rs, around line 200) requires `owner_by_key` for both the context and the declaring family, so such a row is refused. The interim list neither defines the table nor names the construct. | spec/functional/FR-569-declare-object-types-populations-and-operations-in-qsl-source.md:412-421; spec/functional/FR-569-declare-object-types-populations-and-operations-in-qsl-source.md:441-443 |
+
+## Dispositions
+
+Disposition pass 1, checked against fix commit ba4ea0fcd.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | FR-569:292-308 gives the object node one field binding per effective-view field. IR's `check_field_member` (operations.rs:4436) admits a field member when the aggregate holds that binding. The empty-body check in owner.rs:730-745 applies only to `ModelOwner` nodes. Both were confirmed by code reading. FR-105-AC-18 no longer depends on a population reference, but see FND-003 for a different refusal of S. |
+| FND-002 | fixed | FR-569:327-341 now defines the clause function's id (path `[type, operation]` and the FR-094 ordinals) and its `declaration` occurrence. IR's `validate_declaration` and callable.rs `function_body` admit one such node. The duplicate-name refusal across sibling clause functions is new, and is recorded as FND-004. |
+| FND-003 | still-open: new this round, routed to the coder | A source operation's `operation_effects` row is refused by IR, and the interim list does not cover it. |
+| FND-004 | still-open: new this round, routed to the coder | Sibling source clause functions share one `declaration`, which IR refuses as ambiguous. |
+| FND-005 | still-open: new this round, routed to the coder | Dispatch tables for a source operation are undefined, and IR would refuse them. |
