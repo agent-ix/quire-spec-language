@@ -847,16 +847,27 @@ fn build_cases(
         what: "checked-package.json",
         source,
     })?;
-    // FR-322 "Operand index segments": the cases are authored against the
-    // resolved form, whose node ids name graph positions, and written back
-    // with operand slots and rows.
-    qsl_semantics::check::wire_id::resolve_operand_slots(&mut value)
-        .map_err(|detail| Error::ReadBackDiffers { detail })?;
     let home = bindings(&value)
         .and_then(|rows| rows.first())
         .and_then(|row| row.get("clock")?.get("kind")?.as_str())
         .unwrap_or_default()
         .to_owned();
+    if value
+        .pointer("/semantic_graph/nodes")
+        .and_then(Value::as_array)
+        .is_none()
+    {
+        for case in cases.iter().filter(|case| case.home == home) {
+            if (case.make)(&value).is_some_and(|made| made.value == value) {
+                return Err(mismatch(case.identity));
+            }
+        }
+    }
+    // FR-322 "Operand index segments": the cases are authored against the
+    // resolved form, whose node ids name graph positions, and written back
+    // with operand slots and rows.
+    qsl_semantics::check::wire_id::resolve_operand_slots(&mut value)
+        .map_err(|detail| Error::ReadBackDiffers { detail })?;
     let mut manifest_cases = Vec::new();
     let mut files = Vec::new();
     for case in cases.into_iter().filter(|case| case.home == home) {

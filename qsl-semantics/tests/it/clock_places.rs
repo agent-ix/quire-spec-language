@@ -2854,8 +2854,8 @@ fn a_clock_parameter_reset_ranging_over_the_place_writes_it() {
 /// owner it names, so a field that is no place refuses
 /// `ill_typed`/`type-mismatch` at the `ref`. A `ref` of a clock place, or of a
 /// longer path that may pass through a reference field (`ref(self.r.x)`),
-/// needs a checked node for a place id that `quire-checked` does not have
-/// yet, and is refused `unsupported-feature` at the `ref` until it does.
+/// needs a downstream term for the place descriptor, which this lowering
+/// does not provide yet, and is refused `unsupported-feature` at the `ref`.
 /// FR-230-AC-24 and FR-230-AC-62 are not met by this slice and are not tagged.
 #[trace("TC-685")]
 #[test]

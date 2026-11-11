@@ -4878,14 +4878,14 @@ impl<'a> Lowering<'a> {
                     frames,
                 );
             }
-            // FR-139, FR-138: a population-valued form and a history read
-            // live in a refinement row, which S4 does not emit yet
-            // (FR-310's node): no FR-093 row lowers either. A quantifier
-            // over a clock collection's slots has no producer form yet, so
-            // S3 keeps `forall(e in r.q: present(e))` out of every lowered
-            // clause body.
+            // These checked forms have no S4 representation yet. In
+            // particular, a clock-place reference is a descriptor, not a
+            // clock value; the downstream term contract has no row for it.
+            // A quantifier over a clock collection's slots likewise has no
+            // producer form yet.
             NodeKind::PopulationObjects { .. }
             | NodeKind::History { .. }
+            | NodeKind::PlaceReference { .. }
             | NodeKind::SlotPresence { .. }
             | NodeKind::Seq { .. } => {
                 return Err(refuse(

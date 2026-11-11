@@ -965,30 +965,9 @@ impl WireGraph {
     /// The JSON reader's message when the bytes hold no such graph, or the
     /// [`WireGraph::new`] refusal.
     pub fn of_package_bytes(bytes: &[u8]) -> Result<Self, String> {
-        #[derive(serde::Deserialize)]
-        struct Document {
-            semantic_graph: Graph,
-        }
-        #[derive(serde::Deserialize)]
-        struct Graph {
-            nodes: Vec<Node>,
-            #[serde(default)]
-            operand_rows: Vec<Vec<CheckedOperandEntry>>,
-        }
-        #[derive(serde::Deserialize)]
-        struct Node {
-            node_id: CheckedNodeId,
-        }
-        let document: Document =
+        let envelope: serde_json::Value =
             serde_json::from_slice(bytes).map_err(|error| error.to_string())?;
-        let ids: Vec<_> = document
-            .semantic_graph
-            .nodes
-            .into_iter()
-            .map(|node| node.node_id)
-            .collect();
-        Self::with_operand_rows(&ids, &document.semantic_graph.operand_rows)
-            .map_err(|error| error.to_string())
+        Self::of_package_value(&envelope)
     }
 
     /// The graph of the checked-package document `envelope`, already parsed.
@@ -1255,6 +1234,27 @@ mod tests {
             WireGraph::with_operand_rows(&ids, &[]).unwrap_err(),
             WireIdError::OperandRowCount { nodes: 3, rows: 0 }
         );
+    }
+
+    /// Current checked-package documents may already hold resolved node IDs
+    /// and omit operand rows; byte and value readers interpret that form alike.
+    #[ix_trace_rs::trace("QSpec-TC-233", "QSpec-FR-322-AC-280")]
+    #[test]
+    fn package_bytes_without_operand_rows_read_as_a_resolved_graph() {
+        let keys = chain(2);
+        let ids = wire_ids(&keys);
+        let envelope = serde_json::json!({
+            "semantic_graph": {
+                "nodes": ids.iter().map(|node_id| serde_json::json!({"node_id": node_id})).collect::<Vec<_>>()
+            }
+        });
+        let bytes = serde_json::to_vec(&envelope).expect("the package value encodes");
+
+        let from_bytes = WireGraph::of_package_bytes(&bytes).expect("the graph reads from bytes");
+        let from_value =
+            WireGraph::of_package_value(&envelope).expect("the graph reads from value");
+        assert_eq!(from_bytes.keys(), keys);
+        assert_eq!(from_bytes.keys(), from_value.keys());
     }
 
     fn text(value: &str) -> PathSegment {
