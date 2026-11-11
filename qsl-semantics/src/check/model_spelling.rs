@@ -42,6 +42,9 @@ pub(crate) type PackageNames = BTreeMap<String, ModelName>;
 /// not of the form `first::T`.
 #[ix_trace_rs::string_edge]
 fn member_of_qualifier<'n>(name: &'n str, first: &str) -> Option<&'n str> {
+    if first == super::source_model::ALIAS {
+        return (!name.contains("::")).then_some(name);
+    }
     name.strip_prefix(first)?.strip_prefix("::")
 }
 
@@ -252,7 +255,15 @@ impl ModelSpellings {
     /// How `name`, written in `unit` (the primary unit when `None`), reads.
     pub(crate) fn spelled(&self, unit: Option<&RawSourceRef>, name: &str) -> Spelled<'_> {
         let Some((alias, member)) = name.split_once("::") else {
-            return Spelled::Other;
+            // A name with no qualifier names a source object type when the
+            // unit declares one of that name.
+            return match self
+                .package(unit, super::source_model::ALIAS)
+                .and_then(|package| package.names.get(name))
+            {
+                Some(found) => Spelled::Model(Some(found)),
+                None => Spelled::Other,
+            };
         };
         if !self.model_aliases.contains(alias) {
             return Spelled::Other;

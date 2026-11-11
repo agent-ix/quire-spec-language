@@ -1939,7 +1939,7 @@ pub(crate) fn population_names(models: &[AdmittedModel]) -> Vec<String> {
                     .population_domains()
                     .filter_map(move |(_, record, _)| {
                         let segment = type_identity_segment(&record.key.package, &record.key.node)?;
-                        Some(format!("{alias}::{segment}"))
+                        Some(super::source_model::qualified(alias, segment))
                     }),
             )
         })

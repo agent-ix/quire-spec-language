@@ -761,8 +761,8 @@ fn source_and_types(g: &mut Grammar) {
             type_ident(),
             opt(s(vec![
                 x("extends"),
-                ident(),
-                star(s(vec![x(","), ident()])),
+                r(P::TypeName),
+                star(s(vec![x(","), r(P::TypeName)])),
             ])),
             opt(s(vec![
                 x("identity"),

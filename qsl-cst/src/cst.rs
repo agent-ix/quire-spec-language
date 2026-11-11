@@ -116,7 +116,7 @@ productions! {
     UnitDeclaration, EnumDeclaration,
     EnumMember, RecordDeclaration, Field, TupleDeclaration, UnionDeclaration, UnionMember, AliasDeclaration,
     FunctionDeclaration, Predicate, Parameter, StateClause, OperationBody, PopulationBound,
-    #[doc = "`[abstract] object <identifier> [extends <identifier>, ...] [identity ( <identifier>, ... )] { <object-member>* }`: a source-declared object type (FR-569)."]
+    #[doc = "`[abstract] object <identifier> [extends <type-name>, ...] [identity ( <identifier>, ... )] { <object-member>* }`: a source-declared object type (FR-569)."]
     ObjectDeclaration,
     #[doc = "`[symmetric] population <identifier> ;`: a closed population of an object declaration's own type."]
     ObjectPopulation,

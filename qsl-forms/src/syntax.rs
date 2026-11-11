@@ -2589,8 +2589,8 @@ pub struct ObjectForm {
     pub name: DeclaredName,
     /// The span of the `abstract` word, when written.
     pub abstract_span: Option<Span>,
-    /// The `extends` supertype names, in source order.
-    pub extends: Vec<DeclaredName>,
+    /// The `extends` supertype names, as written, in source order.
+    pub extends: Vec<NameForm>,
     /// The `identity` field names, in source order.
     pub identity: Vec<DeclaredName>,
     /// The fields, populations and operations, in source order.

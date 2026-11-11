@@ -162,6 +162,7 @@ mod refinement;
 mod refusal;
 mod region;
 mod settings;
+mod source_model;
 mod state_clause;
 mod state_graph_claim;
 mod state_model;

@@ -12,7 +12,7 @@ use super::syntax::{
     ObjectOperationForm, ObjectPopulationForm, ParameterForm, RedefinesForm,
 };
 use super::value::{
-    declared_name, items, nodes_of, only, production_node, text, tokens_of, type_form, unexpected,
+    declared_name, items, name_form, nodes_of, only, production_node, text, tokens_of, type_form, unexpected,
     Item,
 };
 
@@ -44,20 +44,21 @@ pub(crate) fn object_declaration(
     }
     let name_token = tokens.next().ok_or_else(|| unexpected(node))?;
     let name = token_name(name_token, node)?;
-    let mut extends = Vec::new();
+    let extends = nodes_of(&object_items, Production::TypeName)
+        .into_iter()
+        .map(|supertype| name_form(cst, supertype))
+        .collect::<Result<Vec<_>, _>>()?;
+    // The `identity` list's names are the identifier tokens between its
+    // parentheses.
     let mut identity = Vec::new();
-    let mut list: Option<&mut Vec<DeclaredName>> = None;
+    let mut listing = false;
     for token in tokens {
         match token.spelling() {
-            b"extends" => list = Some(&mut extends),
-            b"identity" => list = Some(&mut identity),
-            b"," | b"(" | b")" => {}
-            b"{" => break,
-            _ => {
-                if let Some(list) = list.as_deref_mut() {
-                    list.push(token_name(token, node)?);
-                }
-            }
+            b"identity" => listing = true,
+            b"," | b"(" => {}
+            b")" | b"{" => break,
+            _ if listing => identity.push(token_name(token, node)?),
+            _ => {}
         }
     }
     let mut members = Vec::new();
@@ -67,6 +68,7 @@ pub(crate) fn object_declaration(
             Production::Field => ObjectMemberForm::Field(field(cst, member)?),
             Production::ObjectPopulation => ObjectMemberForm::Population(population(cst, member)?),
             Production::ObjectOperation => ObjectMemberForm::Operation(operation(cst, member)?),
+            Production::TypeName => continue,
             _ => return Err(unexpected(member)),
         });
     }
