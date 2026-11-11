@@ -442,16 +442,16 @@ enum ArenaNode {
     Boolean(bool),
     Text(String),
     Ordinal { value: u64, digits: usize },
-    Object(Vec<Member>),
-    Array(Vec<Member>),
+    Object(Vec<ArenaMember>),
+    Array(Vec<ArenaMember>),
 }
-struct Member {
+struct ArenaMember {
     name: Option<&'static str>,
     node: usize,
     order_bytes: Option<Vec<u8>>,
 }
 struct Frame {
-    members: Vec<Member>,
+    members: Vec<ArenaMember>,
     object: bool,
     order: ArrayOrder,
     name: Option<&'static str>,
@@ -510,7 +510,7 @@ impl<'s, 'a> Bounded<'s, 'a> {
         };
         if let Some(frame) = self.stack.last_mut() {
             self.scope.reserve(&mut frame.members, 1)?;
-            frame.members.push(Member {
+            frame.members.push(ArenaMember {
                 name: frame.name.take(),
                 node,
                 order_bytes,

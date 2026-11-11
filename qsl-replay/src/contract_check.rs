@@ -701,7 +701,7 @@ impl<'s, 'a> ContractTarget<'s, 'a> {
     ///
     /// # Errors
     ///
-    /// [`CounterexampleWireError::Unspelled`] when a node, state or value has
+    /// [`crate::CounterexampleWireError::Unspelled`] when a node, state or value has
     /// no encoding.
     pub fn wire(
         &self,
