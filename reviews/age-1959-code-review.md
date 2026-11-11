@@ -76,6 +76,9 @@ Focused gates on the worktree target:
 | FND-004 | fixed | `object_type_environment` and its doc are deleted; the bridge doc says `types` is the unit's assembled environment. |
 | FND-005 | fixed | D01 reads `declarations_a.types`; the hand-built overrides at the four cited sites are removed. One leftover, at a site not cited, is FND-007. |
 | FND-006 | fixed | The S-1 row drops the QSL-copy clause and the "directs S-1b to add" sentence. T-6, O-13 and QC-21 now state `PopulationId` as the population node's `NodeId`, matching QSpec FR-201:64 and quire-exact `PopulationId(NodeKey)`. |
+| FND-007 | fixed | Round 2 (2a5a7e257): the money-bridge fixture passes its own hand-built `types.clone()` to the bridge and no longer overwrites `declarations.types`. |
+| FND-008 | fixed | Round 2: `link_dispatch` calls the crate-private 7-argument `checked_dispatch_core`, which builds `types` from `PackageDeclarations::new` (empty) and takes no environment. No per-family clone remains: no `self.types.clone()` in qsl-semantics/src. The public 8-argument `checked_dispatch_operation` wraps the core and sets `types`. |
+| FND-009 | fixed | Round 2: `chain_package` and every `model.A/op*` key in model_dispatch.rs are rekeyed to `ix://test/orders/A/op*`. `cargo test -p qsl-semantics --all-features --test it model_dispatch::` gives 15 passed, including both previously failing tests. |
 
 ## New findings (disposition pass 1)
 
