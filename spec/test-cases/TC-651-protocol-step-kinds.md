@@ -12,7 +12,7 @@ relationships:
 
 Verify the enabledness and effects of the attempt, event, channel, fork, join, timeout and finish steps, the folding of structural moves and the waiting rule.
 
-Scope: FR-206-AC-1 to FR-206-AC-11.
+Scope: FR-206-AC-1 to FR-206-AC-12.
 
 ## Test Procedure
 
@@ -41,6 +41,11 @@ Scope: FR-206-AC-1 to FR-206-AC-11.
 11. Run FR-206-AC-11's `join predicate(f) [c, a] outstanding cancel`
     protocol and its `[a, c]` variant, and read `join(P)`'s enabledness at
     every state.
+12. Over an `unordered` channel of capacity 2 with delivery
+    `exactly-once-premise`, send `P1` then `P2`, then send `P3`, once under
+    `overflow loss head` and once under `overflow loss tail`; repeat with
+    `P2` sent before `P1`. Read each third send's record and the queue, and
+    explore each `receive` of the remaining entries.
 
 Tag the tests `#[trace("TC-651", "FR-206-AC-n")]`.
 
@@ -69,3 +74,7 @@ Tag the tests `#[trace("TC-651", "FR-206-AC-n")]`.
   environment.
 - Step 11: `join(P)` enabled exactly where FR-206-AC-11 states; the `[a, c]`
   variant reaches the same states and transitions.
+- Step 12: no unsupported refusal; under `loss head` the third send is
+  `accepted` displacing the first-sent entry, under `loss tail` displacing
+  the second-sent entry, as FR-206-AC-12 states; both remaining entries are
+  each receivable.

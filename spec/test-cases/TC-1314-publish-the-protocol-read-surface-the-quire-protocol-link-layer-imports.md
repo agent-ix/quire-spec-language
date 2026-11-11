@@ -11,7 +11,7 @@ relationships:
 ## Description
 
 Verify the causal relation, the protocol view and the record-to-node map.
-Scope: FR-519-AC-1 to FR-519-AC-17, AC-7 retired. **R** is the package of FR-517, except for row 12.
+Scope: FR-519-AC-1 to FR-519-AC-19, AC-7 retired. **R** is the package of FR-517, except for rows 12 and 18.
 
 ## Test Procedure
 
@@ -34,8 +34,10 @@ Scope: FR-519-AC-1 to FR-519-AC-17, AC-7 retired. **R** is the package of FR-517
 | 15 | 15 | `attempts_maximum` over a copy of the `Full` node with `maximum` removed from its `attempts` group | `ViewRefusal::MissingMember` naming `attempts.maximum`; no value |
 | 16 | 16 | `attempts_maximum` with an id absent from the package, a role id and a control id | `ViewRefusal::NotACompensation` naming the id, each time; no value |
 | 17 | 17 | `attempts_maximum` over a copy of the `Full` node with `maximum` set to zero, and to a non-integer term | `ViewRefusal::MalformedMember` naming `attempts.maximum`, each time; no value |
+| 18 | `await_anchor` over a protocol the test authors (**R** has no `await`) with one `await` after an `event` control and one after a `compensation` template; then over a copy of the first node with `after` removed, and with `after.kind` set to `signal` | `Event` with the event control's id; `Compensation` with the template's id; each equal to the in-memory `after` Group; `MissingMember` naming `after`; `MalformedMember` naming `after`; no value for either refusal |
+| 19 | `channel_endpoints` over **R**'s channel `Decisions`; then over copies with `from`, `to` and `carries` each removed | the sender role, receiver role and message type node ids, equal to the in-memory channel; `MissingMember` naming each removed member; no value |
 
-Tag the test `#[trace("FR-519-AC-1", ..., "FR-519-AC-17", "TC-1314")]`; row 1 also carries FR-383-AC-16.
+Tag the test `#[trace("FR-519-AC-1", ..., "FR-519-AC-19", "TC-1314")]`; row 1 also carries FR-383-AC-16.
 
 ## Expected Results
 

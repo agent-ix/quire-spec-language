@@ -16,8 +16,9 @@ rules, that candidate sets follow the FR-290 rule independently of registration
 order, and that routing consumes settled dispositions as data. Negotiation
 itself is quire-contract-codegen's and is not run here; its settlements are
 supplied as fixture records shaped like `negotiate_*` output. Registration
-also judges each backend's `domains`. Scope: FR-057-AC-5, FR-057-AC-6,
-FR-057-AC-8 and FR-057-AC-12.
+also judges each backend's `domains`. The negotiation cause type is the one
+source of the three negotiation cause spellings. Scope: FR-057-AC-5,
+FR-057-AC-6, FR-057-AC-8, FR-057-AC-12 and FR-057-AC-15.
 
 ## Test Procedure
 
@@ -48,6 +49,12 @@ FR-057-AC-8 and FR-057-AC-12.
    empty `domains`. Register one advertising a `bounded` pair with
    `domains` [`collection`, `population`, `integer`, `recursive`] and read its
    descriptor's `domains()`.
+8. Through `qsl_route`, convert step 4's four candidate outcomes (two
+   candidates unnamed, one named candidate, the empty set, the unregistered
+   name) to the negotiation cause, and read `code()` of each cause. Scan the
+   shipped source under `qsl-*/src` and `src`, `#[cfg(test)]` items excluded,
+   for the strings `unknown-backend`, `ambiguous-backend` and
+   `unsupported-requested-capability`.
 
 ## Expected Results
 
@@ -79,4 +86,13 @@ FR-057-AC-8 and FR-057-AC-12.
   `Collection` name those bytes. The unknown-mode registration refuses
   `unknown-mode`, not `invalid-domains`. The last registration is admitted,
   and `domains()` returns the four kinds.
+- Step 8: the two unnamed candidates give `AmbiguousBackend` naming both in
+  identity order, with code `invalid_capability`/`ambiguous-backend`; the
+  named candidate gives no cause; the empty set gives
+  `UnsupportedRequestedCapability` naming `operation-contract` and the named
+  backend, with code
+  `unsupported_projection`/`unsupported-requested-capability`; the
+  unregistered name gives `UnknownBackend` naming it, with code
+  `invalid_capability`/`unknown-backend`. The scan finds the three strings
+  only in the cause type's definition in `qsl-foundation`.
 - Assertions compare typed codes, causes and identities, never message text.

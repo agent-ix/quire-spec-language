@@ -78,6 +78,11 @@ add states that no behaviour distinguishes.
   `{channel, payload, outcome, displaced}`, with `channel` in the channel's
   qualified name, as the step's result; the send record is not a binder value
   and not part of the state key, and its step carries it as `send_record` (ADR-027 ST-3, PS-7, PX-1).
+- On an `unordered` channel with overflow `loss head` or `loss tail`, the
+  protocol system SHALL order the queued entries by send occurrence, so `head`
+  displaces the oldest sent entry still queued and `tail` the newest (ADR-027
+  ST-3, PS-7; QSpec FR-465 "Queue"), and SHALL NOT refuse the channel as
+  unsupported. `receive` still takes any entry of the channel (ADR-027 ST-4).
 - Under `outstanding cancel`, the protocol system SHALL make `cancelled`, in
   the join step, every branch thread still `running` together with every
   thread at or below it, and SHALL settle and remove every parallel
@@ -116,6 +121,7 @@ add states that no behaviour distinguishes.
 | FR-206-AC-9 | `parallel Outer { branch a attempt Fast; branch b sequence { parallel Inner { branch x attempt X1; branch y attempt Y1 } join any [x, y] outstanding continue; attempt After } } join any [a] outstanding cancel`, with every attempt always enabled: in a state where `a` has completed, `b` rests at `Inner`'s join and `x` and `y` are both `running`, the `join(Outer)` step makes `b`, `x` and `y` `cancelled`, settles and removes `Inner`'s instance, and in no later state does any of them take a step; `Y1` and `After` are enabled in no state after that join. | Test (TC-651) |
 | FR-206-AC-10 | `run sequence Main { parallel P { branch left attempt A as (a); branch right attempt B } join all; effect E of Main::P::left::A as (e) { true } }`, with `A` and `B` always enabled: at the state after `join(P)`, `event(E)` is enabled and the root thread's environment holds `A`'s binder, added by the join. | Test (TC-651) |
 | FR-206-AC-11 | Three branches `a`, `b` and `c`, each one always-enabled attempt, joined `join predicate(f) [c, a] outstanding cancel` with `function f using v(x: Boolean, y: Boolean): Boolean pure { x and not y }`: `f` receives `a`'s disposition first and `c`'s second, so `join(P)` is enabled in a state where `a` has completed and `c` is `running`, whatever `b` is, is not enabled where only `c` has completed, and is not enabled where both have; its step makes every branch thread still `running` `cancelled`. The same protocol written `[a, c]` reaches the same states and the same transitions. | Test (TC-651) |
+| FR-206-AC-12 | Over an `unordered` channel `ch` of capacity 2 holding `P1` sent before `P2`, a third `send` of `P3` under `overflow loss head` is enabled, gives outcome `accepted` with `displaced` `P1`, and leaves `P2` and `P3` queued; under `overflow loss tail` it gives `accepted` with `displaced` `P2` and leaves `P1` and `P3` queued. In both, the protocol is explored rather than refused as unsupported, and each queued entry is still deliverable to a matching `receive`. The same sends made in the order `P2` then `P1` displace `P2` under `loss head` and `P1` under `loss tail`. | Test (TC-651) |
 
 ## Dependencies
 

@@ -102,7 +102,33 @@ the FR-449 activation rows (`protocol_activation_relation`).
 `attempts_maximum` returns the value of the `maximum` member of the `attempts`
 group of the compensation node `compensation`, the retry bound FR-381 checks as
 `maximum_attempts`: a `u64` of at least one, counting the initial attempt, held in
-the integer encoding of QSpec FR-322. It refuses with `ViewRefusal`, and returns
+the integer encoding of QSpec FR-322.
+
+Two further view functions read a node's typed members:
+
+```rust
+pub fn await_anchor(node: &CheckedSemanticNodeV2) -> Result<AwaitAnchor<'_>, ViewRefusal>;
+pub fn channel_endpoints(channel: &CheckedSemanticNodeV2)
+    -> Result<ChannelEndpoints<'_>, ViewRefusal>;
+```
+
+`await_anchor` reads the `after` Group of an `await` control node (QSpec
+FR-464): `AwaitAnchor { kind: AwaitAnchorKind, target: &CheckedNodeId }`, where
+`AwaitAnchorKind` is `Event` for the text `event` (the target is the `event`
+control the await follows) or `Compensation` for the text `compensation` (the
+target is the compensation template whose forward body the await follows). It
+is the reading `causal_relation` uses for the `AwaitAnchor` edge, so the two
+agree. It refuses with `MissingMember` naming `after` when the node has no
+`after`, and `MalformedMember` naming `after` when the Group lacks a text `kind`
+or a reference `target`, or `kind` is any other text.
+
+`channel_endpoints` reads a `channel` node's `from`, `to` and `carries`
+(QSpec FR-465 "Channel"): `ChannelEndpoints { sender: &CheckedNodeId, receiver:
+&CheckedNodeId, message_type: &CheckedNodeId }`, the sending role node, the
+receiving role node and the message type node. It refuses with
+`MissingMember` naming the absent member, and `MalformedMember` naming a member
+that is not a reference. A role carries no internality member (QSpec FR-465,
+FR-465-AC-8), so no view function returns one. It refuses with `ViewRefusal`, and returns
 no value, when `compensation` is absent from the package or names a node that is
 not a compensation (`ViewRefusal::NotACompensation`, naming the id), when the
 node's `attempts` group lacks `maximum` (`MissingMember` naming
@@ -120,7 +146,8 @@ function** when QSL's `protocol_view` module returns its successor, or it is
 reads directly and QSL publishes no view for it. The view functions are
 `protocol_view`, `causal_relation`, `control_operation`, `operation_identity`,
 `binder`, `locus`, `delivery`, `queue_capacity`, `owner_model`, `declaration`,
-`temporal_binding`, `dependency`, `source`, `selection` and `attempts_maximum`.
+`temporal_binding`, `dependency`, `source`, `selection`, `attempts_maximum`,
+`await_anchor` and `channel_endpoints`.
 `protocol_view`, `causal_relation`, `binder` and `attempts_maximum` take an
 admitted package; the others take the node, lock or source map they read.
 
@@ -178,6 +205,8 @@ admitted package; the others take the node, lock or source map they read.
 | FR-519-AC-15 | With `maximum` removed from the `attempts` group of the compensation node, `attempts_maximum` refuses with `ViewRefusal::MissingMember` naming `attempts.maximum` and returns no value. An admitted package never lacks the member (FR-383-AC-8), so the removal is made on a copy of the node the function reads and not on an admitted package. | Test (TC-1314) |
 | FR-519-AC-16 | For an id absent from the package, or naming a role, a control or any other node that is not a compensation, `attempts_maximum` refuses with `ViewRefusal::NotACompensation` naming the id and returns no value. | Test (TC-1314) |
 | FR-519-AC-17 | With a `maximum` member that is not an integer, or is zero (FR-381-AC-7 admits only a count of at least one), `attempts_maximum` refuses with `ViewRefusal::MalformedMember` naming `attempts.maximum` and returns no value; the malformed value is set on a copy of the node the function reads, as in FR-519-AC-15. | Test (TC-1314) |
+| FR-519-AC-18 | For a protocol with one `await` anchored after an `event` control and one anchored after a `compensation` template, `qsl_package::protocol_view::await_anchor` returns `AwaitAnchorKind::Event` with the event control's `CheckedNodeId` for the first and `AwaitAnchorKind::Compensation` with the template's `CheckedNodeId` for the second, each equal to the `after` Group the checked clause holds in memory, and `AwaitAnchor` and `AwaitAnchorKind` are public. On a copy of the node with `after` removed it refuses `ViewRefusal::MissingMember` naming `after`; with `kind` set to another text it refuses `ViewRefusal::MalformedMember` naming `after`; neither returns a value. | Test (TC-1314) |
+| FR-519-AC-19 | For **R**'s channel `Decisions`, `qsl_package::protocol_view::channel_endpoints` returns the sending role node, the receiving role node and the message type node, each the `CheckedNodeId` the channel node's `from`, `to` and `carries` reference, equal to the checked clause in memory. On a copy of the node with `from`, `to` or `carries` removed it refuses `ViewRefusal::MissingMember` naming that member and returns no value. `ChannelEndpoints` has no internality field. | Test (TC-1314) |
 
 ## Dependencies
 
