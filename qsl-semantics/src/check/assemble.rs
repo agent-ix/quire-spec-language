@@ -5372,6 +5372,7 @@ impl PackageDeclarations {
             .collect::<BTreeSet<_>>()
             .into_iter()
             .collect();
+        package.first_source_object = unit.objects.first().map(|object| object.span);
         package.protocols = unit.protocols;
         package.temporal_clauses = unit.temporal_clauses;
         package.timed_forms = unit.timed;

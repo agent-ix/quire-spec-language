@@ -257,6 +257,7 @@ fn assembly_limit(cause: &AssemblyCause) -> Option<ReachedLimit> {
         | AssemblyCause::UnsuppliedImport { .. }
         | AssemblyCause::UnadmittedModel { .. }
         | AssemblyCause::UnsupportedModelMember { .. }
+        | AssemblyCause::SourceObject(_)
         | AssemblyCause::ModelType { .. }
         | AssemblyCause::UnresolvedOperation { .. }
         | AssemblyCause::AmbiguousOperation { .. }

@@ -399,7 +399,7 @@ pub use assemble::{
     AdmittedImport, AssemblyCause, AssemblyError, AssemblyLimits, AssemblyRefusal, AssemblyRun,
     ClockReadingDeclaration, ClockSite, ClockSlot, ClockTypePosition, ClockUse,
     DimensionEquivalence, EquivalenceClasses, EquivalenceFault, EquivalenceRetained,
-    TimedDeclaration, TopologyFault, TopologyRetained, DEFAULT_DECIMAL_SCALE,
+    SourceObjectFault, TimedDeclaration, TopologyFault, TopologyRetained, DEFAULT_DECIMAL_SCALE,
 };
 pub use capability::{Capability, DeclarationFamily, UnknownCapabilityLabel};
 pub use check::{
@@ -866,6 +866,8 @@ pub struct CheckedGraph {
     /// FR-110: the header-selectable layers the unit's header profiles
     /// resolve to, ascending.
     header_layers: Vec<crate::value::layer::HeaderLayer>,
+    /// The span of the unit's first source `object` declaration.
+    first_source_object: Option<qsl_foundation::Span>,
     /// FR-110 "Extension selection": the extension definitions the unit
     /// selects, ascending by `(authority, identity)`.
     extension_selections: Vec<qsl_foundation::selection::DefinitionRef>,
@@ -1060,6 +1062,7 @@ impl DebugWith for CheckedGraph {
             protocol_population_types,
             model_roots,
             header_layers,
+            first_source_object,
             extension_selections,
             extension_definitions,
             time_sources,
@@ -1177,6 +1180,7 @@ impl DebugWith for CheckedGraph {
             )
             .field("model_roots", &NodeList(model_roots.iter(), table))
             .field("header_layers", &header_layers)
+            .field("first_source_object", &first_source_object)
             .field("extension_selections", &extension_selections)
             .field("extension_definitions", &extension_definitions)
             .field("time_sources", &Seq(time_sources, table))
@@ -2711,6 +2715,7 @@ impl PackageDeclarations {
             .collect();
         let protocol_profile = self.protocol_profile;
         let header_layers = self.header_layers;
+        let first_source_object = self.first_source_object;
         let mut held_extensions: Vec<_> = self.held_extensions.iter().collect();
         held_extensions.sort_by(|a, b| {
             let (a, b) = (a.definition(), b.definition());
@@ -7345,6 +7350,7 @@ impl PackageDeclarations {
             protocol_population_types,
             model_roots,
             header_layers,
+            first_source_object,
             extension_selections,
             extension_definitions,
             time_sources: self.time_sources,
@@ -8243,6 +8249,12 @@ impl CheckedGraph {
     /// `requires` closure of these.
     pub fn header_layers(&self) -> &[crate::value::layer::HeaderLayer] {
         &self.header_layers
+    }
+
+    /// The span of the unit's first source `object` declaration, if it
+    /// declares one.
+    pub fn first_source_object(&self) -> Option<qsl_foundation::Span> {
+        self.first_source_object
     }
 
     /// FR-110 "Extension selection": the extension definitions the unit

@@ -411,6 +411,9 @@ pub struct PackageDeclarations {
     /// resolve to, ascending; the lock's `definition_selections` hold their
     /// `requires` closure.
     pub header_layers: Vec<crate::value::layer::HeaderLayer>,
+    /// The span of the unit's first source `object` declaration, which the
+    /// package emitter refuses until it can write source object types.
+    pub first_source_object: Option<qsl_foundation::Span>,
     /// Record, tuple and model object-type declarations.
     pub types: TypeEnvironment,
     /// Where each record keeps the fields its ancestors name (FR-359).
@@ -778,6 +781,7 @@ impl PackageDeclarations {
             package_name: package_name.into(),
             protocol_profile: None,
             header_layers: Vec::new(),
+            first_source_object: None,
             types: TypeEnvironment::default(),
             model_records: ModelRecords::default(),
             relationships: Relationships::default(),

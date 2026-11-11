@@ -782,7 +782,12 @@ fn source_and_types(g: &mut Grammar) {
     );
     g.insert(
         P::ObjectPopulation,
-        s(vec![opt(x("symmetric")), literal("population"), ident(), x(";")]),
+        s(vec![
+            opt(x("symmetric")),
+            literal("population"),
+            ident(),
+            x(";"),
+        ]),
     );
     g.insert(
         P::ObjectOperation,

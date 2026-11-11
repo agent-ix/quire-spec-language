@@ -12,8 +12,8 @@ use super::syntax::{
     ObjectOperationForm, ObjectPopulationForm, ParameterForm, RedefinesForm,
 };
 use super::value::{
-    declared_name, items, name_form, nodes_of, only, production_node, text, tokens_of, type_form, unexpected,
-    Item,
+    declared_name, items, name_form, nodes_of, only, production_node, text, tokens_of, type_form,
+    unexpected, Item,
 };
 
 /// The words `modifies` and `deletes` take as an entry's receiver.

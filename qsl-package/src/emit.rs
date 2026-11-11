@@ -169,6 +169,14 @@ pub enum EmitRefusal {
         /// The unit's selected header profile identity, when it selects one.
         profile: Option<&'static str>,
     },
+    /// The unit declares a source `object` type, which the checked-package/v2
+    /// graph has no node shape for yet: the emitter refuses at the first
+    /// declaration rather than write a package without it.
+    #[error("source object declarations cannot be written to a checked-package/v2 graph yet (SourceObjectEmission)")]
+    SourceObjectEmission {
+        /// The first `object` declaration's span.
+        span: qsl_foundation::Span,
+    },
     /// Interim fail-closed guard: this emission path does not yet map a
     /// checked time source into `timed_model` nodes, and it cannot omit one
     /// because the time source is part of the package's meaning.
@@ -423,9 +431,9 @@ impl EmitRefusal {
             Self::Abstraction(_) => Code::UnsupportedProjection,
             Self::StaleProtocolReference { .. } => Code::MissingDeclaration,
             Self::Cancelled { .. } => Code::Cancelled,
-            Self::ProbabilisticModelNotEmitted { .. } | Self::TimedModelNotEmitted { .. } => {
-                Code::UnsupportedConstruct
-            }
+            Self::ProbabilisticModelNotEmitted { .. }
+            | Self::TimedModelNotEmitted { .. }
+            | Self::SourceObjectEmission { .. } => Code::UnsupportedConstruct,
             Self::MonitorPlanAmbiguous { .. } => Code::InvalidProjectionCorrespondence,
             Self::MonitorBaseRefused(read) => read.code(),
             Self::TimedModelNodeSetMismatch
@@ -455,9 +463,9 @@ impl EmitRefusal {
         match self {
             Self::StaleProtocolReference { .. } => Some("missing-name"),
             Self::MonitorBaseRefused(_) => None,
-            Self::ProbabilisticModelNotEmitted { .. } | Self::TimedModelNotEmitted { .. } => {
-                Some("not-yet-implemented")
-            }
+            Self::ProbabilisticModelNotEmitted { .. }
+            | Self::TimedModelNotEmitted { .. }
+            | Self::SourceObjectEmission { .. } => Some("not-yet-implemented"),
             Self::RefinementNotEmitted => Some("not-yet-implemented"),
             Self::NothingToEmit { .. }
             | Self::ProtocolResultsRequired
@@ -6035,6 +6043,9 @@ fn emit_package_inner(
         .map(|relation| graph.abstraction_nodes(relation))
         .transpose()
         .map_err(EmitRefusal::Abstraction)?;
+    if let Some(span) = graph.first_source_object() {
+        return Err(EmitRefusal::SourceObjectEmission { span });
+    }
     if let Some((feature, declaration)) = graph.probabilistic_model().first_declaration() {
         return Err(EmitRefusal::ProbabilisticModelNotEmitted {
             declaration,

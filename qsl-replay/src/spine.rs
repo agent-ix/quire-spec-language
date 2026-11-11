@@ -34,8 +34,8 @@ use qsl_package::{EmitRefusal, ImportViewRefusal, LinkRefusal, OmittedNode};
 use qsl_semantics::check::AssemblyLimits;
 use qsl_semantics::check::{
     AccessClass, AssemblyCause, AssemblyRefusal, CheckCause, CheckRefusal, ExtensionCause,
-    ProbabilisticCause, ProfileRefusal, ProtocolAnchorCause, ShadowedDeclaration, TemporalCause,
-    TimeUnitCause, TopologyRetained,
+    ProbabilisticCause, ProfileRefusal, ProtocolAnchorCause, ShadowedDeclaration,
+    SourceObjectFault, TemporalCause, TimeUnitCause, TopologyRetained,
 };
 use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
@@ -422,12 +422,12 @@ impl CompileRefusal {
             Self::Import { refusal, .. } => refusal.cause(),
             Self::Dependency { refusal, .. } => refusal.cause(),
             Self::Link(refusal) => refusal.cause(),
+            Self::Emit(refusal) => refusal.cause(),
             Self::Limit(limit) => Some(limit.kind().catalog_cause()),
             Self::Intake { refusal, .. } => refusal.cause.cause(),
             Self::Forms { .. }
             | Self::OperationClause { .. }
             | Self::TypeInvariant { .. }
-            | Self::Emit(_)
             | Self::Omitted(_) => None,
         }
     }
@@ -956,6 +956,17 @@ fn assembly_message(refusal: &AssemblyRefusal) -> String {
             "the domain package of `model {alias}` declares `{node}`, which no type environment \
              entry represents yet"
         ),
+        AssemblyCause::SourceObject(fault) => match fault {
+            SourceObjectFault::NotAnObjectType { name } => {
+                format!("`{name}` is not a source object type")
+            }
+            SourceObjectFault::NotAReference { name } => {
+                format!("`{name}` is not a reference the operation can delete")
+            }
+            SourceObjectFault::UnsupportedType => {
+                "a source object member's type is not supported yet".to_owned()
+            }
+        },
         AssemblyCause::ModelType { alias, node } => {
             format!("the domain package of `model {alias}` has no effective type for `{node}`")
         }
