@@ -1452,9 +1452,10 @@ fn protocol_results_preserve_independent_emission_when_a_join_is_refused() {
             if cause.construct() == Some(ProtocolConstruct::NoOwnerModel)
     ));
 
-    let dependent = good
-        .replace("protocol Flow", "protocol Dependent")
-        .replace("join all [a, b]", "join predicate(Broken) [a, b]");
+    let dependent = good.replace("protocol Flow", "protocol Dependent").replace(
+        "join all [a, b]",
+        "join predicate(Broken) [a, b] outstanding cancel",
+    );
     let dependent_source = format!("{good}\n{broken}\n{dependent}");
     let check_prefix = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
@@ -1744,7 +1745,7 @@ fn tso_continue_and_nested_parallels_read_back() {
     // Inside a branch's `sequence`: `In` is held by `Ay`.
     let in_sequence = read(
         "parallel Par { branch a sequence Ay { parallel In { branch x sequence X { } \
-         branch y sequence Y { } } join any [y]; } branch b sequence Bee { } } \
+         branch y sequence Y { } } join any [y] outstanding cancel; } branch b sequence Bee { } } \
          join all [a, b];",
     );
     let ay = control_at(&in_sequence, &["Flow", "run", "Main", "Par", "Ay"]);
@@ -1793,7 +1794,7 @@ fn a_predicate_join_references_its_function_and_reads_back() {
             "function both using v(a: Boolean, b: Boolean): Boolean pure {{ a and b }}\n{}",
             parallel_flow(
                 "parallel Par { branch a sequence Ay { } branch b sequence Bee { } } \
-                 join predicate(both) [a, b];"
+                 join predicate(both) [a, b] outstanding cancel;"
             )
         ),
     );
@@ -1831,8 +1832,8 @@ fn a_predicate_join_references_its_function_and_reads_back() {
 fn predicate_joins_share_the_function_node_and_are_order_invariant() {
     let run = |labels: [&str; 2], function: &str| {
         let joins = format!(
-            "parallel First {{ branch east sequence East {{ }} branch west sequence West {{ }} }} join predicate({function}) [{}, {}];\n\
-             parallel Second {{ branch east sequence East2 {{ }} branch west sequence West2 {{ }} }} join predicate({function}) [{}, {}];",
+            "parallel First {{ branch east sequence East {{ }} branch west sequence West {{ }} }} join predicate({function}) [{}, {}] outstanding cancel;\n\
+             parallel Second {{ branch east sequence East2 {{ }} branch west sequence West2 {{ }} }} join predicate({function}) [{}, {}] outstanding cancel;",
             labels[0], labels[1], labels[0], labels[1]
         );
         let text = format!(
@@ -1900,7 +1901,7 @@ fn an_out_of_order_predicate_join_binds_by_ascending_label() {
             "function ahead using v(x: Boolean, y: Boolean): Boolean pure {{ x and not y }}\n{}",
             parallel_flow(
                 "parallel Par { branch a sequence Ay { } branch b sequence Bee { } } \
-                 join predicate(ahead) [b, a];"
+                 join predicate(ahead) [b, a] outstanding cancel;"
             )
         ),
     );
@@ -1939,7 +1940,7 @@ fn a_predicate_function_reading_its_protocol_is_admitted() {
         "function both using v(a: Boolean, b: Boolean): Boolean pure {{ a and b and protocol Flow }}\n{}",
         parallel_flow(
             "parallel Par { branch a sequence Ay { } branch b sequence Bee { } } \
-             join predicate(both) [a, b];"
+             join predicate(both) [a, b] outstanding cancel;"
         )
     );
     let lowered = lower_with(model(), PROFILES, &text);

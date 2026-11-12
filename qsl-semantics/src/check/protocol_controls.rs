@@ -563,6 +563,18 @@ fn check_join(
     parallel: &ParallelForm,
     refusals: &mut Vec<(Span, CheckRefusal)>,
 ) {
+    // A join other than `all` leaves branches outstanding, so it must say
+    // what becomes of them (FR-218-AC-40); this is independent of the list.
+    if parallel.join.value != JoinPolicy::All && parallel.outstanding.is_none() {
+        refusals.push((
+            parallel.join.span,
+            refusal(ProtocolAnchorCause::JoinList {
+                parallel: parallel.name.name.clone(),
+                fault: JoinFault::NoOutstandingRule,
+                span: parallel.join.span,
+            }),
+        ));
+    }
     let branches: BTreeSet<&str> = parallel
         .branches
         .iter()
@@ -1132,13 +1144,17 @@ mod tests {
                     branch: "west".to_owned(),
                 },
             ),
-            ("quorum(0) [east, west]", "0", JoinFault::QuorumBelowOne),
             (
-                "quorum(3) [east, west]",
+                "quorum(0) [east, west] outstanding cancel",
+                "0",
+                JoinFault::QuorumBelowOne,
+            ),
+            (
+                "quorum(3) [east, west] outstanding cancel",
                 "3",
                 JoinFault::QuorumAboveLabels { labels: 2 },
             ),
-            ("any []", "[]", JoinFault::NoLabel),
+            ("any [] outstanding cancel", "[]", JoinFault::NoLabel),
         ] {
             let (text, cause, code, tag) = only_refusal(&pipeline("", &parallel(join)));
             assert_eq!((code, tag.as_str()), ("invalid_package", "invalid-value"));
@@ -1154,14 +1170,17 @@ mod tests {
         }
         for join in [
             "all [east, west]",
-            "quorum(2) [east, west]",
-            "any [east]",
+            "quorum(2) [east, west] outstanding cancel",
+            "any [east] outstanding continue",
             "all [east, west, east]",
         ] {
             checks(&pipeline("", &parallel(join)));
         }
         // A label listed twice is one joined label.
-        let (_, cause, ..) = only_refusal(&pipeline("", &parallel("quorum(3) [east, west, east]")));
+        let (_, cause, ..) = only_refusal(&pipeline(
+            "",
+            &parallel("quorum(3) [east, west, east] outstanding cancel"),
+        ));
         assert!(matches!(
             cause,
             ProtocolAnchorCause::JoinList {
@@ -1169,6 +1188,45 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    /// FR-218-AC-40 (TC-663 step 10): a join other than `all` with no
+    /// `outstanding` rule refuses `invalid_package`/`invalid-value` at the
+    /// join; the same joins with a rule check, and `join all` needs none.
+    #[trace("TC-663", "FR-218-AC-40")]
+    #[test]
+    fn a_non_all_join_with_no_outstanding_rule_refuses_at_the_join() {
+        let function = "function f using v(x: Boolean): Boolean pure { x }";
+        let run = |join: &str| {
+            format!(
+                "{function}\n{}",
+                pipeline(
+                    "",
+                    &format!(
+                        "parallel P {{ branch a sequence A {{ }} branch b sequence B {{ }} }} \
+                         join {join};"
+                    ),
+                )
+            )
+        };
+        for join in ["any [a]", "quorum(1) [a, b]", "predicate(f) [a]"] {
+            let declarations = run(join);
+            let (text, cause, code, tag) = only_refusal(&declarations);
+            assert_eq!((code, tag.as_str()), ("invalid_package", "invalid-value"));
+            let ProtocolAnchorCause::JoinList {
+                parallel, fault, ..
+            } = &cause
+            else {
+                panic!("a JoinList cause, got {cause:?}");
+            };
+            assert_eq!(parallel, "P");
+            assert_eq!(*fault, JoinFault::NoOutstandingRule, "{join}");
+            assert!(join.starts_with(located(&text, &cause)), "{join}");
+            for rule in ["cancel", "continue"] {
+                checks(&run(&format!("{join} outstanding {rule}")));
+            }
+        }
+        checks(&run("all [a, b]"));
     }
 
     /// FR-218 "Control constructs": a join naming a label that is no branch
@@ -1314,7 +1372,10 @@ mod tests {
             { east and west }";
         let declarations = format!(
             "{function}\n{}",
-            pipeline("", &parallel("predicate(done) [east, west]"))
+            pipeline(
+                "",
+                &parallel("predicate(done) [east, west] outstanding cancel")
+            )
         );
         let graph = checks(&declarations);
         let checked = graph.protocol("Pipeline").expect("checked protocol");
@@ -1338,7 +1399,7 @@ mod tests {
     #[trace("TC-1065", "FR-218-AC-31")]
     #[test]
     fn predicate_join_checks_name_kind_and_signature() {
-        let run = parallel("predicate(done) [east, west]");
+        let run = parallel("predicate(done) [east, west] outstanding cancel");
         let cases = [
             ("", "missing_declaration", "missing-name"),
             (

@@ -783,8 +783,9 @@ fn join_step(reached: &[Reached], at: usize) -> Option<usize> {
 /// completion and its step leaves no branch thread to step; `outstanding
 /// continue` leaves the others running, each still taking its attempt;
 /// `join quorum(2)` is enabled after two completions and not after one.
-/// Not covered: `join predicate(f)`, which this system refuses as
-/// unimplemented.
+/// `join predicate(f)` is covered by
+/// [`a_predicate_join_is_enabled_where_its_function_holds`].
+#[trace("TC-651", "FR-206-AC-3")]
 #[test]
 fn a_join_policy_decides_when_its_join_is_enabled() {
     use Disposition::{Completed, Running};
@@ -826,6 +827,83 @@ fn a_join_policy_decides_when_its_join_is_enabled() {
     );
     let second = [("a", Completed), ("b", Completed), ("c", Running)];
     assert!(join_step(&reached, at_join(&system, &reached, &second)).is_some());
+}
+
+/// A unit of the contracts, `function` and the protocol `P` with `run`.
+fn predicate_case(function: &str, run: &str) -> Case {
+    Case::new(
+        &(contracts("self.v = 0") + function + "\n" + &protocol("P", "", run, "d")),
+        &[0],
+    )
+}
+
+/// FR-206-AC-3 and FR-206-AC-11 (TC-651): `join predicate(f) outstanding
+/// cancel` over three branches is enabled where `f`, true exactly when
+/// branch `a` is `completed`, holds, and its step cancels every running
+/// branch. Over `join predicate(f) [c, a]` with `f(x, y) = x and not y`,
+/// `f` receives `a`'s disposition first and `c`'s second whichever order the
+/// join lists them: enabled with `a` completed and `c` running, whatever `b`
+/// is; not with only `c` completed; not with both.
+#[trace("TC-651", "FR-206-AC-3", "FR-206-AC-11")]
+#[test]
+fn a_predicate_join_is_enabled_where_its_function_holds() {
+    use Disposition::{Completed, Running};
+    let branches = [("a", touch("TA")), ("b", touch("TB")), ("c", touch("TC"))];
+
+    let only_a = "function f using v(a: Boolean, b: Boolean, c: Boolean): Boolean pure { a }";
+    let run = parallel(&branches, "join predicate(f) [a, b, c] outstanding cancel");
+    let case = predicate_case(only_a, &run);
+    let subject = case.subject("P");
+    let system = sc_system(&subject);
+    let reached = reachable(&system);
+    let after_a = at_join(
+        &system,
+        &reached,
+        &[("a", Completed), ("b", Running), ("c", Running)],
+    );
+    let joined = join_step(&reached, after_a).expect("enabled after `a` completes");
+    // The step cancels `b` and `c`, which take no further step: only the
+    // root is left.
+    let threads = system.threads(&reached[joined].state).expect("threads");
+    assert_eq!(
+        threads
+            .iter()
+            .map(|thread| &thread.path)
+            .collect::<Vec<_>>(),
+        vec![&root()],
+        "{threads:?}"
+    );
+    let without_a = at_join(
+        &system,
+        &reached,
+        &[("a", Running), ("b", Completed), ("c", Completed)],
+    );
+    assert_eq!(join_step(&reached, without_a), None);
+
+    let ahead = "function f using v(x: Boolean, y: Boolean): Boolean pure { x and not y }";
+    for labels in ["[c, a]", "[a, c]"] {
+        let run = parallel(
+            &branches,
+            &format!("join predicate(f) {labels} outstanding cancel"),
+        );
+        let case = predicate_case(ahead, &run);
+        let subject = case.subject("P");
+        let system = sc_system(&subject);
+        let reached = reachable(&system);
+        for (wanted, enabled) in [
+            ([("a", Completed), ("b", Running), ("c", Running)], true),
+            ([("a", Completed), ("b", Completed), ("c", Running)], true),
+            ([("a", Running), ("b", Running), ("c", Completed)], false),
+            ([("a", Completed), ("b", Running), ("c", Completed)], false),
+        ] {
+            let at = at_join(&system, &reached, &wanted);
+            assert_eq!(
+                join_step(&reached, at).is_some(),
+                enabled,
+                "{labels} {wanted:?}"
+            );
+        }
+    }
 }
 
 /// FR-206-AC-6 (TC-651): `a` one attempt and `b` a sequence of two, joined

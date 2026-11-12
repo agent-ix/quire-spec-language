@@ -209,14 +209,29 @@ fn a_weak_default_requires_join_all_without_outstanding() {
         "all [left, right]",
         "",
     )));
-    checks(&protocol(&parallel("Both", "memory sc", "any [left]", "")));
-    checks(&protocol(&parallel("Both", "", "any [left]", "")));
+    checks(&protocol(&parallel(
+        "Both",
+        "memory sc",
+        "any [left] outstanding cancel",
+        "",
+    )));
+    checks(&protocol(&parallel(
+        "Both",
+        "",
+        "any [left] outstanding cancel",
+        "",
+    )));
 
     for (memory, join, model, policy) in [
-        ("memory ra", "any [left]", MemoryModelName::Ra, "any"),
+        (
+            "memory ra",
+            "any [left] outstanding cancel",
+            MemoryModelName::Ra,
+            "any",
+        ),
         (
             "memory tso",
-            "quorum(1) [left, right]",
+            "quorum(1) [left, right] outstanding continue",
             MemoryModelName::Tso,
             "quorum",
         ),
@@ -251,6 +266,35 @@ fn a_weak_default_requires_join_all_without_outstanding() {
             located(&text, &cause)
         );
     }
+}
+
+/// A weak `parallel` joined `any` with no `outstanding` rule reports both
+/// FR-218's missing-rule refusal and FR-219's weak-join refusal at the join.
+#[trace("TC-663", "FR-218-AC-40")]
+#[test]
+fn a_weak_join_with_no_outstanding_rule_reports_both_refusals() {
+    let declarations = protocol(&parallel("Both", "memory tso", "any [left]", ""));
+    let (_, assembled) = assemble(&declarations);
+    let found = assembled
+        .check(CheckingLimits::default())
+        .expect_err("checking refuses");
+    let mut seen: Vec<(&str, String)> = found
+        .iter()
+        .map(|refusal| {
+            (
+                refusal.cause.code().as_str(),
+                refusal.cause.cause().unwrap_or_default().to_owned(),
+            )
+        })
+        .collect();
+    seen.sort();
+    assert_eq!(
+        seen,
+        [
+            ("invalid_package", "invalid-value".to_owned()),
+            ("unsupported_construct", "declaration-form".to_owned()),
+        ]
+    );
 }
 
 /// A `fence` records its ordering, whichever of the four it is written

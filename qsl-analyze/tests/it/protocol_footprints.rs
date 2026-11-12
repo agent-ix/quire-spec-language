@@ -402,6 +402,41 @@ fn a_cancelling_join_writes_its_branches_and_a_queue_orders_its_steps() {
     );
 }
 
+/// FR-216-AC-8: under `join predicate(f) [c, a] outstanding cancel`,
+/// `join(Both)` reads and enables on exactly `inst(Both)` and the owning
+/// thread's `ctl`, and no model location, binder or branch `ctl`; it is
+/// dependent with the `attempt` of `a`, which ends branch `a`, and writes
+/// every branch's `ctl` as `join any … outstanding cancel` does.
+#[trace("TC-661", "FR-216-AC-8")]
+#[test]
+fn a_predicate_join_reads_only_its_instance_and_owner() {
+    let run = format!(
+        "sequence Main {{ parallel Both {{ branch a {} branch b {} branch c {} }} \
+         join predicate(f) [c, a] outstanding cancel; }}",
+        touch("TA"),
+        touch("TB"),
+        touch("TC"),
+    );
+    let function = "function f using v(x: Boolean, y: Boolean): Boolean pure { x and not y }\n";
+    let unit = Cells::new(
+        &(contracts("self.v = 0") + function + &protocol("P", "", &run, "d")),
+        &["c"],
+    );
+    let subject = unit.subject("P");
+    let system = sc_system(&subject);
+    let reached = reachable(&system);
+    let s1 = forked(&system, &reached);
+    let (_, attempt_a, after_a) = step(&system, &reached, s1, StepKind::Attempt, "TA");
+    let (_, join, _) = step(&system, &reached, after_a, StepKind::Join, "Both");
+    let expected = BTreeSet::from([both(), ctl(&root())]);
+    assert_eq!(join.reads, expected, "{join:?}");
+    assert_eq!(join.enabling, expected, "{join:?}");
+    for label in ["a", "b", "c"] {
+        assert!(join.writes.contains(&ctl(&branch(label))), "{join:?}");
+    }
+    assert!(!independent(&join, &attempt_a), "{join:?} {attempt_a:?}");
+}
+
 /// FR-216-AC-5: an attempt of `nudge(peer)`, the AC's `bump(by)` (`bump`
 /// is this fixture's parameterless operation, and `by` is a keyword of the
 /// attempt form), on receiver `c` with reference

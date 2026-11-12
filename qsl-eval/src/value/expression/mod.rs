@@ -477,6 +477,33 @@ pub fn evaluate_protocol_slot(
     .run_frame(body.root(), frame)
 }
 
+/// Evaluate the declared function `function` of `package` on `arguments`,
+/// one value per parameter in declared order, over no model state: the
+/// function a `join predicate(..)` names is pure and reads only its
+/// arguments (FR-206-AC-11). A `function` the package does not declare is an
+/// internal fault, as the join was checked against the package.
+pub fn evaluate_join_predicate(
+    package: &CheckedPackage,
+    function: &NodeKey,
+    arguments: Vec<Value>,
+    meter: &mut Meter,
+) -> Result<Evaluation, InternalFault> {
+    let state = package
+        .graph()
+        .function_by_identity(function.clone())
+        .ok_or_else(|| InternalFault::new("S6a", "join-predicate-function-resolves"))?;
+    let objects = ObjectEnvironment::default();
+    Machine::new(
+        package.graph().scope(),
+        package.graph(),
+        &objects,
+        meter,
+        package.graph().dispatch_tables(),
+    )
+    .with_formed_units(state.formed_units)
+    .run(state.body, state.slots, arguments)
+}
+
 /// The F-layer diagnostic code of an [`InputRefusal`], as the catalog enum.
 /// The refusal lives in the `no_std` leaf `quire-semantic-value`, which
 /// names the same code as a string ([`InputRefusal::code`]) but cannot name

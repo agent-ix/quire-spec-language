@@ -128,11 +128,6 @@ pub enum Unsupported {
     /// whose expressions read the activation binder at a slot this system
     /// does not fill.
     ActivationOnEachTemplate,
-    /// `join predicate(...)`.
-    JoinPredicate,
-    /// A join whose policy may leave branches running, with no
-    /// `outstanding` rule.
-    UnruledOutstanding,
     /// An `over` input whose type is not an object type.
     OverNotAnObject,
     /// A slot that reads an attempt binder whose operation returns no value
@@ -156,8 +151,6 @@ impl Unsupported {
             Self::UndecidedInitialGuard => "undecided guard at an initial state",
             Self::Capture => "protocol capture",
             Self::ActivationOnEachTemplate => "activation on each with a compensation template",
-            Self::JoinPredicate => "join predicate",
-            Self::UnruledOutstanding => "join with no outstanding rule",
             Self::OverNotAnObject => "over input of no object type",
             Self::UnboundAttemptBinder => "read of an unbound attempt binder",
             Self::NodelessBinder => "read of a nodeless binder",

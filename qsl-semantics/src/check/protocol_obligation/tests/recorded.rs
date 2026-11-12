@@ -381,7 +381,12 @@ fn a_commit_that_dominates_its_effect_refuses() {
         "commit Main::Committed;",
         "commit Main::Early::Committed;",
     );
-    let required = ["all [a, b]", "quorum(2) [a, b]", "any [a]"].map(joined);
+    let required = [
+        "all [a, b]",
+        "quorum(2) [a, b] outstanding cancel",
+        "any [a] outstanding cancel",
+    ]
+    .map(joined);
     for source in std::iter::once(nested).chain(required) {
         let (text, cause) = only(&source);
         let ObligationCause::CommitPrecedesEffect { commit, span, .. } = &cause else {
@@ -392,12 +397,15 @@ fn a_commit_that_dominates_its_effect_refuses() {
     }
 
     // Rows 19b and 19d: a join that requires no branch admits the commit.
-    for join in ["any [a, b]", "quorum(1) [a, b]"] {
+    for join in [
+        "any [a, b] outstanding cancel",
+        "quorum(1) [a, b] outstanding cancel",
+    ] {
         checked(&joined(join));
     }
     // TC-1058 row 19f: the checked predicate can settle when branch `b`
     // completes, so the commit in branch `a` does not dominate the effect.
-    let predicate = joined("predicate(P) [a, b]").replacen(
+    let predicate = joined("predicate(P) [a, b] outstanding cancel").replacen(
         "protocol Refunds",
         "function P using v(a: Boolean, b: Boolean): Boolean pure { a or b }\n\
          protocol Refunds",

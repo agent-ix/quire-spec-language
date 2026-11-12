@@ -797,6 +797,10 @@ pub enum JoinFault {
     },
     /// A `join any` or `join predicate` that lists no label.
     NoLabel,
+    /// A `join any`, `join quorum` or `join predicate` that writes no
+    /// `outstanding` rule, so the branches it leaves outstanding have no
+    /// stated fate.
+    NoOutstandingRule,
 }
 
 /// Why a protocol reference expression that resolved is still refused

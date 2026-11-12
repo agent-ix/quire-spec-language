@@ -20,7 +20,8 @@ use std::sync::Arc;
 use qsl_semantics::check::{
     AccessClass, CheckedBody, CheckedJoinPolicy, CheckedOutstanding, ControlStep, ProtocolNodeId,
 };
-use quire_exact::Value;
+use quire_eval::FamilyOutcome;
+use quire_exact::{Meter, Outcome, Value};
 use quire_semantic_value::model_transition::ModelTransition;
 
 use super::access::{
@@ -45,6 +46,7 @@ use crate::simulation::model::{
     OperationRef, Verdict,
 };
 use crate::simulation::subject::Cut;
+use crate::value::evaluate_join_predicate;
 
 /// One application of an attempt, the observation it was applied over and
 /// the message it read there (FR-229).
@@ -95,6 +97,9 @@ pub(super) fn jcs(value: &impl quire_canonical::Encode) -> Result<Vec<u8>, Proto
 
 /// Whether `policy` holds over `completed` of the joined labels (QSpec
 /// FR-171): `all`, every one; `any`, one; `quorum(n)`, `n`.
+///
+/// A `predicate` join is decided by its function instead, in
+/// [`ProtocolSystem::join_enabled`].
 fn policy_holds(policy: &CheckedJoinPolicy, joined: usize, completed: usize) -> bool {
     match policy {
         CheckedJoinPolicy::All => completed == joined,
@@ -102,7 +107,6 @@ fn policy_holds(policy: &CheckedJoinPolicy, joined: usize, completed: usize) -> 
         CheckedJoinPolicy::Quorum(count) => {
             u64::try_from(completed).is_ok_and(|done| done >= *count)
         }
-        // Refused before any state is built.
         CheckedJoinPolicy::Predicate { .. } => false,
     }
 }
@@ -1128,10 +1132,33 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         let Some((_, parallel)) = Self::joined_instance(instance, path, node) else {
             return Err(ProtocolRefusal::fault("a-waiting-join-has-its-instance"));
         };
+        let is_completed =
+            |label: &String| parallel.dispositions.get(label) == Some(&Disposition::Completed);
+        if let CheckedJoinPolicy::Predicate { function } = &join.policy {
+            // The function receives one Boolean per joined branch, in the
+            // branches' declared order whatever order the join lists them.
+            let arguments = join
+                .branches
+                .iter()
+                .filter(|(label, _)| join.joined.contains(label))
+                .map(|(label, _)| Value::Boolean(is_completed(label)))
+                .collect();
+            let evaluation = evaluate_join_predicate(
+                self.package,
+                function,
+                arguments,
+                &mut Meter::new(self.model.meter()),
+            )
+            .map_err(|_| ProtocolRefusal::fault("a-join-predicate-evaluates"))?;
+            return match evaluation.outcome {
+                FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(holds))) => Ok(holds),
+                _ => Err(ProtocolRefusal::fault("a-join-predicate-is-boolean")),
+            };
+        }
         let completed = join
             .joined
             .iter()
-            .filter(|label| parallel.dispositions.get(*label) == Some(&Disposition::Completed))
+            .filter(|label| is_completed(label))
             .count();
         Ok(policy_holds(&join.policy, join.joined.len(), completed))
     }
