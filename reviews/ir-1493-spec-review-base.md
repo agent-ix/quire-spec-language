@@ -42,3 +42,10 @@ FND-002 (one-word trace fix). The lowering row, typing rule (`Int[min, max]` fro
 scalar length), refusal (`ill_typed`/`type-mismatch`, matching the checker's existing
 `Size` refusal), and the String exclusion are consistent with the catalog and with
 FR-093's existing text rows (`Order`, `Equality`, `ConvertText`).
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Round 1, b612dd79f: AC-63 and TC-1409 step 2 add the U+0065 U+0301 input, expected `1` under `nfc`; TC-1409 states a byte or pre-normalization count returns `2` and fails. |
+| FND-002 | fixed | Round 1, b612dd79f: AC-63's verification cell now reads `Test (TC-1409)`. |
