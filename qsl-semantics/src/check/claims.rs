@@ -292,6 +292,15 @@ pub struct PathGuard {
 }
 
 impl PathGuard {
+    /// A guard requiring the node at `occurrence` to evaluate to `holds`.
+    /// Neither the node nor the role of `occurrence` is checked against a
+    /// graph; a guard is the node's `expression` occurrence, and the caller
+    /// is responsible for supplying one.
+    #[must_use]
+    pub fn new(occurrence: OccurrenceKey, holds: bool) -> Self {
+        Self { occurrence, holds }
+    }
+
     /// The guard node's occurrence.
     pub fn occurrence(&self) -> &OccurrenceKey {
         &self.occurrence
@@ -342,6 +351,16 @@ impl std::fmt::Debug for RequirementRecord {
 }
 
 impl RequirementRecord {
+    /// The record with its path condition replaced: the seam a test uses to
+    /// build a record whose guard sits at an occurrence that is not a
+    /// checked node.
+    #[cfg(any(test, feature = "test-support"))]
+    #[must_use]
+    pub fn with_path_condition(mut self, path_condition: Vec<PathGuard>) -> Self {
+        self.path_condition = path_condition;
+        self
+    }
+
     /// The record with its owner replaced: the seam a test uses to build a
     /// record map with a missing or unknown owner (FR-395-AC-10).
     #[cfg(any(test, feature = "test-support"))]

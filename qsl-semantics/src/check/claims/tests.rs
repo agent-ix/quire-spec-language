@@ -596,6 +596,29 @@ fn tc_1089_every_value_validity_record_has_the_declaring_function_as_owner() {
     assert_eq!(owners, [Some("sq"); 3]);
 }
 
+/// A caller outside the checker builds a record whose guard is at an
+/// occurrence that is no checked node, and reads it back unchanged.
+#[test]
+fn a_record_can_carry_a_guard_at_a_non_checked_node() {
+    let checked = check("function sq using v(x: Int[0, 9]): Integer pure { (x + 1) * (x + 1) }");
+    let (key, record) = checked
+        .graph
+        .requirements()
+        .iter()
+        .next()
+        .expect("a record");
+    let ghost = OccurrenceKey::new(wire(node_key(250)), key.origin().clone());
+    assert!(checked
+        .graph
+        .occurrences()
+        .all(|(node, _, _)| wire(node.clone()) != *ghost.node()));
+    let guard = PathGuard::new(ghost.clone(), false);
+    let altered = record.clone().with_path_condition(vec![guard.clone()]);
+    assert_eq!(altered.path_condition(), [guard]);
+    assert_eq!(altered.path_condition()[0].occurrence(), &ghost);
+    assert!(!altered.path_condition()[0].holds());
+}
+
 /// FR-062 "Extent": a record names every extent root, including a bounded
 /// parameter that adds no unbounded domain, and no parameter its application
 /// and path condition read nowhere.
