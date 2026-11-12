@@ -12,7 +12,7 @@ relationships:
 
 Verify that a body whose parameter count differs from its operation's
 signature, or whose type does not match the operation's declared result,
-refuses when dispatch linking first reads the body. Scope: FR-302-AC-8.
+refuses, whether or not a dispatched call reaches its operation. Scope: FR-302-AC-8.
 
 ## Test Procedure
 
@@ -23,9 +23,11 @@ refuses when dispatch linking first reads the body. Scope: FR-302-AC-8.
 2. Compile the unit.
 3. Replace the body with `body wrongType using V on M::A::add(amount) { true }`
    and compile again.
+4. Remove the precondition call so no dispatched call reaches `A.add`, and
+   compile once with `tooMany` and once with `wrongType`.
 
 ## Expected Results
 
-Each compile refuses at S3 as `ill_typed`/`type-mismatch` located at the
+Each of the four compiles refuses at S3 as `ill_typed`/`type-mismatch` located at the
 body, and produces no checked package and no partial dispatch table. With the body `body ok using V on M::A::add(amount) { amount }`
 the compile succeeds.

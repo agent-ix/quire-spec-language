@@ -30,22 +30,22 @@ QSpec FR-151 states that "a body is supplied by an `operation-body`
 declaration". [FR-102](./FR-102-build-state-clause-forms.md) retains that
 declaration's expression tree, [FR-103](./FR-103-admit-model-operations-and-frames-on-the-spine.md)
 associates it with the operation's `DeclarationKey` and sets `has_body`,
-[FR-302](./FR-302-link-dispatch-during-unit-compile.md) checks it when dispatch
-linking first reads it, [FR-094](./FR-094-key-model-owned-reference-population-and-quantity-nodes.md)
-builds a body clause function only for a dispatch-eligible operation, and
+[FR-302](./FR-302-link-dispatch-during-unit-compile.md) checks every body,
+[FR-094](./FR-094-key-model-owned-reference-population-and-quantity-nodes.md)
+builds a body clause function for every operation with `has_body`, and
 [FR-494](./FR-494-emit-producer-dispatch-decisions-into-checked-packages.md)
 carries a body identity inside a dispatch candidate. None of them makes a
 checked package say, for every operation, whether it has an authored body and
 which checked body it is. A backend consumer (CG, through quire-driver, for a
 Kani proof subject; QSL-1899) has no producer-stated body to bind to the
-operation and would have to rebuild one. An operation with a body that no
-dispatched call reaches has no body node and is never type-checked today.
+operation and would have to rebuild one. FR-302, FR-094 and FR-103 are
+widened to every body in the same change as this requirement.
 
 This requirement owns the QSL producer side: that `check` builds and checks the
 body of every operation with `has_body`, and that emission writes one record per
 operation carrying that body or its explicit absence. It follows the
 [FR-496](./FR-496-emit-model-operation-effects-into-checked-packages.md)
-precedent: the record is an optional top-level checked-package member, the
+precedent: the record is a top-level checked-package member, the
 `operation_bodies` member, whose wire shape, closed row schema and reader joins
 QSpec FR-322 owns. QSpec FR-322-AC-288 closes `checked_term_data`, so the
 member is not a `checked_term_data` array. This requirement names the content
@@ -108,7 +108,7 @@ repositories.
 | ID | Criteria | Verification |
 | --- | --- | --- |
 | FR-576-AC-1 | A unit with `A.size` having an `operation-body` and a dispatched call that reaches it emits an `operation_bodies` row for `A.size` whose `body` references the FR-094 body function node; reading that node yields the authored expression with its source provenance. | Test |
-| FR-576-AC-2 | Operation `A.empty` has a body and no call in the unit reaches it: the package still holds its body function node and a row referencing it. The same source with a wrong-typed `A.empty` body refuses `ill_typed`/`type-mismatch` at that body and emits no package. The body function node's id is equal in the package where a dispatched call reaches `A.empty` and the package where none does. | Test |
+| FR-576-AC-2 | Operation `A.empty` has a body and no call in the unit reaches it: the package still holds its body function node and a row referencing it. The same source with a wrong-typed `A.empty` body, and again with a body whose parameter count differs from `A.empty`'s signature, each refuses `ill_typed`/`type-mismatch` at that body and emits no package. The existing traced test for FR-302-AC-8 (`unit_compile_checks_a_bodys_arity_and_type_against_its_operation`) calls the operation from a `pre` clause, so a test for the uncalled wrong-type and uncalled wrong-arity cases is missing and the implementer writes it. The body function node's id is equal in the package where a dispatched call reaches `A.empty` and the package where none does. | Test |
 | FR-576-AC-3 | An operation without an `operation-body` has exactly one row whose `body` is `no_body`, and the package holds no body function node, default value or empty body for it. | Test |
 | FR-576-AC-4 | Types `A` and `B` each declare `size`, `A` with a body and `B` without: rows `(doc, A, size)` and `(doc, B, size)` are separate, the first with a body reference and the second `no_body`; permuting declaration order emits an equal member. | Test |
 | FR-576-AC-5 | Subtype `S` of `A` inherits `A.size` and declares nothing: the member has no row `(doc, S, size)`. Subtype `R` of `A` redefines `size` with its own body: it has its own row `(doc, R, size)` naming `R`'s body function node, distinct from `A`'s. | Test |

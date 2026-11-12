@@ -46,3 +46,4 @@ on emitted output, not a recorded digest.
 | FND-001 | fixed | Behavior lines 83-88 require `check` to build and check the FR-094 body function for every operation with `has_body`, whether or not a call reaches it; AC-2 tests an uncalled body, and AC-1 now states the dispatched call. |
 | FND-002 | fixed | The post-hoc-removal AC is gone. AC-8 compares against a separately emitted package without the member, and Behavior lines 103-104 scope graph equality to "the same bodies". |
 | FND-003 | fixed | AC-5 covers an inherited operation (no row) and a redefined one (own row), and AC-6 covers two aliases of one document (one row). |
+| FND-004 | fixed | Round 2: the omit-the-member rule and its AC-8 are removed. Behavior now states that every body is built and checked or the compile refuses, so the emitter always has every row; Outputs no longer allows omitting the member. |

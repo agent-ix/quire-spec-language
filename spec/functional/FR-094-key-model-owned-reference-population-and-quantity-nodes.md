@@ -255,10 +255,7 @@ defines that node, and FR-391 states how `check` emits it.
 A **clause function** is a function declaration that `check` synthesizes
 from a domain package clause (`FunctionDeclaration::clause`), and no named
 call reaches it. For one dispatch-eligible operation,
-`check::checked_dispatch` builds the functions below, and builds the body
-function alone for every other operation with `has_body` (FR-576). A body
-node's id does not depend on whether a dispatched call reaches its operation.
-For a dispatch-eligible operation it builds:
+`check::checked_dispatch` builds:
 
 - one function per authored precondition clause, shared by every candidate
   whose effective precondition includes it;
@@ -266,6 +263,10 @@ For a dispatch-eligible operation it builds:
   precondition has two or more terms, their disjunction with the candidate's
   own clause first; a candidate with one term uses its authored function;
 - one body function per candidate.
+
+`check` also builds the body function, and only it, for every operation with
+`has_body` that is not dispatch-eligible (FR-576). A body node's id does not
+depend on whether a dispatched call reaches its operation.
 
 `check` SHALL build a clause function's node as FR-092's function node, with
 these differences:
