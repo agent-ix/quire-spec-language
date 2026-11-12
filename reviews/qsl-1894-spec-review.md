@@ -29,3 +29,11 @@ FR-519 now lists 22 view functions in "The record-to-node map", and the new para
 - SW-5 (spec/decisions/ADR-031-state-forall-separating-witness.md): Amended by ADR-036 PA-24: the deciding quantifier is absent for a family with no quantifier occurrence, and the deciding element is either the kernel value or the canonical string of a protocol element's checked node id. (examined)
 - SW-7 (spec/decisions/ADR-031-state-forall-separating-witness.md): Amended by ADR-036 PA-24: quantifier is Option, deciding_element is a DecidingElement, and the wire accepts an absent index and quantifier for the protocol element. (examined)
 - TC-1314 (spec/test-cases/TC-1314-publish-the-protocol-read-surface-the-quire-protocol-link-layer-imports.md): rows 21-23. (examined)
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | 8187414ca: ADR-031 SW-5, ADR-036 PA-24, and FR-574 (deciding_element row and AC-3) pin the RFC 8785 text of the CheckedNodeId V2 wire object and the reader's re-encode refusal. |
+| FND-002 | fixed | 8187414ca: SW-7 says "the cause codec accepts…; the native-run-result/2 clause-run reader stays state-clause only; it extends to the protocol record with its producer." |
+| FND-003 | fixed | 8187414ca: TC-1314 row 22 adds a selector on `block` and `MalformedMember` naming `channel` on a non-reference. |

@@ -38,3 +38,16 @@ Recommended canonical node-id form: the RFC 8785 canonical text (`quire_canonica
 - FR-574 (spec/functional/FR-574-carry-the-separating-witness-record-on-a-decisive-protocol-counterexample.md): The QSL record type is amended by ADR-036 PA-24; a state-clause record shall still round-trip unchanged. (examined)
 - FR-519-AC-21 (spec/functional/FR-519-publish-the-protocol-read-surface-the-quire-protocol-link-layer-imports.md): channel_ordering and fifo_key over Charges and an unordered channel. (examined)
 - FR-519-AC-22 (spec/functional/FR-519-publish-the-protocol-read-surface-the-quire-protocol-link-layer-imports.md): queue_overflow and queue_channel. (examined)
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | 8187414ca: `node_text` is `quire_canonical::to_vec(id)`. The test pins `{"ordinal":3,"package":"pkg","path":["c"]}` and shows the declaration-order text is refused as `NotCanonical`. |
+| FND-002 | fixed | 8187414ca: every premise node member is a typed `CheckedNodeId`. `premises_are_ordered_by_checked_node_id` shows ordinal 9 sorts before ordinal 10. |
+| FND-003 | fixed | 8187414ca: `choice_premises` uses `control_operation(node)?`. A test shows an unreadable control is refused as `PremiseRefusal::View`. |
+| FND-004 | fixed | 8187414ca: `spine/clause/tests/protocol_premises.rs` runs `from_view` over an IR-admitted package with two channels, a queue each and a choice, and covers OrphanQueue, ChannelWithoutQueue and the unreadable control. |
+| FND-005 | fixed | 8187414ca: an unknown `kind` gets its own `UnknownKind` refusal (`invalid-value`). A projection key now reads `ProjectionBoundsDraft` with `deny_unknown_fields`, so a stored `max_history` is refused. |
+| FND-006 | fixed | 8187414ca: `require_nested` refuses missing channel, choice, FIFO and analyzer members as `missing-member` naming the path (for example `channels[0].delivery`), and `KeyReadError` has `code()` and `cause()`. |
+| FND-007 | fixed | 8187414ca: `read_deciding` and `RecordWire::of` both call `read_node_text`, so a string that is not a node id refuses `Shape("deciding_element")`. Tested on both sides. |
+| FND-008 | fixed | 8187414ca: ADR-031 SW-7 now says the /2 reader stays state-only until the producer lands (QSL-1895), and `a_protocol_record_or_a_quantifierless_record_fails_the_element_step` tests the `separate()` branch. |

@@ -130,7 +130,7 @@ fn premises_are_built_from_the_protocol_view() {
 
 /// A queue naming no channel of the clause, a channel with no queue, and a
 /// control whose operation refuses are each refused, never skipped.
-#[trace("FR-572-AC-4", "TC-1412")]
+#[trace("TC-1412")]
 #[test]
 fn premises_refuse_an_orphan_queue_a_queueless_channel_and_an_unreadable_control() {
     let package = admitted();

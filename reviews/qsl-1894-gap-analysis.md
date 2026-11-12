@@ -34,3 +34,18 @@ Planless audit of the PR diff. Tests are linked by `#[trace]` tags. The focused 
 - FR-519-AC-21 (spec/functional/FR-519-publish-the-protocol-read-surface-the-quire-protocol-link-layer-imports.md): channel_ordering and fifo_key. (examined)
 - FR-519-AC-22 (spec/functional/FR-519-publish-the-protocol-read-surface-the-quire-protocol-link-layer-imports.md): queue_overflow and queue_channel. (examined)
 - FR-519-AC-23 (spec/functional/FR-519-publish-the-protocol-read-surface-the-quire-protocol-link-layer-imports.md): no value-path accessor. (examined)
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | 8187414ca: the FR-572-AC-6 tag is dropped. The run-limit test now carries only TC-1412 and checks that results differing in limit value share their key. |
+| FND-002 | fixed | 8187414ca: the witness test checks each refusal's cause: a present index or quantifier, a missing trace_position, deciding_element or value_path, and a non-node-id string. Its doc states the /2 reader follows in QSL-1895. |
+| FND-003 | fixed | 8187414ca: added `queue_channel` MalformedMember on a non-reference `channel`, and a selector on `block`. |
+| FND-004 | fixed | 8187414ca: the reader is now tested for every realizability member and every nested path. AC-1 and AC-2 now change delivery, overflow, capacity, the visible set and the owner. |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | low | Two new tests are traced to ACs they do not assert. `premises_refuse_an_orphan_queue_a_queueless_channel_and_an_unreadable_control` is tagged FR-572-AC-4, which is about absent key members, but it tests premise pairing and refusals. `a_protocol_record_or_a_quantifierless_record_fails_the_element_step` is tagged FR-574-AC-6, which is about state-record round-trip, but it tests the separation step. Tag them TC-1412 or TC-1414 only. | qsl-replay/src/spine/clause/tests/protocol_premises.rs:133; qsl-replay/src/spine/clause/tests/witness.rs:1648 |

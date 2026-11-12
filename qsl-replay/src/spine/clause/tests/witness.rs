@@ -1645,7 +1645,7 @@ fn unmet(step: SeparationStep) -> SeparationOutcome {
 /// The state-clause separation check names no element of a protocol record
 /// (no index) or of a kernel record without a quantifier: it fails at the
 /// element step (ADR-031 SW-5 as amended by ADR-036 PA-24).
-#[trace("FR-574-AC-6", "TC-1414")]
+#[trace("TC-1414")]
 #[test]
 fn a_protocol_record_or_a_quantifierless_record_fails_the_element_step() {
     let unit = witness_unit();
