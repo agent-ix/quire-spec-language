@@ -30,10 +30,11 @@ use quire_semantic_value::location::{ExpressionLocation as Location, ExpressionO
 
 use super::check::DispatchOperation;
 use super::checked_dispatch::{
-    checked_dispatch_core, rename_names, DispatchBridgeRefusal, DispatchRoot, OperationClauses,
+    body_function, checked_dispatch_core, rename_names, DispatchBridgeRefusal, DispatchRoot, OperationClauses,
 };
 use super::ir::{DispatchCandidate, DispatchTable};
 use super::refusal::{DispatchLinkCause, DispatchSubtypeFailure};
+use super::lowering::ModelClause;
 use super::{CheckCause, CheckRefusal, PackageDeclarations};
 use crate::model::accounting::{Meter, ModelNormalizationLimits};
 use crate::model::dispatch::{DispatchLinkOutcome, GeneralizationClosure, LinkCheckOutcome};
@@ -146,9 +147,6 @@ impl PackageDeclarations {
         limits: ModelNormalizationLimits,
     ) -> Result<PendingLinks, Vec<CheckRefusal>> {
         let called = self.called_members();
-        if called.is_empty() {
-            return Ok(PendingLinks::default());
-        }
         let mut meter = Meter::new(limits);
         let mut pending = PendingLinks::default();
         let mut linked = Vec::new();
@@ -205,11 +203,79 @@ impl PackageDeclarations {
                 refusals.push(dispatch_link(*cause));
             }
         }
+        self.build_uncalled_bodies();
         refusals.extend(self.body_arity_refusals(first_new));
         if refusals.is_empty() {
             Ok(pending)
         } else {
             Err(refusals)
+        }
+    }
+
+    /// FR-094, FR-576: builds the body clause function of every operation with
+    /// a body that linking did not build one for, because no dispatched call
+    /// reaches its family or its family is not dispatch-eligible, so
+    /// `check` types every body whether or not a call reaches it (FR-302).
+    /// The function is the one linking builds for a candidate
+    /// ([`body_function`]), so its node does not depend on a call. An
+    /// operation without a declared result has no result type to check its
+    /// body against and gets no function. One function per operation key,
+    /// whichever aliases select its document.
+    fn build_uncalled_bodies(&mut self) {
+        let mut built: BTreeSet<DeclarationKey> = self
+            .model_clauses
+            .values()
+            .filter(|clause| clause.kind == DeclaredClauseKind::Body)
+            .map(|clause| clause.declaration.clone())
+            .collect();
+        let mut functions = Vec::new();
+        for view in self.selected_views.values() {
+            let keys: Vec<DeclarationKey> = view
+                .domain_package()
+                .records
+                .iter()
+                .filter_map(|record| match record {
+                    DomainPackageRecord::OperationMember(operation)
+                        if self.operation_body(&operation.key).is_some() =>
+                    {
+                        Some(operation.key.clone())
+                    }
+                    _ => None,
+                })
+                .filter(|key| !built.contains(key))
+                .collect();
+            if keys.is_empty() {
+                continue;
+            }
+            let Some(clauses) = self.view_clauses(view) else {
+                continue;
+            };
+            for key in keys {
+                let Ok((function, signature)) = body_function(&key, &clauses) else {
+                    continue;
+                };
+                if built.insert(key.clone()) {
+                    functions.push((key, function, signature));
+                }
+            }
+        }
+        for (key, function, signature) in functions {
+            let index = self.functions.len();
+            let Some(body) = self.operation_body(&key) else {
+                continue;
+            };
+            let Ok(function) = function.with_spans(body.spans.clone()) else {
+                continue;
+            };
+            self.resolved_signatures.insert(index, signature);
+            self.model_clauses.insert(
+                index,
+                ModelClause {
+                    declaration: key,
+                    kind: DeclaredClauseKind::Body,
+                },
+            );
+            self.functions.push(function);
         }
     }
 
