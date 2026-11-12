@@ -306,6 +306,30 @@ fn bounded_result_interval(bounded: &BoundedQuantityType) -> Result<QuantityResu
     ))
 }
 
+/// The `size` of a text (its profile length) or a collection (its member
+/// count); any other operand is an invariant fault.
+fn size_of(operand: Value) -> Result<Integer, Halt> {
+    match operand {
+        Value::Text(text) => Ok(Integer::from(text.length())),
+        Value::Collection(collection) => Ok(Integer::from(collection.elements().len())),
+        Value::Boolean(_)
+        | Value::Integer(_)
+        | Value::Rational(_)
+        | Value::Decimal(_)
+        | Value::Float(_)
+        | Value::Quantity(_)
+        | Value::String(_)
+        | Value::Uuid(_)
+        | Value::Timestamp(_)
+        | Value::Enum(_)
+        | Value::Population(_)
+        | Value::Option(_)
+        | Value::Composite(_)
+        | Value::Union(_)
+        | Value::Reference(_) => Err(invariant("size-operand-expected")),
+    }
+}
+
 /// A QSL-owned invariant at its detecting producer (FR-090).
 fn invariant(identifier: &'static str) -> Halt {
     Halt::Fault(InternalFault::new("S6a", identifier))
@@ -3298,11 +3322,8 @@ impl<'a, 'm, N: NodeSource<'a>> Machine<'a, 'm, N> {
                 outcome_into_stop(form(result_type, produced, self.meter))?
             }
             NodeKind::Size(_) => {
-                let collection = self.pop_collection()?;
-                retain_scalar(
-                    Value::Integer(Integer::from(collection.elements().len())),
-                    self.meter,
-                )?
+                let size = size_of(self.pop()?)?;
+                retain_scalar(Value::Integer(size), self.meter)?
             }
             NodeKind::Contains(_, _) => {
                 let item = self.pop()?;

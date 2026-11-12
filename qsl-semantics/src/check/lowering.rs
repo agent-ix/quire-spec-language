@@ -5288,6 +5288,21 @@ impl<'a> Lowering<'a> {
                 })));
                 return Ok(LowerStep::Descend(node.at(*source)));
             }
+            NodeKind::Size(operand) if text_profile(node.at(*operand).value_type()).is_some() => {
+                let profile = text_profile(node.at(*operand).value_type())
+                    .ok_or_else(|| fault(node.location(), KeyFault::UnbuiltLiteral))?;
+                (
+                    Keyed::Application(
+                        Operator::Call,
+                        Operation {
+                            laws: vec![self.law(LawRole::TextProfile, node.location())?],
+                            mode: Some(OperationMode::TextProfile(profile)),
+                            ..plain("quire.op.text.size")
+                        },
+                    ),
+                    Operands::One(operand),
+                )
+            }
             NodeKind::Size(operand) => {
                 let member = self.type_argument(node.value_type(), node.location())?;
                 (
