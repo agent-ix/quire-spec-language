@@ -24,8 +24,9 @@ Scope: FR-571-AC-1 to FR-571-AC-6; QSpec FR-175-AC-1 to AC-5.
    and run it again.
 2. Decide the unrepaired worked example, and a protocol the environment can
    defeat under every owner branch by one admitted loss.
-3. Decide the repaired example with the role-knowledge premise absent, then
-   declared empty; and with `max_depth` too small.
+3. Decide the repaired example with the role-knowledge premise `None`
+   (not stated), then `Some` of the empty set; and with `max_depth` too
+   small.
 4. Recompute `observation(role, history)` for every explored history of
    step 1 and compare actions of equal sequences; build a class with no
    common winning action.

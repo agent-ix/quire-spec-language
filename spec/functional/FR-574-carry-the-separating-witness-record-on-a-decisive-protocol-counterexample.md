@@ -34,7 +34,11 @@ byte-exactly and refuses a decisive realizability result without it.
 ## Inputs
 
 A projection or realizability counterexample (FR-570, FR-571) that has
-replayed (FR-573).
+replayed (FR-573), and the request's assessed-subject root: the
+observation identity and the FR-204 declared object identity the claim is
+assessed over. The root is the claim's own binding of the subject it is
+assessed over (QSpec FR-351 "the assessed subject's root"); the engine does
+not choose, derive or default it.
 
 ## Outputs
 
@@ -51,17 +55,21 @@ The record has exactly these components:
 | `deciding_element` | The canonical string of the checked node id of the violated obligation (realizability) or of the divergent action's global node (projection). |
 | `index` | Absent: the family assigns no positional index. |
 | `value_path` | An FR-207 runtime value path, derived below. |
-| `trace_position` | The decimal, zero-based index of the step at which the divergence or violation occurs in the counterexample's ordered event sequence: for indistinguishable histories the longer of the two histories, and for environment defeat the defeating play of the first owner branch. |
+| `trace_position` | The decimal, zero-based index of the step at which the divergence or violation occurs in the counterexample's ordered event sequence: for indistinguishable histories the length of the longer of the two histories less one, for environment defeat the same index in the defeating play of the first owner branch (branches in canonical node order), and for a projection counterexample the index into `path_a` of the first divergent action, `path_a` being the canonically first of the two paths (FR-570). |
 
 The `value_path` derivation:
 
 - The canonical wire form shall be FR-207's: `kind: runtime_value`, a `root`
   with exactly `observation` and `subject`, and an ordered `steps` array.
-- `root.observation` shall be the observation identity under which the
-  assessed protocol subject is read; `root.subject` shall be the `object`
-  subject whose declared object identity (FR-204) is that of the assessed
-  protocol subject, the root FR-351 requires "from the assessed subject's
-  root".
+- The engine shall copy `root.observation` and `root.subject` verbatim from
+  the request's assessed-subject root: the observation identity, and the
+  `object` subject whose declared object identity (FR-204) the request
+  carries. The engine shall not invent, derive or default either.
+- QSL shall refuse a request with the root or either component absent,
+  `invalid_runtime_input`/`missing-member` naming it. The root is not a
+  member of the FR-572 key and does not change the artifact identity. QSpec
+  FR-290 defines no carrier for this binding, so the request input is stated
+  here and the carrier is part of the open question on QSL-1898.
 - `steps` shall be the empty sequence, which FR-207 defines as denoting the
   subject itself and never as an absent path. FR-207 has six step kinds and
   none selects a node of a checked protocol graph, so the derivation shall
@@ -70,10 +78,9 @@ The `value_path` derivation:
   node ids of the linked graph, which are not the trace position.
 - A value path shall not be rendered text, a source span or a name search.
 
-This derivation is a pin, not a QSpec change. That FR-207 has no step kind
-for a protocol graph node is raised with QSpec on QSL-1898 and the derivation
-is to be re-read when QSpec answers; the requirement does not assume an
-answer.
+This derivation is a pin, not a QSpec change. A protocol-node step kind in
+FR-207 would be an optional upstream improvement raised on QSL-1898; it does
+not block this requirement and the requirement does not assume an answer.
 
 The QSL record type (`SeparatingWitnessRecord`) is amended by ADR-036 PA-24
 (an optional quantifier, a deciding element that is a kernel value or a
@@ -87,8 +94,9 @@ protocol element, and an absent `index` on the wire); a state-clause record
 | FR-574-AC-1 | Every `refuted`/`decisive-counterexample` result of either kind carries exactly one record; a `proved`, `inconclusive`, `unsupported` or `failed` result carries none. | Test (TC-1414) |
 | FR-574-AC-2 | The record has an absent `deciding_quantifier` and an absent `index`, and the wire form omits both; a record the strict reader sees with either present for these families, or with a missing `deciding_element`, `value_path` or `trace_position`, is refused (QSpec FR-351-AC-5). | Test (TC-1414) |
 | FR-574-AC-3 | `deciding_element` equals the canonical string of the violated obligation's checked node id for a realizability counterexample, and of the divergent action's global node for a projection counterexample. | Test (TC-1414) |
-| FR-574-AC-4 | `trace_position` is the zero-based decimal index named above, for each of the two realizability refutation forms and a projection counterexample, and two counterexamples that differ only in the step of divergence give different positions. | Test (TC-1414) |
-| FR-574-AC-5 | `value_path` has the FR-207 canonical form with an `object` root subject and an empty `steps` array, compares componentwise, and is never absent; changing only display text, path or span leaves it equal. | Test (TC-1414) |
+| FR-574-AC-4 | For a projection counterexample whose divergent action is the third event of `path_a`, `trace_position` is `2`; for indistinguishable histories of lengths 3 and 5 it is `4`; for an environment defeat whose violation occurs at the fourth step of the first owner branch's defeating play it is `3`; two counterexamples that differ only in the step of divergence give different positions. | Test (TC-1414) |
+| FR-574-AC-5 | `value_path` has the FR-207 canonical form with an `object` root subject and an empty `steps` array, compares componentwise, and is never absent; its root equals the request's assessed-subject root exactly; changing only display text, path or span leaves it equal. | Test (TC-1414) |
+| FR-574-AC-7 | A request with the assessed-subject root absent, or its observation or object identity absent, is refused `invalid_runtime_input`/`missing-member` naming the absent component; a request differing only in the root yields an equal FR-572 key. | Test (TC-1414) |
 | FR-574-AC-6 | A state-clause separating witness record (FR-265) with its quantifier and index round-trips unchanged through the amended record type and wire. | Test (TC-1414) |
 
 ## Dependencies
@@ -96,7 +104,7 @@ protocol element, and an absent `index` on the wire); a state-clause record
 - ADR-036 PA-24; ADR-031 SW-5, SW-7.
 - [FR-570](FR-570-project-a-global-protocol-onto-one-role.md), [FR-571](FR-571-decide-whether-local-strategies-realize-a-global-protocol.md).
 - [FR-265](FR-265-derive-a-state-clause-separating-witness.md): the state-clause record that must not change.
-- QSpec FR-351, FR-207, FR-352. Open: QSL-1898 (FR-207 protocol-node step).
+- QSpec FR-351, FR-207, FR-352. Open on QSL-1898: an optional upstream improvement (a protocol-node step kind in FR-207) and the carrier of the assessed-subject binding; neither blocks this requirement.
 
 ## References
 

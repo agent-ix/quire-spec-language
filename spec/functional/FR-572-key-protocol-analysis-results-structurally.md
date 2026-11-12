@@ -39,8 +39,15 @@ the profile, the channel, choice and visibility premises as selected
 (FR-054) and the bounds. For a realizability result they are: the definition
 key, the strategy profile, the role knowledge and visibility, the channel and
 environment premises, the bounds and the producing analyzer identity and
-version. `Bounds` has the key members `max_depth` and `max_history` (the
-latter realizability only).
+version. `Bounds` has two key members: `max_depth` (the horizon in events
+along a path or play) and `max_history` (local history length,
+realizability only) (PA-14).
+
+The role-knowledge and environment premises are optional-valued key members
+(PA-8): `None` ("not stated") and `Some` of an empty set ("declared empty")
+are both **present** values of the member and are different keys. A key
+struct with the member missing altogether is the absent member that is
+refused.
 
 ## Behavior
 
@@ -49,8 +56,11 @@ latter realizability only).
   defaulted. A reader shall rebuild the key from a stored result and refuse
   an artifact with an absent member the same way (PA-13).
 - Display name, path, span, producing run and timestamp shall not be fields
-  of the key and shall not change it (PA-13).
-- `max_depth` and `max_history` shall have no default. `max_states`,
+  of the key and shall not change it (PA-13). The assessed-subject root
+  (FR-574) is a request input, not a key member, and shall not change it.
+- `max_depth` and `max_history` shall have no default, and a search that
+  completes its method up to the horizon without a counterexample is
+  `inconclusive` (FR-573). `max_states`,
   `max_transitions` and the evaluation meter are run limits with published
   defaults outside the key (PA-14; ADR-018 V-7).
 - One key shall yield one result. Collections shall be ordered by checked
@@ -67,10 +77,10 @@ latter realizability only).
 | --- | --- | --- |
 | FR-572-AC-1 | Changing the definition key, the role, the profile, a channel, choice or visibility premise, or a bound yields a different projection key, and changing only display name, path, span or producing run yields an equal key (implements FR-174-AC-6). | Test (TC-1412) |
 | FR-572-AC-2 | Changing the definition key, the strategy profile, the role knowledge or visibility, a channel or environment premise, a bound or the analyzer identity or version yields a different realizability key, and changing only display name, path, span or producing run yields an equal key (implements FR-175-AC-6). | Test (TC-1412) |
-| FR-572-AC-3 | The result carries every key member as a typed value, and the key holds no digest: no member is a digest of the artifact or of another member. | Test (TC-1412) |
-| FR-572-AC-4 | For each key member in turn, building a key without it, and reading a stored result with it removed, are each refused `invalid_runtime_input`/`missing-member` naming that member, and no member takes a default. | Test (TC-1412) |
-| FR-572-AC-5 | Two runs of one analyzer identity and version on one realizability key return the same result, and two runs on one projection key return the same result, byte for byte on the result's serialized form (implements FR-175-AC-6, FR-174-AC-6). | Test (TC-1412) |
-| FR-572-AC-6 | A run stopped by `max_states`, `max_transitions` or the evaluation meter leaves the key unchanged between runs with different values of those limits, and the stopped run carries no artifact (PA-14). | Test (TC-1412) |
+| FR-572-AC-3 | The result carries every key member as a typed value, and the key holds no digest: no member is a digest of the artifact or of another member. A realizability key with the role-knowledge or environment premise `None` is present and unequal to one with that premise `Some` of the empty set; neither is refused. | Test (TC-1412) |
+| FR-572-AC-4 | For each key member in turn, building a key without it, and reading a stored result with it removed, are each refused `invalid_runtime_input`/`missing-member` naming that member, and no member takes a default. An optional-valued premise set to `None` is not an absent member. | Test (TC-1412) |
+| FR-572-AC-5 | Two runs of one analyzer identity and version on one realizability key return the same result, and two runs on one projection key return the same result, byte for byte on the result's serialized form (implements FR-175-AC-6; PA-15). | Test (TC-1412) |
+| FR-572-AC-6 | A run stopped by `max_states`, `max_transitions` or the evaluation meter leaves the key unchanged between runs with different values of those limits, and the stopped run carries no artifact (PA-14). A request with the assessed-subject root changed alone yields an equal key. | Test (TC-1412) |
 
 ## Dependencies
 

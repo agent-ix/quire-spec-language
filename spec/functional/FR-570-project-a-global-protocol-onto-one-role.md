@@ -38,9 +38,12 @@ is FR-572's; its settlement is FR-573's.
 ## Inputs
 
 A projection request: the FR-288 definition key of the checked protocol, a
-role, the profile, the premises and the bounds (ADR-036 PA-5, PA-6). The
-protocol is read only through the FR-519 read surface, and the premises
-(channel members and `choice_visibility`) are populated from it.
+role, the profile, the premises and the bounds (ADR-036 PA-5, PA-6), and the
+claim's assessed-subject root: the observation and the FR-204 declared object
+identity the claim is assessed over (FR-574). The root is a request input, not
+a key member (FR-572). The protocol is read only through the FR-519 read
+surface, and the premises (channel members and `choice_visibility`) are
+populated from it.
 
 ## Outputs
 
@@ -60,19 +63,22 @@ edges.
 - Each global communication shall yield exactly one local send and one local
   receive, and a total correspondence table shall map each global event of
   the role to its local event (PA-9; FR-174-AC-4).
-- A `parallel ... join all` shall stay a local partial order, and the engine shall enumerate no
-  interleaving. FIFO order per exact channel key and
-  evaluated key value shall be kept as the local receive order (PA-9).
-- At a `choice` the projection shall treat the role as internal choice when it is the
+- A `parallel ... join all` shall stay a local partial order, and the
+  engine shall enumerate no interleaving (PA-9).
+- The engine shall keep FIFO order per exact channel key and evaluated key
+  value as the local receive order (PA-9).
+- At a `choice` the engine shall classify the role as internal choice when it is the
   owner, as observing the outcome when it lies in `visible` or an earlier
   received message carries the outcome (FR-053-AC-1), as external choice when
   every branch's first events are receives from one peer with distinct
-  message types, and otherwise branches shall merge only when their first
-  events pair off by direction and peer with equal message types, merged
-  pairs recursing on their continuations (PA-10).
+  message types (PA-10).
+- Otherwise the engine shall merge branches only when their first events pair
+  off by direction and peer with equal message types, merged pairs recursing
+  on their continuations (PA-10).
 - A failure to merge shall return the counterexample of PA-11 and no graph:
   the choice, its owner, the role, two global paths to the first divergent
-  action and the two actions, of smallest length (the sum of the two paths'
+  action (path A being the one whose node id sequence is canonically first,
+  so the pair is ordered) and the two actions, of smallest length (the sum of the two paths'
   event counts), ties broken by the lexicographic order of the choice node
   id, then the node ids of path A, then those of path B.
 - Soundness is by construction (PA-12): the correspondence table is total

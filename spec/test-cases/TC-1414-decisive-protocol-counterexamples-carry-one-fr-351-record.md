@@ -17,7 +17,7 @@ relationships:
 Verify the record's presence, components, trace position and value path, and
 that the state-clause record still round-trips.
 
-Scope: FR-574-AC-1 to FR-574-AC-6.
+Scope: FR-574-AC-1 to FR-574-AC-7.
 
 ## Test Procedure
 
@@ -27,9 +27,14 @@ Scope: FR-574-AC-1 to FR-574-AC-6.
    record handed to the strict reader, and remove each of `deciding_element`,
    `value_path` and `trace_position` in turn.
 3. Read `deciding_element` for each counterexample.
-4. Read `trace_position` for the three counterexample forms, and for two
+4. Read `trace_position` for a projection counterexample diverging at the
+   third event of `path_a`, indistinguishable histories of lengths 3 and 5,
+   and an environment defeat violated at the fourth step; and for two
    counterexamples differing only in the divergent step.
-5. Read `value_path`; change display text, path and span.
+5. Read `value_path` against the request's assessed-subject root; change
+   display text, path and span; submit requests with the root absent, with
+   its observation absent and with its object identity absent; change only
+   the root and compare FR-572 keys.
 6. Round-trip a state-clause record (FR-265) with quantifier and index.
 
 Tag the tests `#[trace("TC-1414", "FR-574-AC-n")]`.
@@ -41,7 +46,9 @@ Tag the tests `#[trace("TC-1414", "FR-574-AC-n")]`.
   each altered record.
 - Step 3: the obligation's node id string (realizability) or the divergent
   action's node id string (projection).
-- Step 4: the zero-based decimal index by the FR-574 rule; the two differ.
-- Step 5: `kind: runtime_value`, an `object` root, `steps` empty; equal after
-  the presentation changes.
+- Step 4: `2`, `4` and `3`; the two differ.
+- Step 5: `kind: runtime_value`, an `object` root equal to the request's
+  root, `steps` empty; equal after the presentation changes; each absent
+  root component refused `invalid_runtime_input`/`missing-member` naming it;
+  the keys equal.
 - Step 6: the record is unchanged.

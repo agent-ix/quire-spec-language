@@ -37,7 +37,9 @@ FR-175-AC-1 to AC-5. The key is FR-572's; settlement is FR-573's.
 ## Inputs
 
 A realizability request: the FR-288 definition key, a strategy profile,
-premises and bounds (ADR-036 PA-5). The premises are the projection premises
+premises and bounds (ADR-036 PA-5), and the claim's assessed-subject root: the observation and
+the FR-204 declared object identity the claim is assessed over (FR-574). The
+root is a request input, not a key member (FR-572). The premises are the projection premises
 (channel members, `choice_visibility`) plus the claim-authored role
 knowledge (shared facts) and environment (admitted external events and
 channel outcomes). The last two are optional values: absent is not
@@ -90,7 +92,7 @@ plays explored, the horizon and whether exploration closed (PA-19).
 | --- | --- | --- |
 | FR-571-AC-1 | For a realizable protocol the result is a `RealizabilityWitness` whose in-engine replay walk selects each action from the table by recomputed class over every environment play of the premises, finds every action enabled and every play winning; a table edited to fail the walk makes the result non-conclusive, never realizable (implements FR-175-AC-1). | Test (TC-1411) |
 | FR-571-AC-2 | For the unrealizable hidden-choice protocol of ADR-036's worked example the result is `IndistinguishableHistories` naming the role, the two histories, the two required actions and the violated obligation; a defeat by the environment of every owner choice is `EnvironmentDefeat` with a defeating play per owner branch of the first lost owner node (implements FR-175-AC-2). | Test (TC-1411) |
-| FR-571-AC-3 | An absent role-knowledge or environment premise returns an `inconclusive` result, while the same premise declared empty is decided under; an exhausted `max_depth` or `max_history`, or an incomplete exploration, returns `inconclusive`, never realizable (implements FR-175-AC-3). | Test (TC-1411) |
+| FR-571-AC-3 | An absent (`None`) role-knowledge or environment premise returns an `inconclusive` result, while the same premise declared empty (`Some` of an empty set) is decided under; a search that completes its method up to `max_depth` or `max_history`, or an exploration that did not close, returns `inconclusive`, never realizable. A run stopped by a run limit (`max_states`, `max_transitions`, the meter) is not this case and settles `failed` (FR-573-AC-5) (implements FR-175-AC-3). | Test (TC-1411) |
 | FR-571-AC-4 | Recomputing `observation(role, history)` for every explored history, equal observation sequences get equal committed actions in the witness, and a protocol whose class has no common winning action returns refuted or `inconclusive`, never a witness (implements FR-175-AC-4). | Test (TC-1411) |
 | FR-571-AC-5 | The result quantifies over every admitted environment event and channel outcome: a protocol that is realizable on every sampled run but defeated by one admitted loss or event outcome is not realizable, and an outcome not admitted by the premises never appears in a play; under an open delivery range a result that depended on a cut count is `inconclusive` (implements FR-175-AC-5). | Test (TC-1411) |
 | FR-571-AC-6 | A refutation by indistinguishable histories is not claimed when an earlier owner choice could avoid either history, and a refutation by environment defeat is not claimed when the defeat depends on a choice the bound cut; each is `inconclusive` (PA-18). | Test (TC-1411) |

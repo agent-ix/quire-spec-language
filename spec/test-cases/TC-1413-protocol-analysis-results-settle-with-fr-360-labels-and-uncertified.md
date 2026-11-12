@@ -15,7 +15,7 @@ relationships:
 Verify the settlement map of FR-573 for both kinds, including the replay
 arm and the certification.
 
-Scope: FR-573-AC-1 to FR-573-AC-6.
+Scope: FR-573-AC-1 to FR-573-AC-7.
 
 ## Test Procedure
 
@@ -28,8 +28,8 @@ Scope: FR-573-AC-1 to FR-573-AC-6.
    premise, and one decided on a cut count.
 5. Settle runs stopped by `max_states`, by `max_transitions` and by the
    meter.
-6. Settle a protocol using `repeat`; request each kind from a registry with
-   no candidate.
+6. Settle a protocol using `repeat`; settle a sound result and read its
+   certification for `Certified` or `Trusted`.
 
 Tag the tests `#[trace("TC-1413", "FR-573-AC-n")]`.
 
@@ -42,6 +42,4 @@ Tag the tests `#[trace("TC-1413", "FR-573-AC-n")]`.
 - Step 4: `inconclusive`, completed, `pending`, `unsettled`.
 - Step 5: `failed`, `resource-incomplete`, `unavailable`, no artifact, the
   limit and value named.
-- Step 6: `unsupported`, `unavailable` axes; and for no candidate
-  `unsupported_projection`/`unsupported-requested-capability` over the three
-  existing `NegotiationCause` variants.
+- Step 6: `unsupported`, `unavailable` axes.

@@ -71,15 +71,19 @@ remedy is the same (a `join all`) and the named policy distinguishes them.
   `unsupported` result.
 - The engine shall never answer a located unsupported construct with a
   projected graph, a strategy, a sampled result or a guessed one (PA-22).
-- Corpora cannot use retry loops or non-`all` joins under projection or
-  realizability in this profile.
+- QSL shall make `repeat` and non-`all` joins unavailable to corpora under
+  projection and realizability in this profile; a corpus that needs a retry
+  loop or such a join receives the cause above.
+- When a construct is both in a row above and refused by `qsl-eval`, the
+  engine shall report that row's own slug; `evaluator-unsupported` is
+  reported only for a `qsl-eval` cause that has no row above.
 
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-575-AC-1 | For each construct row, a protocol using it yields `unsupported`, `unsupported_projection` with exactly that slug and the construct's checked node id, for projection and for realizability, and returns no local graph, strategy or counterexample (implements FR-174-AC-3). | Test (TC-1415) |
-| FR-575-AC-2 | A construct `qsl-eval` refuses (a protocol capture, `activation on each` with compensation, an unordered channel with a head or tail loss selector, an unenumerable step binder) yields `evaluator-unsupported` for realizability carrying the `qsl-eval` cause. | Test (TC-1415) |
+| FR-575-AC-1 | For each construct row other than `evaluator-unsupported`, a protocol using it yields `unsupported`, `unsupported_projection` with exactly that slug and the construct's checked node id, for projection and for realizability, and returns no local graph, strategy or counterexample (implements FR-174-AC-3). | Test (TC-1415) |
+| FR-575-AC-2 | A construct `qsl-eval` refuses (a protocol capture, `activation on each` with compensation, an unordered channel with a head or tail loss selector, an unenumerable step binder) yields `evaluator-unsupported` for realizability carrying the `qsl-eval` cause, except that a refused construct that has a row above (a symbolic capacity) reports that row's slug. | Test (TC-1415) |
 | FR-575-AC-3 | A request with profile `bounded-static` over a protocol using only the profile's constructs is decided, and a request with any other profile word is refused `invalid_runtime_input`/`invalid-value` naming `profile` before any analysis. | Test (TC-1415) |
 | FR-575-AC-4 | A `NegotiationCause` has exactly its three existing variants and a kind with no candidate still negotiates `unsupported_projection`/`unsupported-requested-capability`; the slugs above arise only from an engine result and add no code family. | Test (TC-1415) |
 

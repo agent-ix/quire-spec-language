@@ -59,8 +59,7 @@ The settlement map is:
 | A run limit stopped the analysis before it completed its method | `failed`, execution `resource-incomplete` | `unavailable` | No artifact; states the limit and the value used (PA-14). |
 | An engine failure | `failed`, execution `failed` | `unavailable` | |
 
-- The replay arm shall be `ReplaySource::ProtocolAnalysis` in `qsl-replay`:
-  it re-walks the counterexample's stated paths or moves against the checked
+- The replay arm shall be `ReplaySource::ProtocolAnalysis`: it re-walks the counterexample's stated paths or moves against the checked
   graph and the premises, checks each step is an admitted successor and that
   the walk ends in the stated divergence or violation. An arm that
   disagrees settles `inconclusive` (ADR-018 SM-7).
@@ -86,9 +85,10 @@ requirement.
 | FR-573-AC-1 | A sound projection and a realizable protocol each settle `proved`, `closed-scope`, execution `completed`, truth `satisfied`, certification `Uncertified`, and the settlement carries the same certification when read back. | Test (TC-1413) |
 | FR-573-AC-2 | A projection counterexample and each of the two realizability refutation forms settle `refuted`, `decisive-counterexample`, execution `completed`, truth `violated`, only after the counterexample replays through `ReplaySource::ProtocolAnalysis`. | Test (TC-1413) |
 | FR-573-AC-3 | A counterexample whose replay disagrees with the checked graph (a step that is not an admitted successor, or a walk that does not end in the stated divergence) settles `inconclusive`, never `refuted`. | Test (TC-1413) |
-| FR-573-AC-4 | A search that reaches `max_depth` without a counterexample settles `inconclusive`, execution `completed`, truth `pending`, basis `unsettled`; the same holds for an absent realizability premise and for a result that depended on a cut. | Test (TC-1413) |
+| FR-573-AC-4 | A search that completes its method up to `max_depth` or `max_history` without a counterexample settles `inconclusive`, execution `completed`, truth `pending`, basis `unsettled`; the same holds for an absent realizability premise and for a result that depended on a cut. | Test (TC-1413) |
 | FR-573-AC-5 | A run stopped by `max_states`, `max_transitions` or the evaluation meter settles `failed`, execution `resource-incomplete`, truth `unavailable`, with no artifact and a record naming the limit and the value used. | Test (TC-1413) |
-| FR-573-AC-6 | A FR-575 construct settles `unsupported`, execution `unsupported`, truth `unavailable`, basis `unavailable`. No `proved` result of either kind settles `Certified` or `Trusted`, and the negotiation result for a kind with no candidate is still `unsupported_projection`/`unsupported-requested-capability` over exactly the three existing `NegotiationCause` variants (FR-057-AC-15). | Test (TC-1413) |
+| FR-573-AC-6 | A FR-575 construct settles `unsupported`, execution `unsupported`, truth `unavailable`, basis `unavailable`. | Test (TC-1413) |
+| FR-573-AC-7 | No `proved` result of either kind settles `Certified` or `Trusted`. | Test (TC-1413) |
 
 ## Dependencies
 
