@@ -378,6 +378,257 @@ fn a_send_binds_its_send_record() {
     }
 }
 
+/// FR-206-AC-12 (TC-651, ADR-027 PS-7, ST-3, ST-4): an `unordered` channel
+/// `ch` of capacity 2 holding the entries of two sends in send order explores
+/// rather than refuses under `loss head` and `loss tail`: a third send `N` is
+/// accepted, `head` displacing the entry sent first and `tail` the one sent
+/// last, whichever of `P1` and `P2` is sent first, and each remaining entry
+/// is still deliverable to a matching `receive`.
+#[trace("TC-651", "FR-206-AC-12")]
+#[test]
+fn an_unordered_channel_with_a_loss_selector_displaces_by_send_order() {
+    let entry = |send: &str, value: bool| {
+        json!({"type": "queue-entry", "send": send,
+            "thread": {"type": "thread-path", "instance": "0", "steps": []},
+            "payload": {"type": "boolean", "value": value}})
+    };
+    // `P1` carries `true` and `P2` `false`, sent in either order.
+    let constraint = |node: &str| match node {
+        "P1" => ("p1", "{ p1 }", true),
+        _ => ("p2", "{ not p2 }", false),
+    };
+    for order in [["P1", "P2"], ["P2", "P1"]] {
+        let sends: String = order
+            .iter()
+            .map(|node| {
+                let (binder, body, _) = constraint(node);
+                format!("send {node} via ch as ({binder}: Boolean) {body}; ")
+            })
+            .collect();
+        for (selector, gone) in [("head", order[0]), ("tail", order[1])] {
+            let kept: Vec<&str> = order.iter().copied().filter(|node| *node != gone).collect();
+            let queued = [constraint(kept[0]).2, true];
+            for survivor in [kept[0], "N"] {
+                let unit = case(
+                    &channel(
+                        "ch",
+                        &format!(
+                            "ordering unordered delivery exactly-once-premise capacity 2 \
+                             overflow loss {selector}"
+                        ),
+                    ),
+                    &format!(
+                        "sequence Main {{ {sends}send N via ch as (n: Boolean) {{ n }}; \
+                         receive R via ch of {survivor} as (r: Boolean) {{ true }}; }}"
+                    ),
+                );
+                let subject = unit.subject("P");
+                let system = sc_system(&subject);
+                let reached = reachable(&system);
+                let full = follow(
+                    &reached,
+                    &[(StepKind::Send, order[0]), (StepKind::Send, order[1])],
+                );
+                let (third, after) = &reached[full].steps[0];
+                assert_eq!(last(third), "N");
+                assert_eq!(
+                    send_record(third),
+                    json!({"type": "send-record", "channel": "P::ch", "outcome": "accepted",
+                        "payload": {"type": "boolean", "value": true},
+                        "displaced": entry(&format!("Main/{gone}"), constraint(gone).2)}),
+                    "{selector} after {order:?}"
+                );
+                assert_eq!(
+                    queues(&system, &reached[*after].state)[0].1,
+                    queued,
+                    "{selector} after {order:?}"
+                );
+                assert_eq!(
+                    key(&system, &reached[*after].state)["queues"]["entries"][0]["value"]["type"],
+                    "sequence",
+                    "a send-ordered queue is a sequence in the state key"
+                );
+                let takes = reached[*after]
+                    .steps
+                    .iter()
+                    .filter(|(transition, _)| transition.kind() == StepKind::Receive)
+                    .count();
+                assert_eq!(
+                    takes, 1,
+                    "{survivor} is deliverable: {selector} after {order:?}"
+                );
+            }
+        }
+    }
+}
+
+/// FR-206-AC-12 (TC-651, ADR-027 PS-7, ST-4, ST-5): on a send-ordered
+/// `unordered` queue of capacity 3 under `loss head` holding `[A, B, A]`,
+/// the two `receive` steps of `A` reach `[B, A]` and `[A, B]`, and a
+/// `duplicate` of the first entry followed by a send displaces the copy
+/// under `loss tail` and the original under `loss head`.
+#[trace("TC-651", "FR-206-AC-12")]
+#[test]
+fn a_send_ordered_queue_steps_each_position_apart() {
+    let unit = case(
+        &channel(
+            "ch",
+            "ordering unordered delivery exactly-once-premise capacity 3 overflow loss head",
+        ),
+        "sequence Main { repeat Loop by w visible () max 3 while { true } \
+         send S via ch as (s: Boolean) { true }; exhausted sequence Out { } \
+         receive R via ch of Loop::S as (r: Boolean) { r }; }",
+    );
+    let subject = unit.subject("P");
+    let system = sc_system(&subject);
+    let reached = reachable(&system);
+    let at = reached
+        .iter()
+        .position(|state| {
+            queues(&system, &state.state).first().map(|q| q.1.clone())
+                == Some(vec![true, false, true])
+        })
+        .expect("a state holding [A, B, A] in send order");
+    let receives: BTreeSet<Vec<bool>> = reached[at]
+        .steps
+        .iter()
+        .filter(|(transition, _)| transition.kind() == StepKind::Receive)
+        .map(|(_, next)| queues(&system, &reached[*next].state)[0].1.clone())
+        .collect();
+    assert_eq!(
+        receives,
+        BTreeSet::from([vec![false, true], vec![true, false]])
+    );
+    let receive_steps = reached[at]
+        .steps
+        .iter()
+        .filter(|(transition, _)| transition.kind() == StepKind::Receive)
+        .count();
+    assert_eq!(receive_steps, 2);
+
+    // `B` is deliverable too, and `lose` gives one step per position.
+    let abab = |delivery: &str, rest: &str| {
+        let unit = case(
+            &channel(
+                "ch",
+                &format!("ordering unordered delivery {delivery} capacity 3 overflow loss head"),
+            ),
+            &format!(
+                "sequence Main {{ repeat Loop by w visible () max 3 while {{ true }} \
+                 send S via ch as (s: Boolean) {{ true }}; exhausted sequence Out {{ }} \
+                 {rest} }}"
+            ),
+        );
+        let subject = unit.subject("P");
+        let system = sc_system(&subject);
+        let reached = reachable(&system);
+        let at = reached
+            .iter()
+            .position(|state| {
+                queues(&system, &state.state).first().map(|q| q.1.clone())
+                    == Some(vec![true, false, true])
+            })
+            .expect("a state holding [A, B, A] in send order");
+        let next: BTreeSet<Vec<bool>> = reached[at]
+            .steps
+            .iter()
+            .filter(|(transition, _)| {
+                transition.kind() == StepKind::Receive || transition.kind() == StepKind::Lose
+            })
+            .map(|(_, next)| {
+                queues(&system, &reached[*next].state)
+                    .first()
+                    .map(|q| q.1.clone())
+                    .unwrap_or_default()
+            })
+            .collect();
+        next
+    };
+    let any = abab(
+        "exactly-once-premise",
+        "receive R via ch of Loop::S as (r: Boolean) { true };",
+    );
+    assert_eq!(
+        any,
+        BTreeSet::from([vec![false, true], vec![true, true], vec![true, false]])
+    );
+    let lost = abab("at-most-once", "");
+    assert_eq!(
+        lost,
+        BTreeSet::from([vec![false, true], vec![true, true], vec![true, false]])
+    );
+
+    for (selector, expected) in [("tail", [true, false, true]), ("head", [false, true, true])] {
+        let unit = case(
+            &channel(
+                "ch",
+                &format!(
+                    "ordering unordered delivery at-least-once capacity 3 \
+                     overflow loss {selector}"
+                ),
+            ),
+            "sequence Main { send P1 via ch as (p1: Boolean) { p1 }; \
+             send P2 via ch as (p2: Boolean) { not p2 }; \
+             send P3 via ch as (p3: Boolean) { p3 }; }",
+        );
+        let subject = unit.subject("P");
+        let system = sc_system(&subject);
+        let reached = reachable(&system);
+        let two = follow(&reached, &[(StepKind::Send, "P1"), (StepKind::Send, "P2")]);
+        let (_, copied) = reached[two]
+            .steps
+            .iter()
+            .find(|(transition, next)| {
+                transition.kind() == StepKind::Duplicate
+                    && queues(&system, &reached[*next].state)[0].1 == [true, false, true]
+            })
+            .expect("a duplicate of P1");
+        assert_eq!(
+            queues(&system, &reached[*copied].state)[0].1,
+            [true, false, true]
+        );
+        let (third, after) = reached[*copied]
+            .steps
+            .iter()
+            .find(|(transition, _)| transition.kind() == StepKind::Send)
+            .expect("the send of P3");
+        assert_eq!(last(third), "P3");
+        assert_eq!(
+            queues(&system, &reached[*after].state)[0].1,
+            expected,
+            "{selector}"
+        );
+    }
+}
+
+/// FR-215 (TC-660, ADR-027 TS-5, ST-2): a record type of finite fields is
+/// stepped, not refused as one the pre-check cannot enumerate: an `event`
+/// whose binder is a record of two `Boolean` fields has one step per record.
+#[trace("TC-660", "FR-215-AC-4")]
+#[test]
+fn an_event_binder_of_a_finite_field_record_is_stepped() {
+    let run = format!(
+        "sequence Main {{ event E by w as (e: Flags) {{ true }}; {} }}",
+        touch("T")
+    );
+    let unit = Case::new(
+        &format!(
+            "record Flags {{ a: Boolean; b: Boolean; }}\n{}",
+            contracts("self.v = 0") + &protocol("P", "", &run, "d")
+        ),
+        &[0],
+    );
+    let subject = unit.subject("P");
+    let system = sc_system(&subject);
+    let reached = reachable(&system);
+    let events = reached[0]
+        .steps
+        .iter()
+        .filter(|(transition, _)| transition.kind() == StepKind::Event)
+        .count();
+    assert_eq!(events, 4);
+}
+
 /// FR-206-AC-8 (TC-651, ADR-027 SE-5), with `weak_memory`'s `tso` half: a
 /// thread resting at `fence F ordering seq_cst;` has one `fence` step,
 /// whose identity names its ordering (ADR-027 TS-2) and which changes no

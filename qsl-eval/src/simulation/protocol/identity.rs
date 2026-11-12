@@ -446,6 +446,10 @@ impl SendOutcome {
 pub struct QueueFlow {
     /// The queue's FIFO key bytes; `None` for an `unordered` channel's queue.
     pub key: Option<Vec<u8>>,
+    /// Whether the queue is a sequence in send order though it has no FIFO
+    /// key: an `unordered` channel whose overflow loses its `head` or `tail`
+    /// (PS-7).
+    pub send_ordered: bool,
     /// The entry the step appended, took, copied or dropped.
     pub entry: Vec<u8>,
     /// How many entries of the same bytes were ahead of the entry in its

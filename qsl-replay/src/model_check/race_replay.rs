@@ -163,10 +163,11 @@ fn nth_equal(queue: &[Queued], entry: &[u8], before: usize) -> Option<usize> {
         .map(|(at, _)| at)
 }
 
-/// Add `entry` to `queue` as the engine does: at the end of a `fifo` queue,
-/// after the entries of no greater bytes in an `unordered` one.
-fn insert(queue: &mut Vec<Queued>, entry: Queued, fifo: bool) {
-    let at = if fifo {
+/// Add `entry` to `queue` as the engine does: at the end of a `fifo` or
+/// send-ordered queue, after the entries of no greater bytes in an
+/// `unordered` bag.
+fn insert(queue: &mut Vec<Queued>, entry: Queued, appended: bool) {
+    let at = if appended {
         queue.len()
     } else {
         queue.partition_point(|(held, _)| *held <= entry.0)
@@ -200,10 +201,10 @@ impl Replay {
                     queued.remove(at);
                 } else {
                     // The engine keeps the original and adds one copy: at the
-                    // end of a `fifo` queue, after the equal entries of an
-                    // `unordered` one.
+                    // end of a `fifo` or send-ordered queue, after the equal
+                    // entries of an `unordered` bag.
                     let copy = (flow.entry.clone(), queued[at].1.clone());
-                    insert(queued, copy, flow.key.is_some());
+                    insert(queued, copy, flow.key.is_some() || flow.send_ordered);
                 }
                 return None;
             }
@@ -271,7 +272,6 @@ impl Replay {
                     thread.instance,
                     flow.key.clone(),
                 );
-                let displacing = flow.displaced.is_some();
                 if let Some((displaced, before)) = &flow.displaced {
                     self.take(&queue, displaced, *before);
                 }
@@ -283,13 +283,7 @@ impl Replay {
                 let carried = clocks.cur.clone();
                 let queued = self.queues.entry(queue).or_default();
                 let entry = (flow.entry.clone(), carried);
-                if displacing {
-                    // A send that displaces an entry is appended whatever the
-                    // channel's order.
-                    queued.push(entry);
-                } else {
-                    insert(queued, entry, flow.key.is_some());
-                }
+                insert(queued, entry, flow.key.is_some() || flow.send_ordered);
                 None
             }
             StepKind::Receive => {

@@ -829,6 +829,27 @@ fn a_forged_race_after_a_displaced_send_is_refused() {
     disagreement(&case, forged);
 }
 
+/// The displaced-send race over an `unordered` channel whose `loss head`
+/// keeps its queue in send order (ADR-027 PS-7): replay follows the engine's
+/// append, so the receive matches the second entry and the forged race on
+/// the second store is refused.
+#[trace("TC-672", "FR-227-AC-3")]
+#[test]
+fn a_forged_race_after_a_displaced_send_on_a_send_ordered_queue_is_refused() {
+    let case = repeat_case("unordered", 1, "loss head", true);
+    let path = [
+        Hop::Fork,
+        Hop::Node("Sx"),
+        Hop::Node("Tx"),
+        Hop::Node("Sx"),
+        Hop::Node("Tx"),
+        Hop::Node("Rx"),
+        Hop::At("Lx", Some(0)),
+    ];
+    let forged = forged_race(&case, &path, location_of(&case, "x"), 4, 7);
+    disagreement(&case, forged);
+}
+
 /// A `duplicate` keeps the original queued and adds one copy after the equal
 /// entries of an `unordered` queue. Taking the first of the equal entries
 /// after it is the older send, which carries only the first store, so the

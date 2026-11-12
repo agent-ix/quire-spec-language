@@ -23,7 +23,7 @@ use qsl_semantics::check::{
 use quire_exact::{EffectiveId, NodeKey, ValueType};
 
 use super::{ProtocolRefusal, Unsupported};
-use crate::simulation::model::enumerable;
+use crate::simulation::model::ModelSystem;
 
 /// One control of the `run` tree.
 pub(super) struct Control {
@@ -97,6 +97,10 @@ pub(super) struct Channel<'a> {
     pub(super) capacity: usize,
     pub(super) overflow: ChannelOverflow,
     pub(super) delivery: ChannelDelivery,
+    /// Whether the queue is a sequence in send order: an `unordered` channel
+    /// whose overflow is `loss head` or `loss tail` (PS-7). Delivery from it
+    /// still takes any entry (ST-4).
+    pub(super) send_ordered: bool,
     /// The `fifo` key over the message binder; `None` for `unordered`.
     pub(super) key: Option<&'a CheckedBody>,
 }
@@ -333,7 +337,10 @@ fn unsupported(construct: Unsupported) -> ProtocolRefusal {
 /// captures, replicated roles and `activation on each` (ADR-027 §9
 /// sequencing steps 3 to 5). Which memory model each `parallel` runs under
 /// is the subject's resolved model, read when the system is built.
-fn refuse_unsupported(protocol: &CheckedProtocol) -> Result<(), ProtocolRefusal> {
+fn refuse_unsupported(
+    model: &ModelSystem<'_>,
+    protocol: &CheckedProtocol,
+) -> Result<(), ProtocolRefusal> {
     for control in &protocol.controls.controls {
         if let ControlStep::Unstepped(construct) = control.step() {
             return Err(unsupported(Unsupported::Control(construct)));
@@ -342,13 +349,6 @@ fn refuse_unsupported(protocol: &CheckedProtocol) -> Result<(), ProtocolRefusal>
     for channel in &protocol.channels {
         if matches!(channel.capacity, ChannelCapacity::Symbolic(_)) {
             return Err(unsupported(Unsupported::SymbolicCapacity));
-        }
-        let ordered_loss = matches!(
-            channel.overflow,
-            ChannelOverflow::Loss(LossSelector::Head | LossSelector::Tail)
-        );
-        if ordered_loss && channel.ordering == CheckedOrdering::Unordered {
-            return Err(unsupported(Unsupported::UnorderedLossSelector));
         }
     }
     if protocol
@@ -373,7 +373,7 @@ fn refuse_unsupported(protocol: &CheckedProtocol) -> Result<(), ProtocolRefusal>
         .slots
         .binders
         .iter()
-        .any(|binder| binder.ranged && !enumerable(&binder.value_type))
+        .any(|binder| binder.ranged && !model.enumerates(&binder.value_type))
     {
         return Err(unsupported(Unsupported::UnenumerableRecord));
     }
@@ -477,8 +477,11 @@ fn replicated_roles(
 impl<'a> Program<'a> {
     /// The structure of `protocol`, or the refusal of a construct this
     /// system does not step.
-    pub(super) fn new(protocol: &'a CheckedProtocol) -> Result<Self, ProtocolRefusal> {
-        refuse_unsupported(protocol)?;
+    pub(super) fn new(
+        model: &ModelSystem<'_>,
+        protocol: &'a CheckedProtocol,
+    ) -> Result<Self, ProtocolRefusal> {
+        refuse_unsupported(model, protocol)?;
         let tree = &protocol.controls.controls;
         let root = tree
             .first()
@@ -749,6 +752,11 @@ impl<'a> Program<'a> {
                 capacity: usize::try_from(capacity).unwrap_or(usize::MAX),
                 overflow: channel.overflow,
                 delivery: channel.delivery,
+                send_ordered: channel.ordering == CheckedOrdering::Unordered
+                    && matches!(
+                        channel.overflow,
+                        ChannelOverflow::Loss(LossSelector::Head | LossSelector::Tail)
+                    ),
                 key: match &channel.ordering {
                     CheckedOrdering::Unordered => None,
                     CheckedOrdering::Fifo { key, .. } => Some(&**key),
