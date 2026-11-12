@@ -22,3 +22,9 @@ untracked, and one sibling edge is missing (see integrity FND-001).
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | medium | FR-576 states that QSpec FR-322 "must admit the body record before this requirement is implemented", but that enablement has no ticket. No STD ticket exists for the carrier, and in Linear QSL-1899 has no blocked-by edge (it only blocks IR-1509). The PR body says the carrier choice is an owner decision recorded in a "ticket report", but QSL-1899 has no comments, so that decision cannot be checked. | FR-576 Dependencies; QSpec FR-322 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Dependencies names STD-660. Linear shows STD-660 (Backlog) `blocks` QSL-1899, and STD-660's row shape `{document, declaring, operation, body}` with `no_body` matches FR-576. |

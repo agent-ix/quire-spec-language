@@ -64,7 +64,7 @@ repositories.
 ## Outputs
 
 - A checked package that carries `operation_bodies` with one row per operation
-  member, or that omits the member.
+  member.
 - The existing typed refusal when a body fails its check.
 
 ## Behavior
@@ -85,36 +85,36 @@ repositories.
   result type), whether or not any dispatched call reaches the operation, and
   the emitter SHALL set the row's `body` to a reference to that function node.
   A body that fails the check refuses the compile as FR-302 states, with no
-  package.
+  package. Because every body is checked, a unit whose uncalled body contains
+  a dispatched call refuses `ill_typed`/`operator-ineligible` at that body
+  (FR-302), where it compiled before this requirement; the body check has no
+  other new refusal.
 - While an operation has `has_body` false, the emitter SHALL set the row's
   `body` to the typed absence `no_body`. It SHALL NOT omit the row, write a
   default or empty body, or substitute the body of another operation.
 - When an operation is a candidate of an FR-494 dispatch table, the emitter SHALL give the row's body reference the same checked identity as that candidate's operation-body identity.
 - The emitter SHALL source every field from checked producer data. It SHALL
   NOT rebuild a body from source text, names, declaration order, graph
-  traversal or an operation catalog. When the producer cannot supply the body
-  or its absence for any operation, the emitter SHALL omit the whole
-  `operation_bodies` member, which means bodies are unavailable; it SHALL NOT
-  emit a partial member.
+  traversal or an operation catalog. Every body of an admitted operation is
+  built and checked, or the compile refuses, so the emitter always has the body
+  or its absence for every operation and SHALL NOT emit a partial member.
 - The emitter SHALL write each row so that the row and the graph node it names
   give a reader the operation identity and the body expression with its source
   provenance, with no other input. The reader's typed read belongs to
   quire-driver.
-- Carrying the member SHALL NOT change a semantic graph node or node identity
-  that the same package without the member holds for the same bodies.
 
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
 | FR-576-AC-1 | A unit with `A.size` having an `operation-body` and a dispatched call that reaches it emits an `operation_bodies` row for `A.size` whose `body` references the FR-094 body function node; reading that node yields the authored expression with its source provenance. | Test |
-| FR-576-AC-2 | Operation `A.empty` has a body and no call in the unit reaches it: the package still holds its body function node and a row referencing it. The same source with a wrong-typed `A.empty` body refuses `ill_typed`/`type-mismatch` at that body and emits no package. | Test |
+| FR-576-AC-2 | Operation `A.empty` has a body and no call in the unit reaches it: the package still holds its body function node and a row referencing it. The same source with a wrong-typed `A.empty` body refuses `ill_typed`/`type-mismatch` at that body and emits no package. The body function node's id is equal in the package where a dispatched call reaches `A.empty` and the package where none does. | Test |
 | FR-576-AC-3 | An operation without an `operation-body` has exactly one row whose `body` is `no_body`, and the package holds no body function node, default value or empty body for it. | Test |
 | FR-576-AC-4 | Types `A` and `B` each declare `size`, `A` with a body and `B` without: rows `(doc, A, size)` and `(doc, B, size)` are separate, the first with a body reference and the second `no_body`; permuting declaration order emits an equal member. | Test |
 | FR-576-AC-5 | Subtype `S` of `A` inherits `A.size` and declares nothing: the member has no row `(doc, S, size)`. Subtype `R` of `A` redefines `size` with its own body: it has its own row `(doc, R, size)` naming `R`'s body function node, distinct from `A`'s. | Test |
 | FR-576-AC-6 | A document selected through two model aliases in one unit emits one row per operation of that document, not one per alias. | Test |
 | FR-576-AC-7 | For an operation that is a candidate in an FR-494 dispatch table, the row's body reference equals that candidate's operation-body identity; for each operation the member's `(document, declaring, operation)` set equals the `operation_effects` row set of the same package. | Test |
-| FR-576-AC-8 | When the producer cannot supply the body or absence of one operation, the package omits `operation_bodies` entirely, and every other member and every semantic graph node and identity equals the package emitted with the member; the member is never partial. | Test |
+| FR-576-AC-8 | A unit whose uncalled `A.empty` body contains a dispatched call refuses `ill_typed`/`operator-ineligible` located at that body and emits no package; the same unit with the call removed compiles. | Test |
 | FR-576-AC-9 | Each row, together with the graph node it names, yields the operation identity and the body expression with source provenance by lookup alone: for the AC-1 package, resolving the row's `body` in the package graph returns the authored body for the row's operation, and for a `no_body` row no node lookup is needed. | Test |
 
 ## Dependencies
