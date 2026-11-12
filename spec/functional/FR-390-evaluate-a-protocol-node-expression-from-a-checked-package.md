@@ -223,8 +223,9 @@ The slots of a protocol node:
 | `finish` obligation | `constraint` | `finish` | none |
 | `terminal` obligation | `condition` | `terminal` | none |
 
-A `repeat`'s `proof.invariant` and `proof.variant` are not slots: S3 discharges
-the proof before emission and a termination claim is their only reader
+A `repeat`'s `proof.invariant` and `proof.variant` are not slots: S3 only
+checks and records them, QSL has no prover for them in V1, and a termination
+claim is their only reader, which settles it inconclusive
 (FR-218), so nothing at run time evaluates them.
 
 ## Outputs
@@ -985,6 +986,7 @@ value; check 6 does not apply to it.
 | FR-390-AC-71 | Reader evaluation of a slot of a protocol node that reaches a source-declared operation anchor. Passes now: the slots `Refund.retry` and `Refund.recover` of E-S, evaluated with the supplies of TC-1407 vectors S1 to S3, evaluate on the source route, and the slots of fixture E give on all three routes the results they gave before. Waits on QC-30 and on IR's FR-352 witness kind (the dependency above): the same E-S slots give on the in-process reader route and on the bytes route the value and the charge log the source route gives | Test (TC-1407) |
 | FR-390-AC-72 | Witness refusals for source-operation rows, each at the `Package` locus of `UnsupportedView` with no partial view and no meter charge. Waits on QC-30, over E-S and over TC-1408 fixture S (with `Order::bump` in place of `Node::step`): a supplier that omits the `step` row gives `MissingIdentityWitness` (E-S only: S's anchor is reached by no protocol); a row whose `source_identity` is `Node::halt`, or whose `structural_node` is a `state_clause` node, gives `UnknownIdentityWitness` and no other reason; the package's complete rows plus the row of a second emission under another source authority give `ForeignIdentityWitness` and no other reason, also when that foreign row also names the `halt` operation. A refusal of this AC precedes any `MissingSelectedJoin` of AC-73. | Test (TC-1407, TC-1408) |
 | FR-390-AC-73 | Passes now: S4 refuses E-S `SourceObjectEmission` (no package, so no view), the source route evaluates every slot of E-S, and view creation over fixture E is unaffected and its slots evaluate. Waits on QC-30: with every row admitted and no IR witness kind in the lock, view creation over E-S returns `ViewFailure::Unsupported` with `MissingSelectedJoin` at the `Node` locus of the `step` anchor reference of `Refund` and creates no view, so no slot of E-S evaluates on the reader or bytes route | Test (TC-1407) |
+| FR-390-AC-74 | Over a `repeat` with an invariant and a variant, the checked package exposes no slot for `proof.invariant` or `proof.variant`, S3 records both without discharging them, and a termination claim over the `repeat` settles inconclusive. | Test (TC-663) |
 
 ## Dependencies
 

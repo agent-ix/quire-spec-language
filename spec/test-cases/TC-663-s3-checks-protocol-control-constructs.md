@@ -5,6 +5,8 @@ type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-218
     type: verifies
+  - target: ix://agent-ix/quire-spec-language/FR-390
+    type: verifies
 ---
 # TC-663: S3 checks every protocol control construct and records scopes
 
@@ -12,7 +14,7 @@ relationships:
 
 Verify that S3 checks every construct the protocol system runs, refuses malformed guards, choices, joins and cycles, and records binder readers and role regions.
 
-Scope: FR-218-AC-1 to FR-218-AC-7, FR-218-AC-28, FR-218-AC-29 and FR-218-AC-35.
+Scope: FR-218-AC-1 to FR-218-AC-7, FR-218-AC-28, FR-218-AC-29, FR-218-AC-35, FR-218-AC-40 and FR-390-AC-74.
 
 ## Test Procedure
 
@@ -38,6 +40,9 @@ Scope: FR-218-AC-1 to FR-218-AC-7, FR-218-AC-28, FR-218-AC-29 and FR-218-AC-35.
    attempt.
 
 Tag the tests `#[trace("TC-663", "FR-218-AC-n")]`.
+10. Check FR-218-AC-40's non-`all` joins with and without an `outstanding`
+    rule, and the `repeat` with an invariant and variant under a termination
+    claim (FR-390-AC-74).
 
 ## Expected Results
 
