@@ -33,3 +33,9 @@ Gates (focused, per brief) all pass; see Coverage.
 - `cargo test -p qsl-semantics --lib a_record_can_carry_a_guard`: pass (1 passed, 0 failed).
 - `cargo clippy -p qsl-semantics --lib --tests --features test-support -- -D warnings`: pass (no warnings).
 - Full workspace clippy, `cargo deny` and full tests were not run: the brief asked for focused checks only, and the full gate runs once before merge.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Verified in 78af12401: the doc no longer claims driver behaviour or calls the guard a record, and says neither node nor role is checked against a graph and that a guard is the node's `expression` occurrence. |
