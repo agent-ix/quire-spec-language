@@ -655,6 +655,9 @@ pub struct Emission {
     /// identities written in these bytes.
     pub(crate) selected_operation_member_rows:
         Vec<quire_contract_model::SelectedOperationMemberRow>,
+    /// FR-576: the body of each operation FR-496 keys, joined to emitted
+    /// nodes. `None` when no row exists or a node it names is not carried.
+    pub(crate) operation_body_rows: Option<Vec<OperationBodyRow>>,
     /// QSL-stage tuple identities keyed by admitted model tuple nodes.
     pub(crate) selected_tuple_declaration_rows:
         Vec<quire_contract_model::SelectedTupleDeclarationRow>,
@@ -923,6 +926,7 @@ impl DebugWith for Emission {
             capability_report,
             source_map,
             selected_operation_member_rows,
+            operation_body_rows,
             selected_tuple_declaration_rows,
             selected_source_unit_rows,
             selected_model_enum_declaration_rows,
@@ -953,6 +957,7 @@ impl DebugWith for Emission {
                 "selected_operation_member_rows",
                 selected_operation_member_rows,
             )
+            .field("operation_body_rows", operation_body_rows)
             .field(
                 "selected_tuple_declaration_rows",
                 selected_tuple_declaration_rows,
@@ -1235,6 +1240,13 @@ impl Emission {
         &self,
     ) -> &[quire_contract_model::SelectedOperationMemberRow] {
         &self.selected_operation_member_rows
+    }
+
+    /// FR-576: one row per operation FR-496 emits an effect row for, on the
+    /// same key and order, naming the operation's body function node or its
+    /// explicit absence. `None` when the package has no such operation.
+    pub fn operation_body_rows(&self) -> Option<&[OperationBodyRow]> {
+        self.operation_body_rows.as_deref()
     }
 
     /// Selected model tuple identity rows carried by this emission.
@@ -2427,6 +2439,65 @@ fn member_value(ids: &StructuralIds, member: &Member) -> Result<serde_json::Valu
             }
         }),
     })
+}
+
+/// FR-576: how an `operation_bodies` row refers to the operation's body.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum OperationBodyRef {
+    /// The emitted body function node, whose owner is the operation's own and
+    /// whose clause is `"body"`.
+    Function(CheckedNodeId),
+    /// The operation has no authored body.
+    NoBody,
+}
+
+/// FR-576: one `operation_bodies` row, keyed as the FR-496 row of the same
+/// operation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OperationBodyRow {
+    /// The selected document.
+    pub document: String,
+    /// The structural id of the declaring node.
+    pub declaring: CheckedNodeId,
+    /// The original member name.
+    pub operation: String,
+    /// The operation's body or its explicit absence.
+    pub body: OperationBodyRef,
+}
+
+/// FR-576: the `operation_bodies` rows of `graph`, sourced from the checked
+/// body function of each operation. A body node or declaring node the package
+/// does not carry makes the whole member unavailable, as for
+/// [`operation_effects_are_carried`]; the rows are never partial.
+fn operation_body_rows(
+    graph: &CheckedGraph,
+    emitted_node_ids: &HashMap<NodeKey, CheckedNodeId>,
+    nodes: &[CheckedSemanticNodeV2],
+) -> Option<Vec<OperationBodyRow>> {
+    let carried: BTreeSet<&CheckedNodeId> = nodes.iter().map(|node| &node.node_id).collect();
+    graph
+        .operation_bodies()?
+        .iter()
+        .map(|row| {
+            let body = match row.body {
+                None => OperationBodyRef::NoBody,
+                Some(index) => {
+                    let identity = graph.function_identity_at(index)?;
+                    OperationBodyRef::Function(emitted_node_ids.get(&identity)?.clone())
+                }
+            };
+            let named = match &body {
+                OperationBodyRef::Function(id) => carried.contains(id),
+                OperationBodyRef::NoBody => true,
+            };
+            (named && carried.contains(&row.declaring)).then(|| OperationBodyRow {
+                document: row.document.clone(),
+                declaring: row.declaring.clone(),
+                operation: row.operation.clone(),
+                body,
+            })
+        })
+        .collect()
 }
 
 /// Whether every node an `operation_effects` row names is a node of the
@@ -5642,6 +5713,7 @@ pub fn emit_timed_models(
         capability_report,
         source_map: inspection_source_map,
         selected_operation_member_rows: Vec::new(),
+        operation_body_rows: None,
         selected_tuple_declaration_rows: Vec::new(),
         selected_source_unit_rows: Vec::new(),
         selected_model_enum_declaration_rows: Vec::new(),
@@ -6662,6 +6734,7 @@ fn emit_package_inner(
     let operation_effects = graph
         .operation_effects()
         .filter(|rows| operation_effects_are_carried(rows, &nodes));
+    let operation_body_rows = operation_body_rows(graph, &emitted_node_ids, &nodes);
     let operand_rows = write_operand_slots(&mut nodes, limits)?;
     let semantic_graph = CheckedSemanticGraphV2 {
         graph_version: GRAPH_V2.into(),
@@ -6710,6 +6783,7 @@ fn emit_package_inner(
         capability_report: capability_report.to_vec(),
         source_map: inspection_source_map,
         selected_operation_member_rows,
+        operation_body_rows,
         selected_tuple_declaration_rows,
         selected_source_unit_rows,
         selected_model_enum_declaration_rows,

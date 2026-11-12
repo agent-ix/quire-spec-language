@@ -1328,6 +1328,7 @@ fn finish(
         capability_report,
         source_map: inspection_source_map,
         selected_operation_member_rows: rows.selected_operation_member_rows,
+        operation_body_rows: None,
         selected_tuple_declaration_rows: rows.selected_tuple_declaration_rows,
         selected_source_unit_rows: rows.selected_source_unit_rows,
         selected_model_enum_declaration_rows: rows.selected_model_enum_declaration_rows,

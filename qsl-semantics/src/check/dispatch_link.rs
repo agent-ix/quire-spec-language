@@ -30,11 +30,12 @@ use quire_semantic_value::location::{ExpressionLocation as Location, ExpressionO
 
 use super::check::DispatchOperation;
 use super::checked_dispatch::{
-    body_function, checked_dispatch_core, rename_names, DispatchBridgeRefusal, DispatchRoot, OperationClauses,
+    body_function, checked_dispatch_core, rename_names, DispatchBridgeRefusal, DispatchRoot,
+    OperationClauses,
 };
 use super::ir::{DispatchCandidate, DispatchTable};
-use super::refusal::{DispatchLinkCause, DispatchSubtypeFailure};
 use super::lowering::ModelClause;
+use super::refusal::{DispatchLinkCause, DispatchSubtypeFailure};
 use super::{CheckCause, CheckRefusal, PackageDeclarations};
 use crate::model::accounting::{Meter, ModelNormalizationLimits};
 use crate::model::dispatch::{DispatchLinkOutcome, GeneralizationClosure, LinkCheckOutcome};
