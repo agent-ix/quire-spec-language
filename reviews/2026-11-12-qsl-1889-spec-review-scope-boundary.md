@@ -33,3 +33,10 @@ Checked qsl-analyze, qsl-replay, qsl-package, qsl-eval Cargo.toml [dependencies]
 - PA-1 (ADR-036): The engine is a new module protocol_analysis of the layer-A crate qsl-analyze, beside model_check. No new crate and no new layer edge.
 - PA-2 (ADR-036): The key, bounds, premises, outcome, witness and counterexample types, the settlement map and the independent witness checker live in qsl-replay module protocol_analysis, as ADR-028 SP-2 places EN-5's types.
 - PA-3 (ADR-036): The engine reads the checked protocol only through qsl_package::protocol_view (FR-519).
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | PA-3 names the three missing accessors (ordering, FIFO key expression, overflow) and slice 2 adds them under FR-519 as an amendment quire-protocol imports |
+| FND-002 | fixed | PA-16 maps the qsl-eval G7 refusals to unsupported carrying the qsl-eval cause |

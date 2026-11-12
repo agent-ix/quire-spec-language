@@ -38,3 +38,20 @@ Read qsl-eval/src/simulation/protocol.rs module doc (ProtocolSystem steps a prot
 - FR-174-AC-5 (quire-specification FR-174): A local branch merge is accepted only under compatible next actions or explicit distinguishing evidence.
 - FR-174-AC-1 (quire-specification FR-174): A projectable graph yields local graphs whose composed traces are included in the admitted global traces.
 - FR-175-AC-3 (quire-specification FR-175): Missing environment/channel premises or analysis limits return inconclusive rather than realizable.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-007 | medium | PA-17/PA-18 compute winning-action sets under perfect information and then intersect per class. Two gaps: (a) refutation (i) is sound only if neither history can be avoided by an earlier owner choice, otherwise it must be inconclusive; (b) per-class commitments need not compose, so `proved` should settle only after the PA-19 table walk passes inside the engine, not only in test support | ADR-036:144 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | PA-17/PA-18: owner choices are existential moves in an AND/OR search; environment defeat refutes only when the root is lost (every owner choice defeated); cut-dependent or non-disjoint cases are inconclusive; residual gaps tracked as FND-007 |
+| FND-002 | fixed | PA-12 drops the composition check; soundness is by construction, proved is Uncertified, AC-1 shown by the TC-205 corpus; rejected alternative recorded |
+| FND-003 | fixed | PA-10 defines first(r, branch) as a set for parallel regions and accepts a divergent first receive from one peer with distinct message types |
+| FND-004 | fixed | PA-7 states V1 is useful only under exactly-once-premise or [1,1], cuts open ranges at literal capacity and max_depth, and makes a cut-dependent result inconclusive |
+| FND-005 | fixed | PA-8 separates absent (None, inconclusive) from declared-empty (Some of empty set, decides) |
+| FND-006 | fixed | PA-11 fixes the measure (sum of path event counts) and the lexicographic tie-break over (choice, path_a, path_b), which also picks among failing choices |

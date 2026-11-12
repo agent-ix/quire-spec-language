@@ -33,3 +33,12 @@ Mergeable on these points once the slicing is trimmed. Minimum useful subset: 1 
 - Section 12 slicing table (ADR-036 lines 199-212).
 - ADR-011 S6c (spec/decisions/ADR-011): a proof settles only after its certificate checker in layer 6 accepts it, or settles proved labelled uncertified when the engine has no core checker.
 - TL-387 (Linear): AC1 dispatch and witness carrying tested against the real QSL backend; AC2 typed unsupported path stays for refused requests.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Independent checkers and the thread-count gate are deferred; PA-2 keeps only types, settlement map and replay arm in qsl-replay |
+| FND-002 | fixed | Slice 1 now covers only behaviour quire-protocol consumes (results, key, settlement map, FR-351 record, unsupported causes, profile) |
+| FND-003 | fixed | Old slices 3 to 5 merged into slice 3; slices 3 and 4 stay unserved until slice 5; no stubbed proved |
+| FND-004 | fixed | PA-15 states the engine is single-threaded with a two-run determinism test; realizability (slice 4) follows projection (slice 3) |

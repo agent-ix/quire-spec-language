@@ -37,3 +37,19 @@ Read QSpec origin/main at b690867b (includes #650 eb2932bd), quire-protocol orig
 - FR-175-AC-6 (quire-specification spec/functional/protocol/FR-175-analyze-protocol-realizability.md): Changing the FR-288 definition key, the strategy profile, the visibility, channel or environment premises, the bounds or the producing analyzer identity or version yields a different witness identity; two runs of one analyzer identity and version on one key return the same witness; an absent key member is refused invalid_runtime_input/missing-member naming the member.
 - FR-152-AC-7 (quire-protocol spec/functional/FR-152-carry-projection-and-realizability-witness.md): Given a stand-in returning a decisive realizability result with no witness, and a second whose witness record has no trace position, each disposition is refused under FR-030, and a decisive local-projection result with no witness is carried unchanged.
 - ADR-018 V-7 (spec/decisions/ADR-018): A run limit stopped the analysis before it completed its method: max_states, max_transitions, ... The max_depth horizon is not a limit.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-006 | medium | PA-24's record does not fit QSL's existing FR-351 type: `qsl-replay` `SeparatingWitnessRecord` (ADR-031 SW-5, SW-7) has a required `quantifier: OccurrenceKey` and a `deciding_element: Value` (kernel value), and its wire refuses a missing index, while PA-24 makes the quantifier and index absent and the deciding element a node-id string. Name the ADR-031 amendment (optional quantifier, protocol deciding element) and its slice, and the FR-352 `native-run-result/2` carriage quire-protocol FR-302 imports from | ADR-036:155 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | PA-24 adds one FR-351 record per decisive-counterexample (deciding_element, value_path, zero-based trace_position string), states node ids are not the trace position, and closed-scope carries none, matching quire-protocol FR-302-AC-2 and FR-152-AC-7; residual type fit tracked as FND-006 |
+| FND-002 | fixed | PA-14: max_depth and max_history are key members (inconclusive); max_states, max_transitions and the meter are V-7 run limits (failed/resource-incomplete) outside the key |
+| FND-003 | fixed | PA-12 and PA-20: proved is Uncertified per ADR-011 S6c and ADR-018 PC-1; refutation settles after the ReplaySource::ProtocolAnalysis replay arm (SM-7); no checker rule |
+| FND-004 | fixed | TC-155 cited (PA-23); PA-21 gives the real reason for excluding join any, quorum and repeat; PA-7's FR-053-AC-1 citation now matches its earlier-message pattern; section numbering removed |
+| FND-005 | fixed | PA-6: projection takes groups (a) and (b) only; the absent (c)/(d) inconclusive rule is realizability-only (PA-20) |

@@ -32,3 +32,10 @@ Fix both in the ADR text; neither blocks the placement decision.
 - FR-175-AC-4 (quire-specification FR-175): A witness strategy selects the same action for every pair of locally indistinguishable histories.
 - FR-174-AC-2 (quire-specification FR-174): A hidden choice or incompatible local merge yields a source-correspondent counterexample.
 - FR-053-AC-1 (quire-specification FR-053): A fulfillment-owned ship/cancel choice is admitted when an earlier message supplies the distinguishing payment outcome.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | PA-19 drops the by-construction claim's weight: AC-4 test recomputes observation(role, history) for every explored history; FR-175-AC-1 replay walks every environment play against the table |
+| FND-002 | fixed | Worked example now repairs with a distinct cancelled receive (PA-10) or an earlier guard-tested decision message, and states a same-type decision in both branches does not distinguish |
