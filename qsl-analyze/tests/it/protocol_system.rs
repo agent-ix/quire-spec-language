@@ -937,7 +937,7 @@ fn a_predicate_join_binds_labels_in_ascending_byte_order() {
 /// ends an undefined-evaluation violation there, never reading it as
 /// `false`; an evaluation the meter stops stops the exploration with
 /// `resource_exhausted`/`insufficient-next-charge`.
-#[trace("TC-651", "FR-206-AC-11")]
+#[trace("TC-651")]
 #[test]
 fn an_undefined_or_exhausted_predicate_is_never_read_as_false() {
     use Disposition::Completed;

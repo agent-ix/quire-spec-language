@@ -58,3 +58,17 @@ FR-206-AC-11 and FR-216-AC-8 have tests that fail without the code. However, FR-
 ordering clause is untested and violated (FND-001). The undefined and resource-limit clauses
 are untested and unimplemented (FND-002). Fix both medium gaps in this PR before QSL-1885
 closes.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | low | `an_undefined_or_exhausted_predicate_is_never_read_as_false` is tagged `#[trace("TC-651", "FR-206-AC-11")]`, but FR-206-AC-11 covers argument order and cancellation, not undefined or meter-stopped predicates. The FR-206 statement clauses it tests have no AC, so the tag claims AC-11 coverage the AC does not state. Fix: drop `FR-206-AC-11` from that test's tag (keep `TC-651`), or add an FR-206 AC for the undefined and resource-limit clauses and tag that AC. | qsl-analyze/tests/it/protocol_system.rs:940 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Round 1, b3c97ceba: `a_predicate_join_binds_labels_in_ascending_byte_order` declares branch `b` before `a`, lists `[b, b, a]`, and asserts enabledness for `f(x, y) = x and not y` bound to `a` and then `b`. |
+| FND-002 | fixed | Round 1, b3c97ceba: FR-206's undefined-result and resource-limit clauses are implemented in `join_enabled` and tested by `an_undefined_or_exhausted_predicate_is_never_read_as_false`. |
+| FND-003 | fixed | Round 1, b3c97ceba: the FR-216-AC-8 test asserts `join.writes == any_join.writes` against the same protocol joined `any [c, a] outstanding cancel`. |

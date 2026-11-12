@@ -51,3 +51,11 @@ internal invariant, against FR-206 and the guard precedent) must be fixed in thi
 empty object environment and its formed units, and charges a fresh meter per evaluation, as
 guards do. FR-216-AC-8's footprint needs no code change: the join footprint never reads the
 function's model state, and the new test confirms this.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Round 1, b3c97ceba: `join_enabled` collects the distinct `join.joined` labels into a `BTreeSet<&String>` (ascending byte order) and passes one Boolean per label. `a_predicate_join_binds_labels_in_ascending_byte_order` declares `b` before `a` and lists `[b, b, a]`, so it fails under declaration order or list order. |
+| FND-002 | fixed | Round 1, b3c97ceba: the outcome is read through `verdict()`. `Incomplete` stops with `EXHAUSTED` and `ExpansionLimit::EvaluationMeter(limit_kind)`, as constraint.rs does. Every other undecided outcome pushes `undetermined(text, outcome)` into `gathered.findings`. `an_undefined_or_exhausted_predicate_is_never_read_as_false` asserts the `ProtocolExpressionUndetermined` finding at `Main/Both`, the `UndefinedEvaluation` counterexample at that locus, and `resource_exhausted`/`insufficient-next-charge` under a tight meter. |
+| FND-003 | fixed | Round 1, b3c97ceba: `policy_holds` returns `Result<bool, ProtocolRefusal>`, and its `Predicate` arm is the fault `a-predicate-join-is-decided-by-its-function`. |
