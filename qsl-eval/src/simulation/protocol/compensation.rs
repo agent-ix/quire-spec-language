@@ -55,9 +55,12 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
     /// The activation binder's value in `instance`, when the protocol
     /// activates `on each`.
     pub(super) fn activation_value(&self, instance: &Instance) -> Option<Option<Value>> {
-        self.program
-            .activation_slot
-            .map(|_| instance.trigger.as_ref().and_then(|bound| bound.value.clone()))
+        self.program.activation_slot.map(|_| {
+            instance
+                .trigger
+                .as_ref()
+                .and_then(|bound| bound.value.clone())
+        })
     }
 
     /// The capture values of `registration`'s first `count` captures.
@@ -79,12 +82,12 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         frame: Vec<Option<Value>>,
         next: &ProtocolState<M>,
     ) -> Result<Decided, ExpansionStop> {
-        self.decide(&template.name, body, frame, &next.model)
+        self.decide_body(&template.name, body, frame, &next.model)
     }
 
     /// The value of `body` over `frame` at the model state `model`, or the
     /// finding, named `owner`, of an undecided evaluation.
-    pub(super) fn decide(
+    pub(super) fn decide_body(
         &self,
         owner: &str,
         body: &CheckedBody,
@@ -104,9 +107,9 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
             return Ok(Decided::Value(value.clone()));
         }
         match verdict(&evaluation.outcome) {
-            Verdict::Undecided(outcome) => Ok(Decided::Undecided(Box::new(undetermined(
-                owner, outcome,
-            )))),
+            Verdict::Undecided(outcome) => {
+                Ok(Decided::Undecided(Box::new(undetermined(owner, outcome))))
+            }
             Verdict::True | Verdict::False => Err(super::broken()),
         }
     }
@@ -417,8 +420,15 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         if compensating.count >= template.attempts || Self::closed(instance, template) {
             return Ok(());
         }
-        let records =
-            self.attempt_records(state, instance, template, compensating, registration, retry, gathered)?;
+        let records = self.attempt_records(
+            state,
+            instance,
+            template,
+            compensating,
+            registration,
+            retry,
+            gathered,
+        )?;
         if !self.gate(state, path, GatedStep::Attempt) {
             return Ok(());
         }

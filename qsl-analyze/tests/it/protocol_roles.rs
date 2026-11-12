@@ -1793,7 +1793,11 @@ fn protocol_captures_are_evaluated_in_source_order_when_an_instance_starts_and_f
     for (trigger, instance) in started {
         let attempted = first_after(&reached, instance, StepKind::Attempt);
         let enabled = kinds(&reached, attempted).contains(&StepKind::Event);
-        assert_eq!(enabled, trigger == "2" || trigger == "3", "trigger {trigger}");
+        assert_eq!(
+            enabled,
+            trigger == "2" || trigger == "3",
+            "trigger {trigger}"
+        );
     }
 }
 
@@ -1848,7 +1852,10 @@ fn a_template_reads_the_protocol_captures_and_the_activation_binder() {
             .find(|entry| entry["key"]["type"] == "registration")
             .map(|entry| {
                 (
-                    entry["value"]["status"].as_str().expect("a status").to_owned(),
+                    entry["value"]["status"]
+                        .as_str()
+                        .expect("a status")
+                        .to_owned(),
                     entry["value"]["captures"].clone(),
                 )
             })
@@ -1886,7 +1893,10 @@ fn a_template_reads_the_protocol_captures_and_the_activation_binder() {
 
     let failed = run_to_fail("1");
     assert_eq!(kinds(&reached, failed), [StepKind::Finish]);
-    assert_eq!(registration(failed).expect("a registration").0, "registered");
+    assert_eq!(
+        registration(failed).expect("a registration").0,
+        "registered"
+    );
 }
 
 /// FR-208-AC-6 (TC-653): a role whose `until` predicate reads the protocol

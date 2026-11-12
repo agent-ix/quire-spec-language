@@ -75,7 +75,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
             frame.extend(self.activation_value(&instance));
             frame.extend(Self::protocol_values(&instance));
             let owner = format!("{}::{}", self.protocol.name, capture.name);
-            match self.decide(&owner, capture.initializer, frame, model)? {
+            match self.decide_body(&owner, capture.initializer, frame, model)? {
                 Decided::Value(value) => instance.captures.push(Bound {
                     enc: value_enc(&value, self.model.typing()),
                     value: Some(value),
