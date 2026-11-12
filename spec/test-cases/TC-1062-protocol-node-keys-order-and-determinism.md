@@ -29,7 +29,7 @@ S3 compiled.
 
 Fixture **W** is TC-1061's. Fixture **N**: a protocol `Names` with a role
 `X`, a channel `X`, a template `X` and a control `X`. Fixture **C**: a
-protocol `Flow` with a predicate-join function whose body references
+protocol `Flow` whose `parallel` is joined by a predicate-join `outstanding cancel`, with a function whose body references
 `protocol Flow`, producing a cycle through the clause and control nodes; the
 same package also contains an acyclic protocol `Plain`. Fixture **L** is a
 100,000-node checked reference cycle, with otherwise identical variants whose

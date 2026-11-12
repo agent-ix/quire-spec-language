@@ -36,7 +36,7 @@ written and resolves nothing; S3 checks it (FR-218, FR-381).
 ## Use case
 
 A verification operator writes a protocol with replicated roles, a bounded
-channel, a `parallel` joined by quorum, a `repeat` with an invariant and
+channel, a `parallel` joined by quorum with an `outstanding` rule, a `repeat` with an invariant and
 variant, a `terminal when` member and `scheduling adversarial`. Each
 construct reaches the checker as a typed form with its parts and spans, so
 every later refusal points at the text the operator wrote.
