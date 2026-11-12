@@ -149,3 +149,15 @@ fn size_over_a_collection_is_unchanged() {
     compile("function f using v(s: Sequence<Integer>[0, 9]): Integer pure { size(s) }")
         .expect("a collection size is an Integer");
 }
+
+/// FR-093-AC-63: the bound of `size(t)` is the text's own length bounds, so
+/// arithmetic over it derives from `[1, 8]`.
+#[trace("FR-093-AC-63", "TC-1409")]
+#[test]
+fn size_over_text_carries_its_length_bounds_into_arithmetic() {
+    compile("function g using v(t: Text[1, 8; nfc]): Int[0, 7] pure { size(t) - 1 }")
+        .expect("[1, 8] - 1 is [0, 7]");
+    assert!(
+        compile("function g using v(t: Text[1, 8; nfc]): Int[0, 6] pure { size(t) - 1 }").is_err()
+    );
+}

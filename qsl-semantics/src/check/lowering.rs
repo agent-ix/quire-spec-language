@@ -5288,10 +5288,8 @@ impl<'a> Lowering<'a> {
                 })));
                 return Ok(LowerStep::Descend(node.at(*source)));
             }
-            NodeKind::Size(operand) if text_profile(node.at(*operand).value_type()).is_some() => {
-                let profile = text_profile(node.at(*operand).value_type())
-                    .ok_or_else(|| fault(node.location(), KeyFault::UnbuiltLiteral))?;
-                (
+            NodeKind::Size(operand) => match text_profile(node.at(*operand).value_type()) {
+                Some(profile) => (
                     Keyed::Application(
                         Operator::Call,
                         Operation {
@@ -5301,21 +5299,21 @@ impl<'a> Lowering<'a> {
                         },
                     ),
                     Operands::One(operand),
-                )
-            }
-            NodeKind::Size(operand) => {
-                let member = self.type_argument(node.value_type(), node.location())?;
-                (
-                    Keyed::Application(
-                        Operator::Collection,
-                        Operation {
-                            member: Some(member),
-                            ..plain("quire.op.collection.size")
-                        },
-                    ),
-                    Operands::One(operand),
-                )
-            }
+                ),
+                None => {
+                    let member = self.type_argument(node.value_type(), node.location())?;
+                    (
+                        Keyed::Application(
+                            Operator::Collection,
+                            Operation {
+                                member: Some(member),
+                                ..plain("quire.op.collection.size")
+                            },
+                        ),
+                        Operands::One(operand),
+                    )
+                }
+            },
             NodeKind::Contains(collection, item) => {
                 let leaves = if let ValueType::Collection(collection_type) =
                     node.at(*collection).value_type()

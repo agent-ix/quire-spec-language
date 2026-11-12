@@ -326,7 +326,7 @@ fn size_of(operand: Value) -> Result<Integer, Halt> {
         | Value::Option(_)
         | Value::Composite(_)
         | Value::Union(_)
-        | Value::Reference(_) => Err(invariant("size-operand-expected")),
+        | Value::Reference(_) => Err(invariant("collection-value-expected")),
     }
 }
 
