@@ -51,3 +51,10 @@ regress collection Size (still false, unchanged lowering to `quire.op.collection
 member). The typing, lowering and evaluation arms implement FR-093-AC-63. The two low findings
 are idiom and precision nits. The FR-090 invariant-identifier gap is recorded in the
 gap-analysis artifact for this ticket.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Round 1, b5064481f: lowering.rs now has one `NodeKind::Size(operand) => match text_profile(..)` arm (Some: `quire.op.text.size` call; None: `quire.op.collection.size` with member); the duplicate computation and the `KeyFault::UnbuiltLiteral` path are gone. text_size_v2 green; clippy -D warnings clean. |
+| FND-002 | fixed | Round 1, b5064481f: facts.rs gives a `ValueType::Text(text)` Size operand the interval `[text.min(), text.max()]`. New test `size_over_text_carries_its_length_bounds_into_arithmetic` accepts `size(t) - 1` as `Int[0, 7]` and refuses `Int[0, 6]` for `Text[1, 8]`; reverting only the facts.rs hunk locally makes that test fail, so it pins the fix. |

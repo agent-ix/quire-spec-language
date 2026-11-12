@@ -48,3 +48,9 @@ All five tests carry `#[trace("FR-093-AC-63", "TC-1409")]`. No AC-63 clause is u
 FR-093-AC-63 is fully implemented and every clause has a test that can fail. One medium gap:
 an S6a invariant identifier with no owning requirement row or probe (FND-001). Fix it in this
 PR (one table row plus one probe, or reuse `collection-value-expected`) before merge.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Round 1, b5064481f: `size_of` faults a non-Text, non-Collection operand with the FR-090-tabled `collection-value-expected` identifier (the identifier this condition returned before the PR); `size-operand-expected` no longer exists, so no new table row or probe is needed. |
