@@ -21,7 +21,7 @@ refusal record that depends on declaration order, a unit that exits 0 with a
 refused protocol, and a dependent protocol that silently emits.
 
 Fixture **W** is TC-1061's. **X** is **W**'s shape with a `parallel` join
-naming a branch label that does not exist. **Y** is a protocol whose predicate-join
+naming a branch label that does not exist. **Y** is a protocol whose predicate-join (`outstanding cancel`)
 function names **X**. **Z** is a second good protocol (**W** renamed).
 
 ## Test Procedure

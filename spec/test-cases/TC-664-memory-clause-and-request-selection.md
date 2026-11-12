@@ -19,12 +19,12 @@ Scope: FR-219-AC-1 to FR-219-AC-5.
 Use ADR-025 §10's `SB` protocol.
 
 1. Check `SB` with no clause and with `memory tso`; check the nested,
-   conflicting-default, `join any` and `outstanding` variants.
+   conflicting-default, `join any … outstanding cancel` and `outstanding` variants.
 2. Resolve requests with no `memory` member, with a `tso` entry, and with
    entries naming the nested `parallel` and an attempt.
 3. Check `SB` under the three resolved models and compare obligation
    identities, including source `tso` against a `tso` selection.
-4. Select `tso` for a `parallel` with no clause that joins `any`.
+4. Select `tso` for a `parallel` with no clause that joins `any … outstanding cancel`.
 5. Write the `SB` request with no `memory` member and with an explicit
    `sc` selection; compare the written effective models and identities;
    compare the checked-package identities of source `tso` and source `sc`
