@@ -431,9 +431,28 @@ fn a_predicate_join_reads_only_its_instance_and_owner() {
     let expected = BTreeSet::from([both(), ctl(&root())]);
     assert_eq!(join.reads, expected, "{join:?}");
     assert_eq!(join.enabling, expected, "{join:?}");
-    for label in ["a", "b", "c"] {
-        assert!(join.writes.contains(&ctl(&branch(label))), "{join:?}");
-    }
+    // The writes are those of `join any … outstanding cancel` (FR-216-AC-3).
+    let any_run = run.replace(
+        "join predicate(f) [c, a] outstanding cancel",
+        "join any [c, a] outstanding cancel",
+    );
+    let any_unit = Cells::new(
+        &(contracts("self.v = 0") + &protocol("P", "", &any_run, "d")),
+        &["c"],
+    );
+    let any_subject = any_unit.subject("P");
+    let any_system = sc_system(&any_subject);
+    let any_reached = reachable(&any_system);
+    let any_s1 = forked(&any_system, &any_reached);
+    let after_any_a = step(&any_system, &any_reached, any_s1, StepKind::Attempt, "TA").2;
+    let (_, any_join, _) = step(
+        &any_system,
+        &any_reached,
+        after_any_a,
+        StepKind::Join,
+        "Both",
+    );
+    assert_eq!(join.writes, any_join.writes, "{join:?} {any_join:?}");
     assert!(!independent(&join, &attempt_a), "{join:?} {attempt_a:?}");
 }
 

@@ -20,8 +20,7 @@ use std::sync::Arc;
 use qsl_semantics::check::{
     AccessClass, CheckedBody, CheckedJoinPolicy, CheckedOutstanding, ControlStep, ProtocolNodeId,
 };
-use quire_eval::FamilyOutcome;
-use quire_exact::{Meter, Outcome, Value};
+use quire_exact::{Meter, Value};
 use quire_semantic_value::model_transition::ModelTransition;
 
 use super::access::{
@@ -38,12 +37,12 @@ use super::{
     undetermined, Bound, Disposition, Instance, Parallel, ParallelKey, ProtocolRefusal,
     ProtocolState, ProtocolSystem, Thread,
 };
-use crate::simulation::expansion::{Expansion, ExpansionStop};
+use crate::simulation::expansion::{Expansion, ExpansionLimit, ExpansionStop};
 use crate::simulation::footprint::Location;
 use crate::simulation::model::encode::{reference_enc, value_enc, Enc};
 use crate::simulation::model::{
-    Applied, Budget, FirstApplication, ModelFinding, ModelSimState, Observed, ObservedIdentities,
-    OperationRef, Verdict,
+    verdict, Applied, Budget, ClauseOutcome, FirstApplication, ModelFinding, ModelSimState,
+    Observed, ObservedIdentities, OperationRef, Verdict, EXHAUSTED,
 };
 use crate::simulation::subject::Cut;
 use crate::value::evaluate_join_predicate;
@@ -100,14 +99,20 @@ pub(super) fn jcs(value: &impl quire_canonical::Encode) -> Result<Vec<u8>, Proto
 ///
 /// A `predicate` join is decided by its function instead, in
 /// [`ProtocolSystem::join_enabled`].
-fn policy_holds(policy: &CheckedJoinPolicy, joined: usize, completed: usize) -> bool {
+fn policy_holds(
+    policy: &CheckedJoinPolicy,
+    joined: usize,
+    completed: usize,
+) -> Result<bool, ProtocolRefusal> {
     match policy {
-        CheckedJoinPolicy::All => completed == joined,
-        CheckedJoinPolicy::Any => completed >= 1,
+        CheckedJoinPolicy::All => Ok(completed == joined),
+        CheckedJoinPolicy::Any => Ok(completed >= 1),
         CheckedJoinPolicy::Quorum(count) => {
-            u64::try_from(completed).is_ok_and(|done| done >= *count)
+            Ok(u64::try_from(completed).is_ok_and(|done| done >= *count))
         }
-        CheckedJoinPolicy::Predicate { .. } => false,
+        CheckedJoinPolicy::Predicate { .. } => Err(ProtocolRefusal::fault(
+            "a-predicate-join-is-decided-by-its-function",
+        )),
     }
 }
 
@@ -228,7 +233,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                     }
                 }
                 Rest::Join(node) => {
-                    if self.join_enabled(instance, path, node)?
+                    if self.join_enabled(instance, path, node, &mut gathered.findings)?
                         && self.gate(state, path, GatedStep::Join)
                     {
                         self.join(state, ordinal, path, node, &mut gathered)?;
@@ -1123,25 +1128,25 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         instance: &Instance,
         path: &ThreadPath,
         node: ProtocolNodeId,
-    ) -> Result<bool, ProtocolRefusal> {
+        findings: &mut Vec<ModelFinding>,
+    ) -> Result<bool, ExpansionStop> {
         let join = self
             .program
             .joins
             .get(&node)
             .ok_or_else(|| ProtocolRefusal::fault("a-join-is-a-parallel"))?;
         let Some((_, parallel)) = Self::joined_instance(instance, path, node) else {
-            return Err(ProtocolRefusal::fault("a-waiting-join-has-its-instance"));
+            return Err(ProtocolRefusal::fault("a-waiting-join-has-its-instance").into());
         };
         let is_completed =
             |label: &String| parallel.dispositions.get(label) == Some(&Disposition::Completed);
         if let CheckedJoinPolicy::Predicate { function } = &join.policy {
-            // The function receives one Boolean per joined branch, in the
-            // branches' declared order whatever order the join lists them.
-            let arguments = join
-                .branches
-                .iter()
-                .filter(|(label, _)| join.joined.contains(label))
-                .map(|(label, _)| Value::Boolean(is_completed(label)))
+            // The function receives one Boolean per distinct joined label, in
+            // ascending UTF-8 byte order whatever order the join lists them.
+            let labels: BTreeSet<&String> = join.joined.iter().collect();
+            let arguments = labels
+                .into_iter()
+                .map(|label| Value::Boolean(is_completed(label)))
                 .collect();
             let evaluation = evaluate_join_predicate(
                 self.package,
@@ -1150,9 +1155,17 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                 &mut Meter::new(self.model.meter()),
             )
             .map_err(|_| ProtocolRefusal::fault("a-join-predicate-evaluates"))?;
-            return match evaluation.outcome {
-                FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(holds))) => Ok(holds),
-                _ => Err(ProtocolRefusal::fault("a-join-predicate-is-boolean")),
+            return match verdict(&evaluation.outcome) {
+                Verdict::True => Ok(true),
+                Verdict::False => Ok(false),
+                Verdict::Undecided(ClauseOutcome::Incomplete(incomplete)) => Err(ExpansionStop {
+                    cause: EXHAUSTED,
+                    limit: Some(ExpansionLimit::EvaluationMeter(incomplete.limit_kind)),
+                }),
+                Verdict::Undecided(outcome) => {
+                    findings.push(undetermined(self.program.text(node)?, outcome));
+                    Ok(false)
+                }
             };
         }
         let completed = join
@@ -1160,7 +1173,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
             .iter()
             .filter(|label| is_completed(label))
             .count();
-        Ok(policy_holds(&join.policy, join.joined.len(), completed))
+        Ok(policy_holds(&join.policy, join.joined.len(), completed)?)
     }
 
     /// ST-7: the instance is settled; under `outstanding cancel` every
@@ -2059,7 +2072,9 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         Ok(Some(match rest {
             Rest::Fork(_) => WaitCause::Gate,
             Rest::Join(node) => {
-                if !self.join_enabled(instance, path, node)? {
+                // A finding the predicate yields is gathered at the join's step
+                // expansion, not here.
+                if !self.join_enabled(instance, path, node, &mut Vec::new())? {
                     let join = self
                         .program
                         .joins

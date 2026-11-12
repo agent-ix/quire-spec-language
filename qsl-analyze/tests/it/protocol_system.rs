@@ -906,6 +906,92 @@ fn a_predicate_join_is_enabled_where_its_function_holds() {
     }
 }
 
+/// FR-206 (TC-651), `join predicate(f)` argument order: `f` receives one
+/// Boolean per distinct joined label in ascending UTF-8 byte order, not in
+/// the order the branches are declared or the join lists them. With `b`
+/// declared before `a` and `[b, b, a]` listed, `f(x, y) = x and not y` binds
+/// `x` to `a` and `y` to `b`.
+#[trace("TC-651", "FR-206-AC-11")]
+#[test]
+fn a_predicate_join_binds_labels_in_ascending_byte_order() {
+    use Disposition::{Completed, Running};
+    let branches = [("b", touch("TB")), ("a", touch("TA"))];
+    let function = "function f using v(x: Boolean, y: Boolean): Boolean pure { x and not y }";
+    let run = parallel(&branches, "join predicate(f) [b, b, a] outstanding cancel");
+    let case = predicate_case(function, &run);
+    let subject = case.subject("P");
+    let system = sc_system(&subject);
+    let reached = reachable(&system);
+    for (wanted, enabled) in [
+        ([("a", Completed), ("b", Running)], true),
+        ([("a", Running), ("b", Completed)], false),
+        ([("a", Completed), ("b", Completed)], false),
+    ] {
+        let at = at_join(&system, &reached, &wanted);
+        assert_eq!(join_step(&reached, at).is_some(), enabled, "{wanted:?}");
+    }
+}
+
+/// FR-206 (TC-651): a `join predicate(f)` whose result is the undefined value
+/// records `ProtocolExpressionUndetermined` at the join and the model check
+/// ends an undefined-evaluation violation there, never reading it as
+/// `false`; an evaluation the meter stops stops the exploration with
+/// `resource_exhausted`/`insufficient-next-charge`.
+#[trace("TC-651", "FR-206-AC-11")]
+#[test]
+fn an_undefined_or_exhausted_predicate_is_never_read_as_false() {
+    use Disposition::Completed;
+    let branches = [("a", touch("TA")), ("b", touch("TB"))];
+    let run = parallel(&branches, "join predicate(f) [a] outstanding cancel");
+
+    let undefined = "function f using v(x: Boolean): Boolean pure { x and 6 mod (1 - 1) >= 0 }";
+    let case = predicate_case(undefined, &run);
+    let subject = case.subject("P");
+    let system = sc_system(&subject);
+    let reached = reachable(&system);
+    let at = at_join(&system, &reached, &[("a", Completed)]);
+    let findings = system
+        .successors(&reached[at].state)
+        .expect("expands")
+        .findings;
+    assert!(
+        findings.iter().any(|finding| matches!(
+            finding,
+            ModelFinding::ProtocolExpressionUndetermined { node, .. } if node == "Main/Both"
+        )),
+        "{findings:?}"
+    );
+    let counterexample = violated(&case.deadlock("P"));
+    let CounterexampleKind::UndefinedEvaluation(undefined) = &counterexample.kind else {
+        panic!("{counterexample:?}");
+    };
+    assert_eq!(
+        undefined.site.locus,
+        UndefinedLocus::Protocol("Main/Both".to_owned())
+    );
+
+    let terms = vec!["1"; 200].join(" + ");
+    let slow = format!("function f using v(x: Boolean): Boolean pure {{ x and {terms} > 0 }}");
+    let case = predicate_case(&slow, &run);
+    let subject = case.subject("P");
+    let system = sc_system(&subject);
+    let reached = reachable(&system);
+    let at = at_join(&system, &reached, &[("a", Completed)]);
+    assert!(join_step(&reached, at).is_some());
+    let mut tight = case.subject("P");
+    tight.model.simulation.meter = quire_exact::ScalarLimits {
+        work_units: 100,
+        ..crate::counter::UNLIMITED
+    };
+    let Err(stop) = sc_system(&tight).successors(&reached[at].state) else {
+        panic!("the meter stops the join's evaluation");
+    };
+    assert_eq!(
+        (stop.cause.code(), stop.cause.cause()),
+        ("resource_exhausted", "insufficient-next-charge")
+    );
+}
+
 /// FR-206-AC-6 (TC-651): `a` one attempt and `b` a sequence of two, joined
 /// `any … outstanding continue`, then `finish`: while `b` runs, `finish` is
 /// not enabled at the root; once `b` completes it is, and its step removes
