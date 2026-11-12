@@ -15,32 +15,41 @@
 use std::collections::BTreeSet;
 
 use qsl_package::protocol_view::{
-    channel_endpoints, channel_ordering, choice_visibility, delivery, fifo_key, protocol_view,
-    queue_capacity, queue_channel, queue_overflow, ChannelOrdering, Delivery, LossSelector,
-    Overflow, QueueCapacity, ViewRefusal,
+    channel_endpoints, channel_ordering, choice_visibility, control_operation, delivery, fifo_key,
+    protocol_view, queue_capacity, queue_channel, queue_overflow, ChannelOrdering,
+    ControlOperation, Delivery, LossSelector, Overflow, QueueCapacity, ViewRefusal,
 };
 use quire_contract_model::{CheckedNodeId, CheckedPackageV2, CheckedSemanticNodeV2};
 use serde::{Deserialize, Deserializer, Serialize};
 
 /// The refusal of a key with an absent member: `invalid_runtime_input` with
 /// cause `missing-member`, naming the member (FR-572, PA-13).
-#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 #[error("invalid_runtime_input/missing-member: the analysis key carries no `{member}`")]
 pub struct MissingMember {
-    /// The key member that is absent.
-    pub member: &'static str,
+    /// The absent key member; a nested member is named by its path, such as
+    /// `channels[0].delivery`.
+    pub member: String,
 }
 
 impl MissingMember {
+    /// A refusal naming `member`.
+    #[must_use]
+    pub fn new(member: impl Into<String>) -> Self {
+        Self {
+            member: member.into(),
+        }
+    }
+
     /// The catalog code of the refusal.
     #[must_use]
-    pub const fn code(self) -> &'static str {
+    pub const fn code(&self) -> &'static str {
         "invalid_runtime_input"
     }
 
     /// The catalog cause of the refusal.
     #[must_use]
-    pub const fn cause(self) -> &'static str {
+    pub const fn cause(&self) -> &'static str {
         "missing-member"
     }
 }
@@ -51,13 +60,35 @@ pub enum KeyReadError {
     /// A member is absent.
     #[error(transparent)]
     Missing(#[from] MissingMember),
-    /// The document is not a key of either kind.
+    /// A member is present in a shape the key does not admit, or is a member
+    /// the key kind does not have.
     #[error("the analysis key does not read: {0}")]
     Malformed(#[from] serde_json::Error),
+    /// The `kind` is present but names neither a projection nor a
+    /// realizability key.
+    #[error("the analysis key kind `{0}` is neither projection nor realizability")]
+    UnknownKind(String),
+}
+
+impl KeyReadError {
+    /// The catalog code of the refusal.
+    #[must_use]
+    pub const fn code(&self) -> &'static str {
+        "invalid_runtime_input"
+    }
+
+    /// The catalog cause of the refusal.
+    #[must_use]
+    pub const fn cause(&self) -> &'static str {
+        match self {
+            Self::Missing(_) => "missing-member",
+            Self::Malformed(_) | Self::UnknownKind(_) => "invalid-value",
+        }
+    }
 }
 
 /// The two bounds that are key members (PA-14). There is no default.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 pub struct Bounds {
     /// The horizon, in events along a path or play.
     pub max_depth: u64,
@@ -66,7 +97,7 @@ pub struct Bounds {
     pub max_history: Option<u64>,
 }
 
-/// A [`Bounds`] whose members may be absent.
+/// The bounds of a realizability key, whose members may be absent.
 #[derive(Clone, Copy, Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct BoundsDraft {
@@ -76,31 +107,32 @@ pub struct BoundsDraft {
     pub max_history: Option<u64>,
 }
 
-impl BoundsDraft {
-    fn depth(self) -> Result<u64, MissingMember> {
-        self.max_depth.ok_or(MissingMember {
-            member: "max_depth",
-        })
-    }
+/// The bounds of a projection key, whose `max_depth` may be absent. A
+/// projection has no `max_history` member, so a stored one is refused.
+#[derive(Clone, Copy, Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ProjectionBoundsDraft {
+    /// The horizon.
+    pub max_depth: Option<u64>,
 }
 
 /// A channel's ordering premise (FR-054).
-#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, tag = "kind", rename_all = "kebab-case")]
 pub enum OrderingPremise {
     /// No order between receives.
     Unordered,
     /// Receives follow the FIFO key.
     Fifo {
-        /// The message binder node, as its canonical string.
-        binder: String,
-        /// The key expression node, as its canonical string.
-        key: String,
+        /// The message binder node.
+        binder: CheckedNodeId,
+        /// The key expression node.
+        key: CheckedNodeId,
     },
 }
 
 /// A channel's delivery premise (FR-054, FR-509).
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, tag = "kind", rename_all = "kebab-case")]
 pub enum DeliveryPremise {
     /// `unknown`.
@@ -121,7 +153,7 @@ pub enum DeliveryPremise {
 }
 
 /// A queue's capacity premise.
-#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, tag = "kind", rename_all = "kebab-case")]
 pub enum CapacityPremise {
     /// A written integer capacity.
@@ -137,7 +169,7 @@ pub enum CapacityPremise {
 }
 
 /// A queue's overflow premise.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, tag = "kind", rename_all = "kebab-case")]
 pub enum OverflowPremise {
     /// The send is refused.
@@ -152,7 +184,7 @@ pub enum OverflowPremise {
 }
 
 /// Which message a lossy queue drops.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum LossPremise {
     /// The oldest queued message.
@@ -165,17 +197,17 @@ pub enum LossPremise {
 
 /// Premises group (a): one channel's FR-054 members with its queue's capacity
 /// and overflow policy (PA-6).
-#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ChannelPremise {
-    /// The channel node, as its canonical string.
-    pub channel: String,
+    /// The channel node.
+    pub channel: CheckedNodeId,
     /// The sending role node.
-    pub sender: String,
+    pub sender: CheckedNodeId,
     /// The receiving role node.
-    pub receiver: String,
+    pub receiver: CheckedNodeId,
     /// The message type node.
-    pub message_type: String,
+    pub message_type: CheckedNodeId,
     /// The ordering policy.
     pub ordering: OrderingPremise,
     /// The delivery policy.
@@ -187,22 +219,22 @@ pub struct ChannelPremise {
 }
 
 /// Premises group (b): one `choice` control's owner and visible set (PA-6).
-#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ChoicePremise {
     /// The `choice` control node.
-    pub choice: String,
+    pub choice: CheckedNodeId,
     /// The owning node.
-    pub owner: String,
+    pub owner: CheckedNodeId,
     /// The visible `expression` nodes, in the order the node carries them.
-    pub visible: Vec<String>,
+    pub visible: Vec<CheckedNodeId>,
 }
 
 /// The premises of a protocol analysis (PA-6, PA-8). Groups (a) and (b) are
 /// built from the linked package; groups (c) and (d) are authored by a
 /// realizability claim. `None` is "not stated" and `Some` of an empty set is
 /// "declared empty": different premises, both present.
-#[derive(Clone, Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProtocolPremises {
     /// Group (a): the channels, ascending by channel node.
@@ -222,32 +254,62 @@ pub enum PremiseRefusal {
     #[error(transparent)]
     View(#[from] ViewRefusal),
     /// A node the view named is not in the package.
-    #[error("the package holds no node {0}")]
-    UnknownNode(String),
+    #[error("the package holds no node {0:?}")]
+    UnknownNode(CheckedNodeId),
     /// A queue belongs to no channel of the clause.
-    #[error("the queue {queue} names no channel of the clause")]
+    #[error("the queue {queue:?} names no channel of the clause")]
     OrphanQueue {
-        /// The queue node, as its canonical string.
-        queue: String,
+        /// The queue node.
+        queue: CheckedNodeId,
     },
     /// A channel of the clause has no queue.
-    #[error("the channel {channel} has no queue")]
+    #[error("the channel {channel:?} has no queue")]
     ChannelWithoutQueue {
-        /// The channel node, as its canonical string.
-        channel: String,
+        /// The channel node.
+        channel: CheckedNodeId,
     },
-    /// A node id has no canonical string.
-    #[error("a node id does not encode: {0}")]
-    Encoding(String),
 }
 
-/// The canonical string of a checked node id: its canonical JSON object.
+/// Why a string is no canonical node-id text.
+#[derive(Debug, Eq, PartialEq, thiserror::Error)]
+pub enum NodeTextError {
+    /// The id does not encode.
+    #[error("a node id does not encode: {0}")]
+    Encoding(String),
+    /// The text does not read as a checked node id.
+    #[error("the text does not read as a checked node id")]
+    NotANodeId,
+    /// The text reads as a node id but is not its canonical encoding.
+    #[error("the text is not the canonical encoding of the node id it reads as")]
+    NotCanonical,
+}
+
+/// The canonical string of a checked node id (ADR-036 PA-24): the RFC 8785
+/// text of its `CheckedNodeId` V2 wire object, `quire_canonical::to_vec`.
 ///
 /// # Errors
 ///
-/// [`PremiseRefusal::Encoding`] when the id does not serialize.
-pub fn node_text(id: &CheckedNodeId) -> Result<String, PremiseRefusal> {
-    serde_json::to_string(id).map_err(|error| PremiseRefusal::Encoding(error.to_string()))
+/// [`NodeTextError::Encoding`] when the id does not encode.
+pub fn node_text(id: &CheckedNodeId) -> Result<String, NodeTextError> {
+    let bytes = quire_canonical::to_vec(id, quire_canonical::Limits::new(u64::MAX))
+        .map_err(|error| NodeTextError::Encoding(error.to_string()))?;
+    String::from_utf8(bytes).map_err(|error| NodeTextError::Encoding(error.to_string()))
+}
+
+/// The checked node id a canonical string names.
+///
+/// # Errors
+///
+/// [`NodeTextError::NotANodeId`] when the text does not read as a node id,
+/// [`NodeTextError::NotCanonical`] when re-encoding the id does not give the
+/// same bytes.
+pub fn read_node_text(text: &str) -> Result<CheckedNodeId, NodeTextError> {
+    let id: CheckedNodeId = serde_json::from_str(text).map_err(|_| NodeTextError::NotANodeId)?;
+    if node_text(&id)? == text {
+        Ok(id)
+    } else {
+        Err(NodeTextError::NotCanonical)
+    }
 }
 
 impl ProtocolPremises {
@@ -264,51 +326,13 @@ impl ProtocolPremises {
         protocol: &CheckedNodeId,
     ) -> Result<Self, PremiseRefusal> {
         let view = protocol_view(package, protocol)?;
-        let queues = view
-            .queues()
-            .iter()
-            .map(|queue| {
-                let node = node_of(package, queue)?;
-                Ok((queue_channel(node)?, node))
-            })
-            .collect::<Result<Vec<_>, PremiseRefusal>>()?;
-        for (channel, node) in &queues {
-            if !view.channels().iter().any(|held| held == channel) {
-                return Err(PremiseRefusal::OrphanQueue {
-                    queue: node_text(&node.node_id)?,
-                });
-            }
-        }
-        let mut channels = Vec::with_capacity(view.channels().len());
-        for id in view.channels() {
-            let node = node_of(package, id)?;
-            let (_, queue) = queues
-                .iter()
-                .find(|(channel, _)| channel == id)
-                .ok_or_else(|| PremiseRefusal::ChannelWithoutQueue {
-                    channel: node_text(id).unwrap_or_default(),
-                })?;
-            channels.push(channel_premise(node, queue)?);
-        }
-        let mut choices = Vec::new();
-        for id in view.controls() {
-            let node = node_of(package, id)?;
-            if qsl_package::protocol_view::control_operation(node)
-                != Ok(qsl_package::protocol_view::ControlOperation::Choice)
-            {
-                continue;
-            }
-            let found = choice_visibility(node)?;
-            choices.push(ChoicePremise {
-                choice: node_text(found.choice)?,
-                owner: node_text(found.owner)?,
-                visible: found
-                    .visible
-                    .iter()
-                    .map(|id| node_text(id))
-                    .collect::<Result<_, _>>()?,
-            });
-        }
+        let nodes = |ids: &[&CheckedNodeId]| {
+            ids.iter()
+                .map(|id| node_of(package, id))
+                .collect::<Result<Vec<_>, _>>()
+        };
+        let mut channels = pair_channels(&nodes(view.channels())?, &nodes(view.queues())?)?;
+        let mut choices = choice_premises(&nodes(view.controls())?)?;
         channels.sort();
         choices.sort();
         Ok(Self {
@@ -320,6 +344,58 @@ impl ProtocolPremises {
     }
 }
 
+/// The premises of each of `channels` with its queue's capacity and
+/// overflow policy. A queue naming no channel of `channels`, or a channel
+/// with no queue, is refused.
+pub(crate) fn pair_channels(
+    channels: &[&CheckedSemanticNodeV2],
+    queues: &[&CheckedSemanticNodeV2],
+) -> Result<Vec<ChannelPremise>, PremiseRefusal> {
+    let queues = queues
+        .iter()
+        .map(|queue| Ok((queue_channel(queue)?, *queue)))
+        .collect::<Result<Vec<_>, PremiseRefusal>>()?;
+    for (channel, queue) in &queues {
+        if !channels.iter().any(|held| &held.node_id == *channel) {
+            return Err(PremiseRefusal::OrphanQueue {
+                queue: queue.node_id.clone(),
+            });
+        }
+    }
+    channels
+        .iter()
+        .map(|channel| {
+            let (_, queue) = queues
+                .iter()
+                .find(|(held, _)| *held == &channel.node_id)
+                .ok_or_else(|| PremiseRefusal::ChannelWithoutQueue {
+                    channel: channel.node_id.clone(),
+                })?;
+            channel_premise(channel, queue)
+        })
+        .collect()
+}
+
+/// The premises of each `choice` among `controls`. A control whose
+/// operation does not read is refused, never skipped.
+pub(crate) fn choice_premises(
+    controls: &[&CheckedSemanticNodeV2],
+) -> Result<Vec<ChoicePremise>, PremiseRefusal> {
+    let mut choices = Vec::new();
+    for node in controls {
+        if control_operation(node)? != ControlOperation::Choice {
+            continue;
+        }
+        let found = choice_visibility(node)?;
+        choices.push(ChoicePremise {
+            choice: found.choice.clone(),
+            owner: found.owner.clone(),
+            visible: found.visible.iter().map(|id| (*id).clone()).collect(),
+        });
+    }
+    Ok(choices)
+}
+
 fn node_of<'p>(
     package: &'p CheckedPackageV2,
     id: &CheckedNodeId,
@@ -329,7 +405,7 @@ fn node_of<'p>(
         .nodes
         .iter()
         .find(|node| &node.node_id == id)
-        .ok_or_else(|| PremiseRefusal::UnknownNode(node_text(id).unwrap_or_default()))
+        .ok_or_else(|| PremiseRefusal::UnknownNode(id.clone()))
 }
 
 fn channel_premise(
@@ -342,16 +418,16 @@ fn channel_premise(
         ChannelOrdering::Fifo => {
             let key = fifo_key(channel)?;
             OrderingPremise::Fifo {
-                binder: node_text(key.binder)?,
-                key: node_text(key.key)?,
+                binder: key.binder.clone(),
+                key: key.key.clone(),
             }
         }
     };
     Ok(ChannelPremise {
-        channel: node_text(&channel.node_id)?,
-        sender: node_text(ends.sender)?,
-        receiver: node_text(ends.receiver)?,
-        message_type: node_text(ends.message_type)?,
+        channel: channel.node_id.clone(),
+        sender: ends.sender.clone(),
+        receiver: ends.receiver.clone(),
+        message_type: ends.message_type.clone(),
         ordering,
         delivery: match delivery(channel)? {
             Delivery::Unknown => DeliveryPremise::Unknown,
@@ -382,7 +458,7 @@ fn channel_premise(
 
 /// The producing analyzer's identity and version: a member of a realizability
 /// key only (FR-175 "Derived-artifact identity"; PA-15).
-#[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AnalyzerIdentity {
     /// `qsl-analyze::protocol_analysis`.
@@ -392,7 +468,7 @@ pub struct AnalyzerIdentity {
 }
 
 /// The members of a projection key (FR-174-AC-6).
-#[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct ProjectionKey {
     /// The FR-288 qualified definition key.
     pub definition_key: String,
@@ -409,7 +485,7 @@ pub struct ProjectionKey {
 }
 
 /// The members of a realizability key (FR-175-AC-6).
-#[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct RealizabilityKey {
     /// The FR-288 qualified definition key.
     pub definition_key: String,
@@ -425,7 +501,7 @@ pub struct RealizabilityKey {
 }
 
 /// The structural key of a protocol analysis result (PA-13).
-#[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum ProtocolAnalysisKey {
     /// A projection's key.
@@ -449,7 +525,7 @@ pub struct ProjectionKeyDraft {
     /// The choice and visibility premises.
     pub choices: Option<Vec<ChoicePremise>>,
     /// The bounds.
-    pub bounds: Option<BoundsDraft>,
+    pub bounds: Option<ProjectionBoundsDraft>,
 }
 
 /// A realizability key whose members may be absent. The optional-valued
@@ -487,8 +563,66 @@ where
     Option::<T>::deserialize(deserializer).map(Some)
 }
 
-fn present<T>(member: Option<T>, name: &'static str) -> Result<T, MissingMember> {
-    member.ok_or(MissingMember { member: name })
+fn present<T>(member: Option<T>, name: &str) -> Result<T, MissingMember> {
+    member.ok_or_else(|| MissingMember::new(name))
+}
+
+type Object = serde_json::Map<String, serde_json::Value>;
+
+fn require(object: &Object, path: &str, members: &[&str]) -> Result<(), MissingMember> {
+    for member in members {
+        if !object.contains_key(*member) {
+            return Err(MissingMember::new(format!("{path}.{member}")));
+        }
+    }
+    Ok(())
+}
+
+/// Refuse the first absent member of a nested premise or the analyzer,
+/// naming its path, before serde reads the document (PA-13).
+fn require_nested(document: &Object) -> Result<(), MissingMember> {
+    let entries = |name: &str| match document.get(name) {
+        Some(serde_json::Value::Array(entries)) => entries.as_slice(),
+        _ => &[],
+    };
+    for (at, channel) in entries("channels").iter().enumerate() {
+        let serde_json::Value::Object(channel) = channel else {
+            continue;
+        };
+        let path = format!("channels[{at}]");
+        require(
+            channel,
+            &path,
+            &[
+                "channel",
+                "sender",
+                "receiver",
+                "message_type",
+                "ordering",
+                "delivery",
+                "capacity",
+                "overflow",
+            ],
+        )?;
+        if let Some(serde_json::Value::Object(ordering)) = channel.get("ordering") {
+            if ordering.get("kind").and_then(serde_json::Value::as_str) == Some("fifo") {
+                require(ordering, &format!("{path}.ordering"), &["binder", "key"])?;
+            }
+        }
+    }
+    for (at, choice) in entries("choices").iter().enumerate() {
+        if let serde_json::Value::Object(choice) = choice {
+            require(
+                choice,
+                &format!("choices[{at}]"),
+                &["choice", "owner", "visible"],
+            )?;
+        }
+    }
+    if let Some(serde_json::Value::Object(analyzer)) = document.get("analyzer") {
+        require(analyzer, "analyzer", &["identity", "version"])?;
+    }
+    Ok(())
 }
 
 impl ProtocolAnalysisKey {
@@ -503,7 +637,10 @@ impl ProtocolAnalysisKey {
         let profile = present(draft.profile, "profile")?;
         let mut channels = present(draft.channels, "channels")?;
         let mut choices = present(draft.choices, "choices")?;
-        let max_depth = present(draft.bounds, "bounds")?.depth()?;
+        let max_depth = present(
+            present(draft.bounds, "bounds")?.max_depth,
+            "bounds.max_depth",
+        )?;
         channels.sort();
         choices.sort();
         Ok(Self::Projection(ProjectionKey {
@@ -532,8 +669,8 @@ impl ProtocolAnalysisKey {
         let mut choices = present(draft.choices, "choices")?;
         let environment = present(draft.environment, "environment")?;
         let bounds = present(draft.bounds, "bounds")?;
-        let max_depth = bounds.depth()?;
-        let max_history = present(bounds.max_history, "max_history")?;
+        let max_depth = present(bounds.max_depth, "bounds.max_depth")?;
+        let max_history = present(bounds.max_history, "bounds.max_history")?;
         let analyzer = present(draft.analyzer, "analyzer")?;
         channels.sort();
         choices.sort();
@@ -559,12 +696,17 @@ impl ProtocolAnalysisKey {
     ///
     /// # Errors
     ///
-    /// [`KeyReadError::Missing`] naming the absent member,
-    /// [`KeyReadError::Malformed`] for a document of no key kind.
+    /// [`KeyReadError::Missing`] naming the absent member (a nested one by
+    /// its path), [`KeyReadError::UnknownKind`] for a `kind` of no key,
+    /// [`KeyReadError::Malformed`] for a member in a shape the key does not
+    /// admit, such as `bounds.max_history` on a projection key.
     pub fn from_json(text: &str) -> Result<Self, KeyReadError> {
         let mut document: serde_json::Map<String, serde_json::Value> = serde_json::from_str(text)?;
-        let kind = document.remove("kind");
-        match kind.as_ref().and_then(serde_json::Value::as_str) {
+        let kind = document
+            .remove("kind")
+            .ok_or_else(|| MissingMember::new("kind"))?;
+        require_nested(&document)?;
+        match kind.as_str() {
             Some("projection") => {
                 let draft = serde_json::from_value(document.into())?;
                 Ok(Self::projection(draft)?)
@@ -573,7 +715,7 @@ impl ProtocolAnalysisKey {
                 let draft = serde_json::from_value(document.into())?;
                 Ok(Self::realizability(draft)?)
             }
-            _ => Err(MissingMember { member: "kind" }.into()),
+            _ => Err(KeyReadError::UnknownKind(kind.to_string())),
         }
     }
 

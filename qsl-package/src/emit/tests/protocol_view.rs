@@ -2043,6 +2043,18 @@ fn a_queues_overflow_policy_is_what_the_checked_clause_holds() {
         &by_name(package, "Charges").node_id
     );
     assert_eq!(
+        queue_channel(&with_argument(
+            held,
+            "channel",
+            text_term(channel_argument(held, "overflow"), "Charges")
+        ))
+        .unwrap_err(),
+        ViewRefusal::MalformedMember {
+            node: held.node_id.clone(),
+            member: "channel"
+        }
+    );
+    assert_eq!(
         queue_channel(&without_argument(held, "channel")).unwrap_err(),
         ViewRefusal::MissingMember {
             node: held.node_id.clone(),
@@ -2100,6 +2112,14 @@ fn a_queues_overflow_policy_is_what_the_checked_clause_holds() {
             "overflow",
         ),
         (with_argument(queue, "loss", selector("head")), "loss"),
+        (
+            with_argument(
+                &with_argument(queue, "overflow", text_term(overflow, "block")),
+                "loss",
+                selector("head"),
+            ),
+            "loss",
+        ),
         (
             with_argument(queue, "overflow", text_term(overflow, "loss")),
             "loss",

@@ -229,7 +229,11 @@ fn take(elements: &mut Elements, slot: ElementSlot) -> Result<DecidingElement, C
 /// kernel value.
 fn read_deciding(node: NodeRef<'_>, keys: Keys<'_>) -> Result<DecidingElement, CauseCodecError> {
     match node.node() {
-        Node::String(text) => Ok(DecidingElement::Protocol(text.to_owned())),
+        Node::String(text) => {
+            crate::protocol_analysis::read_node_text(text)
+                .map_err(|_| CauseCodecError::Shape("deciding_element"))?;
+            Ok(DecidingElement::Protocol(text.to_owned()))
+        }
         _ => decode_element(node, keys).map(DecidingElement::Value),
     }
 }
@@ -814,6 +818,8 @@ impl RecordWire<Box<RawValue>> {
                 if record.trace_position.is_none() {
                     return Err(CauseCodecError::Shape("trace_position"));
                 }
+                crate::protocol_analysis::read_node_text(node)
+                    .map_err(|_| CauseCodecError::Shape("deciding_element"))?;
                 RawValue::from_string(serde_json::to_string(node)?)?
             }
         };
