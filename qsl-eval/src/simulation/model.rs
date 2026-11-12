@@ -81,7 +81,6 @@ pub use contract::{
     OperationStep, PreconditionCase, UndecidedContract,
 };
 pub(crate) use contracts::{verdict, Verdict};
-pub(crate) use domain::enumerable;
 use encode::declaration_text;
 pub use encode::{
     canonical_json, declaration_identity_text, encode_reference, reference_canonical_text,

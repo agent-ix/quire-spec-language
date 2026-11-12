@@ -251,11 +251,11 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
             };
             let appended = entry.bytes.clone();
             let mut queue = instance.queues.get(&key).cloned().unwrap_or_default();
-            let fifo = key.fifo.is_some();
+            let append = key.fifo.is_some() || channel.send_ordered;
             let fifo_key = key.fifo.as_ref().map(|fifo| fifo.bytes.clone());
             let mut displaced = None;
             let outcome = if queue.len() < channel.capacity {
-                if fifo {
+                if append {
                     queue.push(entry);
                 } else {
                     insert_sorted(&mut queue, entry);
@@ -367,7 +367,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         } = send;
         gathered.budget.charge()?;
         let instance = Self::instance(state, ordinal)?;
-        let fifo = key.fifo.is_some();
+        let append = key.fifo.is_some() || channel.send_ordered;
         let fifo_key = key.fifo.as_ref().map(|fifo| fifo.bytes.clone());
         let mut queue = instance.queues.get(&key).cloned().unwrap_or_default();
         let mut entries = Vec::new();
@@ -396,7 +396,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
             let mut entry_displaced = None;
             let outcome = if queue.len() < channel.capacity {
                 appended.push(entry.bytes.clone());
-                if fifo {
+                if append {
                     queue.push(entry);
                 } else {
                     insert_sorted(&mut queue, entry);
@@ -427,7 +427,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                             }
                             removals.push(self.program.text(removed.send)?.to_owned());
                             let bytes = entry.bytes.clone();
-                            if fifo {
+                            if append {
                                 queue.push(entry);
                             } else {
                                 insert_sorted(&mut queue, entry);
@@ -647,11 +647,25 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
             } else {
                 queue.iter().enumerate().collect()
             };
+            let send_ordered = self
+                .program
+                .channels
+                .get(key.channel)
+                .is_some_and(|channel| channel.send_ordered);
+            let mut previous: Option<Vec<u8>> = None;
             for (position, entry) in candidates {
                 let identity = self.choice(memory, entry)?;
-                let distinct = !found
-                    .iter()
-                    .any(|(((other, _), _), seen)| other == key && *seen == identity);
+                // A send-ordered queue keeps equal entries at different
+                // positions apart, except that taking either of two
+                // adjacent equal entries leaves one sequence (PS-7).
+                let distinct = if send_ordered {
+                    previous.as_ref() != Some(&identity)
+                } else {
+                    !found
+                        .iter()
+                        .any(|(((other, _), _), seen)| other == key && *seen == identity)
+                };
+                previous = Some(identity.clone());
                 if Some(entry.send) == message.from && distinct {
                     found.push((((key.clone(), position), entry), identity));
                 }
@@ -762,7 +776,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                     let mut variants = Vec::new();
                     if channel.duplicates() && queue.len() < channel.capacity {
                         let mut copied = queue.clone();
-                        if key.fifo.is_some() {
+                        if key.fifo.is_some() || channel.send_ordered {
                             copied.push(entry.clone());
                         } else {
                             insert_sorted(&mut copied, entry.clone());

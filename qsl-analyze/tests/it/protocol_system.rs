@@ -1833,44 +1833,6 @@ fn a_protocol_replay_recomputes_the_blocked_threads() {
     parity(finished);
 }
 
-/// A protocol with a construct this system does not step yet is refused
-/// with `unsupported_construct`/`not-yet-implemented` before any state is
-/// explored.
-#[test]
-fn check_protocol_refuses_an_unstepped_construct() {
-    // An `unordered` channel whose overflow loses its `head`, which a bag
-    // does not order.
-    let members = "channel ch from w to w carries Boolean ordering unordered \
-                   delivery exactly-once-premise capacity 1 overflow loss head;";
-    let run = "sequence Main { send S via ch as (s: Boolean) { s }; }";
-    let case = Case::new(
-        &(contracts("self.v = 0") + &protocol("P", members, run, "d")),
-        &[0],
-    );
-    let refusal = check_protocol(
-        ProtocolCheckRequest {
-            temporal_clock_selections: &[],
-            subject: case.subject("P"),
-            item: ModelCheckItem::DeadlockFreedom,
-            max_depth: None,
-            max_store_buffer: None,
-            max_messages: None,
-            max_live_instances: None,
-            limits: ModelCheckLimits::default(),
-            ignore_memory_constraints: false,
-        },
-        &Cancel::new(),
-    )
-    .expect_err("an ordered loss selector on a bag is not stepped");
-    let ModelCheckRefusal::Protocol(refusal) = refusal else {
-        panic!("{refusal:?}");
-    };
-    assert_eq!(
-        (refusal.code(), refusal.cause()),
-        (Code::UnsupportedConstruct, "not-yet-implemented")
-    );
-}
-
 /// Part of FR-211-AC-1 (TC-656): `Fill` checks and compiles with no
 /// `terminal` member, with `terminal when` a predicate over `k.v` and with
 /// `terminal any`. A second `terminal` member refuses

@@ -119,9 +119,6 @@ pub enum Unsupported {
     AccessFootprint,
     /// A channel whose capacity is `symbolic(..)`, with no bound to read.
     SymbolicCapacity,
-    /// An `unordered` channel whose overflow loses its `head` or `tail`,
-    /// which a bag does not order.
-    UnorderedLossSelector,
     /// A `choice` guard, `repeat` guard or `check` undecided at an initial
     /// state, before any position a finding can name.
     UndecidedInitialGuard,
@@ -156,7 +153,6 @@ impl Unsupported {
             Self::WeakMemory => "memory",
             Self::AccessFootprint => "attempt footprint under a weak memory model",
             Self::SymbolicCapacity => "symbolic channel capacity",
-            Self::UnorderedLossSelector => "ordered loss selector on an unordered channel",
             Self::UndecidedInitialGuard => "undecided guard at an initial state",
             Self::Capture => "protocol capture",
             Self::ActivationOnEachTemplate => "activation on each with a compensation template",
@@ -859,7 +855,7 @@ pub fn classify_accesses(
     let governing = memory
         .governing(protocol)
         .map_err(ProtocolRefusal::Memory)?;
-    let program = Program::new(protocol)?;
+    let program = Program::new(model, protocol)?;
     let over = over_value(model, protocol, over)?;
     access::classify(
         model,
@@ -895,7 +891,7 @@ pub fn load_buffering_shapes(
     {
         return Ok(Vec::new());
     }
-    let program = Program::new(protocol)?;
+    let program = Program::new(model, protocol)?;
     let accesses = classify_accesses(model, protocol, memory, over)?;
     Ok(
         access::load_buffering_shapes(&program, &governing, &accesses)?
@@ -1049,7 +1045,7 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
         {
             return Err(ProtocolRefusal::Unsupported(Unsupported::WeakMemory));
         }
-        let program = Program::new(protocol)?;
+        let program = Program::new(&model, protocol)?;
         let enabled = access::classify(
             &model,
             protocol,
