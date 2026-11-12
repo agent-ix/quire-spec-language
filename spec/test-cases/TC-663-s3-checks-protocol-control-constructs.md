@@ -39,10 +39,12 @@ Scope: FR-218-AC-1 to FR-218-AC-7, FR-218-AC-28, FR-218-AC-29, FR-218-AC-35, FR-
    temporal profile, and anchored at a later attempt; then a `repeat` over one
    attempt.
 
-Tag the tests `#[trace("TC-663", "FR-218-AC-n")]`.
 10. Check FR-218-AC-40's non-`all` joins with and without an `outstanding`
-    rule, and the `repeat` with an invariant and variant under a termination
-    claim (FR-390-AC-74).
+    rule, a `memory tso` `parallel` joined `any` with none, and a `repeat`
+    with an invariant and variant (FR-390-AC-74).
+
+Tag the tests `#[trace("TC-663", "FR-218-AC-n")]` and
+`#[trace("TC-663", "FR-390-AC-74")]`.
 
 ## Expected Results
 
@@ -73,3 +75,9 @@ Tag the tests `#[trace("TC-663", "FR-218-AC-n")]`.
   at the undeclared alias; the later anchor refuses `invalid_package`/
   `definition-cycle` naming `Wait` and `Later`; the `repeat` checks and holds a
   back edge.
+- Step 10: each non-`all` join with no `outstanding` rule refuses
+  `invalid_package`/`invalid-value` at the join and checks with `outstanding
+  cancel` or `continue`; `join all` with none checks; the `memory tso`
+  `join any` with none reports that refusal and `unsupported_construct`/
+  `declaration-form` at the join; the `repeat` checks, records its invariant
+  and variant, and carries no proof result for either.

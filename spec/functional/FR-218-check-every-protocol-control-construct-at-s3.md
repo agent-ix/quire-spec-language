@@ -182,8 +182,8 @@ protocol system only ever runs a protocol whose meaning is fixed.
   without an invariant and variant, and SHALL record the maximum, invariant
   and variant it has. A termination claim is the only reader of the
   variant. QSL has no prover for a `repeat`'s invariant or variant in V1, so
-  S3 does not discharge them and a termination claim over them settles
-  inconclusive.
+  S3 only checks and records them and does not discharge them (the
+  termination claim's behaviour is ADR-014's).
 - `parallel`, `repeat`, `choice` and `sequence` SHALL nest with no ceiling
   of their own; only the caller's resource limits bound a declaration's
   size, and the partition proof of a `choice` charges `s3.work_units`
@@ -210,8 +210,9 @@ reaches S4 (FR-383).
 - S3 SHALL refuse a `join` of a `parallel` that declares no `outstanding`
   rule when its policy is not `all`, with `invalid_package`/`invalid-value` at
   the join (QSpec FR-171: each join declares). A checked protocol therefore
-  never holds such a join, and the stepper (FR-206) SHALL assume every
-  non-`all` join has an `outstanding` rule.
+  holds no such join. This refusal and FR-219's weak-join
+  `unsupported_construct`/`declaration-form` refusal are independent, and S3
+  reports both at one join that earns both, with no precedence between them.
 - S3 SHALL refuse a role whose model is neither a model alias (Role on a
   model alias) nor an object type, a process, a state machine, a systems
   interface or a persistence interface with
@@ -635,7 +636,7 @@ one protocol declared in the same unit. It carries no package selector.
 | FR-218-AC-37 | A model type written in a temporal clause's binder, trigger or capture resolves to that model's own type: over a model whose scalar `Total` is the integer interval 0 to 1000 and whose scalar `Tally` is the interval 0 to 3, a clause `over (view: M::Node)` `on each (started: M::Node)` with `capture saved: M::Total` and `capture level: M::Tally` checks, and its captures are `saved` of `Int[0, 1000]` and `level` of `Int[0, 3]` in source order, its `over` binder and its trigger have the type of the model's object `Node`, and that type is not `Int[0, 1000]`. | Test (TC-1056) |
 | FR-218-AC-38 | A predicate, a temporal clause that calls it and a protocol that requires that clause and calls the predicate, written in three units of one package, check in every request order of the units. The protocol's requirement is bound to the clause's position among the package's temporal clauses, which is the clause's own position, 1, when another unit declares a clause that sorts before it. Without the clause's unit the same package refuses `missing_declaration`/`missing-name` at the name `Due` in `requires temporal Due;`. | Test (TC-1056) |
 | FR-218-AC-39 | Passes now (S3). In TC-1408 variant S-M, which selects `M` and declares the source object type `Order`, a protocol with `role w on M` and `role Seller on Order` checks: `w` is the role on the whole model `M`, recording `M`'s package identity, and `Seller` a static role on the source-declared `Order`. A protocol `over (view: Order)` checks with model context the source `Order`. Neither role nor `over` resolves to the other kind of declaration. | Test (TC-1408) |
-| FR-218-AC-40 | Over branches `a` and `b`, `join any [a]` and `join quorum(1) [a, b]` and `join predicate(f) [a]` with no `outstanding` rule each refuse `invalid_package`/`invalid-value` at the join, and the same joins with `outstanding cancel` or `outstanding continue` check; `join all [a, b]` with no `outstanding` rule checks. A repeat with an invariant and variant checks and records both, and a termination claim over it settles inconclusive. | Test (TC-663) |
+| FR-218-AC-40 | Pending QSL-1891. Over branches `a` and `b`, with `function f using v(x: Boolean): Boolean pure { x }` declared in the unit, `join any [a]`, `join quorum(1) [a, b]` and `join predicate(f) [a]` with no `outstanding` rule each refuse `invalid_package`/`invalid-value` at the join, and the same joins with `outstanding cancel` or `outstanding continue` check; `join all [a, b]` with no `outstanding` rule checks. A `memory tso` `parallel` joined `any` with no `outstanding` rule reports this refusal and FR-219's `unsupported_construct`/`declaration-form` at the join. | Test (TC-663) |
 
 ## Dependencies
 
