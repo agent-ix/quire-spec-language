@@ -50,3 +50,11 @@ Boundary with QSpec: no QSpec file is changed. The two QSpec gaps (FR-360 Scope;
 ## Verdict
 
 1 finding(s); FND-001 low.
+
+## Dispositions
+
+Round 1, head 066128e96d.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |

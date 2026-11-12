@@ -29,7 +29,8 @@ Scope: FR-572-AC-1 to FR-572-AC-6; QSpec FR-174-AC-6, FR-175-AC-6.
 4. For each member, build a key without it and read a stored result with it
    removed; then build a realizability key with the role-knowledge premise
    `None`, and with it `Some` of the empty set.
-5. Run each kind twice on one key and compare serialized results.
+5. Run each kind twice on one key and one assessed-subject root and compare
+   serialized results; then run once under a different root and compare.
 6. Change only the assessed-subject root of a request; vary `max_states`, `max_transitions` and the meter, stopping a run.
 
 Tag the tests `#[trace("TC-1412", "FR-572-AC-n")]`.
@@ -41,5 +42,6 @@ Tag the tests `#[trace("TC-1412", "FR-572-AC-n")]`.
 - Step 3: every member present and typed; none a digest.
 - Step 4: each refused `invalid_runtime_input`/`missing-member` naming the
   member; the `None` and `Some`-empty keys are both accepted and unequal.
-- Step 5: equal, byte for byte.
+- Step 5: equal, byte for byte, under one root; under the other root they
+  differ only in the separating witness record's root.
 - Step 6: the key is unchanged; the stopped run carries no artifact.

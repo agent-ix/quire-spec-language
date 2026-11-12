@@ -47,3 +47,12 @@ Description statements of FR-570..575 each carry one SHALL-led capability. Behav
 ## Verdict
 
 2 finding(s); FND-001 low, FND-002 low.
+
+## Dispositions
+
+Round 1, head 066128e96d.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
+| FND-002 | fixed | - |

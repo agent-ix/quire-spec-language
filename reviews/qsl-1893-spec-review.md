@@ -89,3 +89,19 @@ Fidelity review against ADR-036 PA-1..PA-25 and QSpec FR-174, FR-175, FR-207, FR
 ## Verdict
 
 3 finding(s); FND-001 high, FND-002 medium, FND-003 low.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | medium | Regression from the FND-001 fix. The assessed-subject root is now a request input outside the key (FR-574-AC-7: 'a request differing only in the root yields an equal FR-572 key'). But it is copied into the separating_witness that ProjectionCounterexample and both RealizabilityCounterexample forms carry (FR-570 and FR-571 Outputs, PA-25). So two requests with one key and different roots give byte-different results. That contradicts FR-572 'One key shall yield one result', 'A projection shall be a function of its five members only' and AC-5's byte-for-byte equality per key, and it leaves QSpec FR-174's 'same artifact exactly when all five members compare equal' holding for artifacts that differ. Fix without changing the owner ruling: state that the separating witness record's root is request-scoped settlement data and is not part of the derived artifact compared by the key, and scope AC-5 determinism to one key and one assessed-subject root. | spec/functional/FR-572-key-protocol-analysis-results-structurally.md:66-72,80 |
+
+## Dispositions
+
+Round 1, head 066128e96d.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
+| FND-002 | fixed | - |
+| FND-003 | fixed | - |

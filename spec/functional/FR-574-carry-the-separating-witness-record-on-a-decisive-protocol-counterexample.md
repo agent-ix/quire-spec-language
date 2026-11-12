@@ -67,7 +67,10 @@ The `value_path` derivation:
   carries. The engine shall not invent, derive or default either.
 - QSL shall refuse a request with the root or either component absent,
   `invalid_runtime_input`/`missing-member` naming it. The root is not a
-  member of the FR-572 key and does not change the artifact identity. QSpec
+  member of the FR-572 key and does not change the artifact identity; the
+  root in the record is request-scoped settlement data, not part of the
+  derived artifact the key identifies, so results of one key under different
+  roots differ only in that record. QSpec
   FR-290 defines no carrier for this binding, so the request input is stated
   here and the carrier is part of the open question on QSL-1898.
 - `steps` shall be the empty sequence, which FR-207 defines as denoting the

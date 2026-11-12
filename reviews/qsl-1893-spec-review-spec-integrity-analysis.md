@@ -91,3 +91,15 @@ Completeness, consistency and atomicity across FR-570..575 and TC-1410..1415. Nu
 ## Verdict
 
 5 finding(s); FND-001 high, FND-002 medium, FND-003 medium, FND-004 low, FND-005 low.
+
+## Dispositions
+
+Round 1, head 066128e96d.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
+| FND-002 | fixed | - |
+| FND-003 | fixed | - |
+| FND-004 | fixed | - |
+| FND-005 | fixed | - |
