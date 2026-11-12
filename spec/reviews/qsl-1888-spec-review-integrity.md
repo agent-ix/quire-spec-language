@@ -75,6 +75,12 @@ QSpec, and G5 is consistent with the rest of the QSL spec.
 | --- | --- | --- | --- |
 | FND-005 | high | Joins with no `outstanding` rule are still written in four places that the round-1 sweep did not reach. Each place expects the protocol to check, emit or step, but FR-218 now refuses it at S3. (1) FR-383-AC-22 and TC-1061 row 9: "**W** with `Shipments` joined `predicate(both) [west, east]`" emits a `parallel` node. With no rule, S3 refuses it and nothing is emitted. (2) TC-1061 row 6: "**W** with each join policy (`quorum(2)`, `any`, `predicate`), a `parallel` memory model and `outstanding`" lists `outstanding` as a separate variant, so the policy variants read as having no rule. (3) FR-206-AC-3 (TC-651): `join quorum(2)` is not enabled after one completion, and `join predicate(f)` with `f` true exactly when `a` is completed. Neither has a rule or an ellipsis, so the stepper is given a protocol S3 refuses. (4) TC-1297 **Y** and TC-1062 `Flow` are predicate-join protocols whose fixture text states no rule (low on its own). Fix: write `outstanding cancel` on the joins in FR-383-AC-22, TC-1061 rows 6 and 9 and FR-206-AC-3, and say in the TC-1297 and TC-1062 fixture prose that the join carries one. | spec/functional/FR-383-emit-a-checked-protocol-as-v2-protocol-nodes.md:631 · spec/test-cases/TC-1061-s4-emits-each-protocol-construct-as-its-v2-protocol-node.md:52,55 · spec/functional/FR-206-take-the-protocol-step-kinds-with-folded-structural-moves.md:119 · spec/test-cases/TC-1297-protocol-results-stay-independent-when-one-protocol-is-refused.md:24 · spec/test-cases/TC-1062 |
 
+## New findings (disposition pass 3)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-006 | low | FR-383-AC-14 and TC-1062 row 9 list "a join policy changed" among the edits to **W** that change a node key. **W**'s `Shipments` is `join all` with no `outstanding` rule. Changing it to `any`, `quorum` or `predicate` without adding a rule makes S3 refuse the protocol, so the variant never reaches the key comparison. A test author finds this at once, so no wrong behaviour ships, but the variant is underspecified. Fix: write "a join policy changed (to `join any [east, west] outstanding cancel`)", or defer it to QSL-1891's fixture work. | spec/functional/FR-383-emit-a-checked-protocol-as-v2-protocol-nodes.md:623 · spec/test-cases/TC-1062-protocol-node-keys-order-and-determinism.md:50 |
+
 ## Dispositions
 
 | FND | outcome | reason |
@@ -83,3 +89,4 @@ QSpec, and G5 is consistent with the rest of the QSL spec.
 | FND-002 | fixed | de65fd145: FR-218-AC-40 is marked "Pending QSL-1891"; QSL-1891 owns the S3 refusal and lists the TC-664 and emit-test fixture updates. |
 | FND-003 | fixed | de65fd145: step 10 sits above the tag line, the tag line adds FR-390-AC-74, and Expected Results has a Step 10 oracle. |
 | FND-004 | fixed | 7b848350b: `outstanding cancel` added to the non-`all` joins in FR-218-AC-23, FR-218-AC-31, FR-381-AC-11, TC-1065 rows 6, 7, 11 and 12, and TC-1058 rows 19b, 19c, 19d and 19f. |
+| FND-005 | fixed | 531f171b4: `outstanding cancel` added in FR-383-AC-22, FR-206-AC-3, TC-1061 rows 6 (and a `continue` variant) and 9, and the TC-1062 `Flow` and TC-1297 **Y** fixtures; FR-383-AC-6, FR-383-AC-28 and FR-308 are aligned. |
