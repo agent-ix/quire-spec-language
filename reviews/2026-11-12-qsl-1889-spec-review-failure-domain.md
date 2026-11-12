@@ -55,3 +55,4 @@ Read qsl-eval/src/simulation/protocol.rs module doc (ProtocolSystem steps a prot
 | FND-004 | fixed | PA-7 states V1 is useful only under exactly-once-premise or [1,1], cuts open ranges at literal capacity and max_depth, and makes a cut-dependent result inconclusive |
 | FND-005 | fixed | PA-8 separates absent (None, inconclusive) from declared-empty (Some of empty set, decides) |
 | FND-006 | fixed | PA-11 fixes the measure (sum of path event counts) and the lexicographic tie-break over (choice, path_a, path_b), which also picks among failing choices |
+| FND-007 | fixed | Round 2: PA-18 (i) refutes only when neither history can be avoided by an earlier owner choice, else inconclusive; PA-19 makes the table walk an in-engine gate before proved, and a failing or unclosed table is inconclusive |
