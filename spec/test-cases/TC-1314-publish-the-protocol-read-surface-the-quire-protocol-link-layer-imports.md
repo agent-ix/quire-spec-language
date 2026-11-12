@@ -11,7 +11,7 @@ relationships:
 ## Description
 
 Verify the causal relation, the protocol view and the record-to-node map.
-Scope: FR-519-AC-1 to FR-519-AC-19, AC-7 retired. **R** is the package of FR-517, except for rows 12 and 18.
+Scope: FR-519-AC-1 to FR-519-AC-20, AC-7 retired. **R** is the package of FR-517, except for rows 12 and 18.
 
 ## Test Procedure
 
@@ -36,8 +36,9 @@ Scope: FR-519-AC-1 to FR-519-AC-19, AC-7 retired. **R** is the package of FR-517
 | 17 | 17 | `attempts_maximum` over a copy of the `Full` node with `maximum` set to zero, and to a non-integer term | `ViewRefusal::MalformedMember` naming `attempts.maximum`, each time; no value |
 | 18 | 18 | `await_anchor` over a protocol the test authors (**R** has no `await`) with one `await` after an `event` control and one after a `compensation` template; then over copies of the first node with `after` removed, with `after.kind` set to `signal`, and with `after.target` removed | `Event` with the event control's id; `Compensation` with the template's id; each equal to the in-memory `after` Group; `MissingMember` naming `after`; `MalformedMember` naming `after`, twice; no value for any refusal |
 | 19 | 19 | `channel_endpoints` over **R**'s channel `Decisions`; then over copies with `from`, `to` and `carries` each removed, and with `from` set to a text term | the sender role, receiver role and message type node ids, equal to the in-memory channel; `MissingMember` naming each removed member; `MalformedMember` naming `from`; no value for any refusal |
+| 20 | 20 | `choice_visibility` over **R**'s `choice` `Outcome`; then over copies with `owner` and `visible` each removed, with `owner` set to a non-reference, with `visible` set to a non-set, and over **R**'s `repeat` `Poll` | the choice's id, owner node and visible `expression` node ids, equal to the in-memory node; `MissingMember` naming each removed member; `MalformedMember` naming `owner`, then `visible`; `MalformedMember` naming `operator`; no value for any refusal |
 
-Tag the test `#[trace("FR-519-AC-1", ..., "FR-519-AC-19", "TC-1314")]`; row 1 also carries FR-383-AC-16.
+Tag the test `#[trace("FR-519-AC-1", ..., "FR-519-AC-20", "TC-1314")]`; row 1 also carries FR-383-AC-16.
 
 ## Expected Results
 

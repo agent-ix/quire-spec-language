@@ -1007,6 +1007,44 @@ pub fn queue_capacity(queue: &CheckedSemanticNodeV2) -> Result<QueueCapacity<'_>
     }
 }
 
+/// The choice-visibility evidence of a `choice` control: who decides and which
+/// `expression` nodes that role sees at the decision (QSpec FR-466 "choice",
+/// FR-172-AC-6). It is not the FR-227 visibility record.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ChoiceVisibility<'n> {
+    /// The `choice` control the evidence belongs to.
+    pub choice: &'n CheckedNodeId,
+    /// The `protocol` or `role` node that owns the decision.
+    pub owner: &'n CheckedNodeId,
+    /// The `expression` nodes whose values the owner sees, in the order the
+    /// node carries them.
+    pub visible: Vec<&'n CheckedNodeId>,
+}
+
+/// The owner and visible set of the `choice` control `node`.
+///
+/// # Errors
+///
+/// [`ViewRefusal::MissingMember`] naming `operation` or `operator` when the
+/// node is no application of a profile operator (a role or a value, for
+/// example), [`ViewRefusal::MalformedMember`] naming `operator` when it names
+/// an operator the protocol profile does not define or a control of another
+/// operation, [`ViewRefusal::MissingMember`] naming `owner` or `visible` when
+/// the node lacks it, [`ViewRefusal::MalformedMember`] naming that member when
+/// `owner` is no reference or `visible` is no set of references.
+pub fn choice_visibility(
+    node: &CheckedSemanticNodeV2,
+) -> Result<ChoiceVisibility<'_>, ViewRefusal> {
+    if control_operation(node)? != ControlOperation::Choice {
+        return Err(malformed(&node.node_id, "operator"));
+    }
+    Ok(ChoiceVisibility {
+        choice: &node.node_id,
+        owner: single(node, "owner")?,
+        visible: references(node, "visible")?,
+    })
+}
+
 /// A binder a control introduces: its node, name and level (QSpec FR-464
 /// "Binders").
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
