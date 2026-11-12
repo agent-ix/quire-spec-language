@@ -317,6 +317,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
             .recording(record)
             .flowing(QueueFlow {
                 key: fifo_key,
+                send_ordered: channel.send_ordered,
                 entry: appended,
                 before: 0,
                 displaced: displaced
@@ -494,6 +495,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         if let Some(entry) = appended.first() {
             transition = transition.flowing(QueueFlow {
                 key: fifo_key,
+                send_ordered: channel.send_ordered,
                 entry: entry.clone(),
                 before: 0,
                 displaced: displaced
@@ -594,6 +596,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
             })
             .flowing(QueueFlow {
                 key: fifo_key,
+                send_ordered: self.channel_of(node)?.send_ordered,
                 entry: entry.bytes.clone(),
                 before,
                 displaced: None,
@@ -651,7 +654,8 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                 .program
                 .channels
                 .get(key.channel)
-                .is_some_and(|channel| channel.send_ordered);
+                .ok_or_else(|| ProtocolRefusal::fault("a-queue-names-a-channel"))?
+                .send_ordered;
             let mut previous: Option<Vec<u8>> = None;
             for (position, entry) in candidates {
                 let identity = self.choice(memory, entry)?;
@@ -814,6 +818,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                         );
                         transition = transition.flowing(QueueFlow {
                             key: key.fifo.as_ref().map(|fifo| fifo.bytes.clone()),
+                            send_ordered: channel.send_ordered,
                             entry: entry.bytes.clone(),
                             before: equal_before(queue, position),
                             displaced: None,

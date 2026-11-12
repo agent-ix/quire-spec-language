@@ -1460,6 +1460,128 @@ fn a_protocol_model_check_is_deterministic() {
     assert_eq!(holds, repaired.deadlock("Fill"));
 }
 
+/// The unit with `declarations` before the protocol `P` whose run is an
+/// `event` node with binder `e: ty`.
+fn event_unit(declarations: &str, ty: &str) -> Case {
+    let run = format!(
+        "sequence Main {{ event E by w as (e: {ty}) {{ true }}; {} }}",
+        touch("T")
+    );
+    Case::new(
+        &format!("{declarations}\n{}", one_protocol("self.v = 0", &run)),
+        &[0],
+    )
+}
+
+/// Part of FR-215-AC-5 (TC-660, ADR-027 TS-5, ST-2): an `event` binder of
+/// the record `Msg` with an `Int[0, 1]` field and a nested record field
+/// gives exactly four `event` steps in domain order, and building the system
+/// refuses nothing. A record `Wide` with an unbounded field `t` returns
+/// `RequiresBound` naming the binder and the field before any state is
+/// explored.
+///
+/// Partial: Remaining work: the `enum Mode` field of the criterion's `Msg`.
+/// An event whose record holds a native `enum` value cannot be explored: the
+/// value has no form in the protocol identity ("an undeclared enum value"),
+/// so the expansion stops with `runtime_invariant`. The criterion id is
+/// therefore not cited; only the test case is.
+#[trace("TC-660")]
+#[test]
+fn a_finite_field_record_binder_steps_in_domain_order() {
+    let msg = event_unit(
+        "record Inner { ok: Boolean; }\nrecord Msg { n: Int[0, 1]; i: Inner; }",
+        "Msg",
+    );
+    let subject = msg.subject("P");
+    let system = sc_system(&subject);
+    let reached = reachable(&system);
+    let records: Vec<String> = reached[0]
+        .steps
+        .iter()
+        .filter(|(transition, _)| transition.kind() == StepKind::Event)
+        .map(|(transition, _)| {
+            json_of(&system.transition_key(transition).expect("an identity"))["record"].to_string()
+        })
+        .collect();
+    assert_eq!(records.len(), 4, "{records:?}");
+    let distinct: BTreeSet<_> = records.iter().collect();
+    assert_eq!(distinct.len(), 4);
+    for (at, record) in records.iter().enumerate() {
+        assert_eq!(record.contains("true"), at % 2 == 1, "{at}: {record}");
+    }
+
+    let wide = event_unit("record Wide { n: Int[0, 1]; t: Integer; }", "Wide");
+    let refusal = check_protocol(
+        ProtocolCheckRequest {
+            temporal_clock_selections: &[],
+            subject: wide.subject("P"),
+            item: ModelCheckItem::DeadlockFreedom,
+            max_depth: None,
+            max_store_buffer: None,
+            max_messages: None,
+            max_live_instances: None,
+            limits: ModelCheckLimits::default(),
+            ignore_memory_constraints: false,
+        },
+        &Cancel::new(),
+    )
+    .expect_err("the event binder is unbounded");
+    let ModelCheckRefusal::RequiresBound(bound) = refusal else {
+        panic!("{refusal:?}");
+    };
+    let named: Vec<_> = bound.domains.iter().map(|(key, _)| key.clone()).collect();
+    assert_eq!(
+        named,
+        [DomainKey::Node {
+            node: wide
+                .checked
+                .graph()
+                .protocol_node_keys("P")
+                .and_then(|keys| keys.binders.iter().find(|key| key.name == "e"))
+                .expect("the protocol keys its e binder")
+                .node
+                .clone(),
+            path: vec![1],
+        }]
+    );
+}
+
+/// A protocol with a construct this system does not step yet is refused
+/// with `unsupported_construct`/`not-yet-implemented` before any state is
+/// explored: a `symbolic` channel capacity has no bound to read.
+#[test]
+fn check_protocol_refuses_an_unstepped_construct() {
+    let members = "channel ch from w to w carries Boolean ordering unordered \
+                   delivery exactly-once-premise capacity symbolic(k) overflow block;";
+    let run = "sequence Main { send S via ch as (s: Boolean) { s }; }";
+    let case = Case::new(
+        &(contracts("self.v = 0") + &protocol("P", members, run, "d")),
+        &[0],
+    );
+    let refusal = check_protocol(
+        ProtocolCheckRequest {
+            temporal_clock_selections: &[],
+            subject: case.subject("P"),
+            item: ModelCheckItem::DeadlockFreedom,
+            max_depth: None,
+            max_store_buffer: None,
+            max_messages: None,
+            max_live_instances: None,
+            limits: ModelCheckLimits::default(),
+            ignore_memory_constraints: false,
+        },
+        &Cancel::new(),
+    )
+    .expect_err("a symbolic capacity is not stepped");
+    let ModelCheckRefusal::Protocol(refusal) = refusal else {
+        panic!("{refusal:?}");
+    };
+    assert_eq!(
+        (refusal.code(), refusal.cause()),
+        (Code::UnsupportedConstruct, "not-yet-implemented")
+    );
+}
+
 /// A memory model that implements `Sc`'s eight members on its own
 /// (FR-215-AC-3).
 #[derive(Clone, Copy, Debug)]

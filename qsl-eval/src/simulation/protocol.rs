@@ -140,8 +140,8 @@ pub enum Unsupported {
     UnboundAttemptBinder,
     /// A slot that reads a binder with no node other than the `over` input.
     NodelessBinder,
-    /// A step binder whose bounded record type has no enumeration here (a
-    /// record, an enum or a bounded text type).
+    /// A step binder whose record type has no enumeration here: a type with
+    /// a field of no finite domain, such as a text type or a map.
     UnenumerableRecord,
 }
 
@@ -1552,6 +1552,7 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
                 };
                 let (kind, fifo) = match &key.fifo {
                     Some(fifo) => ("sequence", fifo.enc.clone()),
+                    None if channel.send_ordered => ("sequence", Enc::Null),
                     None => ("bag", Enc::Null),
                 };
                 queues.push((

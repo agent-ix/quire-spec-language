@@ -378,11 +378,12 @@ fn a_send_binds_its_send_record() {
     }
 }
 
-/// FR-206-AC-12 (TC-651, ADR-027 PS-7, ST-3): an `unordered` channel `ch` of
-/// capacity 2 holding `P1` sent before `P2` explores rather than refuses
-/// under `loss head` and `loss tail`: a third send `N` is accepted, `head`
-/// displacing the entry sent first and `tail` the one sent last, and the
-/// same sends in the other order displace the other entries.
+/// FR-206-AC-12 (TC-651, ADR-027 PS-7, ST-3, ST-4): an `unordered` channel
+/// `ch` of capacity 2 holding the entries of two sends in send order explores
+/// rather than refuses under `loss head` and `loss tail`: a third send `N` is
+/// accepted, `head` displacing the entry sent first and `tail` the one sent
+/// last, whichever of `P1` and `P2` is sent first, and each remaining entry
+/// is still deliverable to a matching `receive`.
 #[trace("TC-651", "FR-206-AC-12")]
 #[test]
 fn an_unordered_channel_with_a_loss_selector_displaces_by_send_order() {
@@ -391,49 +392,72 @@ fn an_unordered_channel_with_a_loss_selector_displaces_by_send_order() {
             "thread": {"type": "thread-path", "instance": "0", "steps": []},
             "payload": {"type": "boolean", "value": value}})
     };
-    // `P1` and `P2` carry `true` then `false`, and then `false` then `true`.
-    for first_value in [true, false] {
-        let (one, two) = if first_value {
-            ("{ p1 }", "{ not p2 }")
-        } else {
-            ("{ not p1 }", "{ p2 }")
-        };
-        for (selector, gone, queued) in [
-            ("head", ("Main/P1", first_value), [!first_value, true]),
-            ("tail", ("Main/P2", !first_value), [first_value, true]),
-        ] {
-            let unit = case(
-                &channel(
-                    "ch",
-                    &format!(
-                        "ordering unordered delivery exactly-once-premise capacity 2 \
-                         overflow loss {selector}"
+    // `P1` carries `true` and `P2` `false`, sent in either order.
+    let constraint = |node: &str| match node {
+        "P1" => ("p1", "{ p1 }", true),
+        _ => ("p2", "{ not p2 }", false),
+    };
+    for order in [["P1", "P2"], ["P2", "P1"]] {
+        let sends: String = order
+            .iter()
+            .map(|node| {
+                let (binder, body, _) = constraint(node);
+                format!("send {node} via ch as ({binder}: Boolean) {body}; ")
+            })
+            .collect();
+        for (selector, gone) in [("head", order[0]), ("tail", order[1])] {
+            let kept: Vec<&str> = order.iter().copied().filter(|node| *node != gone).collect();
+            let queued = [constraint(kept[0]).2, true];
+            for survivor in [kept[0], "N"] {
+                let unit = case(
+                    &channel(
+                        "ch",
+                        &format!(
+                            "ordering unordered delivery exactly-once-premise capacity 2 \
+                             overflow loss {selector}"
+                        ),
                     ),
-                ),
-                &format!(
-                    "sequence Main {{ send P1 via ch as (p1: Boolean) {one}; \
-                     send P2 via ch as (p2: Boolean) {two}; \
-                     send N via ch as (n: Boolean) {{ n }}; }}"
-                ),
-            );
-            let subject = unit.subject("P");
-            let system = sc_system(&subject);
-            let reached = reachable(&system);
-            let full = follow(&reached, &[(StepKind::Send, "P1"), (StepKind::Send, "P2")]);
-            let (third, after) = &reached[full].steps[0];
-            assert_eq!(last(third), "N");
-            assert_eq!(
-                send_record(third),
-                json!({"type": "send-record", "channel": "P::ch", "outcome": "accepted",
-                    "payload": {"type": "boolean", "value": true},
-                    "displaced": entry(gone.0, gone.1)}),
-                "{selector} with P1 {first_value}"
-            );
-            assert_eq!(
-                queues(&system, &reached[*after].state)[0].1,
-                queued,
-                "{selector} with P1 {first_value}"
-            );
+                    &format!(
+                        "sequence Main {{ {sends}send N via ch as (n: Boolean) {{ n }}; \
+                         receive R via ch of {survivor} as (r: Boolean) {{ true }}; }}"
+                    ),
+                );
+                let subject = unit.subject("P");
+                let system = sc_system(&subject);
+                let reached = reachable(&system);
+                let full = follow(
+                    &reached,
+                    &[(StepKind::Send, order[0]), (StepKind::Send, order[1])],
+                );
+                let (third, after) = &reached[full].steps[0];
+                assert_eq!(last(third), "N");
+                assert_eq!(
+                    send_record(third),
+                    json!({"type": "send-record", "channel": "P::ch", "outcome": "accepted",
+                        "payload": {"type": "boolean", "value": true},
+                        "displaced": entry(&format!("Main/{gone}"), constraint(gone).2)}),
+                    "{selector} after {order:?}"
+                );
+                assert_eq!(
+                    queues(&system, &reached[*after].state)[0].1,
+                    queued,
+                    "{selector} after {order:?}"
+                );
+                assert_eq!(
+                    key(&system, &reached[*after].state)["queues"]["entries"][0]["value"]["type"],
+                    "sequence",
+                    "a send-ordered queue is a sequence in the state key"
+                );
+                let takes = reached[*after]
+                    .steps
+                    .iter()
+                    .filter(|(transition, _)| transition.kind() == StepKind::Receive)
+                    .count();
+                assert_eq!(
+                    takes, 1,
+                    "{survivor} is deliverable: {selector} after {order:?}"
+                );
+            }
         }
     }
 }
@@ -481,6 +505,58 @@ fn a_send_ordered_queue_steps_each_position_apart() {
         .filter(|(transition, _)| transition.kind() == StepKind::Receive)
         .count();
     assert_eq!(receive_steps, 2);
+
+    // `B` is deliverable too, and `lose` gives one step per position.
+    let abab = |delivery: &str, rest: &str| {
+        let unit = case(
+            &channel(
+                "ch",
+                &format!("ordering unordered delivery {delivery} capacity 3 overflow loss head"),
+            ),
+            &format!(
+                "sequence Main {{ repeat Loop by w visible () max 3 while {{ true }} \
+                 send S via ch as (s: Boolean) {{ true }}; exhausted sequence Out {{ }} \
+                 {rest} }}"
+            ),
+        );
+        let subject = unit.subject("P");
+        let system = sc_system(&subject);
+        let reached = reachable(&system);
+        let at = reached
+            .iter()
+            .position(|state| {
+                queues(&system, &state.state).first().map(|q| q.1.clone())
+                    == Some(vec![true, false, true])
+            })
+            .expect("a state holding [A, B, A] in send order");
+        let next: BTreeSet<Vec<bool>> = reached[at]
+            .steps
+            .iter()
+            .filter(|(transition, _)| {
+                transition.kind() == StepKind::Receive || transition.kind() == StepKind::Lose
+            })
+            .map(|(_, next)| {
+                queues(&system, &reached[*next].state)
+                    .first()
+                    .map(|q| q.1.clone())
+                    .unwrap_or_default()
+            })
+            .collect();
+        next
+    };
+    let any = abab(
+        "exactly-once-premise",
+        "receive R via ch of Loop::S as (r: Boolean) { true };",
+    );
+    assert_eq!(
+        any,
+        BTreeSet::from([vec![false, true], vec![true, true], vec![true, false]])
+    );
+    let lost = abab("at-most-once", "");
+    assert_eq!(
+        lost,
+        BTreeSet::from([vec![false, true], vec![true, true], vec![true, false]])
+    );
 
     for (selector, expected) in [("tail", [true, false, true]), ("head", [false, true, true])] {
         let unit = case(
