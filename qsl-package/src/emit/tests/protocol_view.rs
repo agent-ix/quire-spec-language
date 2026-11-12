@@ -14,9 +14,10 @@ use super::protocol_requirements::fixture_w::{
 use super::*;
 use crate::protocol_view::{
     attempts_maximum, attempts_over, await_anchor, binder, causal_relation, channel_endpoints,
-    control_operation, declaration, delivery, dependency, locus, operation_identity, owner_model,
-    protocol_view, queue_capacity, relation_over, selection, source, temporal_binding, AwaitAnchor,
-    AwaitAnchorKind, ControlOperation, Delivery, QueueCapacity, Scheduling, ViewRefusal,
+    choice_visibility, control_operation, declaration, delivery, dependency, locus,
+    operation_identity, owner_model, protocol_view, queue_capacity, relation_over, selection,
+    source, temporal_binding, AwaitAnchor, AwaitAnchorKind, ChoiceVisibility, ControlOperation,
+    Delivery, QueueCapacity, Scheduling, ViewRefusal,
 };
 
 /// The TC-134 workflow plus an `await` anchored at an event, so every edge
@@ -1823,4 +1824,104 @@ fn channel_argument<'n>(channel: &'n CheckedSemanticNodeV2, name: &str) -> &'n C
             _ => None,
         })
         .unwrap_or_else(|| panic!("a {name} argument"))
+}
+
+/// FR-519-AC-20 (TC-1314 row 20): a choice's owner and visible set, and the
+/// refusals on a copy that lacks or garbles them.
+#[trace("FR-519-AC-20", "TC-1314")]
+#[test]
+fn a_choices_owner_and_visible_set_are_the_nodes_it_references() {
+    let fixture = fixture();
+    let package = &*fixture.admitted;
+    let outcome = by_name(package, "Outcome");
+    let argument = |node: &CheckedSemanticNodeV2, member: &str| match channel_argument(node, member)
+    {
+        CheckedTerm::Aggregate { members } => members
+            .iter()
+            .map(|entry| match entry {
+                CheckedTerm::Reference { target } => target.clone(),
+                other => panic!("{member} holds a reference, not {other:?}"),
+            })
+            .collect::<Vec<_>>(),
+        CheckedTerm::Reference { target } => vec![target.clone()],
+        other => panic!("{member} is a set or reference, not {other:?}"),
+    };
+    let found = choice_visibility(outcome).unwrap();
+    let owner = argument(outcome, "owner");
+    let visible = argument(outcome, "visible");
+    assert_eq!(found.choice, &outcome.node_id);
+    assert_eq!(vec![found.owner.clone()], owner);
+    assert_eq!(&*node(package, found.owner).semantic_form, "role");
+    assert!(!visible.is_empty());
+    assert_eq!(
+        found
+            .visible
+            .iter()
+            .map(|id| (*id).clone())
+            .collect::<Vec<_>>(),
+        visible
+    );
+    for id in &found.visible {
+        assert_eq!(&*node(package, id).semantic_form, "query");
+    }
+    let _: ChoiceVisibility<'_> = found;
+
+    for member in ["owner", "visible"] {
+        assert_eq!(
+            choice_visibility(&without_argument(outcome, member)).unwrap_err(),
+            ViewRefusal::MissingMember {
+                node: outcome.node_id.clone(),
+                member: if member == "owner" {
+                    "owner"
+                } else {
+                    "visible"
+                }
+            }
+        );
+    }
+    let mut texted = outcome.clone();
+    let CheckedTerm::Application { arguments, .. } = &mut texted.body else {
+        panic!("an application body");
+    };
+    for argument in arguments {
+        if let CheckedTerm::Binding { name, value } = argument {
+            if &**name == "owner" {
+                **value = CheckedTerm::Aggregate {
+                    members: Vec::new(),
+                };
+            }
+        }
+    }
+    assert_eq!(
+        choice_visibility(&texted).unwrap_err(),
+        ViewRefusal::MalformedMember {
+            node: outcome.node_id.clone(),
+            member: "owner"
+        }
+    );
+    let mut scalar = outcome.clone();
+    let CheckedTerm::Application { arguments, .. } = &mut scalar.body else {
+        panic!("an application body");
+    };
+    for argument in arguments {
+        if let CheckedTerm::Binding { name, value } = argument {
+            if &**name == "visible" {
+                **value = CheckedTerm::reference(outcome.node_id.clone());
+            }
+        }
+    }
+    assert_eq!(
+        choice_visibility(&scalar).unwrap_err(),
+        ViewRefusal::MalformedMember {
+            node: outcome.node_id.clone(),
+            member: "visible"
+        }
+    );
+    assert_eq!(
+        choice_visibility(by_name(package, "Poll")).unwrap_err(),
+        ViewRefusal::MalformedMember {
+            node: by_name(package, "Poll").node_id.clone(),
+            member: "operator"
+        }
+    );
 }

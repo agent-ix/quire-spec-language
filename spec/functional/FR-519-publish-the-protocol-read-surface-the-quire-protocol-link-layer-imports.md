@@ -110,12 +110,14 @@ node's `attempts` group lacks `maximum` (`MissingMember` naming
 (`MalformedMember` naming `attempts.maximum`). FR-520-AC-4 compares the retry
 bound it reads through this function, so the two requirements state one value.
 
-Two further view functions read a node's typed members:
+Three further view functions read a node's typed members:
 
 ```rust
 pub fn await_anchor(node: &CheckedSemanticNodeV2) -> Result<AwaitAnchor<'_>, ViewRefusal>;
 pub fn channel_endpoints(channel: &CheckedSemanticNodeV2)
     -> Result<ChannelEndpoints<'_>, ViewRefusal>;
+pub fn choice_visibility(node: &CheckedSemanticNodeV2)
+    -> Result<ChoiceVisibility<'_>, ViewRefusal>;
 ```
 
 `await_anchor` reads the `after` Group of an `await` control node (its layout
@@ -137,6 +139,17 @@ receiving role node and the message type node. It refuses with
 that is not a reference. A role carries no internality member (QSpec FR-465,
 FR-465-AC-8), so no view function returns one.
 
+`choice_visibility` reads a `choice` control node's `owner` and `visible`
+(QSpec FR-466 "choice"): `ChoiceVisibility { choice: &CheckedNodeId, owner:
+&CheckedNodeId, visible: Vec<&CheckedNodeId> }`, the choice's own id, the
+owning `protocol`/`role` node and the `expression` nodes whose values the owner
+sees, in the order the node carries them. It is the choice-visibility evidence
+of QSpec FR-172-AC-6; it exposes no FR-227 visibility record. It refuses with
+`MalformedMember` naming `operator` when the node is a control of another
+operation, `MissingMember` naming `owner` or `visible` when the node lacks it,
+and `MalformedMember` naming that member when `owner` is not a reference or
+`visible` is not a set of references.
+
 ## Behavior
 
 ### The record-to-node map
@@ -148,7 +161,7 @@ reads directly and QSL publishes no view for it. The view functions are
 `protocol_view`, `causal_relation`, `control_operation`, `operation_identity`,
 `binder`, `locus`, `delivery`, `queue_capacity`, `owner_model`, `declaration`,
 `temporal_binding`, `dependency`, `source`, `selection`, `attempts_maximum`,
-`await_anchor` and `channel_endpoints`.
+`await_anchor`, `channel_endpoints` and `choice_visibility`.
 `protocol_view`, `causal_relation`, `binder` and `attempts_maximum` take an
 admitted package; the others take the node, lock or source map they read.
 
@@ -208,6 +221,7 @@ admitted package; the others take the node, lock or source map they read.
 | FR-519-AC-17 | With a `maximum` member that is not an integer, or is zero (FR-381-AC-7 admits only a count of at least one), `attempts_maximum` refuses with `ViewRefusal::MalformedMember` naming `attempts.maximum` and returns no value; the malformed value is set on a copy of the node the function reads, as in FR-519-AC-15. | Test (TC-1314) |
 | FR-519-AC-18 | For a protocol with one `await` anchored after an `event` control and one anchored after a `compensation` template, `qsl_package::protocol_view::await_anchor` returns `AwaitAnchorKind::Event` with the event control's `CheckedNodeId` for the first and `AwaitAnchorKind::Compensation` with the template's `CheckedNodeId` for the second, each equal to the `after` Group the checked clause holds in memory, and `AwaitAnchor` and `AwaitAnchorKind` are public. On a copy of the node with `after` removed it refuses `ViewRefusal::MissingMember` naming `after`; with `kind` set to another text, and with `target` removed from the Group, it refuses `ViewRefusal::MalformedMember` naming `after`; no refusal returns a value. | Test (TC-1314) |
 | FR-519-AC-19 | For **R**'s channel `Decisions`, `qsl_package::protocol_view::channel_endpoints` returns the sending role node, the receiving role node and the message type node, each the `CheckedNodeId` the channel node's `from`, `to` and `carries` reference, equal to the checked clause in memory. On a copy of the node with `from`, `to` or `carries` removed it refuses `ViewRefusal::MissingMember` naming that member, and with `from` set to a text term that is not a reference it refuses `ViewRefusal::MalformedMember` naming `from`; neither returns a value. `ChannelEndpoints` has no internality field. | Test (TC-1314) |
+| FR-519-AC-20 | For **R**'s `choice` `Outcome`, `qsl_package::protocol_view::choice_visibility` returns the choice's own `CheckedNodeId`, the owner node and the visible `expression` nodes, each the `CheckedNodeId` the node's `owner` and `visible` reference, equal to the checked clause in memory; `ChoiceVisibility` is public and carries no FR-227 visibility record. On a copy with `owner` or `visible` removed it refuses `ViewRefusal::MissingMember` naming that member; with `owner` set to a non-reference and with `visible` set to a non-set it refuses `ViewRefusal::MalformedMember` naming that member; over a `repeat` node it refuses `MalformedMember` naming `operator`; no refusal returns a value. | Test (TC-1314) |
 
 ## Dependencies
 
