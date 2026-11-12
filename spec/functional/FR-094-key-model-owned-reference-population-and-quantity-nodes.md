@@ -264,6 +264,10 @@ call reaches it. For one dispatch-eligible operation,
   own clause first; a candidate with one term uses its authored function;
 - one body function per candidate.
 
+`check` also builds the body function, and only it, for every operation with
+`has_body` that is not dispatch-eligible (FR-576). A body node's id does not
+depend on whether a dispatched call reaches its operation.
+
 `check` SHALL build a clause function's node as FR-092's function node, with
 these differences:
 
