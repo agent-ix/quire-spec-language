@@ -23,7 +23,7 @@ Scope: FR-093-AC-63.
 
 1. Check and lower FR-093-AC-63's `n` over `t: Text[0, 8; nfc]` and read the
    body's node and its `result_type`.
-2. Evaluate `n` for `""` and `"abc"`.
+2. Evaluate `n` for `""`, `"abc"` and the input U+0065 U+0301.
 3. Check `size` over a `String` operand and over an `Integer` operand.
 
 Tag the tests `#[trace("TC-1409", "FR-093-AC-63")]`.
@@ -35,5 +35,5 @@ Tag the tests `#[trace("TC-1409", "FR-093-AC-63")]`.
   type node, law `text_profile` with the
   `quire.value.text.unicode-17.0.0/v1` definition, mode `text_profile` `nfc`,
   and no member or leaves.
-- Step 2: `0` and `3`.
+- Step 2: `0`, `3` and `1`. The last input is two raw scalars that `nfc` retains as the one scalar U+00E9 (two UTF-8 bytes), so a byte count or a pre-normalization scalar count returns `2` and fails.
 - Step 3: `ill_typed`/`type-mismatch` at the operand in each case, and no node.
