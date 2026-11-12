@@ -1740,3 +1740,205 @@ fn a_protocol_derived_items_max_live_instances_reaches_the_run_and_the_check() {
         assert_eq!(used.value, bound, "the run's bound");
     }
 }
+
+/// The state the first step of `kind` from `reached[at]` reaches.
+fn first_after(reached: &[Reached], at: usize, kind: StepKind) -> usize {
+    reached[at]
+        .steps
+        .iter()
+        .find(|(step, _)| step.kind() == kind)
+        .map(|(_, next)| *next)
+        .unwrap_or_else(|| panic!("a {kind:?} step from {at}"))
+}
+
+/// The state each `activate` step of `reached[0]` reaches, by the trigger
+/// value its identity names.
+fn activations(system: &System<'_>, reached: &[Reached]) -> BTreeMap<String, usize> {
+    reached[0]
+        .steps
+        .iter()
+        .filter(|(step, _)| step.kind() == StepKind::Activate)
+        .map(|(step, next)| {
+            let record = identity(system, step)["record"]["value"]
+                .as_str()
+                .expect("an integer trigger")
+                .to_owned();
+            (record, *next)
+        })
+        .collect()
+}
+
+/// FR-209-AC-9 (TC-654): under `on each (x: M::Level)` the protocol's
+/// captures `lower = x < 2`, `big = not lower` and `fresh = k.v = 0` are
+/// evaluated in source order when the instance starts and then frozen: after
+/// the attempt `inc` makes `k.v = 1`, `event E`, whose constraint is `big and
+/// not lower and fresh`, is enabled for the triggers 2 and 3 and never for 0
+/// and 1.
+#[trace("TC-654", "FR-209-AC-9")]
+#[test]
+fn protocol_captures_are_evaluated_in_source_order_when_an_instance_starts_and_frozen() {
+    let captures = "capture lower: Boolean = x < 2;\n\
+                    capture big: Boolean = not lower;\n\
+                    capture fresh: Boolean = k.v = 0;";
+    let run = "sequence Main { \
+               attempt T by w on M::Cell::inc contracts [IncPre, IncPost] \
+               as (t: Boolean) { true }; \
+               event E by w as (e: Boolean) { big and not lower and fresh }; }";
+    let world = World::new(&unit(EACH, "", captures, run), &["c"], &[0]);
+    let subject = world.subject();
+    let system = sc_system(&subject).with_max_live_instances(1);
+    let reached = reachable(&system);
+    let started = activations(&system, &reached);
+    assert_eq!(started.len(), 4);
+    for (trigger, instance) in started {
+        let attempted = first_after(&reached, instance, StepKind::Attempt);
+        let enabled = kinds(&reached, attempted).contains(&StepKind::Event);
+        assert_eq!(enabled, trigger == "2" || trigger == "3", "trigger {trigger}");
+    }
+}
+
+/// FR-207-AC-7 (TC-652): a template reads the protocol captures and, in its
+/// registration captures, the activation binder: under `on each (x:
+/// M::Level)` with the protocol capture `big = x > 1`, the registration
+/// capture `seen = x > 2 and big`, the activation guard `f and big`, the
+/// activation capture `armed = big` and the recovery predicate `seen and
+/// armed`, the trigger 3 ends `recovered` with `seen` true, the trigger 2
+/// ends `unrecovered` with `seen` false, and the trigger 1 never activates the
+/// compensation.
+#[trace("TC-652", "FR-207-AC-7")]
+#[test]
+fn a_template_reads_the_protocol_captures_and_the_activation_binder() {
+    let template = "compensate Refund for Main::Paid as (fwd: M::Cell)\n\
+         by w on M::Cell::dec using t0 clock \"c\" {\n\
+         capture seen: Boolean = x > 2 and big;\n\
+         activate first (f: Boolean) when { f and big } { capture armed: Boolean = big; }\n\
+         within [0, 10];\n\
+         attempts 1 of M::Attempt;\n\
+         retry (e: M::Attempt, l: M::Attempt) { false };\n\
+         commit never;\n\
+         recover (r: M::Attempt) { seen and armed };\n\
+         }";
+    let members = format!("capture big: Boolean = x > 1;\n{template}");
+    let run = format!(
+        "sequence Main {{ {} {} event Fail by w as (failed: Boolean) {{ failed }}; }}",
+        crate::protocol_compensation::CHARGE,
+        crate::protocol_compensation::paid("Main::C"),
+    );
+    let body = contracts("self.v = 0")
+        + REFUND
+        + &format!(
+            "protocol R using p over (k: M::Cell) {EACH} {{\n\
+             role w on M::Cell;\n\
+             {members}\n\
+             run {run}\n\
+             finish Done as (d: Boolean) {{ true }};\n\
+             }}\n"
+        );
+    let world = World::new(&body, &["c"], &[0]);
+    let subject = world.subject();
+    let system = sc_system(&subject).with_max_live_instances(1);
+    let reached = reachable(&system);
+    let registration = |at: usize| -> Option<(String, Json)> {
+        let (bytes, _) = SubjectSystem::state_key(&system, &reached[at].state).expect("a key");
+        let key = json_of(&bytes);
+        key["control"]["entries"]
+            .as_array()
+            .expect("a map")
+            .iter()
+            .find(|entry| entry["key"]["type"] == "registration")
+            .map(|entry| {
+                (
+                    entry["value"]["status"].as_str().expect("a status").to_owned(),
+                    entry["value"]["captures"].clone(),
+                )
+            })
+    };
+    let seen = |captures: &Json| -> Json {
+        captures["entries"]
+            .as_array()
+            .expect("a map")
+            .iter()
+            .find(|entry| entry["key"] == "seen")
+            .map(|entry| entry["value"].clone())
+            .expect("the registration capture seen")
+    };
+    let started = activations(&system, &reached);
+    let run_to_fail = |trigger: &str| -> usize {
+        let mut at = started[trigger];
+        for kind in [StepKind::Attempt, StepKind::Event, StepKind::Event] {
+            at = first_after(&reached, at, kind);
+        }
+        at
+    };
+    let finished = |trigger: &str| -> (String, Json) {
+        let mut at = run_to_fail(trigger);
+        at = first_after(&reached, at, StepKind::CAttempt);
+        at = first_after(&reached, at, StepKind::CEnd);
+        registration(at).expect("a registration")
+    };
+
+    let (status, captures) = finished("3");
+    assert_eq!(status, "recovered");
+    let seen_true = seen(&captures);
+    let (status, captures) = finished("2");
+    assert_eq!(status, "unrecovered");
+    assert_ne!(seen(&captures), seen_true);
+
+    let failed = run_to_fail("1");
+    assert_eq!(kinds(&reached, failed), [StepKind::Finish]);
+    assert_eq!(registration(failed).expect("a registration").0, "registered");
+}
+
+/// FR-208-AC-6 (TC-653): a role whose `until` predicate reads the protocol
+/// capture `j` of type `Reference<M::Cell>` and looks it up in the population
+/// `M::cells` checks, and `retire(r, o)` is enabled exactly where the
+/// predicate holds: with `j = k` (the cell `c`) and the cells `{c, d}`
+/// both at `v = 1`, only `c` retires; with the further clause `r.v >= 2`
+/// nothing retires until the protocol's `inc` raises `c` to 2.
+#[trace("TC-653", "FR-208-AC-6")]
+#[test]
+fn a_retire_predicate_reads_a_protocol_capture_and_the_population_it_names() {
+    let capture = "capture j: Reference<M::Cell> = k;";
+    let retire_at = |threshold: u64, run: &str| -> Vec<(usize, BTreeSet<String>)> {
+        let until = format!(
+            "until(r.v >= {threshold} and present(lookup<M::Cell>(M::cells, j) absent empty) \
+             and r = j)"
+        );
+        let world = World::new(
+            &unit(ORIGIN, &role(2, &until), capture, run),
+            &["c", "d"],
+            &[1],
+        );
+        let subject = world.subject();
+        let system = sc_system(&subject);
+        let reached = reachable(&system);
+        let both = {
+            let c = after(&system, &reached, 0, StepKind::Spawn, "c");
+            after(&system, &reached, c, StepKind::Spawn, "d")
+        };
+        let mut found = vec![(both, objects(&system, &reached, both, StepKind::Retire))];
+        if let Some(next) = reached[both]
+            .steps
+            .iter()
+            .find(|(step, _)| step.kind() == StepKind::Attempt)
+            .map(|(_, next)| *next)
+        {
+            found.push((next, objects(&system, &reached, next, StepKind::Retire)));
+        }
+        found
+    };
+    let work = "sequence Main { attempt Bump by w on M::Cell::inc contracts [IncPre, IncPost] \
+                as (b: Boolean) { true }; }";
+    assert_eq!(
+        retire_at(1, work)[0].1,
+        BTreeSet::from(["c".to_owned()]),
+        "only the cell the capture names retires"
+    );
+    let gated = retire_at(2, work);
+    assert!(gated[0].1.is_empty(), "r.v is 1 before the attempt");
+    assert_eq!(
+        gated[1].1,
+        BTreeSet::from(["c".to_owned()]),
+        "retires once r.v reaches 2"
+    );
+}

@@ -20,6 +20,7 @@
 
 use quire_exact::{ObjectReference, Value};
 
+use super::compensation::Decided;
 use super::identity::{Actor, ProtocolTransition, StepKind, ThreadPath, WaitCause};
 use super::memory::MemoryModel;
 use super::program::{Cursor, Lifetime};
@@ -54,9 +55,10 @@ pub(super) enum Acting {
 }
 
 impl<M: MemoryModel> ProtocolSystem<'_, M> {
-    /// ADR-027 FO-3, ST-13: protocol instance `ordinal` with its root thread
-    /// settled from the start of `run`, started by `trigger` under
-    /// `activation on each`.
+    /// ADR-027 FO-3, ST-13: protocol instance `ordinal` with its captures
+    /// evaluated in source order over `[over, activation binder, earlier
+    /// captures]` at `model`, and its root thread settled from the start of
+    /// `run`, started by `trigger` under `activation on each`.
     pub(super) fn start(
         &self,
         ordinal: u64,
@@ -68,6 +70,19 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
             trigger,
             ..Instance::default()
         };
+        for capture in &self.program.captures {
+            let mut frame = vec![Some(self.over.clone())];
+            frame.extend(self.activation_value(&instance));
+            frame.extend(Self::protocol_values(&instance));
+            let owner = format!("{}::{}", self.protocol.name, capture.name);
+            match self.decide(&owner, capture.initializer, frame, model)? {
+                Decided::Value(value) => instance.captures.push(Bound {
+                    enc: value_enc(&value, self.model.typing()),
+                    value: Some(value),
+                }),
+                Decided::Undecided(finding) => return Ok(Started::Undecided(finding)),
+            }
+        }
         let rest = match self.settle(
             &mut instance,
             &root,
@@ -221,14 +236,8 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                     continue;
                 }
                 let mut frame = vec![Some(self.over.clone())];
-                if self.program.activation_slot.is_some() {
-                    frame.push(
-                        instance
-                            .trigger
-                            .as_ref()
-                            .and_then(|bound| bound.value.clone()),
-                    );
-                }
+                frame.extend(self.activation_value(instance));
+                frame.extend(Self::protocol_values(instance));
                 frame.push(Some(Value::Reference(object.clone())));
                 match self.evaluate(predicate, frame, &state.model)? {
                     Verdict::True => {}

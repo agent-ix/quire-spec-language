@@ -1079,8 +1079,9 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                     .replicated
                     .get(index)
                     .map(|role| role.object.clone());
-                let mut parameters =
-                    self.slot_parameters(&[Some(0), self.program.activation_slot])?;
+                let mut roots = vec![Some(0), self.program.activation_slot];
+                roots.extend(self.program.capture_slots.iter().copied().map(Some));
+                let mut parameters = self.slot_parameters(&roots)?;
                 parameters.push((
                     role.name.clone(),
                     quire_exact::ValueType::Reference(object.ok_or_else(unknown)?),

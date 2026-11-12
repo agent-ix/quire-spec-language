@@ -119,22 +119,14 @@ pub enum Unsupported {
     AccessFootprint,
     /// A channel whose capacity is `symbolic(..)`, with no bound to read.
     SymbolicCapacity,
-    /// A `choice` guard, `repeat` guard or `check` undecided at an initial
-    /// state, before any position a finding can name.
+    /// A protocol capture, `choice` guard, `repeat` guard or `check`
+    /// undecided at an initial state, before any position a finding can name.
     UndecidedInitialGuard,
-    /// A capture of the protocol clause.
-    Capture,
-    /// `activation on each` in a protocol with a compensation template,
-    /// whose expressions read the activation binder at a slot this system
-    /// does not fill.
-    ActivationOnEachTemplate,
     /// An `over` input whose type is not an object type.
     OverNotAnObject,
     /// A slot that reads an attempt binder whose operation returns no value
     /// of the binder's type, so the binder is never bound.
     UnboundAttemptBinder,
-    /// A slot that reads a binder with no node other than the `over` input.
-    NodelessBinder,
     /// A step binder whose record type has no enumeration here: a type with
     /// a field of no finite domain, such as a text type or a map.
     UnenumerableRecord,
@@ -149,11 +141,8 @@ impl Unsupported {
             Self::AccessFootprint => "attempt footprint under a weak memory model",
             Self::SymbolicCapacity => "symbolic channel capacity",
             Self::UndecidedInitialGuard => "undecided guard at an initial state",
-            Self::Capture => "protocol capture",
-            Self::ActivationOnEachTemplate => "activation on each with a compensation template",
             Self::OverNotAnObject => "over input of no object type",
             Self::UnboundAttemptBinder => "read of an unbound attempt binder",
-            Self::NodelessBinder => "read of a nodeless binder",
             Self::UnenumerableRecord => "step binder of an unenumerable record type",
         }
     }
@@ -468,6 +457,9 @@ struct Instance {
     /// The trigger record that started the instance under `activation on
     /// each`, which the activation binder reads (ADR-027 AE-1).
     trigger: Option<Bound>,
+    /// The protocol's captures in source order, evaluated once when the
+    /// instance starts and frozen (ADR-027 ST-13).
+    captures: Vec<Bound>,
     /// The instances of each replicated role (an index into
     /// [`Program::replicated`]), by object, with their status (RR-3). A
     /// retired instance stays, so it is never spawned again.
@@ -1473,6 +1465,18 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
                     Enc::tagged("integer", vec![("value", Enc::text(counter.to_string()))]),
                 ));
             }
+            for (capture, bound) in self.program.captures.iter().zip(&instance.captures) {
+                observations.push((
+                    Enc::tagged(
+                        "capture",
+                        vec![
+                            ("instance", Enc::text(ordinal.to_string())),
+                            ("name", Enc::text(capture.name.clone())),
+                        ],
+                    ),
+                    bound.enc.clone(),
+                ));
+            }
             if let (true, Some(trigger)) = (self.program.trigger_read, &instance.trigger) {
                 observations.push((
                     Enc::tagged(
@@ -1647,8 +1651,12 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
                     .as_ref()
                     .filter(|_| self.program.reads(slot, reader))
                     .and_then(|bound| bound.value.clone()),
-                // Refused in `Program::new` when any slot reads one.
-                None => None,
+                None => self
+                    .program
+                    .capture_of(slot)
+                    .and_then(|capture| instance.captures.get(capture))
+                    .filter(|_| self.program.reads(slot, reader))
+                    .and_then(|bound| bound.value.clone()),
                 Some(_) if !self.program.reads(slot, reader) => None,
                 Some(node) => instance
                     .entry(*node, path)
@@ -1736,6 +1744,16 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
                 let mut frame = vec![None; self.program.slots.len()];
                 if let Some(first) = frame.first_mut() {
                     *first = Some(self.over.clone());
+                }
+                // Only `on origin` lets the predicate read the captures
+                // (FR-381), and then the one instance is ordinal 0.
+                if let Some(instance) = state.instances.get(&0) {
+                    for (index, bound) in instance.captures.iter().enumerate() {
+                        let slot = self.program.capture_slots.get(index).copied();
+                        if let Some(entry) = slot.and_then(|slot| frame.get_mut(slot)) {
+                            *entry = bound.value.clone();
+                        }
+                    }
                 }
                 let observed = self.memory.atom_values(&state.memory, &state.model);
                 Ok(match self.evaluate(predicate, frame, &observed)? {
