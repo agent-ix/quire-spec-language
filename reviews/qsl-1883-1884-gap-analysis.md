@@ -21,3 +21,10 @@ Tickets: QSL-1883 and QSL-1884. PR agent-ix/quire-spec-language#2683 at head c35
 ## Verdict
 
 PASS WITH FINDINGS for coverage. Every changed path has an owning requirement, and both PS-7 behaviours the tickets name have tagged tests that fail without the code. FND-001 leaves part of FR-206-AC-12 unasserted. FR-215-AC-5 has no test at all (code-review FND-004).
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Verified in 70ff900db. The displacement test now runs both send orders, `P1`-then-`P2` and `P2`-then-`P1`. For each selector and order it adds `receive R via ch of <survivor> { true }` for both the kept entry and `N`, and asserts exactly one receive is enabled. |
+| FND-002 | fixed | Verified in 70ff900db. The `[A, B, A]` test adds an any-payload `receive` and an `at-most-once` `lose`, and asserts each gives the three states `[B, A]`, `[A, A]` and `[A, B]`. |
