@@ -39,3 +39,12 @@ QSL crate evaluates one. TC-663 is an S3 checking test and cannot exercise it.
 REVISE. No high finding in this method; FND-001 and FND-002 are medium and
 should be fixed in this PR, together with SR-599003. The FR-390 wording change
 itself is correct and resolves the G5 contradiction it was filed for.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | de65fd145: FR-390-AC-74 drops the termination-claim settlement and states "the checked `repeat` records both and carries no proof result for either"; FR-218 and FR-390 defer the claim's behaviour to ADR-014. |
+| FND-002 | fixed | de65fd145: FR-218-AC-40 holds only the join refusal (plus its co-refusal with FR-219); the repeat rule is in FR-390-AC-74 alone. |
+| FND-003 | fixed | de65fd145: the stepper SHALL is replaced by "A checked protocol therefore holds no such join." |
+| FND-004 | fixed | de65fd145: FR-218-AC-40 declares `function f using v(x: Boolean): Boolean pure { x }`. |

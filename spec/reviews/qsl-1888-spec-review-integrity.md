@@ -62,3 +62,17 @@ REVISE. FND-001 is high and blocks merge: the PR makes FR-219-AC-1/AC-4 and
 their existing test contradict FR-218. FND-002 and FND-003 are medium and
 should be fixed in this PR. The G3b condition itself matches the stepper and
 QSpec, and G5 is consistent with the rest of the QSL spec.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | high | Other existing QSL ACs and test descriptions still say non-`all` joins with no `outstanding` rule check, which FR-218's new rule refuses. FR-218-AC-23 and TC-1065 row 7: "`join quorum(2) [east, west]`, `join any [east]` ... check". FR-218-AC-31 and TC-1065 row 11: "`join predicate(f) [a, c]` and `join predicate(f) [c, a, c]` each check". FR-381-AC-11 and TC-1058 rows 19b and 19d: a commit in a branch of `join any [a, b]` or `quorum(1) [a, b]` "check"; rows 19c and the AC's `join any [a]` / `quorum(2) [a, b]` cases expect only the `commit-precedes-effect` refusal, but would now also refuse for the missing rule. The tests that back them (qsl-semantics/src/check/protocol_controls.rs, protocol_obligation/tests/recorded.rs, protocol_requirement/tests.rs) are not in QSL-1891's fixture list. Fix: write `outstanding cancel` or `continue` on these joins in FR-218-AC-23, FR-218-AC-31, FR-381-AC-11, TC-1065 rows 7 and 11 and TC-1058 rows 19b to 19d, and add those test files to QSL-1891. | spec/functional/FR-218-check-every-protocol-control-construct-at-s3.md:622,630 · spec/functional/FR-381-check-protocol-captures-activation-and-compensation-recovery-at-s3.md:289 · spec/test-cases/TC-1065-a-channel-s-loss-selector-and-the-admission-rules-emission-needs.md:40,44 · spec/test-cases/TC-1058-s3-checks-compensation-registration-retry-commit-and-recovery.md:58-59 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | de65fd145: FR-219-AC-1 and AC-4 now write `join any … outstanding cancel`; FR-218 states the missing-rule and weak-join refusals are independent and both reported at one join; TC-664 steps 1 and 4 updated. |
+| FND-002 | fixed | de65fd145: FR-218-AC-40 is marked "Pending QSL-1891"; QSL-1891 owns the S3 refusal and lists the TC-664 and emit-test fixture updates. |
+| FND-003 | fixed | de65fd145: step 10 sits above the tag line, the tag line adds FR-390-AC-74, and Expected Results has a Step 10 oracle. |
