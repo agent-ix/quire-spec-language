@@ -1025,11 +1025,13 @@ pub struct ChoiceVisibility<'n> {
 ///
 /// # Errors
 ///
-/// [`ViewRefusal::MalformedMember`] naming `operator` when the node is a
-/// control of another operation, [`ViewRefusal::MissingMember`] naming
-/// `owner` or `visible` when the node lacks it,
-/// [`ViewRefusal::MalformedMember`] naming that member when `owner` is no
-/// reference or `visible` is no set of references.
+/// [`ViewRefusal::MissingMember`] naming `operation` or `operator` when the
+/// node is no application of a profile operator (a role or a value, for
+/// example), [`ViewRefusal::MalformedMember`] naming `operator` when it names
+/// an operator the protocol profile does not define or a control of another
+/// operation, [`ViewRefusal::MissingMember`] naming `owner` or `visible` when
+/// the node lacks it, [`ViewRefusal::MalformedMember`] naming that member when
+/// `owner` is no reference or `visible` is no set of references.
 pub fn choice_visibility(
     node: &CheckedSemanticNodeV2,
 ) -> Result<ChoiceVisibility<'_>, ViewRefusal> {

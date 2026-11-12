@@ -1862,20 +1862,21 @@ fn a_choices_owner_and_visible_set_are_the_nodes_it_references() {
         visible
     );
     for id in &found.visible {
+        assert_eq!(&*node(package, id).node_tag, "expression");
         assert_eq!(&*node(package, id).semantic_form, "query");
     }
-    let _: ChoiceVisibility<'_> = found;
+    let ChoiceVisibility {
+        choice: _,
+        owner: _,
+        visible: _,
+    } = found;
 
     for member in ["owner", "visible"] {
         assert_eq!(
             choice_visibility(&without_argument(outcome, member)).unwrap_err(),
             ViewRefusal::MissingMember {
                 node: outcome.node_id.clone(),
-                member: if member == "owner" {
-                    "owner"
-                } else {
-                    "visible"
-                }
+                member
             }
         );
     }

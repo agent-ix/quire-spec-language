@@ -145,10 +145,13 @@ FR-465-AC-8), so no view function returns one.
 owning `protocol`/`role` node and the `expression` nodes whose values the owner
 sees, in the order the node carries them. It is the choice-visibility evidence
 of QSpec FR-172-AC-6; it exposes no FR-227 visibility record. It refuses with
-`MalformedMember` naming `operator` when the node is a control of another
-operation, `MissingMember` naming `owner` or `visible` when the node lacks it,
-and `MalformedMember` naming that member when `owner` is not a reference or
-`visible` is not a set of references.
+`MissingMember` naming `operation` or `operator` when the node is no
+application of a profile operator (a role or a value, for example),
+`MalformedMember` naming `operator` when it names an operator the protocol
+profile does not define or a control of another operation, `MissingMember`
+naming `owner` or `visible` when the node lacks it, and `MalformedMember`
+naming that member when `owner` is not a reference or `visible` is not a set of
+references.
 
 ## Behavior
 
