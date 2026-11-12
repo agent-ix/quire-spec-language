@@ -84,6 +84,7 @@ mod temporal_identity;
 mod temporal_relation;
 mod temporal_rulings;
 mod temporal_trace;
+mod text_size;
 mod tick_monitor;
 mod timed_subject;
 mod timed_trace;

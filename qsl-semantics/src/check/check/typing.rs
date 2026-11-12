@@ -3161,10 +3161,21 @@ impl<'a> Typer<'a> {
             Unary::Flatten => self.flatten(operand, &location),
             Unary::DropFirst => self.drop_first(operand, &location),
             Unary::Size => {
-                self.element_type(&operand)?;
+                // FR-093-AC-63: a Text operand's size is its profile length,
+                // bounded by the text type's own bounds.
+                let value_type = if let ValueType::Text(text) = &operand.value_type {
+                    int_type(
+                        Integer::from(text.min()),
+                        Integer::from(text.max()),
+                        &location,
+                    )?
+                } else {
+                    self.element_type(&operand)?;
+                    ValueType::Integer
+                };
                 Ok(node(
                     NodeKind::Size(self.push(operand)),
-                    ValueType::Integer,
+                    value_type,
                     &location,
                 ))
             }

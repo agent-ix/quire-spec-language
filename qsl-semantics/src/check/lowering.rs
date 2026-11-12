@@ -5288,19 +5288,32 @@ impl<'a> Lowering<'a> {
                 })));
                 return Ok(LowerStep::Descend(node.at(*source)));
             }
-            NodeKind::Size(operand) => {
-                let member = self.type_argument(node.value_type(), node.location())?;
-                (
+            NodeKind::Size(operand) => match text_profile(node.at(*operand).value_type()) {
+                Some(profile) => (
                     Keyed::Application(
-                        Operator::Collection,
+                        Operator::Call,
                         Operation {
-                            member: Some(member),
-                            ..plain("quire.op.collection.size")
+                            laws: vec![self.law(LawRole::TextProfile, node.location())?],
+                            mode: Some(OperationMode::TextProfile(profile)),
+                            ..plain("quire.op.text.size")
                         },
                     ),
                     Operands::One(operand),
-                )
-            }
+                ),
+                None => {
+                    let member = self.type_argument(node.value_type(), node.location())?;
+                    (
+                        Keyed::Application(
+                            Operator::Collection,
+                            Operation {
+                                member: Some(member),
+                                ..plain("quire.op.collection.size")
+                            },
+                        ),
+                        Operands::One(operand),
+                    )
+                }
+            },
             NodeKind::Contains(collection, item) => {
                 let leaves = if let ValueType::Collection(collection_type) =
                     node.at(*collection).value_type()

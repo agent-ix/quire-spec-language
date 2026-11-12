@@ -1655,6 +1655,11 @@ impl<'n> quire_walk::Walk for IntervalWalk<'_, '_, '_, 'n> {
                 let operand = node.at(*operand);
                 let bound = match operand.value_type() {
                     ValueType::Collection(collection) => cardinality(collection),
+                    // The size of a text is bounded by its declared length.
+                    ValueType::Text(text) => Interval {
+                        lower: End::Finite(Integer::from(text.min())),
+                        upper: End::Finite(Integer::from(text.max())),
+                    },
                     _ => Interval::unbounded(),
                 };
                 match definedness.stable_path(operand, facts) {

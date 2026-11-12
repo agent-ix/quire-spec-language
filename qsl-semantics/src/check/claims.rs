@@ -476,6 +476,9 @@ fn is_scalar_application(node: CheckedNode<'_>) -> bool {
             scalar_conversion_target(target, node.at(*operand).value_type()).is_some()
         }
         NodeKind::Equality(_, _, left, _) => scalar_equality(node.at(*left).value_type()),
+        // A Text size lowers to `quire.op.text.size`, a scalar application;
+        // a collection size lowers to a collection operation.
+        NodeKind::Size(operand) => matches!(node.at(*operand).value_type(), ValueType::Text(_)),
         NodeKind::IeeeNumericEquality(..)
         | NodeKind::IeeeTotalOrder(..)
         | NodeKind::IeeeBitIdentical(..)
@@ -506,7 +509,6 @@ fn is_scalar_application(node: CheckedNode<'_>) -> bool {
         | NodeKind::Query { .. }
         | NodeKind::Flatten(_)
         | NodeKind::Fold { .. }
-        | NodeKind::Size(_)
         | NodeKind::Contains(..)
         | NodeKind::DropFirst(_)
         | NodeKind::RemoveOne(..)

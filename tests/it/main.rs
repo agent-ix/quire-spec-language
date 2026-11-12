@@ -115,5 +115,6 @@ mod temporal_package_route_formula;
 mod temporal_result_evidence;
 mod temporal_v1_retired;
 mod text_enum_identity;
+mod text_size_v2;
 mod unbounded_declarations;
 mod union_nodes;
