@@ -30,13 +30,12 @@ use qsl_replay::{
 use qsl_route::request::ExtentClassification;
 use qsl_route::routing::Disposition;
 use qsl_route::{Candidate, EvidenceKind, Registry};
-use qsl_semantics::check::Capability;
+use qsl_semantics::check::{Capability, NegotiationOutcome};
 use qsl_semantics::model::intake::{package_input, PackageInput};
 use qsl_semantics::model::observation::{document_reference, DocumentProvision, DocumentRef};
 use quire_checked::key::DeclarationKey;
 use quire_eval::{CallFailure, Evaluation, ExecutionBackendChoice};
 use quire_exact::{Cancel, Integer, Value};
-use quire_semantic_value::catalog::CatalogCode;
 use quire_semantic_value::checking::CheckingLimits;
 
 use crate::fault_backend::FaultInjectingBackend;
@@ -641,10 +640,7 @@ impl Subject {
                 negotiated.item.backend = None;
                 negotiated.disposition = Disposition::Unsupported;
                 negotiated.diagnostic = Some(Diagnostic {
-                    code: CatalogCode::new(
-                        "unsupported_projection",
-                        "unsupported-requested-capability",
-                    ),
+                    code: NegotiationOutcome::UnsupportedRequestedCapability.code(),
                     payload: Payload::Kind(Capability::TemporalSatisfaction),
                 });
                 negotiated

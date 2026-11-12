@@ -6,6 +6,7 @@
 mod evidence_kinds;
 mod fairness_kinds;
 mod memory_models;
+mod negotiation_cause;
 mod provider_origin;
 mod route_registry;
 mod routing;
