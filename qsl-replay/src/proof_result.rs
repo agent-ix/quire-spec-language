@@ -2952,8 +2952,8 @@ mod tests {
             Origin::new(Role::new("expression"), 0),
         );
         let record = crate::SeparatingWitnessRecord {
-            quantifier: occurrence.clone(),
-            deciding_element: Value::Boolean(false),
+            quantifier: Some(occurrence.clone()),
+            deciding_element: crate::DecidingElement::Value(Value::Boolean(false)),
             index: Some(0),
             value_path: RuntimeValuePath {
                 observation: qsl_foundation::witness::ObservationIdentity {
@@ -3076,8 +3076,10 @@ mod tests {
             let quantifier =
                 OccurrenceKey::new(crate::fixture_node(7), Origin::new(Role::new("q"), 0));
             crate::SeparatingWitnessRecord {
-                quantifier: quantifier.clone(),
-                deciding_element: Value::Integer(Integer::from(1_u64)),
+                quantifier: Some(quantifier.clone()),
+                deciding_element: crate::DecidingElement::Value(Value::Integer(Integer::from(
+                    1_u64,
+                ))),
                 index: Some(0),
                 value_path: RuntimeValuePath {
                     observation: qsl_foundation::witness::ObservationIdentity {
@@ -3183,11 +3185,14 @@ mod tests {
         type WitnessEdit = (&'static str, fn(&mut crate::SeparatingWitnessRecord));
         let witness_edits: &[WitnessEdit] = &[
             ("quantifier role String", |record| {
-                record.quantifier =
-                    OccurrenceKey::new(crate::fixture_node(7), Origin::new(Role::new("qq"), 0));
+                record.quantifier = Some(OccurrenceKey::new(
+                    crate::fixture_node(7),
+                    Origin::new(Role::new("qq"), 0),
+                ));
             }),
             ("deciding Integer", |record| {
-                record.deciding_element = Value::Integer(Integer::from(10_u64));
+                record.deciding_element =
+                    crate::DecidingElement::Value(Value::Integer(Integer::from(10_u64)));
             }),
             ("observation authority String", |record| {
                 record.value_path.observation.authority.push('x');
