@@ -292,9 +292,10 @@ pub struct PathGuard {
 }
 
 impl PathGuard {
-    /// A guard requiring the node at `occurrence` to evaluate to `holds`. The
-    /// occurrence is not checked against any graph: a caller that builds a
-    /// guard at a non-checked node gets a record the driver refuses.
+    /// A guard requiring the node at `occurrence` to evaluate to `holds`.
+    /// Neither the node nor the role of `occurrence` is checked against a
+    /// graph; a guard is the node's `expression` occurrence, and the caller
+    /// is responsible for supplying one.
     #[must_use]
     pub fn new(occurrence: OccurrenceKey, holds: bool) -> Self {
         Self { occurrence, holds }
