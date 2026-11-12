@@ -456,7 +456,7 @@ fn a_parallel_joins_only_the_branches_its_join_names() {
         "protocol Flow using P over (view: M::OrderView) on origin {\n\
          role Orders on M::OrderView;\n\
          run sequence Main {\n\
-         parallel Par { branch a sequence Ay { } branch b sequence Bee { } } join any [a];\n\
+         parallel Par { branch a sequence Ay { } branch b sequence Bee { } } join any [a] outstanding cancel;\n\
          }\n\
          finish End as (outcome: Boolean) { true };\n}",
     );
@@ -707,7 +707,7 @@ fn an_unknown_or_non_clause_node_refuses_without_a_partial_result() {
          protocol Flow using p over (input: M::Order) on origin {\n\
          role Buyer on M::Order;\n\
          run parallel Par { branch a sequence Ay { } branch b sequence Bee { } } \
-         join predicate(both) [a, b];\n\
+         join predicate(both) [a, b] outstanding cancel;\n\
          finish End as (outcome: Boolean) { true };\n}\n";
     let lowered = super::reachability::lower_with(
         super::protocol_graph::model(),

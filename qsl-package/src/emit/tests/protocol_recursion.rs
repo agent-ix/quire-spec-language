@@ -39,7 +39,7 @@ fn protocol_declarations(cyclic: bool) -> String {
 
 fn protocol_declarations_with_predicate(cyclic: bool, predicate: &str) -> String {
     let join = if cyclic {
-        format!("join predicate({predicate}) [west, east];")
+        format!("join predicate({predicate}) [west, east] outstanding cancel;")
     } else {
         "join all [west, east];".to_owned()
     };
@@ -254,7 +254,7 @@ fn an_attempt_bearing_protocol_in_a_predicate_cycle_is_grouped_and_reads_back() 
              parallel Fork {{\n\
                branch west sequence West {{ }}\n\
                branch east sequence East {{ }}\n\
-             }} join predicate(refers) [west, east];\n\
+             }} join predicate(refers) [west, east] outstanding cancel;\n\
            }}\n\
            finish End as (outcome: Boolean) {{ true }};\n\
          }}\n"

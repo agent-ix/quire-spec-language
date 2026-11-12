@@ -605,12 +605,6 @@ impl<'a> Program<'a> {
 
         let mut joins = BTreeMap::new();
         for parallel in &protocol.parallels {
-            if matches!(parallel.policy, CheckedJoinPolicy::Predicate { .. }) {
-                return Err(unsupported(Unsupported::JoinPredicate));
-            }
-            if parallel.outstanding.is_none() && parallel.policy != CheckedJoinPolicy::All {
-                return Err(unsupported(Unsupported::UnruledOutstanding));
-            }
             let control = controls
                 .get(&parallel.node)
                 .ok_or_else(|| ProtocolRefusal::fault("a-parallel-is-a-control"))?;
