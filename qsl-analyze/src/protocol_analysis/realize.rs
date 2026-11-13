@@ -1028,11 +1028,14 @@ mod tests {
         }
     }
 
-    fn point(winning: &[StrategyAction], not_lost: &[StrategyAction]) -> Point {
+    fn point<const W: usize, const N: usize>(
+        winning: [StrategyAction; W],
+        not_lost: [StrategyAction; N],
+    ) -> Point {
         Point {
             node: 0,
-            winning: winning.iter().cloned().collect(),
-            not_lost: not_lost.iter().cloned().collect(),
+            winning: winning.into(),
+            not_lost: not_lost.into(),
         }
     }
 
@@ -1044,11 +1047,11 @@ mod tests {
     fn a_disjointness_resting_on_a_cut_action_is_not_forced() {
         let (x, y) = (send("X"), send("Y"));
         let cut = [
-            point(&[x.clone()], &[x.clone(), y.clone()]),
-            point(&[y.clone()], &[y.clone()]),
+            point([x.clone()], [x.clone(), y.clone()]),
+            point([y.clone()], [y.clone()]),
         ];
         assert!(forced_pair(&cut).is_none());
-        let decided = [point(&[x.clone()], &[x]), point(&[y.clone()], &[y])];
+        let decided = [point([x.clone()], [x]), point([y.clone()], [y])];
         assert!(forced_pair(&decided).is_some());
     }
 }
