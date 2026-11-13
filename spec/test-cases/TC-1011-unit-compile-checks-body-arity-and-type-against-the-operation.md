@@ -16,7 +16,7 @@ Verify that a body whose parameter count differs from its operation's
 signature, whose type does not match the operation's declared result, or that
 is declared on an operation with no result type, refuses. The two mismatch
 cases refuse whether or not a dispatched call reaches the operation; an
-operation with no result cannot be called (FR-151). Scope: FR-302-AC-8, FR-576-AC-10.
+operation with no result cannot be called (QSpec FR-151). Scope: FR-302-AC-8, FR-576-AC-10.
 
 ## Test Procedure
 

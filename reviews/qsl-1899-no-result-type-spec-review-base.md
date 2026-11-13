@@ -73,6 +73,12 @@ TC-1011 (FND-003 to FND-005). Fix FND-001 to FND-005 in this PR.
 | FND-009 | low | The Description and Dependencies prose of FR-576 still say FR-094 builds a body function "for every operation with `has_body`", and that this requirement extends FR-094 "to every operation with `has_body`". Both statements contradict the amended FR-094:267-270 and FR-576's own Behavior bullet at lines 93-100, which give a resultless operation with a body no body function. Fix: say "every operation with `has_body` that declares a result type". | spec/functional/FR-576-emit-the-operation-body-into-checked-packages-for-backend-consumers.md:35, 44-45, 133-134 |
 | FND-010 | low | TC-1011's Description says that all three cases refuse "whether or not a dispatched call reaches its operation". The resultless case is now tested uncalled only, and a call to it cannot be made at all: FR-151 allows calls only to query operations. Fix: limit the "whether or not" clause to the two mismatch cases. | spec/test-cases/TC-1011-unit-compile-checks-body-arity-and-type-against-the-operation.md:15-18 |
 
+## New findings (disposition pass 2)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-011 | low | TC-1011's new Description sentence reads "an operation with no result cannot be called (FR-151)". This repository has its own FR-151 (`FR-151-admit-a-request-s-symmetry-declarations.md`), so the bare id names the wrong requirement. The rule meant is QSpec FR-151's dispatch rule, which FR-302 and FR-576 cite as "QSpec FR-151". Fix: write "(QSpec FR-151)". | spec/test-cases/TC-1011-unit-compile-checks-body-arity-and-type-against-the-operation.md:17-19 |
+
 ## Dispositions
 
 | FND | outcome | reason |
@@ -85,3 +91,6 @@ TC-1011 (FND-003 to FND-005). Fix FND-001 to FND-005 in this PR.
 | FND-006 | fixed | e74a9feb0: FR-302:95-96 and FR-103:120-121 now state that a body on an operation that declares no result refuses `ill_typed`/`type-mismatch` (FR-576). |
 | FND-007 | fixed | e74a9feb0: the "never withheld or partial" clause is removed from AC-10. |
 | FND-008 | fixed | e74a9feb0: TC-1011's Description names the case of an operation with no result type. The title still reads correctly, because it covers checking a body's type against its operation. |
+| FND-004 | fixed | 5a3bae984: step 5 now opens "Start from the `ok` body on `A.add`", so the step-5 refusal is `A.touch`'s alone; step 6 takes the step-5 unit with `noResult` removed. |
+| FND-009 | fixed | 5a3bae984: FR-576:35-36, 46 and 135-136 now say "every operation with `has_body` that declares a result type". |
+| FND-010 | fixed | 5a3bae984: TC-1011's Description limits "whether or not a dispatched call reaches" to the two mismatch cases, and says a resultless operation cannot be called. |
