@@ -775,6 +775,10 @@ pub enum InconclusiveCause {
     /// Realizability: a channel's open delivery range was cut at its
     /// capacity and the horizon, and the result depended on it (PA-7).
     CutCount,
+    /// Realizability: the result depended on an evaluation `qsl-eval` left
+    /// undecided: an undetermined clause or protocol expression, or a
+    /// terminal predicate undefined or refused at a terminal state.
+    Undecided,
 }
 
 /// The settlement of one analysis, by the FR-360 labels (PA-20). `A` is the

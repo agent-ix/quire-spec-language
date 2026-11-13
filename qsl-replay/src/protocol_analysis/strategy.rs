@@ -32,6 +32,13 @@ pub enum StrategyAction {
 /// One item of a role's local observation (PA-16).
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum Observed {
+    /// The protocol captures every role holds (FR-218), as the RFC 8785
+    /// bytes of each live instance's capture names and FR-181 typed values.
+    /// First in an observation, and only for a protocol that declares one.
+    Captures {
+        /// The capture bytes.
+        payload: Vec<u8>,
+    },
     /// The role sent the record `payload` at the `send` control `node`.
     Sent {
         /// The `send` control.
@@ -50,9 +57,8 @@ pub enum Observed {
 }
 
 /// An observation class: the observation sequence every history of the
-/// class shares. The declared shared facts (premise group (c)) are common
-/// to every history of every role, so they never split a class and are not
-/// repeated here.
+/// class shares. Premise group (c) holds no fact in V1 (a non-empty set is
+/// refused), so it adds nothing here.
 pub type ObservationClass = Vec<Observed>;
 
 /// One role's strategy: a table from observation class to the committed

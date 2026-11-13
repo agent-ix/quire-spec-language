@@ -1295,6 +1295,47 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
         Ok(binders)
     }
 
+    /// The RFC 8785 bytes of the protocol captures of `state` (ADR-027
+    /// ST-13): per live instance, ascending by ordinal, each capture's name
+    /// and FR-181 typed value, the values every role of the instance holds
+    /// (FR-218). `None` when the protocol declares no capture.
+    ///
+    /// # Errors
+    ///
+    /// An [`ExpansionStop`] when a capture value has no typed canonical
+    /// representation.
+    pub fn capture_bytes(
+        &self,
+        state: &ProtocolState<M>,
+    ) -> Result<Option<Vec<u8>>, ExpansionStop> {
+        if self.program.captures.is_empty() {
+            return Ok(None);
+        }
+        let instances = state
+            .instances
+            .iter()
+            .map(|(ordinal, instance)| {
+                let captures = self
+                    .program
+                    .captures
+                    .iter()
+                    .zip(&instance.captures)
+                    .map(|(capture, bound)| (Enc::text(capture.name.clone()), bound.enc.clone()))
+                    .collect();
+                Enc::Object(vec![
+                    ("instance", Enc::text(ordinal.to_string())),
+                    ("captures", map_enc(captures)),
+                ])
+            })
+            .collect();
+        quire_canonical::to_vec(
+            &Enc::Array(instances),
+            quire_canonical::Limits::new(u64::MAX),
+        )
+        .map(Some)
+        .map_err(|_| broken())
+    }
+
     /// QSpec FR-425's `<rest>` of `rest`.
     fn rest_point(&self, rest: Rest) -> Result<RestPoint, ProtocolRefusal> {
         let named = |kind, node| -> Result<RestPoint, ProtocolRefusal> {

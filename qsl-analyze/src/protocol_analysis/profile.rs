@@ -8,6 +8,26 @@ use qsl_package::protocol_view::{
 use qsl_replay::protocol_analysis::{UnsupportedCause, UnsupportedSlug};
 use quire_contract_model::{CheckedNodeId, CheckedPackageV2, CheckedSemanticNodeV2};
 
+/// A strategy or projection profile V1 decides (FR-575).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Profile {
+    /// `bounded-static`: static roles, literal capacities, sequence, send,
+    /// receive, choice and `parallel` with `join all` (PA-21).
+    BoundedStatic,
+}
+
+impl Profile {
+    /// The profile a request word names, `None` for any other word.
+    #[ix_trace_rs::string_edge]
+    #[must_use]
+    pub fn from_wire(word: &str) -> Option<Self> {
+        match word {
+            "bounded-static" => Some(Self::BoundedStatic),
+            _ => None,
+        }
+    }
+}
+
 fn node<'p>(
     package: &'p CheckedPackageV2,
     id: &CheckedNodeId,
