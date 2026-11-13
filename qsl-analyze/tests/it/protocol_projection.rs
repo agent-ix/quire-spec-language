@@ -8,12 +8,12 @@ use qsl_analyze::protocol_analysis::{
 };
 use qsl_replay::protocol_analysis::{
     replay_projection_counterexample, AnalysisOutcome, AssessedRootDraft, ChoiceBasis,
-    DecidingElement, GlobalStructure, InconclusiveCause, LocalEventKind, ProjectionBoundsDraft,
+    GlobalStructure, InconclusiveCause, LocalEventKind, ProjectionBoundsDraft,
     ProjectionCounterexample, ProjectionWitness, ProtocolAnalysisEvidence, RunBudget,
     UnsupportedSlug, WalkDisagreement,
 };
 use qsl_replay::spine::replay_protocol_analysis;
-use qsl_replay::{ObservationIdentity, ReplaySource};
+use qsl_replay::{DecidingElement, ObservationIdentity, ReplaySource};
 use quire_contract_model::{
     CheckedNodeId, CheckedPackageDispatchResult, CheckedPackageReadLimits, CheckedPackageV2,
 };
@@ -37,7 +37,7 @@ const RECORDS: &str = "record Ack { ok: Boolean; }\nrecord Note { ok: Boolean; }
 fn source(members: &str, run: &str) -> String {
     format!(
         "{RECORDS}protocol Flow using pp over (k: M::Cell) on origin {{\n{members}\nrun {run}\n\
-         finish Done as (d: Boolean) {{ true }};\n}}\n"
+         finish Done as (zz: Boolean) {{ true }};\n}}\n"
     )
 }
 
@@ -142,14 +142,16 @@ fn worked(ship: &str, cancel: &str, before: &str) -> Box<CheckedPackageV2> {
          send Placed via Order as (placed: Ack) {{ true }};\n\
          receive Got via Order of Placed as (got: Ack) {{ true }};\n\
          choice Decide by Seller visible (got.ok) {{\n\
-           case cancel when {{ not got.ok }} sequence Cancel {{ {cancel} }}\n\
-           case ship when {{ got.ok }} sequence Ship {{ {ship} }}\n\
+           case no when {{ not got.ok }} sequence Cancel {{ {cancel} }}\n\
+           case yes when {{ got.ok }} sequence Ship {{ {ship} }}\n\
          }} }}"
     ))
 }
 
 const PICK: &str = "send PickIt via Pick as (p: PickMsg) { true };\n\
     receive PickedUp via Pick of PickIt as (q: PickMsg) { true };";
+const PICK2: &str = "send PickIt2 via Pick as (p2: PickMsg) { true };\n\
+    receive PickedUp2 via Pick of PickIt2 as (q2: PickMsg) { true };";
 const CANCELLED: &str = "send Cn via Cancelled as (c: CancelMsg) { true };\n\
     receive Cn2 via Cancelled of Cn as (d: CancelMsg) { true };";
 
@@ -208,8 +210,8 @@ fn an_earlier_message_whose_payload_the_decision_reads_carries_the_outcome() {
          send Rep via Report as (rep: Ack) {{ true }};\n\
          receive Got via Report of Rep as (got: Ack) {{ true }};\n\
          choice Decide by Seller visible (got.ok) {{\n\
-           case cancel when {{ not got.ok }} sequence Cancel {{ }}\n\
-           case ship when {{ got.ok }} sequence Ship {{ {PICK} }}\n\
+           case no when {{ not got.ok }} sequence Cancel {{ }}\n\
+           case yes when {{ got.ok }} sequence Ship {{ {PICK} }}\n\
          }} }}"
     ));
     let found = witness(run(&package, "Warehouse"));
@@ -230,7 +232,7 @@ fn an_earlier_message_whose_payload_the_decision_reads_carries_the_outcome() {
 /// both branches that no decision fact reads does not distinguish them.
 #[trace("TC-1410", "FR-570-AC-6", "FR-570-AC-5")]
 #[test]
-fn a_decision_message no_fact_reads_does_not_distinguish_the_branches() {
+fn a_decision_message_no_fact_reads_does_not_distinguish_the_branches() {
     let before = "send Dec via Decision as (dec: Note) { true };\n\
         receive Dec2 via Decision of Dec as (dec2: Note) { true };\n";
     let package = worked(PICK, "", before);
@@ -243,7 +245,7 @@ fn a_decision_message no_fact_reads_does_not_distinguish_the_branches() {
 #[trace("TC-1410", "FR-570-AC-4", "FR-174-AC-5")]
 #[test]
 fn equal_first_actions_merge_and_recurse_on_their_continuations() {
-    let package = worked(PICK, PICK.replace("PickIt", "PickIt2").replace("PickedUp", "PickedUp2").as_str(), "");
+    let package = worked(PICK, PICK2, "");
     let found = witness(run(&package, "Warehouse"));
     let [evidence] = &found.merge_evidence[..] else {
         panic!("one choice");
@@ -252,7 +254,7 @@ fn equal_first_actions_merge_and_recurse_on_their_continuations() {
     assert_eq!(evidence.merged.len(), 1, "the receives pair off");
     // A continuation that differs after an equal first action does not merge.
     let longer = format!("{PICK}\nsend Tail via Back as (t: Ack) {{ true }};");
-    let other = PICK.replace("PickIt", "PickIt2").replace("PickedUp", "PickedUp2");
+    let other = PICK2;
     let package = worked(&longer, &other, "");
     let found = counterexample(run(&package, "Warehouse"));
     assert_eq!(found.action_a.as_ref().map(|a| a.at.node.clone()), Some(named(&package, "Tail")));
@@ -496,8 +498,8 @@ fn constructs_outside_the_profile_answer_unsupported_with_no_graph() {
         ),
         (
             MEMBERS,
-            "sequence Main { repeat Loop by Buyer visible () while { true } \
-             sequence Body { } }",
+            "sequence Main { repeat Loop by Buyer visible () max 1 while { true } \
+             sequence Body { send RS via Order as (rs: Ack) { true }; } exhausted sequence Spent { } }",
             "Loop",
             UnsupportedSlug::Repeat,
             "",
@@ -609,19 +611,21 @@ fn a_decisive_counterexample_carries_one_record_and_a_missing_root_is_refused() 
 #[test]
 fn the_trace_position_is_the_divergent_actions_index_in_path_a() {
     let long = format!(
-        "send Pre via Decision as (pre: Note) {{ true }};\n\
-         receive Pre2 via Decision of Pre as (pre2: Note) {{ true }};\n{PICK}"
+        "send Other via Order as (o1: Ack) {{ true }};\n\
+         receive Other2 via Order of Other as (o2: Ack) {{ true }};\n\
+         send Early via Decision as (e1: Note) {{ true }};\n\
+         receive Early2 via Decision of Early as (e2: Note) {{ true }};\n{PICK}"
     );
     let package = worked(&long, "", "");
     let found = counterexample(run(&package, "Warehouse"));
-    assert_eq!(found.path_a.len(), 4);
+    assert_eq!(found.path_a.len(), 4, "two events of other roles precede the divergence");
     assert_eq!(
         found.separating_witness.trace_position.as_ref().map(|p| p.as_str()),
         Some("3")
     );
     // The first divergent action is the Decision receive, third event on.
-    assert_eq!(found.action_a.as_ref().unwrap().at.node, named(&package, "Pre2"));
-    assert_eq!(found.path_a.last().unwrap().node, named(&package, "Pre2"));
+    assert_eq!(found.action_a.as_ref().unwrap().at.node, named(&package, "Early2"));
+    assert_eq!(found.path_a.last().unwrap().node, named(&package, "Early2"));
 }
 
 /// PA-20, FR-573-AC-3: the replay arm re-walks the paths and ends in the
