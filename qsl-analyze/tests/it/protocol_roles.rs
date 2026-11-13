@@ -1835,7 +1835,7 @@ fn a_template_reads_the_protocol_captures_and_the_activation_binder() {
          retry (e: M::Attempt, l: M::Attempt) { false };\n\
          commit never;\n\
          recover (r: M::Attempt) { seen and armed };\n\
-         }"";
+         }";
     let run = format!(
         "sequence Main {{ {} {} event Fail by w as (failed: Boolean) {{ failed }}; }}",
         crate::protocol_compensation::CHARGE,
