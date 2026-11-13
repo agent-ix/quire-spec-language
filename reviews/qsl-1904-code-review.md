@@ -108,3 +108,22 @@ Test runs (via `~/dev/worktrees/locked-build.sh`, `CARGO_PROFILE_DEV_DEBUG=0`,
 - FR-380-AC-20 (examined): field edge and relationship end share one population id and node.
 - FR-380-AC-21 (examined): RushFav record holds `people`, `orders`, no `rushes`, no ambiguity.
 - FR-105 `reaches_field` member note (context_only): the added `population` key only when bounded.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-007 | low | The new refinement-mapping test is tagged `FR-380-AC-21`, but AC-21 is the `RushFav` state-clause record over fixture R; the test checks FR-146 records of a refinement mapping over `Tag`/`Sub`. Its assertions sit inside `for … in domains(&graph)` with no check that the loop runs, so an empty record set would pass. Drop the FR-380-AC-21 tag (FR-146-AC-10 and TC-551 fit) and assert the records are non-empty (or count them). | qsl-semantics/tests/it/refinement_step_simulation.rs:473-513 |
+
+## Dispositions
+
+Round 1, checked against fix commit fd31b2efc (`git diff origin/main...HEAD`).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | `record_bounds` reads `CheckedStateClause::population_bounds()` of the named clause (the clause record's bounded domains), replacing the graph-wide `bound_labels`; AC-17, AC-18 and AC-21 assert it, including `[]` for the rushes-bounded RushFav record. |
+| FND-002 | fixed | AC-19 now evaluates the invariant `FavLoop` (`not reaches(self.fav, self.fav, trail)`) with `o1.trail = o2`, compares the outcome and charge points at 4 with the same clause over unbounded `orders`, and checks the refusal at 5. |
+| FND-003 | fixed | AC-13 asserts the structural key against the literal `TRAIL_REACHES_KEY`, which carries no member operand, so a re-key of field members fails. |
+| FND-004 | fixed | `field_population` is `Option<Box<AuthoredBound>>`, read through `as_deref`. The parallel field stays, accepted as confined to `pub(in crate::check)`. |
+| FND-005 | fixed | `a_mapping_field_edge_over_a_subtype_operand_walks_the_edge_types_population` covers the refinement path: a `Sub` operand walks `tags`, not `subs`, with no ambiguity refusal. |
+| FND-006 | fixed | AC-14 asserts `refusal.location.path() == [0]`, the `reaches` under the root `not`. |

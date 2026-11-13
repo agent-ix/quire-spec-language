@@ -62,3 +62,11 @@ AC-19 are recorded in SR-2700001 and not repeated here.
 - FR-380-AC-19 (examined): tagged `a_walked_field_edge_population_refuses_above_its_bound`.
 - FR-380-AC-20 (examined): tagged `a_field_edge_and_an_end_share_one_population_node`.
 - FR-380-AC-21 (examined): tagged `the_edge_type_not_the_operand_type_names_the_walked_population`.
+
+## Dispositions
+
+Round 1, checked against fix commit fd31b2efc.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | deferred | AC-12 waits on QSpec STD-663 and IR-1533, as FR-380 Dependencies records; the ignore reason names both. Un-ignore when IR-1533 lands. |
