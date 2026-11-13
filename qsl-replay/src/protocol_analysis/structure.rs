@@ -183,6 +183,7 @@ pub struct GlobalStructure {
     index: BTreeMap<PortRef, usize>,
     below: Vec<Bits>,
     covers: Vec<Vec<usize>>,
+    back: Vec<Vec<usize>>,
     depth: Vec<u64>,
     pub(super) case_bodies: BTreeMap<CheckedNodeId, CheckedNodeId>,
 }
@@ -335,6 +336,13 @@ impl GlobalStructure {
             }
         }
 
+        let mut back = vec![Vec::new(); events.len()];
+        for (from, row) in covers.iter().enumerate() {
+            for to in row {
+                back[*to].push(from);
+            }
+        }
+
         // The depth of an event: the longest chain of events ending at it.
         let mut depth = vec![1_u64; events.len()];
         let mut order: Vec<usize> = (0..events.len()).collect();
@@ -349,6 +357,7 @@ impl GlobalStructure {
             index,
             below,
             covers,
+            back,
             depth,
             case_bodies,
         })
@@ -427,10 +436,10 @@ impl GlobalStructure {
         while !frontier.is_empty() {
             let mut next = Vec::new();
             for node in frontier {
-                for (before, row) in self.covers.iter().enumerate() {
-                    if row.contains(&node) && !distance.contains_key(&before) {
-                        distance.insert(before, distance[&node] + 1);
-                        next.push(before);
+                for before in &self.back[node] {
+                    if !distance.contains_key(before) {
+                        distance.insert(*before, distance[&node] + 1);
+                        next.push(*before);
                     }
                 }
             }
@@ -448,18 +457,6 @@ impl GlobalStructure {
             at = *step;
         }
         Some(path)
-    }
-
-    /// The enclosing choice case of `event`, nearest first: `(choice, body)`.
-    fn nearest_case<'a>(
-        &'a self,
-        event: &'a GlobalEvent,
-    ) -> Option<(&'a CheckedNodeId, &'a CheckedNodeId)> {
-        event
-            .within
-            .iter()
-            .rev()
-            .find_map(|node| self.case_bodies.get(node).map(|choice| (choice, node)))
     }
 
     /// The `(direction, peer, message type)` of a communication seen from
@@ -484,32 +481,24 @@ impl GlobalStructure {
         }
     }
 
-    /// The communications `role` performs directly in the case `body` of
-    /// `choice` (not inside a nested case), within a horizon of `max_depth`,
-    /// and whether any such communication lies beyond that horizon.
+    /// Every communication `role` performs inside the case `body`, nested
+    /// choices included (a nested alternative is a possible first action of
+    /// the case), each with whether it lies beyond a horizon of `max_depth`.
     fn case_actions(
         &self,
         role: &CheckedNodeId,
-        choice: &CheckedNodeId,
         body: &CheckedNodeId,
         max_depth: u64,
-    ) -> (Vec<Action>, bool) {
-        let mut visible = Vec::new();
-        let mut hidden = false;
-        for (position, event) in self.events.iter().enumerate() {
-            if self.nearest_case(event) != Some((choice, body)) {
-                continue;
-            }
-            let Some(action) = self.action_of(&event.at, role) else {
-                continue;
-            };
-            if self.depth[position] > max_depth {
-                hidden = true;
-            } else {
-                visible.push(action);
-            }
-        }
-        (visible, hidden)
+    ) -> Vec<(Action, bool)> {
+        self.events
+            .iter()
+            .enumerate()
+            .filter(|(_, event)| event.within.contains(body))
+            .filter_map(|(position, event)| {
+                self.action_of(&event.at, role)
+                    .map(|action| (action, self.depth[position] > max_depth))
+            })
+            .collect()
     }
 
     /// The minimal actions of `actions` under the structure's order.
@@ -596,8 +585,9 @@ pub enum BranchMerge {
 }
 
 impl GlobalStructure {
-    /// How `role` stands at the choice event `choice`, within a horizon of
-    /// `max_depth` (PA-10).
+    /// How `role` stands at the choice event `choice` (PA-10). The role is
+    /// told the outcome only when every message the decision reads is one it
+    /// took part in: the decision then depends on nothing it does not know.
     ///
     /// # Panics
     ///
@@ -607,7 +597,6 @@ impl GlobalStructure {
         &self,
         role: &CheckedNodeId,
         choice: &PortRef,
-        max_depth: u64,
     ) -> Option<ChoiceBasis> {
         let event = self.event(choice)?;
         let GlobalEventKind::Choice {
@@ -621,17 +610,22 @@ impl GlobalStructure {
         if owner == role {
             return Some(ChoiceBasis::Owner);
         }
-        for carrier in carriers {
+        let knows = |carrier: &CheckedNodeId| {
             let receive = PortRef {
                 node: carrier.clone(),
                 port: Port::Enter,
             };
-            let Some(GlobalEventKind::Receive(comm)) = self.event(&receive).map(|e| &e.kind) else {
-                continue;
-            };
-            if (&comm.sender == role || &comm.receiver == role) && self.precedes(&receive, choice) {
+            matches!(
+                self.event(&receive).map(|e| &e.kind),
+                Some(GlobalEventKind::Receive(comm))
+                    if (&comm.sender == role || &comm.receiver == role)
+                        && self.precedes(&receive, choice)
+            )
+        };
+        if let Some(first) = carriers.first() {
+            if carriers.iter().all(knows) {
                 return Some(ChoiceBasis::Informed {
-                    carrier: carrier.clone(),
+                    carrier: first.clone(),
                 });
             }
         }
@@ -640,7 +634,11 @@ impl GlobalStructure {
         let firsts: Vec<Vec<Action>> = cases
             .iter()
             .map(|(_, body)| {
-                let (actions, _) = self.case_actions(role, &choice.node, body, max_depth);
+                let actions: Vec<Action> = self
+                    .case_actions(role, body, u64::MAX)
+                    .into_iter()
+                    .map(|(action, _)| action)
+                    .collect();
                 self.minimal(&actions)
             })
             .collect();
@@ -688,17 +686,30 @@ impl GlobalStructure {
         second: &CheckedNodeId,
         max_depth: u64,
     ) -> BranchMerge {
-        let (mut left, left_hidden) = self.case_actions(role, choice, first, max_depth);
-        let (mut right, right_hidden) = self.case_actions(role, choice, second, max_depth);
-        if left_hidden || right_hidden {
-            return BranchMerge::Cut;
-        }
+        let held = |body: &CheckedNodeId| self.case_actions(role, body, max_depth);
+        let (left, right) = (held(first), held(second));
+        let hidden: BTreeSet<PortRef> = left
+            .iter()
+            .chain(&right)
+            .filter(|(_, beyond)| *beyond)
+            .map(|(action, _)| action.at.clone())
+            .collect();
+        let mut left: Vec<Action> = left.into_iter().map(|(action, _)| action).collect();
+        let mut right: Vec<Action> = right.into_iter().map(|(action, _)| action).collect();
         let mut merged = Vec::new();
         loop {
             let mut front_left = self.minimal(&left);
             let mut front_right = self.minimal(&right);
             front_left.sort_by(|a, b| (a.shape(), &a.at).cmp(&(b.shape(), &b.at)));
             front_right.sort_by(|a, b| (a.shape(), &a.at).cmp(&(b.shape(), &b.at)));
+            // A layer holding an event beyond the horizon is not known.
+            if front_left
+                .iter()
+                .chain(&front_right)
+                .any(|action| hidden.contains(&action.at))
+            {
+                return BranchMerge::Cut;
+            }
             if front_left.is_empty() && front_right.is_empty() {
                 return BranchMerge::Merged(merged);
             }
@@ -754,12 +765,65 @@ impl GlobalStructure {
         }
     }
 
+    /// The covering edges of the order induced on the events `kept`, as
+    /// pairs of positions in `kept`: `a` covers `b` when `b` follows `a` and
+    /// no other kept event lies between. At most `max_transitions` edges are
+    /// built.
+    ///
+    /// # Errors
+    ///
+    /// [`RunLimit`] when more edges would be built.
+    pub fn induced_cover(
+        &self,
+        kept: &[&PortRef],
+        max_transitions: u64,
+    ) -> Result<Vec<(usize, usize)>, RunLimit> {
+        let positions: Vec<usize> = kept
+            .iter()
+            .filter_map(|at| self.index.get(*at).copied())
+            .collect();
+        let slot: BTreeMap<usize, usize> = positions
+            .iter()
+            .enumerate()
+            .map(|(at, position)| (*position, at))
+            .collect();
+        let mut mask = Bits::new(self.events.len());
+        for position in &positions {
+            mask.set(*position);
+        }
+        let mut edges = Vec::new();
+        for (from, a) in positions.iter().enumerate() {
+            let mut after = self.below[*a].clone();
+            for (word, keep) in after.0.iter_mut().zip(&mask.0) {
+                *word &= keep;
+            }
+            let mut between = Bits::new(self.events.len());
+            for b in after.members() {
+                between.or(&self.below[b]);
+            }
+            for b in after.members() {
+                if !between.get(b) {
+                    if edges.len() as u64 >= max_transitions {
+                        return Err(RunLimit {
+                            limit: "max_transitions",
+                            value: max_transitions,
+                        });
+                    }
+                    if let Some(to) = slot.get(&b).copied() {
+                        edges.push((from, to));
+                    }
+                }
+            }
+        }
+        Ok(edges)
+    }
+
     /// The events `role` performs and the choices it takes part in, for a
     /// local graph: communications it performs, choices it owns or is
     /// told the outcome of, and the entry and exit of every `parallel` whose
     /// branches hold at least two of those.
     #[must_use]
-    pub fn role_events(&self, role: &CheckedNodeId, max_depth: u64) -> Vec<&GlobalEvent> {
+    pub fn role_events(&self, role: &CheckedNodeId) -> Vec<&GlobalEvent> {
         let mut kept: Vec<&GlobalEvent> = self
             .events
             .iter()
@@ -768,7 +832,7 @@ impl GlobalStructure {
                     self.action_of(&event.at, role).is_some()
                 }
                 GlobalEventKind::Choice { .. } => matches!(
-                    self.classify(role, &event.at, max_depth),
+                    self.classify(role, &event.at),
                     Some(
                         ChoiceBasis::Owner
                             | ChoiceBasis::Informed { .. }

@@ -402,6 +402,10 @@ pub enum ReplayRefusal {
     /// FR-170: the explicit state-graph replay entry received another arm.
     #[error("invalid_runtime_input/invalid-value at /replay/source: state-graph replay requires a ModelGraph source")]
     WrongModelGraphSource,
+    /// ADR-036 PA-20: a protocol analysis source replays through
+    /// `spine::replay_protocol_analysis` and its checked package alone.
+    #[error("invalid_runtime_input/invalid-value at /replay/source: a ProtocolAnalysis source replays through replay_protocol_analysis and its checked package")]
+    WrongProtocolAnalysisEntry,
     /// FR-116, FR-122: the envelope's replay target differs from the
     /// request's (`stale_dependency`/`content-mismatch`), naming both.
     #[error("stale_dependency/content-mismatch: the request's target is {request} but the envelope's is {envelope}")]
@@ -587,7 +591,9 @@ impl ReplayRefusal {
             Self::WrongObservedTemporalTarget { .. } | Self::WrongObservedTemporalSource => {
                 Code::InvalidRuntimeInput
             }
-            Self::WrongModelGraphEntry | Self::WrongModelGraphSource => Code::InvalidRuntimeInput,
+            Self::WrongModelGraphEntry
+            | Self::WrongModelGraphSource
+            | Self::WrongProtocolAnalysisEntry => Code::InvalidRuntimeInput,
             Self::MalformedOperationTarget { .. } => Code::InvalidModelBinding,
             Self::AmbiguousOperation { .. } => Code::AmbiguousDeclaration,
             Self::FrameIdentity(_)
@@ -659,7 +665,9 @@ impl ReplayRefusal {
             Self::WrongReplayTarget { .. } => Some("unknown-member"),
             Self::WrongObservedTemporalTarget { .. } => Some("unknown-member"),
             Self::WrongObservedTemporalSource => Some("invalid-value"),
-            Self::WrongModelGraphEntry | Self::WrongModelGraphSource => Some("invalid-value"),
+            Self::WrongModelGraphEntry
+            | Self::WrongModelGraphSource
+            | Self::WrongProtocolAnalysisEntry => Some("invalid-value"),
             Self::MalformedOperationTarget { .. } => Some("malformed-declaration"),
             Self::AmbiguousOperation { .. } => Some("ambiguous-name"),
             Self::WrongObservation { .. } => Some("wrong-observation"),
@@ -725,7 +733,9 @@ impl ReplayRefusal {
                 Some(Cow::Borrowed("/replay/observed_counterexample"))
             }
             Self::WrongObservedTemporalSource => Some(Cow::Borrowed("/replay/source")),
-            Self::WrongModelGraphEntry | Self::WrongModelGraphSource => {
+            Self::WrongModelGraphEntry
+            | Self::WrongModelGraphSource
+            | Self::WrongProtocolAnalysisEntry => {
                 Some(Cow::Borrowed("/replay/source"))
             }
             Self::ObservedTemporalMismatch { member } => Some(match *member {
@@ -1201,10 +1211,10 @@ pub fn replay_with_cancel_and_temporal_selections(
     cancel: &Cancel,
 ) -> Result<ReplayResult, ReplayRefusal> {
     let request = ReplayRequest::decode(wire, replay_limits)?;
-    if matches!(
-        request.source(),
-        ReplaySource::ModelGraph(_) | ReplaySource::ProtocolAnalysis(_)
-    ) {
+    if matches!(request.source(), ReplaySource::ProtocolAnalysis(_)) {
+        return Err(ReplayRefusal::WrongProtocolAnalysisEntry);
+    }
+    if matches!(request.source(), ReplaySource::ModelGraph(_)) {
         return Err(ReplayRefusal::WrongModelGraphEntry);
     }
     let function = match request.source() {

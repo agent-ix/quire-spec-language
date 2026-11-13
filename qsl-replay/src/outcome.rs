@@ -2086,6 +2086,7 @@ fn replay_stage(refusal: &ReplayRefusal) -> Option<OutcomeStage> {
         | ReplayRefusal::WrongModelGraphEntry
         | ReplayRefusal::ModelGraphMismatch { .. }
         | ReplayRefusal::WrongModelGraphSource
+        | ReplayRefusal::WrongProtocolAnalysisEntry
         | ReplayRefusal::TargetMismatch { .. }
         | ReplayRefusal::MalformedOperationTarget { .. }
         | ReplayRefusal::AmbiguousOperation { .. }

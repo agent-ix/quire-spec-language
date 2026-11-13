@@ -8,7 +8,7 @@ use qsl_replay::protocol_analysis::{
     node_text, replay_projection_counterexample, Action, AnalysisOutcome, AssessedRoot,
     AssessedRootDraft, BranchMerge, ChoiceBasis, Correspondence, GlobalEventKind, GlobalStructure,
     InconclusiveCause, LocalEvent, LocalEventId, LocalEventKind, LocalGraph, MergeEvidence,
-    MissingMember, PremiseRefusal, ProjectionBoundsDraft, ProjectionCounterexample,
+    MissingMember, PremiseRefusal, RunLimit, ProjectionBoundsDraft, ProjectionCounterexample,
     ProjectionKeyDraft, ProjectionWitness, ProtocolAnalysisKey, ProtocolAnalysisResult,
     ProtocolPremises, RunBudget,
 };
@@ -61,6 +61,9 @@ pub enum ProjectionRefusal {
     /// Premises (a) and (b) were not built.
     #[error(transparent)]
     Premises(#[from] PremiseRefusal),
+    /// The structure contradicts itself: an engine fault, never a result.
+    #[error("the protocol structure is inconsistent: {0}")]
+    Inconsistent(&'static str),
     /// The structure did not build for a reason other than a run limit.
     #[error(transparent)]
     Structure(StructureError),
@@ -135,7 +138,7 @@ pub fn project(
         {
             continue;
         }
-        let Some(basis) = structure.classify(role, &event.at, max_depth) else {
+        let Some(basis) = structure.classify(role, &event.at) else {
             continue;
         };
         let mut merged = Vec::new();
@@ -152,19 +155,23 @@ pub fn project(
                                     let path = match &action {
                                         Some(action) => structure
                                             .shortest_path(&event.at, &action.at)
-                                            .unwrap_or_default(),
+                                            .ok_or_else(|| {
+                                                ProjectionRefusal::Inconsistent(
+                                                    "a divergent action does not follow its choice",
+                                                )
+                                            })?,
                                         None => Vec::new(),
                                     };
-                                    Side {
+                                    Ok::<_, ProjectionRefusal>(Side {
                                         action,
                                         case: case.clone(),
                                         path,
-                                    }
+                                    })
                                 };
                                 let candidate = Candidate::new(
                                     event.at.clone(),
-                                    side(divergence.first, case_first),
-                                    side(divergence.second, case_second),
+                                    side(divergence.first, case_first)?,
+                                    side(divergence.second, case_second)?,
                                 );
                                 if best
                                     .as_ref()
@@ -202,8 +209,10 @@ pub fn project(
             AnalysisOutcome::Inconclusive(InconclusiveCause::Horizon),
         ));
     }
-    let witness = witness(&structure, key.clone(), role, max_depth, evidence);
-    Ok(result(key, AnalysisOutcome::Proved(witness)))
+    match witness(&structure, key.clone(), role, request.budget, evidence) {
+        Ok(witness) => Ok(result(key, AnalysisOutcome::Proved(witness))),
+        Err(limit) => Ok(result(key, AnalysisOutcome::Failed(limit))),
+    }
 }
 
 struct Side {
@@ -289,10 +298,10 @@ fn witness(
     structure: &GlobalStructure,
     key: ProtocolAnalysisKey,
     role: &CheckedNodeId,
-    max_depth: u64,
+    budget: RunBudget,
     merge_evidence: Vec<MergeEvidence>,
-) -> ProjectionWitness {
-    let kept = structure.role_events(role, max_depth);
+) -> Result<ProjectionWitness, RunLimit> {
+    let kept = structure.role_events(role);
     let mut correspondence = BTreeMap::new();
     let mut events = Vec::new();
     for (position, event) in kept.iter().enumerate() {
@@ -326,30 +335,35 @@ fn witness(
         correspondence.insert(event.at.clone(), id);
         events.push(LocalEvent { id, kind });
     }
-    let mut edges = Vec::new();
-    for first in &kept {
-        for second in &kept {
-            if !structure.precedes(&first.at, &second.at) {
-                continue;
-            }
-            let between = kept.iter().any(|middle| {
-                structure.precedes(&first.at, &middle.at)
-                    && structure.precedes(&middle.at, &second.at)
-            });
-            if let (false, Some(from), Some(to)) = (
-                between,
-                correspondence.get(&first.at),
-                correspondence.get(&second.at),
-            ) {
-                edges.push((*from, *to));
-            }
-        }
-    }
+    let ids: Vec<Option<LocalEventId>> = kept
+        .iter()
+        .map(|event| correspondence.get(&event.at).copied())
+        .collect();
+    let ats: Vec<&PortRef> = kept.iter().map(|event| &event.at).collect();
+    let mut edges: Vec<(LocalEventId, LocalEventId)> = structure
+        .induced_cover(&ats, budget.max_transitions)?
+        .into_iter()
+        .filter_map(|(from, to)| Some((ids[from]?, ids[to]?)))
+        .collect();
     edges.sort();
-    ProjectionWitness {
+    let mut alternatives: Vec<(LocalEventId, LocalEventId)> = merge_evidence
+        .iter()
+        .flat_map(|held| &held.merged)
+        .filter_map(|(first, second)| {
+            let (a, b) = (correspondence.get(first)?, correspondence.get(second)?);
+            Some((*a.min(b), *a.max(b)))
+        })
+        .collect();
+    alternatives.sort();
+    alternatives.dedup();
+    Ok(ProjectionWitness {
         key,
-        local_graph: LocalGraph { events, edges },
+        local_graph: LocalGraph {
+            events,
+            edges,
+            alternatives,
+        },
         correspondence: Correspondence(correspondence),
         merge_evidence,
-    }
+    })
 }

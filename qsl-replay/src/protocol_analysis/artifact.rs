@@ -65,6 +65,10 @@ pub struct LocalGraph {
     pub events: Vec<LocalEvent>,
     /// The covering edges `(earlier, later)`, ascending.
     pub edges: Vec<(LocalEventId, LocalEventId)>,
+    /// Pairs of events that are one behaviour of the role seen in two
+    /// branches of a choice it merged (PA-10): alternatives, not concurrent
+    /// events. Ascending.
+    pub alternatives: Vec<(LocalEventId, LocalEventId)>,
 }
 
 /// The total map from each global event of the role to its local event.
@@ -252,7 +256,7 @@ pub fn replay_projection_counterexample(
         node: ce.choice.clone(),
         port: qsl_package::protocol_view::Port::Enter,
     };
-    match structure.classify(&ce.role, &choice, max_depth) {
+    match structure.classify(&ce.role, &choice) {
         None => return Err(WalkDisagreement::UnknownChoice),
         Some(ChoiceBasis::MustMerge) => {}
         Some(_) => return Err(WalkDisagreement::NotMustMerge),

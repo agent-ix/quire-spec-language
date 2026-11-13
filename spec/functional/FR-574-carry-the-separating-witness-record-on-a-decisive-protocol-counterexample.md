@@ -42,7 +42,10 @@ not choose, derive or default it.
 
 ## Outputs
 
-One FR-351 record on the QSpec FR-352 `native-run-result/2` document. A
+One FR-351 record on the QSpec FR-352 `native-run-result/2` document. This
+slice builds the record and attaches it to the counterexample; the
+`native-run-result/2` carriage is part of serving the kinds. Remaining work:
+QSL-1897. A
 `closed-scope` result carries no record (quire-protocol FR-302).
 
 ## Behavior

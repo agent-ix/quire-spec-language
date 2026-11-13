@@ -256,6 +256,11 @@ fn equal_first_actions_merge_and_recurse_on_their_continuations() {
     };
     assert_eq!(evidence.basis, ChoiceBasis::MustMerge);
     assert_eq!(evidence.merged.len(), 1, "the receives pair off");
+    assert_eq!(
+        found.local_graph.alternatives.len(),
+        1,
+        "the paired receives are alternatives, not concurrent events"
+    );
     // A continuation that differs after an equal first action does not merge.
     let longer = format!("{PICK}\nsend Tail via Back as (t: Ack) {{ true }};");
     let other = PICK2;
@@ -478,7 +483,7 @@ fn a_horizon_short_of_the_protocol_is_inconclusive() {
 }
 
 /// PA-14: a run limit stops the run `failed`, stating the limit and value.
-#[trace("TC-1410", "FR-570-AC-7", "FR-573-AC-5")]
+#[trace("TC-1410", "FR-570-AC-7")]
 #[test]
 fn a_run_limit_fails_the_run_naming_the_limit() {
     let package = parallel_flow("unordered");
@@ -509,7 +514,7 @@ fn a_run_limit_fails_the_run_naming_the_limit() {
 #[trace("TC-1415", "FR-575-AC-1", "FR-575-AC-3", "FR-174-AC-3")]
 #[test]
 fn constructs_outside_the_profile_answer_unsupported_with_no_graph() {
-    let cases: [(&str, &str, &str, UnsupportedSlug, &str); 5] = [
+    let cases: [(&str, &str, &str, UnsupportedSlug, &str); 7] = [
         (
             MEMBERS,
             "sequence Main { parallel Par { branch a sequence Ay { } branch b sequence Bee { } } \
@@ -550,9 +555,28 @@ fn constructs_outside_the_profile_answer_unsupported_with_no_graph() {
             UnsupportedSlug::UnsupportedJoin,
             "quorum",
         ),
+        (
+            "role Buyer on M::Cell;\nrole Pool each M::Cell from cells max 2 lifetime workflow;",
+            "sequence Main { }",
+            "Pool",
+            UnsupportedSlug::DynamicRolePopulation,
+            "",
+        ),
+        (
+            MEMBERS,
+            "sequence Main { parallel Par { branch a sequence Ay { } branch b sequence Bee { } } \
+             join predicate(both) [a, b] outstanding cancel; }",
+            "Par",
+            UnsupportedSlug::UnsupportedJoin,
+            "predicate",
+        ),
     ];
     for (members, run_text, node, slug, detail) in cases {
-        let package = admitted_source(&source(members, run_text));
+        let mut text = source(members, run_text);
+        if detail == "predicate" {
+            text = format!("function both using v(a: Boolean, b: Boolean): Boolean pure {{ a and b }}\n{text}");
+        }
+        let package = admitted_source(&text);
         let cause = unsupported_construct(&package, &clause(&package))
             .unwrap()
             .unwrap_or_else(|| panic!("{node}: a construct outside the profile"));
@@ -674,7 +698,7 @@ fn the_trace_position_is_the_divergent_actions_index_in_path_a() {
 
 /// PA-20, FR-573-AC-3: the replay arm re-walks the paths and ends in the
 /// stated divergence; a walk that does not settles as a disagreement.
-#[trace("TC-1413", "FR-573-AC-2", "FR-573-AC-3")]
+#[trace("TC-1413", "FR-573-AC-3")]
 #[test]
 fn the_replay_arm_reproduces_a_counterexample_and_refuses_an_edited_one() {
     let package = worked(PICK, "", "");
@@ -735,4 +759,74 @@ fn the_replay_arm_reproduces_a_counterexample_and_refuses_an_edited_one() {
 fn two_runs_on_one_key_give_one_result() {
     let package = worked(PICK, CANCELLED, "");
     assert_eq!(run(&package, "Warehouse"), run(&package, "Warehouse"));
+}
+
+/// FR-570 (nested choice): a choice nested in a branch contributes its
+/// alternatives to the branch's actions, so a role that receives in one
+/// branch and nothing in the other is not projectable.
+#[trace("TC-1410", "FR-570-AC-4", "FR-570-AC-5")]
+#[test]
+fn a_choice_nested_in_a_branch_counts_toward_the_outer_merge() {
+    let inner = format!(
+        "choice Inner by Seller visible (got.ok) {{\n\
+           case a when {{ got.ok }} sequence InnerA {{ {PICK} }}\n\
+           case b when {{ not got.ok }} sequence InnerB {{ {PICK2} }}\n}}"
+    );
+    let package = worked(&inner, "", "");
+    let found = counterexample(run(&package, "Warehouse"));
+    assert_eq!(found.choice, named(&package, "Decide"));
+    assert_eq!(found.action_b, None);
+}
+
+fn two_senders(second: &str, guard_reads: &str) -> Box<CheckedPackageV2> {
+    flow(&format!(
+        "sequence Main {{\n\
+         send Rep via Report as (rep: Ack) {{ true }};\n\
+         receive Got via Report of Rep as (got: Ack) {{ true }};\n\
+         send Placed via {second} as (placed: Ack) {{ true }};\n\
+         receive Got2 via {second} of Placed as (got2: Ack) {{ true }};\n\
+         choice Decide by Seller visible (got.ok, got2.ok) {{\n\
+           case no when {{ not {guard_reads} }} sequence Cancel {{ }}\n\
+           case yes when {{ {guard_reads} }} sequence Ship {{ {PICK} }}\n\
+         }} }}"
+    ))
+}
+
+/// FR-570 (told the outcome): a role is told only when every message the
+/// decision reads is one it took part in.
+#[trace("TC-1410", "FR-570-AC-4", "FR-570-AC-6", "FR-053-AC-1")]
+#[test]
+fn a_decision_reading_a_message_the_role_took_no_part_in_does_not_inform_it() {
+    // `got` came from Warehouse, `got2` from Buyer, and the guards test `got2`.
+    let package = two_senders("Order", "got2.ok");
+    let found = counterexample(run(&package, "Warehouse"));
+    assert_eq!(found.choice, named(&package, "Decide"));
+    // Both messages are Warehouse's: the whole decision is known to it.
+    let package = two_senders("Back", "got2.ok");
+    let told = witness(run(&package, "Warehouse"));
+    assert!(matches!(
+        told.merge_evidence[0].basis,
+        ChoiceBasis::Informed { .. }
+    ));
+    // The owner is told in both protocols.
+    assert!(matches!(
+        run(&package, "Seller").outcome,
+        AnalysisOutcome::Proved(_)
+    ));
+}
+
+/// FR-570 (horizon): a divergence in the first layer is a counterexample
+/// even when the branch holds events beyond the horizon.
+#[trace("TC-1410", "FR-570-AC-5", "FR-570-AC-7")]
+#[test]
+fn a_divergence_before_the_horizon_is_found_though_later_events_are_cut() {
+    let tail = format!("{PICK}\nsend T1 via Back as (t1: Ack) {{ true }};");
+    let package = worked(&tail, "", "");
+    let mut shallow = request(&package, "Warehouse");
+    shallow.bounds = Some(ProjectionBoundsDraft { max_depth: Some(5) });
+    let found = match project(&package, shallow).unwrap().outcome {
+        AnalysisOutcome::Refuted(found) => found,
+        other => panic!("expected the shallow counterexample: {other:?}"),
+    };
+    assert_eq!(found.action_a.as_ref().unwrap().at.node, named(&package, "PickedUp"));
 }

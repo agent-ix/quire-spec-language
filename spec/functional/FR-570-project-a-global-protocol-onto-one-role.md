@@ -67,14 +67,19 @@ edges.
   engine shall enumerate no interleaving (PA-9).
 - The engine shall keep FIFO order per exact channel key and evaluated key
   value as the local receive order (PA-9).
-- At a `choice` the engine shall classify the role as internal choice when it is the
-  owner, as observing the outcome when it sent or received an earlier message
-  whose payload binder the choice's decision facts read (the `visible`
-  expressions, followed through the value nodes they reference; FR-053-AC-1;
-  a checked package's `visible` holds expression nodes, so a role "lies in
-  `visible`" exactly by taking part in such a message), as external choice
-  when a peer sends a receive in every branch's first events and the message
-  types differ across branches (PA-10).
+- At a `choice` the engine shall classify the role as internal choice when it is
+  the owner (PA-10).
+- The engine shall classify a non-owner role as observing the outcome only when
+  every earlier message whose payload binder the choice's decision facts read
+  is a message the role sent or received (FR-053-AC-1). The decision facts are
+  the choice's `visible` expressions followed through the value nodes they
+  reference; a checked package's `visible` holds expression nodes, not roles.
+  A decision that also reads a message the role took no part in does not
+  inform the role.
+- The engine shall classify a non-owner role that is not told the outcome as
+  external choice when, in every branch, the first events include a receive
+  from one peer and the message types of those receives differ across
+  branches (PA-10).
 - Otherwise the engine shall merge branches only when their first events pair
   off by direction and peer with equal message types, merged pairs recursing
   on their continuations (PA-10).
@@ -95,9 +100,17 @@ edges.
   default to 4096 and 262144; a run one of them stops is `failed`,
   `resource-incomplete`, and states the limit and its value.
 - An event deeper than `max_depth` (the longest chain of events ending at it)
-  is beyond the horizon: a branch pair holding such an event is not compared,
-  and a search that finds no counterexample with any event beyond the horizon
-  is `inconclusive`.
+  is beyond the horizon. The merge of two branches compares layer by layer and
+  stops at the first layer whose first events include an event beyond the
+  horizon; a divergence at an earlier layer is a counterexample, and a search
+  that finds no counterexample and stops at such a layer, or meets any event
+  beyond the horizon, is `inconclusive`.
+- The actions of a branch include those inside a choice nested in the branch:
+  every alternative of the nested choice is a possible first action of the
+  branch.
+- A merged choice's paired events are recorded in the local graph as
+  alternatives (one behaviour of the role in two branches), not as concurrent
+  events.
 - Soundness is by construction (PA-12): the correspondence table is total
   and order-preserving, each local event maps to one global event, and a
   branch merges only under the rule above. No composition check and no
@@ -110,9 +123,9 @@ edges.
 | FR-570-AC-1 | For a projectable protocol the local graph's events and causal order equal the global event structure restricted to the role's events through the correspondence table, every local event maps to exactly one global event, and the local order is the induced order of any causal path (implements FR-174-AC-1). | Test (TC-1410) |
 | FR-570-AC-2 | Every global communication projects to exactly one local send and one local receive, the correspondence table is total over the role's global events, and the send/receive pair is matched by message type and peer (implements FR-174-AC-4). | Test (TC-1410) |
 | FR-570-AC-3 | A `parallel` region with `join all` projects to a local partial order with no enumerated interleaving, and two receives on one channel with equal evaluated FIFO key keep their global order as local receive order (PA-9). | Test (TC-1410) |
-| FR-570-AC-4 | A choice branch merges for the role only by the PA-10 rule: owner, `visible`, an earlier outcome-carrying message, or distinct first-receive message types, or pairwise equal (direction, peer, message type) first events recursing on their continuations; a send against a receive, an empty first set against a non-empty one, and differing peers or send message types do not merge (implements FR-174-AC-5). | Test (TC-1410) |
+| FR-570-AC-4 | A choice branch merges for the role only by the PA-10 rule: owner, an earlier message the role took part in that carries the whole decision, or distinct first-receive message types, or pairwise equal (direction, peer, message type) first events recursing on their continuations; a send against a receive, an empty first set against a non-empty one, and differing peers or send message types do not merge (implements FR-174-AC-5). | Test (TC-1410) |
 | FR-570-AC-5 | A choice the role cannot distinguish returns a counterexample naming the choice, owner, role, the two paths and the two actions, of smallest length with the PA-11 tie-break, and returns no `local_graph` and no substitute graph; for two failing choices the counterexample names the one the tie-break orders first (implements FR-174-AC-2). | Test (TC-1410) |
-| FR-570-AC-6 | For `Seller` owning `ship \| cancel` with `ship` sending `pick` to `Warehouse`, projection onto `Warehouse` returns the counterexample (`receive pick` against end); with `cancel` sending `cancelled` to `Warehouse`, or with an earlier message between `Warehouse` and `Seller` whose payload binder the choice's `visible` fact reads, it returns the witness; an earlier `decision` message of one type in both branches that no decision fact reads returns the counterexample (ADR-036 worked example). | Test (TC-1410) |
+| FR-570-AC-6 | For `Seller` owning `ship \| cancel` with `ship` sending `pick` to `Warehouse`, projection onto `Warehouse` returns the counterexample (`receive pick` against end); with `cancel` sending `cancelled` to `Warehouse`, or with an earlier message that `Warehouse` sends to `Seller` and `Seller` receives, whose payload binder the choice's `visible` fact reads (and no other message is read), it returns the witness; when the decision also reads a message `Warehouse` took no part in it returns the counterexample; a choice nested in a branch contributes its alternatives to that branch's actions; an earlier `decision` message of one type in both branches that no decision fact reads returns the counterexample (ADR-036 worked example). | Test (TC-1410) |
 | FR-570-AC-7 | A request the engine cannot decide (FR-575) or whose search reaches `max_depth` returns a non-conclusive result with no graph, and the result carries no substitute for the missing graph (implements FR-174-AC-3). | Test (TC-1410) |
 
 ## Dependencies

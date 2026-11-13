@@ -234,7 +234,7 @@ pub fn replay_protocol_analysis(
     protocol: &CheckedNodeId,
     source: &crate::witness::ReplaySource,
     budget: RunBudget,
-) -> Result<crate::protocol_analysis::ProtocolReplayResult, ProtocolReplayRefusal> {
+) -> Result<crate::result::ReplayResult, ProtocolReplayRefusal> {
     use crate::protocol_analysis::{
         replay_projection_counterexample, ProtocolAnalysisKey, ProtocolReplayResult,
         ProtocolReplaySettlement,
@@ -254,5 +254,7 @@ pub fn replay_protocol_analysis(
         Ok(()) => ProtocolReplaySettlement::Reproduced,
         Err(disagreement) => ProtocolReplaySettlement::Inconclusive(disagreement),
     };
-    Ok(ProtocolReplayResult { settlement })
+    Ok(crate::result::ReplayResult::ProtocolAnalysis(
+        ProtocolReplayResult { settlement },
+    ))
 }
