@@ -420,15 +420,8 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         if compensating.count >= template.attempts || Self::closed(instance, template) {
             return Ok(());
         }
-        let records = self.attempt_records(
-            state,
-            instance,
-            template,
-            compensating,
-            registration,
-            retry,
-            gathered,
-        )?;
+        let records =
+            self.attempt_records(state, instance, template, compensating, retry, gathered)?;
         if !self.gate(state, path, GatedStep::Attempt) {
             return Ok(());
         }
@@ -504,10 +497,13 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         instance: &Instance,
         template: &Template<'_>,
         compensating: &Compensating,
-        registration: &Registration,
         retry: bool,
         gathered: &mut Gathered<M>,
     ) -> Result<Vec<Bound>, ExpansionStop> {
+        let registration = instance
+            .registrations
+            .get(&compensating.registration)
+            .ok_or_else(|| ProtocolRefusal::fault("a-compensation-thread-has-its-registration"))?;
         let values = self
             .model
             .values_of(template.attempt_type, &state.model, &mut gathered.budget)?
