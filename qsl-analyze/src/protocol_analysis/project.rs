@@ -8,9 +8,9 @@ use qsl_replay::protocol_analysis::{
     node_text, replay_projection_counterexample, Action, AnalysisOutcome, AssessedRoot,
     AssessedRootDraft, BranchMerge, ChoiceBasis, Correspondence, GlobalEventKind, GlobalStructure,
     InconclusiveCause, LocalEvent, LocalEventId, LocalEventKind, LocalGraph, MergeEvidence,
-    MissingMember, PremiseRefusal, RunLimit, ProjectionBoundsDraft, ProjectionCounterexample,
+    MissingMember, PremiseRefusal, ProjectionBoundsDraft, ProjectionCounterexample,
     ProjectionKeyDraft, ProjectionWitness, ProtocolAnalysisKey, ProtocolAnalysisResult,
-    ProtocolPremises, RunBudget,
+    ProtocolPremises, RunBudget, RunLimit,
 };
 use qsl_replay::spine::StructureError;
 use quire_contract_model::{CheckedNodeId, CheckedPackageV2};
@@ -145,8 +145,7 @@ pub fn project(
         if basis == ChoiceBasis::MustMerge {
             for (first, (_, case_first)) in cases.iter().enumerate() {
                 for (_, case_second) in &cases[first + 1..] {
-                    match structure.merge(role, &event.at.node, case_first, case_second, max_depth)
-                    {
+                    match structure.merge(role, case_first, case_second, max_depth) {
                         BranchMerge::Merged(pairs) => merged.extend(pairs),
                         BranchMerge::Cut => cut = true,
                         BranchMerge::Diverged(divergences) => {

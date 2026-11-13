@@ -735,9 +735,7 @@ impl ReplayRefusal {
             Self::WrongObservedTemporalSource => Some(Cow::Borrowed("/replay/source")),
             Self::WrongModelGraphEntry
             | Self::WrongModelGraphSource
-            | Self::WrongProtocolAnalysisEntry => {
-                Some(Cow::Borrowed("/replay/source"))
-            }
+            | Self::WrongProtocolAnalysisEntry => Some(Cow::Borrowed("/replay/source")),
             Self::ObservedTemporalMismatch { member } => Some(match *member {
                 "clause_node" => Cow::Borrowed("/replay/observed_counterexample/clause_node"),
                 "occurrence_key" => Cow::Borrowed("/replay/observed_counterexample/occurrence_key"),

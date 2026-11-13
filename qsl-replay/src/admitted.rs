@@ -669,6 +669,7 @@ impl From<ReplayRefusal> for AdmittedRefusal {
             | ReplayRefusal::WrongModelGraphEntry
             | ReplayRefusal::ModelGraphMismatch { .. }
             | ReplayRefusal::WrongModelGraphSource
+            | ReplayRefusal::WrongProtocolAnalysisEntry
             | ReplayRefusal::TargetMismatch { .. }
             | ReplayRefusal::MalformedOperationTarget { .. }
             | ReplayRefusal::AmbiguousOperation { .. }

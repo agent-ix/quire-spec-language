@@ -574,7 +574,9 @@ fn constructs_outside_the_profile_answer_unsupported_with_no_graph() {
     for (members, run_text, node, slug, detail) in cases {
         let mut text = source(members, run_text);
         if detail == "predicate" {
-            text = format!("function both using v(a: Boolean, b: Boolean): Boolean pure {{ a and b }}\n{text}");
+            text = format!(
+                "function both using v(a: Boolean, b: Boolean): Boolean pure {{ a and b }}\n{text}"
+            );
         }
         let package = admitted_source(&text);
         let cause = unsupported_construct(&package, &clause(&package))
@@ -828,5 +830,8 @@ fn a_divergence_before_the_horizon_is_found_though_later_events_are_cut() {
         AnalysisOutcome::Refuted(found) => found,
         other => panic!("expected the shallow counterexample: {other:?}"),
     };
-    assert_eq!(found.action_a.as_ref().unwrap().at.node, named(&package, "PickedUp"));
+    assert_eq!(
+        found.action_a.as_ref().unwrap().at.node,
+        named(&package, "PickedUp")
+    );
 }

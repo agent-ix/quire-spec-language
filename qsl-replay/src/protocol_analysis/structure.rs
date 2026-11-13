@@ -593,11 +593,7 @@ impl GlobalStructure {
     ///
     /// Never for a `choice` that names a choice event of this structure.
     #[must_use]
-    pub fn classify(
-        &self,
-        role: &CheckedNodeId,
-        choice: &PortRef,
-    ) -> Option<ChoiceBasis> {
+    pub fn classify(&self, role: &CheckedNodeId, choice: &PortRef) -> Option<ChoiceBasis> {
         let event = self.event(choice)?;
         let GlobalEventKind::Choice {
             owner,
@@ -681,7 +677,6 @@ impl GlobalStructure {
     pub fn merge(
         &self,
         role: &CheckedNodeId,
-        choice: &CheckedNodeId,
         first: &CheckedNodeId,
         second: &CheckedNodeId,
         max_depth: u64,
