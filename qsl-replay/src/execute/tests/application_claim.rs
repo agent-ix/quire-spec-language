@@ -112,6 +112,7 @@ fn settled(result: Result<ReplayResult, ReplayRefusal>) -> Settled {
         }
         ReplayResult::ObservedTemporal(_) => panic!("function replay returned a temporal arm"),
         ReplayResult::ModelGraph(_) => panic!("function replay returned a state-graph arm"),
+        ReplayResult::ProtocolAnalysis(_) => panic!("a protocol analysis arm"),
     }
 }
 

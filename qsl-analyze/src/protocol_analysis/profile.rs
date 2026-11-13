@@ -79,7 +79,7 @@ pub fn unsupported_construct(
                     Some("outstanding"),
                 )),
                 ControlBody::Choice { owner, .. }
-                    if !view.roles().iter().any(|role| *role == owner) =>
+                    if !view.roles().contains(&owner) =>
                 {
                     Some(cause(UnsupportedSlug::UnassignedLocalChoice, id, None))
                 }
