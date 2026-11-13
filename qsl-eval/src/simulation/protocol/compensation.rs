@@ -34,16 +34,44 @@ use super::{
 };
 use crate::simulation::expansion::ExpansionStop;
 use crate::simulation::model::encode::{reference_enc, typed_value_enc, value_enc};
-use crate::simulation::model::{verdict, FirstApplication, ModelFinding, OperationRef, Verdict};
+use crate::simulation::model::{
+    verdict, FirstApplication, ModelFinding, ModelSimState, OperationRef, Verdict,
+};
 use crate::value::evaluate_protocol_slot;
 
+/// The instance, compensation thread and registration an attempt step is
+/// enumerated for.
+#[derive(Clone, Copy)]
+struct AttemptOf<'a> {
+    instance: &'a Instance,
+    compensating: &'a Compensating,
+    registration: &'a Registration,
+}
+
 /// A template expression's value, or the finding of an undecided one.
-enum Decided {
+pub(super) enum Decided {
     Value(Value),
     Undecided(Box<ModelFinding>),
 }
 
 impl<M: MemoryModel> ProtocolSystem<'_, M> {
+    /// The values of `instance`'s protocol captures, which the template
+    /// stages bind ahead of the template's own captures (FR-381).
+    pub(super) fn protocol_values(instance: &Instance) -> impl Iterator<Item = Option<Value>> + '_ {
+        instance.captures.iter().map(|bound| bound.value.clone())
+    }
+
+    /// The activation binder's value in `instance`, when the protocol
+    /// activates `on each`.
+    pub(super) fn activation_value(&self, instance: &Instance) -> Option<Option<Value>> {
+        self.program.activation_slot.map(|_| {
+            instance
+                .trigger
+                .as_ref()
+                .and_then(|bound| bound.value.clone())
+        })
+    }
+
     /// The capture values of `registration`'s first `count` captures.
     fn captured(registration: &Registration, count: usize) -> Vec<Option<Value>> {
         registration
@@ -63,7 +91,19 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         frame: Vec<Option<Value>>,
         next: &ProtocolState<M>,
     ) -> Result<Decided, ExpansionStop> {
-        let observation = self.model.observation_of(&next.model)?;
+        self.decide_body(&template.name, body, frame, &next.model)
+    }
+
+    /// The value of `body` over `frame` at the model state `model`, or the
+    /// finding, named `owner`, of an undecided evaluation.
+    pub(super) fn decide_body(
+        &self,
+        owner: &str,
+        body: &CheckedBody,
+        frame: Vec<Option<Value>>,
+        model: &ModelSimState,
+    ) -> Result<Decided, ExpansionStop> {
+        let observation = self.model.observation_of(model)?;
         let evaluation = evaluate_protocol_slot(
             self.package,
             body,
@@ -76,10 +116,9 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
             return Ok(Decided::Value(value.clone()));
         }
         match verdict(&evaluation.outcome) {
-            Verdict::Undecided(outcome) => Ok(Decided::Undecided(Box::new(undetermined(
-                &template.name,
-                outcome,
-            )))),
+            Verdict::Undecided(outcome) => {
+                Ok(Decided::Undecided(Box::new(undetermined(owner, outcome))))
+            }
             Verdict::True | Verdict::False => Err(super::broken()),
         }
     }
@@ -187,9 +226,18 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         findings: &mut Vec<ModelFinding>,
     ) -> Result<bool, ExpansionStop> {
         let template = self.program.template(index)?;
+        // `[forward, over, activation binder, protocol captures, ...]`.
+        let leading: Vec<Option<Value>> = {
+            let instance = Self::instance(next, ordinal)?;
+            [Some(forward), Some(self.over.clone())]
+                .into_iter()
+                .chain(self.activation_value(instance))
+                .chain(Self::protocol_values(instance))
+                .collect()
+        };
         let mut captures: Vec<Bound> = Vec::with_capacity(template.registration.len());
         for (_, initializer) in &template.registration {
-            let mut frame = vec![Some(forward.clone()), Some(self.over.clone())];
+            let mut frame = leading.clone();
             frame.extend(captures.iter().map(|bound| bound.value.clone()));
             match self.decide_template(template, initializer, frame, next)? {
                 Decided::Value(value) => captures.push(Bound {
@@ -253,8 +301,12 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
             .map(|(key, registration)| (key.clone(), registration.clone()))
             .collect();
         let count = template.registration.len();
+        let protocol: Vec<Option<Value>> =
+            Self::protocol_values(Self::instance(next, ordinal)?).collect();
         for (key, mut registration) in waiting {
+            // `[trigger, protocol captures, registration captures, over]`.
             let mut frame = vec![Some(trigger.clone())];
+            frame.extend(protocol.iter().cloned());
             frame.extend(Self::captured(&registration, count));
             frame.push(Some(self.over.clone()));
             match self.holds(template, template.guard, frame, next, findings)? {
@@ -263,7 +315,10 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                 Some(true) => {}
             }
             for (_, initializer) in &template.activation {
+                // `[trigger, over, protocol captures, registration captures,
+                // earlier activation captures]`.
                 let mut frame = vec![Some(trigger.clone()), Some(self.over.clone())];
+                frame.extend(protocol.iter().cloned());
                 frame.extend(Self::captured(&registration, usize::MAX));
                 match self.decide_template(template, initializer, frame, next)? {
                     Decided::Value(value) => registration.captures.push(Bound {
@@ -374,8 +429,17 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         if compensating.count >= template.attempts || Self::closed(instance, template) {
             return Ok(());
         }
-        let records =
-            self.attempt_records(state, template, compensating, registration, retry, gathered)?;
+        let records = self.attempt_records(
+            state,
+            AttemptOf {
+                instance,
+                compensating,
+                registration,
+            },
+            template,
+            retry,
+            gathered,
+        )?;
         if !self.gate(state, path, GatedStep::Attempt) {
             return Ok(());
         }
@@ -448,12 +512,16 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
     fn attempt_records(
         &self,
         state: &ProtocolState<M>,
+        of: AttemptOf<'_>,
         template: &Template<'_>,
-        compensating: &Compensating,
-        registration: &Registration,
         retry: bool,
         gathered: &mut Gathered<M>,
     ) -> Result<Vec<Bound>, ExpansionStop> {
+        let AttemptOf {
+            instance,
+            compensating,
+            registration,
+        } = of;
         let values = self
             .model
             .values_of(template.attempt_type, &state.model, &mut gathered.budget)?
@@ -471,6 +539,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         for value in values {
             if retry {
                 let mut frame = vec![earlier.clone(), Some(value.clone())];
+                frame.extend(Self::protocol_values(instance));
                 frame.extend(Self::captured(registration, usize::MAX));
                 frame.push(Some(self.over.clone()));
                 if self.holds(
@@ -510,6 +579,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         // The predicate reads no recovery view: `Program::new` refuses one
         // that does.
         let mut frame = vec![None];
+        frame.extend(Self::protocol_values(Self::instance(state, ordinal)?));
         frame.extend(Self::captured(registration, usize::MAX));
         frame.push(Some(self.over.clone()));
         let Some(recovered) = self.holds(

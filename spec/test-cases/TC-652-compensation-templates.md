@@ -12,7 +12,7 @@ relationships:
 
 Verify compensation registration, folded activation, `cattempt` under the authored count and retry relation, the commit cutoff, `cend` and finishing.
 
-Scope: FR-207-AC-1 to FR-207-AC-6.
+Scope: FR-207-AC-1 to FR-207-AC-7.
 
 ## Test Procedure
 
@@ -26,6 +26,10 @@ Scope: FR-207-AC-1 to FR-207-AC-6.
 6. Run FR-207-AC-6's `attempts 2` variant with the retry relation
    `not e.ok`, and with `l.ok`; list the `cattempt` identities at t4 and the
    enabled steps at each retry point.
+7. Run FR-207-AC-7's `on each` variant with a protocol capture read by the
+   template's activation guard, activation capture and recovery predicate,
+   and the activation binder read by its registration capture, for the
+   triggers 3, 2, 1 and 0.
 
 Tag the tests `#[trace("TC-652", "FR-207-AC-n")]`.
 
@@ -44,3 +48,6 @@ Tag the tests `#[trace("TC-652", "FR-207-AC-n")]`.
   under `not e.ok`, two retry `cattempt` steps and `cend` after `ok` false
   and `cend` alone after `ok` true; under `l.ok`, one retry `cattempt` with
   `ok` true and `cend` after either first attempt.
+- Step 7: `recovered` with `seen` true for the trigger 3, `unrecovered` with
+  `seen` false for the trigger 2, and `registered` with `seen` false until
+  `finish` for the triggers 1 and 0.

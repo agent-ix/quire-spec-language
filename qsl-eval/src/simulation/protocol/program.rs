@@ -137,15 +137,15 @@ pub(super) struct Finish<'a> {
 /// captures by stage, its authored attempt count, its retry relation, its
 /// commit node and its recovery predicate.
 ///
-/// Each expression reads the slots FR-381's stage table binds, in its
-/// order, with no protocol capture and no activation binder (both refused
-/// before a template is read): a registration capture `[forward, over,
-/// earlier registration captures]`; the trigger guard `[trigger,
-/// registration captures, over]`; an activation capture `[trigger, over,
-/// registration captures, earlier activation captures]`; the retry relation
-/// `[earlier, later, registration captures, activation captures, over]`;
-/// the recovery predicate `[recovery, registration captures, activation
-/// captures, over]`.
+/// Each expression reads the slots FR-381's stage table binds, in the order
+/// the checker binds them (`P` the protocol captures, `A` the activation
+/// binder when the protocol activates `on each`): a registration capture
+/// `[forward, over, A, P, earlier registration captures]`; the trigger guard
+/// `[trigger, P, registration captures, over]`; an activation capture
+/// `[trigger, over, P, registration captures, earlier activation captures]`;
+/// the retry relation `[earlier, later, P, registration captures, activation
+/// captures, over]`; the recovery predicate `[recovery, P, registration
+/// captures, activation captures, over]`.
 pub(super) struct Template<'a> {
     /// `<protocol>::<template>`, as a channel is named (PS-7).
     pub(super) name: String,
@@ -304,6 +304,18 @@ pub(super) struct Program<'a> {
     /// Whether anything reads the activation binder after the instance
     /// starts, so that the trigger record is part of the state key.
     pub(super) trigger_read: bool,
+    /// The protocol's captures in source order.
+    pub(super) captures: Vec<Capture<'a>>,
+    /// The binder slot of each capture, index-aligned with `captures`.
+    pub(super) capture_slots: Vec<usize>,
+}
+
+/// One protocol capture (FR-381): evaluated when its instance starts over
+/// `[over, activation binder, earlier captures]`, then frozen (ADR-027
+/// ST-13).
+pub(super) struct Capture<'a> {
+    pub(super) name: String,
+    pub(super) initializer: &'a CheckedBody,
 }
 
 /// A control's place in the `run` tree: its preorder position, the last
@@ -350,23 +362,6 @@ fn refuse_unsupported(
         if matches!(channel.capacity, ChannelCapacity::Symbolic(_)) {
             return Err(unsupported(Unsupported::SymbolicCapacity));
         }
-    }
-    if protocol
-        .obligations
-        .captures
-        .iter()
-        .any(|capture| capture.owner == CaptureOwner::Protocol)
-    {
-        return Err(unsupported(Unsupported::Capture));
-    }
-    // A template's expressions read the activation binder at a slot this
-    // system does not fill (QSpec FR-381 "Names a stage may read").
-    if matches!(
-        protocol.obligations.activation,
-        CheckedActivation::OnEach { .. }
-    ) && !protocol.obligations.compensations.is_empty()
-    {
-        return Err(unsupported(Unsupported::ActivationOnEachTemplate));
     }
     // The pre-check (TS-5) has already refused an unbounded record type.
     if protocol
@@ -553,18 +548,29 @@ impl<'a> Program<'a> {
                     .ok_or_else(|| ProtocolRefusal::fault("an-activation-binder-has-a-slot"))?,
             ),
         };
-        let nodeless_read =
-            slots
-                .iter()
-                .zip(&readers)
-                .enumerate()
-                .skip(1)
-                .any(|(slot, (node, readers))| {
-                    node.is_none() && !readers.is_empty() && Some(slot) != activation_slot
-                });
-        if nodeless_read {
-            return Err(unsupported(Unsupported::NodelessBinder));
-        }
+        let captures: Vec<Capture<'_>> = protocol
+            .obligations
+            .captures
+            .iter()
+            .filter(|capture| capture.owner == CaptureOwner::Protocol)
+            .map(|capture| Capture {
+                name: capture.name.clone(),
+                initializer: &capture.initializer,
+            })
+            .collect();
+        let capture_slots = captures
+            .iter()
+            .map(|capture| {
+                protocol
+                    .slots
+                    .binders
+                    .iter()
+                    .position(|candidate| {
+                        candidate.node.is_none() && candidate.name == capture.name
+                    })
+                    .ok_or_else(|| ProtocolRefusal::fault("a-protocol-capture-has-a-slot"))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
         let body_of = |node: ProtocolNodeId| {
             protocol
                 .slots
@@ -821,8 +827,17 @@ impl<'a> Program<'a> {
                 steps.then_some((owner.node, index))
             })
             .collect();
+        // Of a template's stages only a registration capture reads the
+        // activation binder (FR-381's stage table), at frame position 2 after
+        // the forward binder and `over`.
         let trigger_read = activation_slot.is_some_and(|slot| {
-            readers.get(slot).is_some_and(|readers| !readers.is_empty())
+            templates.iter().any(|template| {
+                template
+                    .registration
+                    .iter()
+                    .any(|(_, initializer)| initializer.reads_local(2))
+            })
+                || readers.get(slot).is_some_and(|readers| !readers.is_empty())
                 || replicated.iter().any(|(_, role)| {
                     matches!(role.lifetime, Lifetime::Until(until) if until.reads_local(slot))
                 })
@@ -871,6 +886,8 @@ impl<'a> Program<'a> {
             activation,
             activation_slot,
             trigger_read,
+            captures,
+            capture_slots,
         };
         program.spans = program.spans()?;
         program.loop_of = program.enclosing_loops()?;
@@ -962,6 +979,13 @@ impl<'a> Program<'a> {
         self.awaits
             .get(&node)
             .ok_or_else(|| ProtocolRefusal::fault("an-await-node-is-an-await"))
+    }
+
+    /// The index into `captures` of the capture bound at binder slot `slot`.
+    pub(super) fn capture_of(&self, slot: usize) -> Option<usize> {
+        self.capture_slots
+            .iter()
+            .position(|candidate| *candidate == slot)
     }
 
     /// Whether the node `reader`'s slots read binder slot `slot`.
