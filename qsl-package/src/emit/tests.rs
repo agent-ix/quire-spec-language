@@ -70,6 +70,7 @@ mod owner_model;
 mod owners;
 mod plan_subject_selection;
 mod population_bound;
+mod population_field_edge;
 mod population_reference;
 mod probabilistic;
 mod protocol_captures;

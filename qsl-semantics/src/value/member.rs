@@ -82,6 +82,11 @@ pub enum Member {
         /// ordinary record projection; `Some` is admitted by IR as its typed
         /// `CheckedFieldReadForm` member projection.
         explicit_deref: Option<bool>,
+        /// The `bounded_domain`/`model_population` node of the population a
+        /// field-edge reachability over this field walks, when the unit
+        /// bounds that population (FR-380 "Field-edge reachability").
+        /// Absent from the wire form, not `null`, when it is `None`.
+        population: Option<NodeKey>,
     },
     /// A tuple's positional element.
     Position {
@@ -220,11 +225,16 @@ impl DebugWith for Member {
                 declaration,
                 name,
                 explicit_deref,
+                population,
             } => f
                 .debug_struct("Field")
                 .field("declaration", &NodeKeyDebug(declaration, table))
                 .field("name", &name)
                 .field("explicit_deref", &explicit_deref)
+                .field(
+                    "population",
+                    &population.as_ref().map(|key| NodeKeyDebug(key, table)),
+                )
                 .finish(),
             Self::Position {
                 declaration,
@@ -361,9 +371,10 @@ impl Member {
     /// The population node this member links, when it links one.
     pub fn population(&self) -> Option<NodeKey> {
         match self {
-            Self::RelationshipEnd { population, .. } => population.clone(),
-            Self::Field { .. }
-            | Self::Position { .. }
+            Self::RelationshipEnd { population, .. } | Self::Field { population, .. } => {
+                population.clone()
+            }
+            Self::Position { .. }
             | Self::Element { .. }
             | Self::Operation { .. }
             | Self::TypeArgument { .. }
@@ -413,6 +424,7 @@ mod tests {
             declaration: node(7),
             name: Identifier::new("same").unwrap(),
             explicit_deref: None,
+            population: None,
         };
         let operation = Member::Operation {
             declaration: node(7),
@@ -427,6 +439,7 @@ mod tests {
             declaration: node(7),
             name: Identifier::new("same").unwrap(),
             explicit_deref: Some(true),
+            population: None,
         };
 
         assert!(format!("{field:?}").contains("explicit_deref: Some(true)"));

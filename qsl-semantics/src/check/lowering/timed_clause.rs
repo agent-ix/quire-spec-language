@@ -437,6 +437,7 @@ impl Lowering<'_> {
                         declaration: object,
                         name,
                         explicit_deref: None,
+                        population: None,
                     }),
                     ..Operation::plain("quire.op.record.project")
                 },

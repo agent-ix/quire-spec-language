@@ -5419,6 +5419,14 @@ impl<'a> Lowering<'a> {
                 // static object type's model node and the field's name.
                 let object =
                     self.referenced_object(node.at(*source).value_type(), node.location())?;
+                // FR-380 "Field-edge reachability": the population node is
+                // over the edge's owner `T`, not the member's `declaration`.
+                let population = match node.field_population() {
+                    None => None,
+                    Some(bound) => {
+                        Some(self.bounded_population(bound, edge.owner.clone(), node.location())?)
+                    }
+                };
                 let name = Identifier::new(edge.name.clone()).map_err(|_| {
                     refuse(
                         node.location(),
@@ -5433,6 +5441,7 @@ impl<'a> Lowering<'a> {
                                 declaration: object,
                                 name,
                                 explicit_deref: None,
+                                population,
                             }),
                             ..plain("quire.op.model.reaches_field")
                         },
@@ -6184,6 +6193,7 @@ impl<'a> Lowering<'a> {
                             declaration: object,
                             name,
                             explicit_deref: Some(explicit_deref),
+                            population: None,
                         }),
                         ..plain("quire.op.record.project")
                     },
@@ -6507,6 +6517,7 @@ impl<'a> Lowering<'a> {
             declaration: self.declared_member_key(node, location)?,
             name,
             explicit_deref: None,
+            population: None,
         })
     }
 

@@ -2568,6 +2568,7 @@ fn node(kind: NodeKind<NodeId>, value_type: ValueType, location: &Location) -> N
         location: location.clone(),
         equality_producer: None,
         ordering_part: false,
+        field_population: None,
     }
 }
 
@@ -2729,6 +2730,7 @@ impl Typer<'_> {
                     location,
                     equality_producer: None,
                     ordering_part: false,
+                    field_population: None,
                 })
             }
             _ => Err(mismatch(&node.location)),
