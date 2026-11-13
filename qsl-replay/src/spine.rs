@@ -216,6 +216,7 @@ pub use refinement::{
     RefinementClass, RefusalCause, RunClassification,
 };
 mod native_result;
+mod protocol_premises;
 mod protocol_proof;
 pub(crate) use native_result::{item_record, ReasonWire};
 pub use native_result::{

@@ -16,10 +16,10 @@ use std::collections::BTreeSet;
 
 use qsl_package::protocol_view::{
     channel_endpoints, channel_ordering, choice_visibility, control_operation, delivery, fifo_key,
-    protocol_view, queue_capacity, queue_channel, queue_overflow, ChannelOrdering,
-    ControlOperation, Delivery, LossSelector, Overflow, QueueCapacity, ViewRefusal,
+    queue_capacity, queue_channel, queue_overflow, ChannelOrdering, ControlOperation, Delivery,
+    LossSelector, Overflow, QueueCapacity, ViewRefusal,
 };
-use quire_contract_model::{CheckedNodeId, CheckedPackageV2, CheckedSemanticNodeV2};
+use quire_contract_model::{CheckedNodeId, CheckedSemanticNodeV2};
 use serde::{Deserialize, Deserializer, Serialize};
 
 /// The refusal of a key with an absent member: `invalid_runtime_input` with
@@ -312,38 +312,6 @@ pub fn read_node_text(text: &str) -> Result<CheckedNodeId, NodeTextError> {
     }
 }
 
-impl ProtocolPremises {
-    /// Groups (a) and (b) of the clause `protocol`, read only through
-    /// `qsl_package::protocol_view` (PA-3). Groups (c) and (d) are `None`:
-    /// no premise is inferred (PA-8).
-    ///
-    /// # Errors
-    ///
-    /// [`PremiseRefusal`] when a view function refuses, a queue and a channel
-    /// do not pair, or a node is not in the package.
-    pub fn from_view(
-        package: &CheckedPackageV2,
-        protocol: &CheckedNodeId,
-    ) -> Result<Self, PremiseRefusal> {
-        let view = protocol_view(package, protocol)?;
-        let nodes = |ids: &[&CheckedNodeId]| {
-            ids.iter()
-                .map(|id| node_of(package, id))
-                .collect::<Result<Vec<_>, _>>()
-        };
-        let mut channels = pair_channels(&nodes(view.channels())?, &nodes(view.queues())?)?;
-        let mut choices = choice_premises(&nodes(view.controls())?)?;
-        channels.sort();
-        choices.sort();
-        Ok(Self {
-            channels,
-            choices,
-            role_knowledge: None,
-            environment: None,
-        })
-    }
-}
-
 /// The premises of each of `channels` with its queue's capacity and
 /// overflow policy. A queue naming no channel of `channels`, or a channel
 /// with no queue, is refused.
@@ -394,18 +362,6 @@ pub(crate) fn choice_premises(
         });
     }
     Ok(choices)
-}
-
-fn node_of<'p>(
-    package: &'p CheckedPackageV2,
-    id: &CheckedNodeId,
-) -> Result<&'p CheckedSemanticNodeV2, PremiseRefusal> {
-    package
-        .resolved_graph()
-        .nodes
-        .iter()
-        .find(|node| &node.node_id == id)
-        .ok_or_else(|| PremiseRefusal::UnknownNode(id.clone()))
 }
 
 fn channel_premise(
