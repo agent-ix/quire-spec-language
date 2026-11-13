@@ -38,8 +38,8 @@ struct Reader<'p> {
     input: StructureInput,
 }
 
-impl Reader<'_> {
-    fn node(&self, id: &CheckedNodeId) -> Result<&CheckedSemanticNodeV2, StructureError> {
+impl<'p> Reader<'p> {
+    fn node(&self, id: &CheckedNodeId) -> Result<&'p CheckedSemanticNodeV2, StructureError> {
         self.package
             .resolved_graph()
             .nodes
@@ -106,9 +106,6 @@ impl Reader<'_> {
             ControlBody::Parallel { branches, .. } => {
                 let bodies: Vec<CheckedNodeId> =
                     branches.iter().map(|(_, body)| (*body).clone()).collect();
-                for body in &bodies {
-                    self.input.branch_bodies.insert(body.clone(), id.clone());
-                }
                 self.input.events.push(GlobalEvent {
                     at: enter.clone(),
                     out: enter,

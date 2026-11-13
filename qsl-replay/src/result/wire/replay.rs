@@ -69,6 +69,9 @@ impl ReplayResult {
             Self::ModelGraph(_) => {
                 return Err(CauseCodecError::UnsupportedReplayArm("model-graph"))
             }
+            Self::ProtocolAnalysis(_) => {
+                return Err(CauseCodecError::UnsupportedReplayArm("protocol-analysis"))
+            }
         };
         let wire = ReplayWire {
             arm,

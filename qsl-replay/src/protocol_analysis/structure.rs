@@ -140,8 +140,6 @@ pub struct StructureInput {
     pub edges: Vec<(PortRef, PortRef)>,
     /// Each choice case body, with the choice it belongs to.
     pub case_bodies: BTreeMap<CheckedNodeId, CheckedNodeId>,
-    /// Each parallel branch body, with the parallel it belongs to.
-    pub branch_bodies: BTreeMap<CheckedNodeId, CheckedNodeId>,
     /// The channels that order every delivery.
     pub uniform_fifo: Vec<UniformFifo>,
     /// Each `receive` control with the `send` control it receives.
@@ -187,7 +185,6 @@ pub struct GlobalStructure {
     covers: Vec<Vec<usize>>,
     depth: Vec<u64>,
     pub(super) case_bodies: BTreeMap<CheckedNodeId, CheckedNodeId>,
-    pub(super) branch_bodies: BTreeMap<CheckedNodeId, CheckedNodeId>,
 }
 
 fn reachable(adjacency: &[Vec<usize>], from: usize) -> Vec<bool> {
@@ -214,7 +211,6 @@ impl GlobalStructure {
             mut events,
             edges,
             case_bodies,
-            branch_bodies,
             uniform_fifo,
             receive_of,
         } = input;
@@ -354,7 +350,6 @@ impl GlobalStructure {
             covers,
             depth,
             case_bodies,
-            branch_bodies,
         })
     }
 
@@ -455,7 +450,10 @@ impl GlobalStructure {
     }
 
     /// The enclosing choice case of `event`, nearest first: `(choice, body)`.
-    fn nearest_case(&self, event: &GlobalEvent) -> Option<(&CheckedNodeId, &CheckedNodeId)> {
+    fn nearest_case<'a>(
+        &'a self,
+        event: &'a GlobalEvent,
+    ) -> Option<(&'a CheckedNodeId, &'a CheckedNodeId)> {
         event
             .within
             .iter()
