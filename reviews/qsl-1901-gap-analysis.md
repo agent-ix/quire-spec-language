@@ -41,6 +41,12 @@ The tests cover the criteria they are tagged to, apart from FND-001 to FND-003. 
 | --- | --- | --- | --- |
 | FND-008 | low | Two new tests are traced to criteria they do not verify. `parameter_facts_follow_the_result_slot_of_a_postcondition` is tagged FR-577-AC-1, but it checks the "parameter of the same name" keying rule over a result-typed operation. `a_bound_refines_neither_a_sum_nor_a_difference_written_backwards` is tagged FR-577-AC-31, a positive "checks" criterion, but it verifies the Behavior exclusions for `+` and `-b + a`. Neither rule has an AC of its own. Add ACs for them, or tag the tests with the FR only. | qsl-replay/src/spine/clause/tests/postcondition_range.rs:1125-1175 |
 
+## New findings (disposition pass 2)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-009 | low | The retired FR-577-AC-29 row keeps the verification "Test (qsl-semantics unit)", but `only_a_postcondition_receives_the_precondition_facts` carries no `#[trace]`, so the computed matrix shows AC-29 with no backing test. Tag the unit test `#[trace("FR-577-AC-29")]`, or make the retired row's verification none. | qsl-semantics/src/check/mod.rs:10163-10180; spec/functional/FR-577-discharge-a-postcondition-s-range-obligations-from-its-operation-s-preconditions.md:234 |
+
 ## Dispositions
 
 | FND | outcome | reason |
@@ -52,3 +58,5 @@ The tests cover the criteria they are tagged to, apart from FND-001 to FND-003. 
 | FND-005 | fixed | cb8db168f: the FR-121-AC-37 assertion checks `region.source()` (authority `agent-ix`, identity `clause-run-fixture`) as well as the byte offsets. |
 | FND-006 | fixed | cb8db168f: `a_bound_refines_neither_a_sum_nor_a_difference_written_backwards` records `a <= b` and asserts that `a + b` and `b + a` are refused. Applying `difference_interval` to `Add` would narrow `a + b` to `[0, 0]` and make the test fail. `-b + a` is also refused. Unary `-` alone remains untested, which is acceptable. |
 | FND-007 | fixed | cb8db168f: the AC-2 test compiles both units through `call_site` (`bank_site`) and compares the sorted clause sites and the requirement record keys. |
+| FND-003 | fixed | 41b7748f9: AC-29 is retired, and FR-577 now states that invariants and state constraints receive no precondition fact by construction (they cannot read at `pre`). The loop gets every clause's facts from the extracted `clause_preconditions`, and `only_a_postcondition_receives_the_precondition_facts` asserts an empty slice for `Invariant`, `Constraint` and `Precondition`, a family member and a missing key. A mutation that hands facts to a non-postcondition kind now fails. |
+| FND-008 | fixed | 41b7748f9: new ACs cover the two rules. FR-577-AC-34 (result-slot postcondition, with and without `CanAfford`) is tagged on `parameter_facts_follow_the_result_slot_of_a_postcondition`, and FR-577-AC-35 (`+`, `b + a`, `-b + a` exclusions) on `a_bound_refines_neither_a_sum_nor_a_difference_written_backwards`. FR-577-AC-31 is back on its own test (`a_function_body_guard_discharges_its_difference`). TC-1416 steps 15 and 16 are added. |

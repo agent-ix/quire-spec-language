@@ -119,6 +119,10 @@ This requirement does not change FR-103's refinement guard facts
   clause (FR-103), and SHALL give none to a kept `ensures` clause.
 - The checker SHALL add no node, occurrence, obligation record or
   requirement record for a transferred fact.
+- The checker counts expression nodes against `s3.nodes` over the whole
+  package, and checks preconditions before postconditions, so a node limit
+  may trip at a different clause than source-order checking would; this
+  difference is accepted.
 
 Precondition reads are `pre` (FR-104 "Observations of reads"), so a
 transferred fact matches a read under `pre(e)` in `Q` and never one of `Q`'s

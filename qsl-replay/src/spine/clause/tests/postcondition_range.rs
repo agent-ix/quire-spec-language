@@ -1155,3 +1155,43 @@ fn a_bound_refines_neither_a_sum_nor_a_difference_written_backwards() {
         assert_eq!(text, value, "{guard} implies r = {value}");
     }
 }
+
+/// A node ceiling below one large precondition's body, after a small
+/// postcondition that fits under it: checking trips the ceiling at the
+/// precondition on every run and the stage limit is the refusal returned.
+#[trace("TC-1416", "FR-577")]
+#[test]
+fn a_node_limit_tripped_at_a_precondition_returns_the_limit_refusal() {
+    let credit = "post Credit using v on Bank::Account::deposit \
+                  { self.balance = pre(self.balance) - amount }\n";
+    let big = clause(
+        "pre",
+        "Big",
+        "Account",
+        &(0..200)
+            .map(|bound| format!("amount <= {}", 100 + bound))
+            .collect::<Vec<_>>()
+            .join(" and "),
+    );
+    let text = unit(&[credit, &big]);
+    let mut limits = SpineLimits::default();
+    limits.checking = limits.checking.with_nodes(160);
+    let packages = qsl_semantics::model::intake::package_input([Bank {
+        deposit: true,
+        ..PLAIN
+    }
+    .document()
+    .as_slice()])
+    .unwrap();
+    let refused = compose(
+        source(),
+        "bank.native",
+        text.as_bytes(),
+        &packages,
+        &DependencyInput::default(),
+        limits,
+    )
+    .expect_err("the unit is refused");
+    let message = format!("{refused:?}");
+    assert!(message.contains("S3Nodes"), "{message}");
+}

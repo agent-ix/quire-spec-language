@@ -3270,6 +3270,10 @@ impl PackageDeclarations {
             if stopped_at.is_some_and(|stopped| index > stopped) {
                 continue;
             }
+            // Once the cancel has tripped no clause can be charged any more.
+            if stopped_at.is_some() && cancel.tripped().is_some() {
+                continue;
+            }
             let clause = &state_clause_forms[index];
             let refusals_before = refusals.len();
             'clause: {
@@ -10158,11 +10162,13 @@ struct Fr401Ac3Doctests;
 #[cfg(test)]
 mod precondition_slice_tests {
     use super::*;
+    use ix_trace_rs::trace;
     use qsl_forms::StateClauseKind;
 
     /// FR-577: only a postcondition outside a redefinition family is checked
     /// under precondition facts; every other clause kind gets an empty slice
     /// even when facts are recorded for its context and operation.
+    #[trace("TC-1416", "FR-577-AC-29")]
     #[test]
     fn only_a_postcondition_receives_the_precondition_facts() {
         let facts = BTreeMap::from([((1_u8, 7_u8), vec!["fact"])]);

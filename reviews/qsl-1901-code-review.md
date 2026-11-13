@@ -37,6 +37,12 @@ Dependents (concern 5): FR-577 only adds facts, so a unit that checked before st
 
 No high-severity soundness defect was found. Fix the three medium findings in this PR before merging.
 
+## New findings (disposition pass 2)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-008 | medium | After a stop at a precondition, the loop keeps checking the earlier postconditions and invariants, and any `Cancelled` result moves `stopped_at` earlier through `stopped_at_or`. When the stop was a `Limit` with `cancel.tripped()` (or a cancel), the next clause's check stops at its first charge with `StageFailure::Cancelled`, which pushes no refusal, and `stopped_at` becomes that clause's lower index. `refusals_in_source_order` then drops the precondition's `stage_limit_exceeded` refusal (index > stopped). The returned `Err` can lack the limit cause, or be empty ("no refusal recorded"). On main the same unit returned the limit refusal. Fix: once `cancel.tripped()`, do not check further clauses, or do not let a `Cancelled` outcome move an existing `stopped_at`. Separately, with the package-cumulative node meter, a precondition-first order can make an earlier small postcondition report `ResourceExhausted` where source order gives its own refusal followed by the precondition's exhaustion. That difference is inherent to the reordering, so FR-577 Outputs ("refused exactly as FR-104 refuses it") should state it as accepted. The helper unit test cannot see either case, because both are in the loop. A deterministic end-to-end test is possible: a node limit below one large precondition's body, placed after a small postcondition. | qsl-semantics/src/check/mod.rs:1632-1634,3266-3375 |
+
 ## Dispositions
 
 | FND | outcome | reason |
@@ -48,3 +54,4 @@ No high-severity soundness defect was found. Fix the three medium findings in th
 | FND-005 | fixed | cb8db168f: `operand` is an `OperandText` newtype. Its `PartialEq` is always true and its `Hash` is empty, so a refusal compares and hashes the same with or without the text. |
 | FND-006 | fixed | cb8db168f: `redefinition_family_keys` builds the family set once. Precondition facts go into a map keyed by (context, operation key) as each precondition is checked (mod.rs:3205-3280). The behaviour is the same as before. |
 | FND-007 | fixed | cb8db168f: p09 is renamed `p09_intervals_come_from_declared_types_literal_guards_and_difference_bounds`. It now asserts that `a < b` narrows `a - b` only to `[-3, -1]` (still refused) and leaves `b + (0 - a)` at `[-3, 3]`. |
+| FND-001 | fixed | 41b7748f9: after a stop at a precondition, the loop no longer breaks. It skips only clauses with index > stop (`if stopped_at.is_some_and(|stopped| index > stopped) { continue; }`), so the earlier postconditions and invariants are still checked, and `refusals_in_source_order` returns the refusals of clauses up to the stop, in source order. The unit test `a_stop_at_a_precondition_reports_the_earlier_clause_refusals_first` gives `[A, B]`. This closes the missing-refusal case for a fault or a refusal-type stop. The cancel and limit interaction and the cumulative-meter difference are new finding FND-008. |
