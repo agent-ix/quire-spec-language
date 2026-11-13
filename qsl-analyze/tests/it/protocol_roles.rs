@@ -1826,16 +1826,17 @@ fn protocol_captures_are_evaluated_in_source_order_when_an_instance_starts_and_f
 #[trace("TC-652", "FR-207-AC-7")]
 #[test]
 fn a_template_reads_the_protocol_captures_and_the_activation_binder() {
-    let template = "compensate Refund for Main::Paid as (fwd: M::Cell)\n\
-         by w on M::Cell::dec using t0 clock \"c\" {\n\
-         capture seen: Boolean = x > 2 and big;\n\
-         activate first (f: Boolean) when { f and big } { capture armed: Boolean = big; }\n\
+    let seen_expr = std::env::var("SEEN").unwrap_or("x > 2 and big".into());
+    let template = format!("compensate Refund for Main::Paid as (fwd: M::Cell)\n\
+         by w on M::Cell::dec using t0 clock \"c\" {{\n\
+         capture seen: Boolean = {seen_expr};\n\
+         activate first (f: Boolean) when {{ f and big }} {{ capture armed: Boolean = big; }}\n\
          within [0, 10];\n\
          attempts 1 of M::Attempt;\n\
-         retry (e: M::Attempt, l: M::Attempt) { false };\n\
+         retry (e: M::Attempt, l: M::Attempt) {{ false }};\n\
          commit never;\n\
-         recover (r: M::Attempt) { seen and armed };\n\
-         }";
+         recover (r: M::Attempt) {{ seen and armed }};\n\
+         }}");
     let run = format!(
         "sequence Main {{ {} {} event Fail by w as (failed: Boolean) {{ failed }}; }}",
         crate::protocol_compensation::CHARGE,
