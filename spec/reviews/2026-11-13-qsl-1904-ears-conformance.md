@@ -38,3 +38,12 @@ behaviour, has no SHALL) and one low.
 | --- | --- | --- | --- |
 | FND-001 | medium | The rule that changes checker behaviour, that a field-edge `reaches` walks the population covering the edge type `T` and not the operands' static type, is stated as description with no actor and no SHALL ("walks the objects of `T` ... so it walks the one population", "Its requirements record adds that domain"). Restate it as a ubiquitous requirement on the checker, for example "The checker SHALL take the population a field-edge `reaches` walks as the one population covering `T`, the edge's owner and reference type, whatever the operands' static types", so it can be traced and tested as the record change it is. | FR-380.md:153-163 |
 | FND-002 | low | The no-bound paragraph ("the key is absent, not `null`, no population node is emitted ... neither is a refusal") states S4 and checker behaviour with no SHALL. FR-365 "The population link" has the same style, but here it is the only normative statement of the absent case for the field form. | FR-380.md:176-182 |
+
+## Dispositions
+
+Round 1, checked against fix commit 04185af40 (`git diff origin/main...HEAD`).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Restated as "The checker SHALL take the population a field-edge `reaches` walks as the one population that covers `T` ... whatever the operands' static types" and "The checker SHALL add that population's domain". |
+| FND-002 | fixed | Restated as "S4 SHALL write no `population` key (absent, not `null`) and emit no population node ... and the application SHALL keep the member and node identity". |
