@@ -199,3 +199,54 @@ impl GlobalStructure {
         GlobalStructure::build(reader.input, budget).map_err(StructureError::Limit)
     }
 }
+
+/// Why the protocol analysis replay arm did not run.
+#[derive(Debug, Eq, PartialEq, thiserror::Error)]
+pub enum ProtocolReplayRefusal {
+    /// The source is no `ProtocolAnalysis` source.
+    #[error("invalid_runtime_input/invalid-value at /replay/source: protocol analysis replay requires a ProtocolAnalysis source")]
+    WrongSource,
+    /// The evidence's key is not a projection key.
+    #[error("invalid_runtime_input/invalid-value: the evidence key is not a projection key")]
+    NotAProjectionKey,
+    /// The structure did not build.
+    #[error(transparent)]
+    Structure(#[from] StructureError),
+}
+
+/// The `ReplaySource::ProtocolAnalysis` arm (ADR-036 PA-20): re-walk the
+/// counterexample's stated paths against the checked graph of `protocol`,
+/// check each step is an admitted successor and that the walk ends in the
+/// stated divergence. An arm that disagrees settles `inconclusive`.
+///
+/// # Errors
+///
+/// [`ProtocolReplayRefusal`] when the source is another arm or the graph
+/// does not build.
+pub fn replay_protocol_analysis(
+    package: &CheckedPackageV2,
+    protocol: &CheckedNodeId,
+    source: &crate::witness::ReplaySource,
+    budget: RunBudget,
+) -> Result<crate::protocol_analysis::ProtocolReplayResult, ProtocolReplayRefusal> {
+    use crate::protocol_analysis::{
+        replay_projection_counterexample, ProtocolAnalysisKey, ProtocolReplayResult,
+        ProtocolReplaySettlement,
+    };
+    let crate::witness::ReplaySource::ProtocolAnalysis(evidence) = source else {
+        return Err(ProtocolReplayRefusal::WrongSource);
+    };
+    let ProtocolAnalysisKey::Projection(key) = &evidence.counterexample.key else {
+        return Err(ProtocolReplayRefusal::NotAProjectionKey);
+    };
+    let structure = GlobalStructure::from_package(package, protocol, budget)?;
+    let settlement = match replay_projection_counterexample(
+        &structure,
+        &evidence.counterexample,
+        key.bounds.max_depth,
+    ) {
+        Ok(()) => ProtocolReplaySettlement::Reproduced,
+        Err(disagreement) => ProtocolReplaySettlement::Inconclusive(disagreement),
+    };
+    Ok(ProtocolReplayResult { settlement })
+}

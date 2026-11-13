@@ -820,7 +820,10 @@ impl ReplayRequest {
     ) -> Result<Self, ReplayRequestRefusal> {
         BoundExceeded::check(measured_encoded_bytes(&wire), limits)?;
         // QSpec FR-323 decode rule 1: before any byte-provision rule.
-        let (replay_target, over) = if matches!(wire.source, ReplaySource::ModelGraph(_)) {
+        let (replay_target, over) = if matches!(
+            wire.source,
+            ReplaySource::ModelGraph(_) | ReplaySource::ProtocolAnalysis(_)
+        ) {
             let target = std::mem::take(&mut wire.replay_target);
             let member = if target.members.function.is_some() {
                 Some(TargetMember::Function)
@@ -1863,6 +1866,7 @@ mod tests {
             ReplaySource::Witness(_) => panic!("expected the Input arm"),
             ReplaySource::ObservedTemporal(_) => panic!("expected the Input arm"),
             ReplaySource::ModelGraph(_) => panic!("expected the Input arm"),
+            ReplaySource::ProtocolAnalysis(_) => panic!("expected the Input arm"),
         }
     }
 }

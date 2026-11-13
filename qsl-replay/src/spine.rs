@@ -48,7 +48,7 @@ use quire_semantic_value::declaration::StorageUnit;
 
 mod lifecycle;
 mod subject;
-pub use protocol_structure::StructureError;
+pub use protocol_structure::{replay_protocol_analysis, ProtocolReplayRefusal, StructureError};
 pub use lifecycle::{
     admit_parsed_unit_list, check, check_units, check_units_with_refinement_internals,
     check_with_execution_points, check_with_execution_points_and_refinement_internals,

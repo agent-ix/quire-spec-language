@@ -442,6 +442,9 @@ pub enum ReplaySource {
     /// State-graph evidence replayed by FR-170. Its claim identity is carried
     /// by the graph envelope, so it has no generic replay target.
     ModelGraph(Box<GraphEvidenceEnvelope>),
+    /// A protocol analysis counterexample, re-walked against the checked
+    /// graph (ADR-036 PA-20). It has no generic replay target.
+    ProtocolAnalysis(Box<crate::protocol_analysis::ProtocolAnalysisEvidence>),
 }
 
 impl ReplaySource {
@@ -455,6 +458,7 @@ impl ReplaySource {
             Self::Input(assignments) => measured_assignments(assignments),
             Self::ObservedTemporal(envelope) => envelope.measured_bytes(),
             Self::ModelGraph(envelope) => envelope.measured_bytes(),
+            Self::ProtocolAnalysis(evidence) => evidence.measured_bytes(),
         }
     }
 }
@@ -540,6 +544,10 @@ impl fmt::Debug for ReplaySource {
             Self::ModelGraph(envelope) => f
                 .debug_struct("ModelGraph")
                 .field("envelope", envelope)
+                .finish(),
+            Self::ProtocolAnalysis(evidence) => f
+                .debug_struct("ProtocolAnalysis")
+                .field("evidence", evidence)
                 .finish(),
         }
     }

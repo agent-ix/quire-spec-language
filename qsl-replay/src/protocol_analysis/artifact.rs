@@ -302,3 +302,32 @@ pub fn replay_projection_counterexample(
         }
     }
 }
+
+/// How a counterexample replay settled (ADR-018 SM-7).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ProtocolReplaySettlement {
+    /// The walk reproduced the stated divergence.
+    Reproduced,
+    /// The walk disagrees with the checked graph.
+    Inconclusive(WalkDisagreement),
+}
+
+/// The result of the `ReplaySource::ProtocolAnalysis` arm.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProtocolReplayResult {
+    /// The settlement.
+    pub settlement: ProtocolReplaySettlement,
+}
+
+impl ProtocolReplayResult {
+    /// The category the result carries: a reproduced walk is a success, a
+    /// disagreeing one `inconclusive`.
+    #[must_use]
+    pub fn category(&self) -> quire_semantic_value::catalog::Category {
+        use quire_semantic_value::catalog::Category;
+        match self.settlement {
+            ProtocolReplaySettlement::Reproduced => Category::Success,
+            ProtocolReplaySettlement::Inconclusive(_) => Category::Inconclusive,
+        }
+    }
+}

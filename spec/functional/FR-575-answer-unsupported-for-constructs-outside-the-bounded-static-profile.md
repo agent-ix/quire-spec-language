@@ -58,7 +58,11 @@ causes, each a slug of `unsupported_projection` in the style of
 | `compensation` | A compensation. |
 | `timed-await` | A timed await. |
 | `unassigned-local-choice` | A role with an enabled local choice the protocol assigns to no owner. |
+| `unsupported-control` | A `check`, `attempt`, `effect`, `event`, `commit` or `fence` control, which the profile's list does not include. |
 | `evaluator-unsupported` | Realizability only: a construct `qsl-eval` refuses to step; the `qsl-eval` cause is carried. |
+
+When a protocol holds several such constructs the engine reports the first in
+the order roles, queues, compensations, then controls in layout order.
 
 Names are chosen as the construct's own name, kebab case, one slug per
 construct, so a corpus author reads the construct from the slug; `join any`,

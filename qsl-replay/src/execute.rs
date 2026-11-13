@@ -1201,12 +1201,15 @@ pub fn replay_with_cancel_and_temporal_selections(
     cancel: &Cancel,
 ) -> Result<ReplayResult, ReplayRefusal> {
     let request = ReplayRequest::decode(wire, replay_limits)?;
-    if matches!(request.source(), ReplaySource::ModelGraph(_)) {
+    if matches!(
+        request.source(),
+        ReplaySource::ModelGraph(_) | ReplaySource::ProtocolAnalysis(_)
+    ) {
         return Err(ReplayRefusal::WrongModelGraphEntry);
     }
     let function = match request.source() {
         ReplaySource::ObservedTemporal(_) => None,
-        ReplaySource::ModelGraph(_) => None,
+        ReplaySource::ModelGraph(_) | ReplaySource::ProtocolAnalysis(_) => None,
         ReplaySource::Witness(_) | ReplaySource::Input(_) => {
             Some(declared_function_target(&request, ReplayEntry::Replay)?)
         }
@@ -1440,6 +1443,9 @@ fn settle(
         }
         ReplaySource::ModelGraph(_) => {
             unreachable!("state-graph requests dispatch before function replay settlement")
+        }
+        ReplaySource::ProtocolAnalysis(_) => {
+            unreachable!("protocol analysis requests dispatch before function replay settlement")
         }
     }
 }
@@ -2556,6 +2562,12 @@ fn arguments(
             return Err(ReplayRefusal::Fault(InternalFault::new(
                 "replay",
                 "state-graph-source-dispatched-by-replay-facade",
+            )))
+        }
+        ReplaySource::ProtocolAnalysis(_) => {
+            return Err(ReplayRefusal::Fault(InternalFault::new(
+                "replay",
+                "protocol-analysis-source-dispatched-by-protocol-replay",
             )))
         }
     };
