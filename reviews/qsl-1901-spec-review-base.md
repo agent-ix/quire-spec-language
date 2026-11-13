@@ -34,3 +34,21 @@ have no AC.
 | FND-002 | low | The rendered form of an interval is unspecified. FR-577 says the message "SHALL name" the required and proved intervals, and AC-2 and TC-1416 assert the substrings `[0, 100]` and `[-100, 100]`. No requirement fixes that spelling, or the spelling of an unbounded end (an `Integer` operand). | FR-577:142-147, FR-577-AC-2, TC-1416:59-62 | wrong-requirement |
 | FND-003 | low | The Description describes the current state rather than the target design. "Today those facts are only the clause's own guards..." describes the code before this change. The spec should state the rule as designed. | FR-577:28-34 | wrong-requirement |
 | FND-004 | low | FR-577-AC-1 bundles four checks: admission, the `Int[0, 100]` typing, `call_site` clause order, and reorder identity. AC-4 and AC-5 each bundle two or three independent fixtures, so one failing row hides which behaviour broke. | FR-577-AC-1, FR-577-AC-4, FR-577-AC-5 | wrong-requirement |
+
+## New findings (disposition pass 1)
+
+Checked at 7b0adbe07.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | medium | FR-577-AC-29's fixture has two refusals. With `CanAfford`'s body replaced by `self.limit <= self.balance`, `Debited` loses its bound and also refuses at `pre(self.balance) - amount`. `Debited` is declared before the added `Room`, so the first refusal (the one `call_site` and the region report) is most likely `Debited`'s, not the asserted `self.balance - self.limit`. The AC therefore does not isolate "no transfer into an invariant". Keep `amount <= self.balance` in `CanAfford`, for example `amount <= self.balance and self.limit <= self.balance`. | FR-577-AC-29 (FR-577:231), TC-1416:89-90 |
+| FND-006 | low | TC-1416's procedure runs every compile through `call_site` with the `Bank::Account::withdraw` selection "unless the step names another entry". Steps 3 and 12 compile a unit that declares only a function. Step 12 expects "compiles", but a `withdraw` selection on a unit with no model or operation refuses `UnknownOperation`. Steps 3 and 12 should name a function selection (`g`, `f`) or a plain compile. | TC-1416:31-33, TC-1416:57, TC-1416:91 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | 7b0adbe07 adds AC-6..AC-31: the join (AC-11, AC-12), negation (AC-8), smaller `c` (AC-9, AC-10), binder (AC-20, AC-21), unreachable (AC-22, AC-23), context (AC-24, AC-25), family (AC-26, AC-27), non-postcondition targets (AC-28..AC-30) and a function body (AC-31). The `own_postcondition_clauses` SHALL became the Description scope sentence at FR-577:64-65. That is acceptable: it now states scope, not a behaviour needing a test. AC-29 has a fixture defect; see FND-005. |
+| FND-002 | fixed | FR-577:183-185 now fixes the spelling `[lo, hi]`, with base-10 ends, `, ` as separator, and `-inf`/`+inf`. AC-5 covers the unbounded case. |
+| FND-003 | fixed | The "Today ..." sentence is gone. The Description now states the target rule and the bank example as a design statement. |
+| FND-004 | fixed | AC-1..AC-4 are now single checks (typing, reorder identity, refusal intervals, `call_site` message), and AC-4/AC-5's old fixtures are split into AC-14..AC-18. |

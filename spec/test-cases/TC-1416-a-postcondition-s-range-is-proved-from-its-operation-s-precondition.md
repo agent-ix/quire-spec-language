@@ -28,14 +28,16 @@ Scope: FR-577-AC-1 to FR-577-AC-33; FR-121-AC-37.
 
 Fixture: FR-577's bank fixture and bank unit, and `Debited1`, as its
 Acceptance Criteria preamble writes them. The unit selects the package as
-`model Bank = ...`. Every compile runs through `qsl_replay::call_site` with
-the `Bank::Account::withdraw` operation selection, unless the step names
-another entry.
+`model Bank = ...`. Every compile of the bank unit runs through `qsl_replay::call_site` with
+the `Bank::Account::withdraw` operation selection. Steps 3 and 12 compile a
+unit that declares only a function through `qsl_replay::call_site` with that
+function's selection (`g`, `f`).
 
 1. Compile the bank unit (AC-1). Compile it with `CanAfford` moved after
    `Debited` and compare clause node identities (AC-2).
 2. Compile the bank unit without `CanAfford` (AC-3, AC-4, FR-121-AC-37).
-3. Compile a unit declaring only FR-577-AC-5's function `g` (AC-5).
+3. Compile a unit declaring only FR-577-AC-5's function `g`, with the
+   function selection `g` (AC-5).
 4. Compile each precondition-fact variant: AC-6 (strict, `Debited1`),
    AC-7 (flipped), AC-8 (negated), AC-9 (repeated pair in one clause),
    AC-10 (repeated pair across two clauses).
@@ -54,13 +56,15 @@ another entry.
     redefining `withdraw`).
 11. Compile the non-postcondition targets: AC-28 (another precondition),
     AC-29 (an invariant), AC-30 (a kept `requires`).
-12. Compile a unit declaring only FR-577-AC-31's function `f` (AC-31).
+12. Compile a unit declaring only FR-577-AC-31's function `f`, with the
+    function selection `f` (AC-31).
 13. From step 1's package, replay a `Debited` envelope through
     `qsl_replay::replay_state_clause` with pre `balance = 3`, `amount = 5`
     and post `balance = 0` (AC-32).
 14. Build a protocol over step 1's package whose attempt of `withdraw` lists
     `contracts [Debited]` only, and explore it from a state with
-    `balance = 3` applying the attempt with `amount = 5` (AC-33).
+    `balance = 3` and `limit = 0`, applying the attempt with `amount = 5`
+    (AC-33).
 
 Tag each test `#[trace("TC-1416", "FR-577-AC-n")]` for the criterion it
 checks, and step 2's region assertion also
@@ -92,8 +96,9 @@ checks, and step 2's region assertion also
 - Step 13: the evaluation refuses `IntegerOutOfDomain` at
   `pre(self.balance) - amount`; the replay is `inconclusive` with cause
   `NoValue`, not a reproduced violation.
-- Step 14: one `ModelFinding::ContractUndetermined` for `Debited` and no
-  successor for that application.
+- Step 14: one `ModelFinding::ContractUndetermined` for `Debited` per
+  candidate post-state of the frame, 101 in all (one per `balance` value in
+  `[0, 100]`), and no successor for that application.
 
 Every refusal above is `undefined_expression`/`unproved-range` unless the
 step names another.

@@ -131,9 +131,10 @@ transferred fact matches a read under `pre(e)` in `Q` and never one of `Q`'s
   occurs, including an invocation where a precondition does not hold.
 - When a protocol attempt (FR-206) whose `contracts` list selects `Q` but
   omits a precondition that discharged `Q`'s obligation is applied where that
-  precondition is false, the protocol system SHALL record the refusal as
-  FR-120's `ModelFinding::ContractUndetermined` for `Q` and give that
-  application no successor. Such an attempt is defined, not refused at check.
+  precondition is false, the protocol system SHALL evaluate `Q` once per
+  candidate post-state of the frame (FR-120 "Post-states"), record one
+  FR-120 `ModelFinding::ContractUndetermined` for `Q` per candidate post-state
+  whose evaluation refuses, and give no successor for such a candidate. Such an attempt is defined, not refused at check.
 
 ### Difference facts
 
@@ -228,11 +229,11 @@ the refusal located at the node `D`.
 | FR-577-AC-26 | Over the AC-24 fixture with `Premium` redeclaring `withdraw(amount: Int[0, 100])` with `redefines` `Account/withdraw` and frame `modifies [Account/balance]`, the bank unit refuses at `pre(self.balance) - amount`. | Test (TC-1416) |
 | FR-577-AC-27 | Over the AC-26 fixture, the bank unit with `CanAfford` and `Debited` both on `Bank::Premium::withdraw` refuses at `pre(self.balance) - amount`. | Test (TC-1416) |
 | FR-577-AC-28 | The bank unit with `pre Fits using v on Bank::Account::withdraw { self.limit = self.balance - amount }` added refuses at `self.balance - amount` in `Fits`. | Test (TC-1416) |
-| FR-577-AC-29 | The bank unit with `CanAfford`'s body `self.limit <= self.balance` and `invariant Room using v on Bank::Account at current { self.limit = self.balance - self.limit }` added refuses at `self.balance - self.limit`. | Test (TC-1416) |
+| FR-577-AC-29 | The bank unit with `CanAfford`'s body `amount <= self.balance and self.limit <= self.balance` and `invariant Room using v on Bank::Account at current { self.limit = self.balance - self.limit }` added refuses at `self.balance - self.limit`. | Test (TC-1416) |
 | FR-577-AC-30 | Over the bank fixture whose `withdraw` keeps the `quire` `requires` clause `amount <= self.balance`, the AC-3 unit refuses at `pre(self.balance) - amount`. | Test (TC-1416) |
 | FR-577-AC-31 | `function f using v(a: Int[0, 100], b: Int[0, 100], r: Int[0, 100]): Boolean pure { a <= b implies r = b - a }` checks. | Test (TC-1416) |
 | FR-577-AC-32 | `qsl_replay::replay_state_clause` over a `Debited` envelope (FR-122) of the bank unit's package whose invocation has pre `balance = 3`, `amount = 5` and post `balance = 0` refuses `IntegerOutOfDomain` at `pre(self.balance) - amount` and settles `inconclusive` with cause `NoValue`, not a reproduced violation. | Test (TC-1416) |
-| FR-577-AC-33 | A protocol over the bank package whose attempt of `withdraw` lists `contracts` `[Debited]` only, applied at a state with `balance = 3` and the argument `amount = 5`, records one `ModelFinding::ContractUndetermined` for `Debited` and gives that application no successor. | Test (TC-1416) |
+| FR-577-AC-33 | A protocol over the bank package whose attempt of `withdraw` lists `contracts` `[Debited]` only, applied at a state with `balance = 3` and `limit = 0` and the argument `amount = 5`, records one `ModelFinding::ContractUndetermined` for `Debited` per candidate post-state of the frame, 101 findings (one per `balance` value in `[0, 100]`), and gives that application no successor. | Test (TC-1416) |
 
 ## Dependencies
 
