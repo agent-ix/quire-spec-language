@@ -2329,12 +2329,16 @@ fn member_value(ids: &StructuralIds, member: &Member) -> Result<serde_json::Valu
             declaration,
             name,
             explicit_deref,
+            population,
         } => {
             let mut member = json!({
                 "kind":"field",
                 "declaration":node_id(ids, declaration),
                 "name":name.as_str()
             });
+            if let Some(population) = population {
+                member["population"] = json!(node_id(ids, population));
+            }
             if let Some(explicit_deref) = explicit_deref {
                 let read_form = if *explicit_deref {
                     "explicit_deref"

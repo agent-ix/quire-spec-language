@@ -56,7 +56,7 @@ fn lower(clauses: &str) -> Lowered {
 }
 
 /// Every `model_population` node of the package.
-fn population_nodes(wire: &Value) -> Vec<&Value> {
+pub(super) fn population_nodes(wire: &Value) -> Vec<&Value> {
     nodes(wire)
         .iter()
         .filter(|node| node["semantic_form"] == "model_population")
@@ -74,7 +74,7 @@ fn member(lowered: &Lowered) -> &Value {
 
 /// The `type` occurrences of `node`: ordinal and the source text of its
 /// source-map region, in ordinal order.
-fn type_occurrences<'t>(lowered: &'t Lowered, node: &Value) -> Vec<(u64, &'t str)> {
+pub(super) fn type_occurrences<'t>(lowered: &'t Lowered, node: &Value) -> Vec<(u64, &'t str)> {
     let mut found: Vec<(u64, &str)> = lowered.wire["source_map"]
         .as_array()
         .unwrap()
@@ -120,7 +120,7 @@ fn assert_anonymous(node: &Value) {
 /// The `Population<Order>[maximum]` chain the population node `population`
 /// of `wire` must be: the `Integer` max literal, the `Set<Reference<Order>>`
 /// semantic type over the `Reference<Order>` node, and the dependencies.
-fn assert_population_node(wire: &Value, population: &Value, maximum: &str) {
+pub(super) fn assert_population_node(wire: &Value, population: &Value, maximum: &str) {
     assert_eq!(population["node_tag"], "bounded_domain");
     assert_anonymous(population);
     let max = binding(population, "max");

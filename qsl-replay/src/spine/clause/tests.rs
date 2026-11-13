@@ -4217,6 +4217,7 @@ fn s4_state_clause_and_anchor_dependencies_beyond_the_frame() {
         declaration: config_version_node.clone(),
         name: quire_exact::Identifier::new("versionNumber").expect("valid identifier"),
         explicit_deref: Some(false),
+        population: None,
     };
     let field_read = graph
         .semantic_graph()
@@ -4364,6 +4365,7 @@ fn s4_version_unchanged_condition_holds_a_pre_application_over_the_versionnumber
             declaration: config_version_node,
             name: quire_exact::Identifier::new("versionNumber").expect("valid identifier"),
             explicit_deref: Some(false),
+            population: None,
         }),
         "pre's own operand is deref(self).versionNumber"
     );
@@ -4391,6 +4393,7 @@ fn s4_no_cycle_condition_holds_a_reaches_field_application_naming_parent() {
             declaration: config_version_node,
             name: quire_exact::Identifier::new("parent").expect("valid identifier"),
             explicit_deref: None,
+            population: None,
         }),
         "reaches(self, self, parent)'s member names ConfigVersion's own parent field"
     );
@@ -4429,6 +4432,7 @@ fn s4_parent_order_self_parent_read_shares_no_cycles_member_shape() {
             declaration: config_version_node_key(graph),
             name: quire_exact::Identifier::new("parent").expect("valid identifier"),
             explicit_deref: Some(false),
+            population: None,
         },
         "ParentOrder's source uses the bare model-object field read"
     );
@@ -4438,6 +4442,7 @@ fn s4_parent_order_self_parent_read_shares_no_cycles_member_shape() {
             declaration: config_version_node_key(graph),
             name: quire_exact::Identifier::new("parent").expect("valid identifier"),
             explicit_deref: None,
+            population: None,
         },
         "reaches_field names the record field without a model-object read form"
     );

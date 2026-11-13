@@ -267,6 +267,7 @@ impl FamilyContract for StateModelFamily {
                 location: location.clone(),
                 equality_producer: None,
                 ordering_part: false,
+                field_population: None,
             }))
         };
         let checked = (|| -> Result<Checked, CheckRefusal> {

@@ -734,14 +734,12 @@ pub(crate) fn populations_overlapping(
 }
 
 /// The object a reachability `node` walks, when it is one: a field edge's
-/// operand type, or an end's near end type `E` (FR-365 "The population a
-/// reachability walks").
+/// owner and reference target type `T` (not its operands' static type,
+/// FR-380 "Field-edge reachability"), or an end's near end type `E`
+/// (FR-365 "The population a reachability walks").
 fn walked_object(node: CheckedNode<'_>, scope: &Scope) -> Option<EffectiveId> {
     match node.kind() {
-        NodeKind::Reaches { source, .. } => match node.at(*source).value_type() {
-            ValueType::Reference(object) => Some(object.clone()),
-            _ => None,
-        },
+        NodeKind::Reaches { edge, .. } => Some(edge.owner.clone()),
         NodeKind::ReachesEnd {
             relationship, near, ..
         } => scope.relationships().end_object(relationship, *near),
@@ -1043,8 +1041,9 @@ fn check_clause_typed(
     // (FR-104 "Requirements").
     let mut clause_populations = BTreeSet::new();
     clause_populations.extend(form.context_population.clone());
-    // Each relationship-end reachability that walks a population with an
-    // authored bound (FR-380), to be linked to that bound below.
+    // Each reachability, over a relationship end or a field edge, that walks
+    // a population with an authored bound (FR-380), to be linked to that
+    // bound below.
     let mut linked = Vec::new();
     for node in body.root().descendants() {
         if let Some(object) = walked_object(node, input.scope) {
@@ -1062,10 +1061,9 @@ fn check_clause_typed(
                     }
                 },
             )?;
-            if end_form
-                && walked
-                    .clone()
-                    .is_some_and(|domain| domain.maximum.is_some())
+            if walked
+                .clone()
+                .is_some_and(|domain| domain.maximum.is_some())
             {
                 let bound = walked_bound(input.models, object, input.scope.types());
                 linked.extend(bound.map(|bound| (node.id(), bound)));

@@ -76,6 +76,11 @@ pub struct Node {
     /// A numeric-equality part of a float ordering's composition: FR-397
     /// charges the ordering once, so such a part adds no charge of its own.
     pub(in crate::check) ordering_part: bool,
+    /// The authored bound of the population a field-edge `Reaches` walks,
+    /// linked by the state-clause checker (FR-380 "Field-edge
+    /// reachability"); `None` on every other node. `NodeKind::Reaches`
+    /// has no population field of its own.
+    pub(in crate::check) field_population: Option<AuthoredBound>,
 }
 
 /// QSL's pre-wire equality facts, retained from typing through lowering.
@@ -427,6 +432,7 @@ impl CheckedBody {
                 ),
                 equality_producer: None,
                 ordering_part: false,
+                field_population: None,
             })
             .collect();
         nodes.push(Node {
@@ -435,6 +441,7 @@ impl CheckedBody {
             location: Location::root(quire_semantic_value::location::ExpressionOwner::Expression),
             equality_producer: None,
             ordering_part: false,
+            field_population: None,
         });
         Self {
             nodes,
@@ -442,16 +449,17 @@ impl CheckedBody {
         }
     }
 
-    /// Link the relationship-end reachability `id` to the authored bound of
-    /// the population it walks (FR-380). A node that is no such
-    /// reachability is left as it is.
+    /// Link the reachability `id`, over a relationship end or a field edge,
+    /// to the authored bound of the population it walks (FR-380). A node
+    /// that is no such reachability is left as it is.
     pub(in crate::check) fn link_population(&mut self, id: NodeId, bound: AuthoredBound) {
-        if let Some(Node {
-            kind: NodeKind::ReachesEnd { population, .. },
-            ..
-        }) = self.nodes.get_mut(id.0)
-        {
-            *population = Some(bound);
+        let Some(node) = self.nodes.get_mut(id.0) else {
+            return;
+        };
+        match &mut node.kind {
+            NodeKind::ReachesEnd { population, .. } => *population = Some(bound),
+            NodeKind::Reaches { .. } => node.field_population = Some(bound),
+            _ => {}
         }
     }
 
@@ -474,6 +482,7 @@ impl CheckedBody {
                     ),
                     equality_producer: None,
                     ordering_part: false,
+                    field_population: None,
                 })
                 .collect(),
         }
@@ -640,6 +649,11 @@ impl<'a> CheckedNode<'a> {
     /// composition (FR-397), which adds no charge beyond the ordering's own.
     pub fn is_ordering_part(self) -> bool {
         self.node().ordering_part
+    }
+
+    /// The authored bound a field-edge `Reaches` is linked to (FR-380).
+    pub(crate) fn field_population(self) -> Option<&'a AuthoredBound> {
+        self.node().field_population.as_ref()
     }
 
     /// The QSL producer facts for a checked equality, if typing selected any.
@@ -1175,6 +1189,7 @@ mod tests {
             location: Location::root(Origin::Expression),
             equality_producer: None,
             ordering_part: false,
+            field_population: None,
         };
         let mut builder = BodyBuilder::default();
         let mut operand = builder.push(node(NodeKind::Local(slot)));

@@ -1512,10 +1512,12 @@ fn map_member(
             declaration,
             name,
             explicit_deref,
+            population,
         } => Member::Field {
             declaration: map_key(map, pending_member, declaration),
             name,
             explicit_deref,
+            population: population.map(|population| map_key(map, pending_member, population)),
         },
         Member::Position {
             declaration,

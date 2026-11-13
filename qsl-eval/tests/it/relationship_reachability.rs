@@ -144,6 +144,48 @@ fn orders_package(shape: Shape, declarations: &str) -> CheckedPackage {
             extent: Extent::Closed,
             symmetric: false,
         }),
+        object_type("Person", &[]),
+        DomainPackageRecord::FieldMember(FieldMemberRecord {
+            key: key("Person/fav"),
+            owner: key("Person"),
+            value_type: ValueTypeRef::Package(key("Order")),
+            multiplicity: Multiplicity {
+                lower: 1,
+                upper: Some(1),
+                ordered: false,
+                unique: true,
+            },
+            presence: Presence::Required,
+            subsets: Vec::new(),
+            redefines: None,
+            position: 0,
+        }),
+        DomainPackageRecord::Population(PopulationRecord {
+            key: key("people"),
+            member_types: vec![key("Person")],
+            extent: Extent::Closed,
+            symmetric: false,
+        }),
+        DomainPackageRecord::OperationMember(OperationMemberRecord {
+            key: key("Person/watch"),
+            owner: key("Person"),
+            parameters: vec![OperationParameterRecord {
+                key: key("Person/watch/target"),
+                value_type: ValueTypeRef::Package(key("Order")),
+                multiplicity: Multiplicity {
+                    lower: 1,
+                    upper: Some(1),
+                    ordered: false,
+                    unique: true,
+                },
+            }],
+            result: None,
+            effect: OperationEffect::default(),
+            requires: Vec::new(),
+            ensures: Vec::new(),
+            has_body: false,
+            redefines: None,
+        }),
         DomainPackageRecord::OperationMember(OperationMemberRecord {
             key: key("Order/reroute"),
             owner: key("Order"),
@@ -1553,4 +1595,72 @@ fn a_ten_thousand_object_chain_reaches_its_far_end_on_a_512_kib_stack() {
         .expect("spawn a 512 KiB thread")
         .join()
         .expect("the evaluation does not overflow a 512 KiB stack");
+}
+
+/// TC-1054 row 27 (FR-380-AC-19): a field-edge walked population that is not
+/// the context population is a bounded domain of the clause's record, so an
+/// observation listing 5 objects of `orders` refuses `above-maximum` naming
+/// the bound 4 and the count 5, and one listing 4 is decided as for an
+/// unbounded population. The context population `people` is unbounded.
+#[trace("TC-1054", "FR-380-AC-19")]
+#[test]
+fn a_walked_field_edge_population_refuses_above_its_bound() {
+    let orders = Orders::with_declarations(
+        Shape::BASE,
+        "bound OrdersBound on M::orders [4]\n\
+         pre PreFav using v on M::Person::watch { true or reaches(self.fav, target, trail) }\n",
+    );
+    let person = orders.at("Person", "p1");
+    let held = orders
+        .held()
+        .into_iter()
+        .map(|object| (object, vec![]))
+        .chain([(
+            person.clone(),
+            vec![(
+                "fav",
+                FieldValue::Present(Value::Reference(orders.order("o1"))),
+            )],
+        )]);
+    let environment =
+        orders.observe_with(held, vec![links(&orders, next(), &[])], vec![orders.q()]);
+    let population = key("orders").node;
+    for (count, refused) in [(4_u64, false), (5, true)] {
+        let observed = environment
+            .clone()
+            .with_population_sizes(BTreeMap::from([(population.clone(), count)]));
+        let (evaluation, meter) =
+            orders.run("PreFav", &person, &orders.order("o3"), &observed, UNLIMITED);
+        match (&evaluation.outcome, refused) {
+            (FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(true))), false) => {}
+            (FamilyOutcome::Evaluated(Outcome::Refused(refusal)), true) => {
+                assert!(
+                    matches!(
+                        refusal,
+                        quire_exact::Refusal::CardinalityOutOfBound {
+                            violation: quire_exact::BoundViolation::AboveMaximum,
+                            count: 5,
+                            ..
+                        }
+                    ),
+                    "{refusal:?}"
+                );
+                let record = qsl_eval::value::refusal_record(&evaluation, |location| {
+                    orders.package.graph().region(location)
+                })
+                .expect("cardinality_out_of_bound has a catalog code");
+                let fields: Vec<(&str, &str)> = record
+                    .fields()
+                    .iter()
+                    .map(|(name, value)| (*name, value.as_str()))
+                    .collect();
+                assert_eq!(
+                    fields,
+                    [("bound", "[0, 4]"), ("collection", "set"), ("count", "5")]
+                );
+                assert_charges(&meter, &[], 0, 0);
+            }
+            (other, _) => panic!("{count} objects: {other:?}"),
+        }
+    }
 }

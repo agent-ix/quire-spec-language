@@ -222,6 +222,7 @@ impl<'a> UnionMember<'a> {
             location: location.clone(),
             equality_producer: None,
             ordering_part: false,
+            field_population: None,
         }
     }
 }
