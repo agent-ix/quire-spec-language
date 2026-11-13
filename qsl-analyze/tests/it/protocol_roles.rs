@@ -1768,6 +1768,16 @@ fn activations(system: &System<'_>, reached: &[Reached]) -> BTreeMap<String, usi
         .collect()
 }
 
+/// `body` with the protocol `captures` written ahead of its roles, where the
+/// grammar puts them.
+fn with_captures(body: &str, captures: &str) -> String {
+    body.replacen(
+        "role w on M::Cell;",
+        &format!("{captures}\nrole w on M::Cell;"),
+        1,
+    )
+}
+
 /// FR-209-AC-9 (TC-654): under `on each (x: M::Level)` the protocol's
 /// captures `lower = x < 2`, `big = not lower` and `fresh = k.v = 0` are
 /// evaluated in source order when the instance starts and then frozen: after
@@ -1784,7 +1794,11 @@ fn protocol_captures_are_evaluated_in_source_order_when_an_instance_starts_and_f
                attempt T by w on M::Cell::inc contracts [IncPre, IncPost] \
                as (t: Boolean) { true }; \
                event E by w as (e: Boolean) { big and not lower and fresh }; }";
-    let world = World::new(&unit(EACH, "", captures, run), &["c"], &[0]);
+    let world = World::new(
+        &with_captures(&unit(EACH, "", "", run), captures),
+        &["c"],
+        &[0],
+    );
     let subject = world.subject();
     let system = sc_system(&subject).with_max_live_instances(1);
     let reached = reachable(&system);
@@ -1822,7 +1836,6 @@ fn a_template_reads_the_protocol_captures_and_the_activation_binder() {
          commit never;\n\
          recover (r: M::Attempt) { seen and armed };\n\
          }";
-    let members = format!("capture big: Boolean = x > 1;\n{template}");
     let run = format!(
         "sequence Main {{ {} {} event Fail by w as (failed: Boolean) {{ failed }}; }}",
         crate::protocol_compensation::CHARGE,
@@ -1832,8 +1845,9 @@ fn a_template_reads_the_protocol_captures_and_the_activation_binder() {
         + REFUND
         + &format!(
             "protocol R using p over (k: M::Cell) {EACH} {{\n\
+             capture big: Boolean = x > 1;\n\
              role w on M::Cell;\n\
-             {members}\n\
+             {template}\n\
              run {run}\n\
              finish Done as (d: Boolean) {{ true }};\n\
              }}\n"
@@ -1915,7 +1929,7 @@ fn a_retire_predicate_reads_a_protocol_capture_and_the_population_it_names() {
              and r = j)"
         );
         let world = World::new(
-            &unit(ORIGIN, &role(2, &until), capture, run),
+            &with_captures(&unit(ORIGIN, &role(2, &until), "", run), capture),
             &["c", "d"],
             &[1],
         );
