@@ -1898,6 +1898,10 @@ fn a_template_reads_the_protocol_captures_and_the_activation_binder() {
         registration(at).expect("a registration")
     };
 
+    for t in ["2", "3"] {
+        let (status, captures) = finished(t);
+        eprintln!("DBG {t} {status} {captures}");
+    }
     let (status, captures) = finished("3");
     assert_eq!(status, "recovered", "{captures}");
     let seen_true = seen(&captures);
