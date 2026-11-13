@@ -1049,7 +1049,6 @@ fn assembly_message(refusal: &AssemblyRefusal) -> String {
     with_more(message, refusal.errors.len())
 }
 
-/// A readable account of the checker's first refusal, and how many more.
 /// An interval as FR-577 spells it: `[lo, hi]`, each end a base-10 integer,
 /// an unbounded lower end `-inf` and an unbounded upper end `+inf`.
 fn interval_source(interval: &ProvedInterval) -> String {
@@ -1064,6 +1063,7 @@ fn interval_source(interval: &ProvedInterval) -> String {
     )
 }
 
+/// A readable account of the checker's first refusal, and how many more.
 fn check_message(refusals: &[CheckRefusal]) -> String {
     let Some(first) = refusals.first() else {
         return "no refusal recorded".to_owned();
@@ -1440,10 +1440,11 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
         CheckCause::Unproved(Obligation::Range {
             required,
             proved,
-            operand: Some(operand),
-        }) => {
+            operand,
+        }) if operand.text().is_some() => {
             message = format!(
-                "{message}: `{operand}` must lie in {} but is proved only in {}",
+                "{message}: `{}` must lie in {} but is proved only in {}",
+                operand.text().unwrap_or_default(),
                 interval_source(required),
                 interval_source(proved)
             );

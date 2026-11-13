@@ -1104,7 +1104,7 @@ fn q13_sum_proves_every_prefix_inside_its_domain_for_every_order() {
                     lower: Some(Integer::from(-3_i64)),
                     upper: Some(Integer::from(6_i64)),
                 }),
-                operand: None,
+                operand: Default::default(),
             })
         );
     }
@@ -1333,7 +1333,7 @@ fn tc_441_an_unbounded_source_has_no_proved_size_maximum() {
                 lower: Some(Integer::from(0_i64)),
                 upper: None,
             }),
-            operand: None,
+            operand: Default::default(),
         })
     );
 }

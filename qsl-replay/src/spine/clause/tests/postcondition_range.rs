@@ -11,8 +11,9 @@ use super::frame::identifier;
 use super::frame_replay::unit_for;
 use super::state_clause_replay;
 use super::*;
-use crate::spine::OperationName;
+use crate::spine::{CallOutcome, CallRefusal, OperationName};
 use crate::{call_site, CallSite, CallSiteRefusal, OperationSite, QualifiedName};
+use quire_exact::{Integer, ValueType};
 
 const BANK: &str = "test/bank";
 
@@ -34,12 +35,16 @@ struct Bank {
     deposit: bool,
     /// A kept `requires` clause `amount <= self.balance` on `withdraw`.
     requires: bool,
+    /// `withdraw` returns a Boolean `result`, so a postcondition's parameters
+    /// sit one slot after a precondition's.
+    result: bool,
 }
 
 const PLAIN: Bank = Bank {
     premium: Premium::Absent,
     deposit: false,
     requires: false,
+    result: false,
 };
 
 fn id(path: &str) -> String {
@@ -74,6 +79,7 @@ fn operation_of(
     name: &str,
     redefines: Option<&str>,
     requires: Option<&str>,
+    returns: bool,
 ) -> serde_json::Value {
     let identity = id(&format!("{owner}/{name}"));
     let parameter = format!("{identity}/amount");
@@ -101,6 +107,13 @@ fn operation_of(
         "origin": origin.clone(),
         "frame": {"modifies": [id("Account/balance")], "creates": [], "deletes": []},
     });
+    if returns {
+        operation["returns"] = json!({
+            "typeRef": "ix://quire/native/Boolean",
+            "multiplicity": {"lower": 1, "upper": 1, "ordered": false, "unique": true},
+            "nullable": false,
+        });
+    }
     if let Some(requires) = requires {
         operation["pre"] = json!([{
             "language": "quire",
@@ -152,9 +165,15 @@ impl Bank {
             })
         };
         let requires = self.requires.then_some("amount <= self.balance");
-        let mut account_operations = vec![operation_of("Account", "withdraw", None, requires)];
+        let mut account_operations = vec![operation_of(
+            "Account",
+            "withdraw",
+            None,
+            requires,
+            self.result,
+        )];
         if self.deposit {
-            account_operations.push(operation_of("Account", "deposit", None, None));
+            account_operations.push(operation_of("Account", "deposit", None, None, false));
         }
         let mut types = vec![
             json!({
@@ -182,7 +201,13 @@ impl Bank {
                 "Premium",
                 &["Account"],
                 vec![],
-                vec![operation_of("Premium", "withdraw", Some("Account"), None)],
+                vec![operation_of(
+                    "Premium",
+                    "withdraw",
+                    Some("Account"),
+                    None,
+                    false,
+                )],
             )),
         }
         let population = id("accounts");
@@ -342,31 +367,69 @@ const DIFFERENCE: &str = "pre(self.balance) - amount";
 #[test]
 fn the_precondition_discharges_the_postcondition_range() {
     checks(PLAIN, &bank_unit());
+    // The difference is typed `Int[0, 100]` by the expected-type rule.
+    let compiled = unit_for(bank_unit(), PLAIN.document()).compiled;
+    let debited = compiled
+        .package
+        .graph()
+        .state_clause("Debited")
+        .expect("Debited is declared");
+    // The checked coercion to `Int[0, 100]` is the node that carries the
+    // range obligation, over the difference.
+    let mut pending = vec![debited.body()];
+    let mut differences = Vec::new();
+    while let Some(node) = pending.pop() {
+        if let quire_checked::node::NodeKind::Coerce(operand, _) = node.kind() {
+            if matches!(
+                node.at(*operand).kind(),
+                quire_checked::node::NodeKind::Arithmetic(
+                    quire_checked::node::Arithmetic::Subtract,
+                    ..
+                )
+            ) {
+                differences.push(node);
+            }
+        }
+        pending.extend(node.children());
+    }
+    let [difference] = differences[..] else {
+        panic!("one difference in Debited");
+    };
+    assert!(
+        matches!(
+            difference.value_type(),
+            ValueType::Int(domain)
+                if domain.lower() == &Integer::from(0_i64)
+                    && domain.upper() == &Integer::from(100_i64)
+        ),
+        "{:?}",
+        difference.value_type()
+    );
 }
 
 #[trace("TC-1416", "FR-577-AC-2")]
 #[test]
 fn a_precondition_declared_after_the_postcondition_discharges_it_with_the_same_identities() {
-    let first = bank_unit();
-    let moved = unit(&[DEBITED, CAN_AFFORD, NON_NEGATIVE]);
-    let clause_nodes = |unit: &str| {
-        let compiled = compose(
-            source(),
-            "bank.native",
-            unit.as_bytes(),
-            &qsl_semantics::model::intake::package_input([PLAIN.document().as_slice()]).unwrap(),
-            &DependencyInput::default(),
-            SpineLimits::default(),
-        )
-        .unwrap_or_else(|refusal| panic!("compile refused: {refusal:?}\n{unit}"));
-        let mut nodes: Vec<_> = state_clause_nodes(compiled.package.graph())
-            .into_iter()
-            .map(|(node, kind)| (kind, node.key()))
+    let identities = |unit: String| {
+        let mut site = bank_site(PLAIN, &unit)
+            .unwrap_or_else(|refused| panic!("refused: {refused:?}\n{unit}"))
+            .site;
+        site.clauses
+            .sort_by(|left, right| left.name.cmp(&right.name));
+        let compiled = unit_for(unit, PLAIN.document()).compiled;
+        let requirements: BTreeSet<_> = compiled
+            .package
+            .graph()
+            .requirements()
+            .keys()
+            .cloned()
             .collect();
-        nodes.sort();
-        nodes
+        (site, requirements)
     };
-    assert_eq!(clause_nodes(&first), clause_nodes(&moved));
+    let first = identities(bank_unit());
+    let moved = identities(unit(&[DEBITED, CAN_AFFORD, NON_NEGATIVE]));
+    assert_eq!(first.0.clauses.len(), 2);
+    assert_eq!(first, moved);
 }
 
 #[trace("TC-1416", "FR-577-AC-3", "FR-577-AC-4", "FR-121-AC-37")]
@@ -388,6 +451,9 @@ fn without_the_precondition_the_difference_is_refused_with_operand_intervals_and
         panic!("expected a Compile refusal");
     };
     let region = region.expect("located");
+    // The region names the unit's own source.
+    assert_eq!(region.source().authority(), "agent-ix");
+    assert_eq!(region.source().identity(), "clause-run-fixture");
     let start = unit.find(DIFFERENCE).expect("in the unit");
     assert_eq!(
         (region.start() as usize, region.end() as usize),
@@ -454,6 +520,32 @@ fn the_smaller_bound_of_a_repeated_pair_across_clauses_is_kept() {
     let unit = unit(&[
         CAN_AFFORD,
         &clause("pre", "Strict", "Account", "amount < self.balance"),
+        &clause(
+            "post",
+            "Debited1",
+            "Account",
+            "self.balance = (pre(self.balance) - amount) - 1",
+        ),
+        NON_NEGATIVE,
+    ]);
+    checks(PLAIN, &unit);
+}
+
+#[trace("TC-1416", "FR-577-AC-9")]
+#[test]
+fn the_smaller_bound_is_kept_when_the_stricter_comes_first() {
+    checks(
+        PLAIN,
+        &with_debited1("amount < self.balance and amount <= self.balance"),
+    );
+}
+
+#[trace("TC-1416", "FR-577-AC-10")]
+#[test]
+fn the_smaller_bound_is_kept_across_clauses_when_the_stricter_clause_comes_first() {
+    let unit = unit(&[
+        &clause("pre", "Strict", "Account", "amount < self.balance"),
+        CAN_AFFORD,
         &clause(
             "post",
             "Debited1",
@@ -719,14 +811,14 @@ fn an_invariant_receives_no_precondition_fact() {
             "pre",
             "CanAfford",
             "Account",
-            "amount <= self.balance and self.limit <= self.balance",
+            "self.balance >= 50 and amount <= self.balance",
         ),
         DEBITED,
         NON_NEGATIVE,
         "invariant Room using v on Bank::Account at current \
-         { self.limit = self.balance - self.limit }\n",
+         { self.limit = self.balance - 50 }\n",
     ]);
-    refuses_at(PLAIN, &unit, "self.balance - self.limit");
+    refuses_at(PLAIN, &unit, "self.balance - 50");
 }
 
 #[trace("TC-1416", "FR-577-AC-30")]
@@ -776,10 +868,15 @@ fn bank_snapshot(label: &DocumentRef, observation: &str, balance: i64) -> Vec<u8
     .into_bytes()
 }
 
-#[trace("TC-1416", "FR-577-AC-32")]
-#[test]
-fn a_replay_outside_the_precondition_is_inconclusive_with_no_value() {
-    let unit = unit_for(bank_unit(), PLAIN.document());
+/// A `withdraw` invocation of `amount = 5` on `balance = 3`, whose post
+/// snapshot holds `balance = 0`: the documents a clause replay reads, and the
+/// same documents split into the snapshot and invocation provisions.
+fn bank_invocation() -> (
+    state_clause_replay::Documents,
+    qsl_semantics::model::observation::DocumentProvision,
+    qsl_semantics::model::observation::DocumentProvision,
+    DocumentRef,
+) {
     let (pre, pre_bytes) =
         document_ref_and_bytes("bank-pre", |label| bank_snapshot(label, "pre", 3));
     let (post, post_bytes) =
@@ -802,21 +899,70 @@ fn a_replay_outside_the_precondition_is_inconclusive_with_no_value() {
         .to_string()
         .into_bytes()
     });
+    let snapshots = BTreeMap::from([
+        (pre.clone(), pre_bytes.clone()),
+        (post.clone(), post_bytes.clone()),
+    ]);
+    let invocations = BTreeMap::from([(invocation.clone(), invocation_bytes.clone())]);
     let documents = state_clause_replay::Documents {
         observation: ClauseSelectionInput::Invocation {
             invocation: invocation.clone(),
         },
         read: vec![invocation.clone(), pre.clone(), post.clone()],
         bytes: vec![
-            (invocation, invocation_bytes),
+            (invocation.clone(), invocation_bytes),
             (pre, pre_bytes),
             (post, post_bytes),
         ],
     };
+    (documents, snapshots, invocations, invocation)
+}
+
+#[trace("TC-1416", "FR-577-AC-32")]
+#[test]
+fn a_replay_outside_the_precondition_refuses_integer_out_of_domain_and_is_inconclusive() {
+    // The evaluation refuses `IntegerOutOfDomain` at the difference.
+    let unit_text = bank_unit();
+    let (_, snapshots, invocations, invocation) = bank_invocation();
+    let packages =
+        qsl_semantics::model::intake::package_input([PLAIN.document().as_slice()]).unwrap();
+    let mut request = config_version_request_for(
+        unit_text.clone(),
+        packages,
+        "bank.native",
+        ClauseRunSelection::Clause(config_version_invocation_selection("Debited", invocation)),
+    );
+    request.snapshots.extend(snapshots);
+    request.invocations.extend(invocations);
+    let report = run_clause(request).expect("the run reports");
+    let ClauseDisposition::Evaluate(CallOutcome::Refused(CallRefusal::Record {
+        code, locus, ..
+    })) = &report.disposition
+    else {
+        panic!(
+            "expected a refused evaluation, got {:?}",
+            report.disposition
+        );
+    };
+    assert_eq!(code.code(), "integer_out_of_domain");
+    let locus = locus.as_ref().expect("the refusal is located");
+    let start = unit_text.find(DIFFERENCE).expect("in the unit");
+    assert_eq!(
+        (locus.span.start.byte, locus.span.end.byte),
+        (start, start + DIFFERENCE.len())
+    );
+
+    // The replay settles that refusal inconclusive, not a reproduced violation.
+    let unit = unit_for(unit_text, PLAIN.document());
+    let (documents, ..) = bank_invocation();
     let result = state_clause_replay::replay(state_clause_replay::case(unit, "Debited", documents))
         .expect("the replay settles");
     let arm = state_clause_replay::witness_arm(&result);
     assert_eq!(arm.settlement(), crate::WitnessSettlement::Inconclusive);
+    assert_eq!(
+        arm.category(),
+        quire_semantic_value::catalog::Category::Refusal
+    );
     assert!(
         matches!(
             arm.disagreement(),
@@ -974,4 +1120,56 @@ fn an_attempt_outside_the_precondition_records_one_finding_per_candidate_post_st
             .application()
             .is_some_and(|application| application.arguments() != [FIVE])
     }));
+}
+
+#[trace("TC-1416", "FR-577-AC-1")]
+#[test]
+fn parameter_facts_follow_the_result_slot_of_a_postcondition() {
+    let bank = Bank {
+        result: true,
+        ..PLAIN
+    };
+    let unit = unit(&[
+        CAN_AFFORD,
+        &clause(
+            "post",
+            "Debited",
+            "Account",
+            "result implies self.balance = pre(self.balance) - amount",
+        ),
+        NON_NEGATIVE,
+    ]);
+    checks(bank, &unit);
+    // Without the precondition the same postcondition is refused.
+    let unit = self::unit(&[
+        &clause(
+            "post",
+            "Debited",
+            "Account",
+            "result implies self.balance = pre(self.balance) - amount",
+        ),
+        NON_NEGATIVE,
+    ]);
+    refuses_at(bank, &unit, DIFFERENCE);
+}
+
+fn guarded_function(guard: &str, value: &str) -> String {
+    format!(
+        "{HEADER}function f using v(a: Int[0, 100], b: Int[0, 100], r: Int[0, 100]): Boolean pure \
+         {{ {guard} implies r = {value} }}\n"
+    )
+}
+
+#[trace("TC-1416", "FR-577-AC-31")]
+#[test]
+fn a_bound_refines_neither_a_sum_nor_a_difference_written_backwards() {
+    for (guard, value) in [
+        ("a <= b", "a + b"),
+        ("a <= b", "b + a"),
+        ("b <= a", "-b + a"),
+    ] {
+        let unit = guarded_function(guard, value);
+        let (_, text) = refusal(function_site(&unit, "f"), &unit);
+        assert_eq!(text, value, "{guard} implies r = {value}");
+    }
 }

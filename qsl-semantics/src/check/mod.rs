@@ -497,7 +497,7 @@ pub use refusal::{
     CheckingLimitKind, CheckingStage, DispatchFunctionRole, DispatchLinkCause,
     DispatchSubtypeFailure, ExcludedClauseForm, ExecutionPointRefusal, IdentityForm, IdentityNode,
     IdentityObserving, InvalidDispatchDeclaration, JoinFault, KeyFault, MeasureObligation,
-    MemberCandidate, NavigationBound, Obligation, ObservationReason, PredicateRole,
+    MemberCandidate, NavigationBound, Obligation, ObservationReason, OperandText, PredicateRole,
     ProtocolAnchorCause, ProtocolCheckRefusal, ProtocolConstruct, ProtocolReferenceCause,
     ProvedInterval, QualifiedCandidate, RefusedProtocolDependency, RelatedEnd, ShadowedDeclaration,
     SlotKind, StageLimitCause, StateGraphCause, TaskSetDefect, TaskTimeMember, TemporalCause,
@@ -1584,23 +1584,26 @@ impl CallableFunction<'_> {
     }
 }
 
-/// FR-577: whether the operation `key` redefines another operation or is
-/// redefined by one of the selected views' operations (QSpec FR-151). A
-/// postcondition of such an operation takes no precondition fact.
-fn in_redefinition_family(
+/// FR-577: the operations that redefine another operation or are redefined
+/// by one of the selected views' operations (QSpec FR-151). A postcondition
+/// of such an operation takes no precondition fact.
+fn redefinition_family_keys(
     views: &BTreeMap<String, crate::model::normalize::EffectiveView>,
-    key: &quire_checked::key::DeclarationKey,
-) -> bool {
-    views.values().any(|view| {
-        view.domain_package().records.iter().any(|record| {
-            matches!(
-                record,
-                crate::model::domain_package::DomainPackageRecord::OperationMember(operation)
-                    if (&operation.key == key && operation.redefines.is_some())
-                        || operation.redefines.as_ref() == Some(key)
-            )
-        })
-    })
+) -> BTreeSet<quire_checked::key::DeclarationKey> {
+    let mut family = BTreeSet::new();
+    for view in views.values() {
+        for record in &view.domain_package().records {
+            if let crate::model::domain_package::DomainPackageRecord::OperationMember(operation) =
+                record
+            {
+                if let Some(redefined) = &operation.redefines {
+                    family.insert(operation.key.clone());
+                    family.insert(redefined.clone());
+                }
+            }
+        }
+    }
+    family
 }
 
 /// A family `check`'s stage limit as a checking refusal's cause (L6): `CheckingLimitKind::try_from(Setting)` is the named reverse of
@@ -3202,28 +3205,30 @@ impl PackageDeclarations {
             }))
             .collect();
         let mut clause_refusals: Vec<(usize, std::ops::Range<usize>)> = Vec::new();
+        // The clause a stop (a reached limit, a cancel, a fault, an
+        // exhausted resource) ended the checking at.
+        let mut stopped_at: Option<usize> = None;
+        let redefinition_family = redefinition_family_keys(&self.selected_views);
+        let mut precondition_facts: BTreeMap<
+            (quire_exact::EffectiveId, quire_checked::key::DeclarationKey),
+            Vec<facts::CheckedFacts>,
+        > = BTreeMap::new();
         for index in clause_order {
             let clause = &state_clause_forms[index];
             let refusals_before = refusals.len();
             'clause: {
                 let location = clause_location(index, &clause.name);
-                let preconditions: Vec<facts::CheckedFacts> =
+                let no_facts = Vec::new();
+                let preconditions: &[facts::CheckedFacts] =
                     match (&clause.kind, &clause.operation_key) {
                         (qsl_forms::StateClauseKind::Postcondition, Some(key))
-                            if !in_redefinition_family(&self.selected_views, key) =>
+                            if !redefinition_family.contains(key) =>
                         {
-                            typed_clauses
-                                .iter()
-                                .filter(|(earlier, _)| {
-                                    let earlier = &state_clause_forms[*earlier];
-                                    earlier.kind == qsl_forms::StateClauseKind::Precondition
-                                        && earlier.context == clause.context
-                                        && earlier.operation_key.as_ref() == Some(key)
-                                })
-                                .map(|(_, typed)| typed.facts.clone())
-                                .collect()
+                            precondition_facts
+                                .get(&(clause.context.clone(), key.clone()))
+                                .unwrap_or(&no_facts)
                         }
-                        _ => Vec::new(),
+                        _ => &no_facts,
                     };
                 let declarations = state_clause::ClauseDeclarations {
                     unit: self.source_owners.get(&format!("state_clause:{index}")),
@@ -3236,7 +3241,7 @@ impl PackageDeclarations {
                     nodes_used,
                     cancel: Some(cancel),
                     staged: pending_types.as_ref(),
-                    preconditions: &preconditions,
+                    preconditions,
                 };
                 let mut contract_cx = crate::family::CheckContext::new(
                     &declarations,
@@ -3268,6 +3273,14 @@ impl PackageDeclarations {
                                 &probabilistic::PreconditionSite::Clause(clause.name.clone()),
                             ));
                         }
+                        if let (qsl_forms::StateClauseKind::Precondition, Some(key)) =
+                            (clause.kind, &clause.operation_key)
+                        {
+                            precondition_facts
+                                .entry((clause.context.clone(), key.clone()))
+                                .or_default()
+                                .push(checked.facts.clone());
+                        }
                         typed_clauses.push((index, checked));
                     }
                     Err(StageFailure::Limit(limit)) => {
@@ -3276,7 +3289,7 @@ impl PackageDeclarations {
                             cause: limit_cause(&limit),
                         });
                         if cancel.tripped().is_some() {
-                            return Err(refusals);
+                            stopped_at = Some(index);
                         }
                     }
                     Err(StageFailure::LimitWithPayload(limit, _)) => {
@@ -3285,34 +3298,37 @@ impl PackageDeclarations {
                             cause: limit_cause(&limit),
                         });
                         if cancel.tripped().is_some() {
-                            return Err(refusals);
+                            stopped_at = Some(index);
                         }
                     }
-                    Err(StageFailure::Cancelled(_)) => return Err(refusals),
+                    Err(StageFailure::Cancelled(_)) => stopped_at = Some(index),
                     Err(StageFailure::Fault(fault)) => {
                         refusals.push(CheckRefusal {
                             location: location.clone(),
                             cause: CheckCause::InternalFault(Box::new(KeyFault::StageFault(fault))),
                         });
-                        return Err(refusals);
+                        stopped_at = Some(index);
                     }
                     Err(StageFailure::Refused(refusal)) => {
                         let exhausted = matches!(refusal.cause, CheckCause::ResourceExhausted(_));
                         refusals.push(refusal);
                         if exhausted {
-                            return Err(refusals);
+                            stopped_at = Some(index);
                         }
                     }
                     Err(StageFailure::RefusedWithPayload(refusal, _)) => {
                         let exhausted = matches!(refusal.cause, CheckCause::ResourceExhausted(_));
                         refusals.push(*refusal);
                         if exhausted {
-                            return Err(refusals);
+                            stopped_at = Some(index);
                         }
                     }
                 }
             }
             clause_refusals.push((index, refusals_before..refusals.len()));
+            if stopped_at.is_some() {
+                break;
+            }
         }
         // Back to source order.
         typed_clauses.sort_by_key(|(index, _)| *index);
@@ -3320,10 +3336,17 @@ impl PackageDeclarations {
             typed_clauses.into_iter().map(|(_, typed)| typed).collect();
         clause_refusals.sort_by_key(|(index, _)| *index);
         let mut held: Vec<Option<CheckRefusal>> = refusals.drain(..).map(Some).collect();
-        for (_, range) in clause_refusals {
+        // A stop reports what checking in source order would have: the
+        // refusals of the clauses up to the one it stopped at.
+        for (index, range) in clause_refusals {
+            if stopped_at.is_some_and(|stopped| index > stopped) {
+                continue;
+            }
             refusals.extend(range.filter_map(|at| held.get_mut(at).and_then(Option::take)));
         }
-        refusals.extend(held.into_iter().flatten());
+        if stopped_at.is_some() {
+            return Err(refusals);
+        }
         // FR-103: each kept operation `requires`/`ensures`, checked as a
         // Boolean under the clause kind its position gives. A kept clause
         // adds no checked state clause, claim or requirement record: it

@@ -90,7 +90,7 @@ checks, and step 2's region assertion also
 - Step 9: both refuse at `pre(self.balance) - amount`.
 - Step 10: each refuses at `pre(self.balance) - amount`.
 - Step 11: AC-28 refuses at `self.balance - amount` in `Fits`; AC-29 refuses
-  at `self.balance - self.limit`; AC-30 refuses at
+  at `self.balance - 50`; AC-30 refuses at
   `pre(self.balance) - amount`.
 - Step 12: compiles.
 - Step 13: the evaluation refuses `IntegerOutOfDomain` at

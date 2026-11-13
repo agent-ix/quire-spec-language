@@ -96,7 +96,7 @@ use qsl_package as pkg;
 use qsl_package::{read_import_view, AdmittedPackages, Emission, Import, ImportViewRefusal};
 use qsl_semantics::check::{
     resolve_profiles, AdmittedImport, AssemblyCause, AssemblyError, CheckCause, CheckRefusal,
-    CorrespondenceConflict, KeyFault, Obligation, PackageDeclarations,
+    CorrespondenceConflict, KeyFault, Obligation, OperandText, PackageDeclarations,
 };
 use qsl_semantics::library::extension::{CoreVocabulary, HeldExtensions};
 use qsl_semantics::library::{ImportView, LibraryName};
@@ -727,7 +727,10 @@ fn name_operand(
 ) {
     let (
         Some(CheckRefusal {
-            cause: CheckCause::Unproved(Obligation::Range { operand, .. }),
+            cause:
+                CheckCause::Unproved(Obligation::Range {
+                    required, operand, ..
+                }),
             ..
         }),
         Some(region),
@@ -735,18 +738,25 @@ fn name_operand(
     else {
         return;
     };
+    // A range refusal that carries no interval (a rational or decimal sum)
+    // has no operand to name.
+    if required.lower.is_none() && required.upper.is_none() {
+        return;
+    }
     let (Ok(start), Ok(end)) = (
         usize::try_from(region.start()),
         usize::try_from(region.end()),
     ) else {
         return;
     };
-    *operand = sources
+    if let Some(text) = sources
         .iter()
         .map(ParsedUnitSource::source)
         .find(|source| source.render(region).is_some())
         .and_then(|source| source.slice(qsl_foundation::Span { start, end }))
-        .map(Box::from);
+    {
+        *operand = OperandText::new(text);
+    }
 }
 
 /// The source that owns an assembler error whose cause names its declaration.
