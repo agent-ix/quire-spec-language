@@ -290,7 +290,8 @@ pub fn replay_projection_counterexample(
             None => {}
         }
     }
-    match structure.merge(&ce.role, &ce.case_a, &ce.case_b, max_depth, &mut u64::MAX) {
+    let mut unlimited = u64::MAX;
+    match structure.merge(&ce.role, &ce.case_a, &ce.case_b, max_depth, &mut unlimited) {
         BranchMerge::Cut | BranchMerge::Exhausted => Err(WalkDisagreement::Cut),
         BranchMerge::Merged(_) => Err(WalkDisagreement::NotTheStatedDivergence),
         BranchMerge::Diverged(found) => {
