@@ -152,34 +152,44 @@ field-edge reachability is "Field-edge reachability" below.
 
 A field-edge `reaches(a, b, edge)` (FR-104) whose `edge` is a field of type
 `Reference<T>`, `Option<Reference<T>>` or `Sequence<Reference<T>>[l, u]`
-walks the objects of `T`, the field's owner and reference target type, so it
-walks the one population that covers `T` by conformance, by FR-104's and
-FR-365's rule for the covering population. `T` is the edge's type and not
-the operands' static type: under `quire.model.complete/v1` an operand of a
-proper subtype of `T` walks the population that covers `T`. Its requirements
-record adds that domain as FR-365 states for a relationship end (once, and
-none when it is the context population), and the domain is
-`Population(Some(N))` exactly when the package authors a bound `N` on that
-population.
+walks the objects of `T`, the field's owner and reference target type (QSpec
+FR-322 "Reaches over a field", step 2), not the member's `declaration` `D`,
+the operand 0 type of step 1. The checker SHALL take the population a
+field-edge `reaches` walks as the one population that covers `T` by
+conformance (FR-104's and FR-365's covering rule), whatever the operands'
+static types: under `quire.model.complete/v1` an operand of a proper subtype
+of `T` walks the population that covers `T`, and a population that covers
+the operand's type but not `T` is not walked. The checker SHALL add that
+population's domain to the clause's requirements record as FR-365 states for
+a relationship end (once, and none when it is the context population); the
+domain is `Population(Some(N))` exactly when the package authors a bound `N`
+on that population.
 
-When that population has an authored bound `N`, S4 SHALL emit the population
-node of `Population<T>[N]` as "The population node" states with `E` = `T`,
-and SHALL write `population: <id>` in the `field` member of the
+If two or more populations cover `T`, then the checker SHALL refuse
+`ambiguous_declaration`/`ambiguous-name` at the `reaches`, naming `T` and
+those populations in ascending `DeclarationKey` order. The refusal's family
+is that of FR-104's field-edge checks, not `StateModel`: unlike FR-365's
+refusal over a relationship end, the field form's refusal is unchanged.
+
+When the walked population has an authored bound `N`, S4 SHALL emit the
+population node of `Population<T>[N]` as "The population node" states with
+`E` = `T`, and SHALL write `population: <id>` in the `field` member of the
 `quire.op.model.reaches_field` application (FR-105), the id of that node,
 with that node among the application's `dependencies`. The member is then
-`{kind: "field", declaration, name, population}`; `declaration` and `name`
-are unchanged. The rule is the same for the three field forms. Only the
-authored `bound` supplies `N`: the field's optionality, the sequence's
+`{kind: "field", declaration, name, population}`; `declaration` (`D`) and
+`name` are unchanged, and the population node is over `T` even when `D` is a
+proper subtype of `T`. The rule is the same for the three field forms. Only
+the authored `bound` supplies `N`: the field's optionality, the sequence's
 `[l, u]` and a `Population<T>[N]` parameter type are not population bounds
 and supply no link.
 
 When the walked population has no authored bound, or no population covers
-`T`, the key is absent, not `null`, no population node is emitted for the
-reachability, and the application keeps the member and node identity it had
-before this rule. A walked population with no authored bound stays a
-`Population(None)` domain of the record, and with no covering population the
-record names no domain for the reachability; neither is a refusal. Two populations covering `T` refuse as FR-104 states for a field
-edge.
+`T`, S4 SHALL write no `population` key (absent, not `null`) and emit no
+population node for the reachability, and the application SHALL keep the
+member and node identity it had before this rule. A walked population with
+no authored bound stays a `Population(None)` domain of the record; with no
+covering population the record names no domain for the reachability; neither
+is a refusal.
 
 The node is content-addressed by `(T, N)`, so a field-edge reachability and a
 relationship-end reachability that walk one bounded population of `T` name
@@ -197,13 +207,20 @@ one per reachability.
 | FR-380-AC-5 | When the walked population covers `Rush`, a subtype of `Order`, and the reachability's near-end type is `Order`, the node is that of `Population<Order>[N]`. A `Population<Order>[3]` parameter type in the same package and a bound of `3` walked by a reachability are one node holding two `Type` occurrences, ordinals 0 and 1 in ascending source order, each with one `source_map` row. | Test (TC-1054) |
 | FR-380-AC-6 | A bound that no reachability walks, and a population with no bound, emit no population node, no `Type` occurrence for it and no link; the reachability of the second keeps the node identity it had before FR-380. | Test (TC-1054) |
 | FR-380-AC-7 | An observation whose selected population holds `N` objects evaluates a clause over it as for an unbounded population, and one holding `N + 1` refuses `cardinality_out_of_bound`/`above-maximum` naming `N` and `N + 1` (`bound` `[0, N]`, `collection` `set`, `count` `N + 1`), as a resource limit never does. | Test (TC-1054) |
-| FR-380-AC-8 | When the package bounds `orders` at `3` and a clause holds `reaches(self, self, chief)` over the field `chief: Reference<Order>`, the emitter lowers it to a `quire.op.model.reaches_field` application whose `field` member holds `population`, the id of the `Population<Order>[3]` `bounded_domain`/`model_population` node, and whose `dependencies` hold that node. | Test (TC-1054) |
-| FR-380-AC-9 | When the package bounds `orders` at `3` and a clause holds `reaches(self, self, trail)` over the field `trail: Option<Reference<Order>>`, the emitter lowers it to a `quire.op.model.reaches_field` application whose `field` member holds `population`, the id of the `Population<Order>[3]` node, and whose `dependencies` hold that node. | Test (TC-1054) |
-| FR-380-AC-10 | When the package bounds `orders` at `3` and a clause holds `reaches(self, self, chain)` over a field `chain: Sequence<Reference<Order>>[0, 3]`, and again over `pair: Sequence<Reference<Order>>[2, 3]`, the emitter lowers each to a `quire.op.model.reaches_field` application whose `field` member holds `population`, the id of the `Population<Order>[3]` node, not a node derived from the sequence's `[l, u]`. | Test (TC-1054) |
-| FR-380-AC-11 | When IR's strict v2 reader reads a package emitted under FR-380-AC-8, FR-380-AC-9 or FR-380-AC-10, the reader admits it and selects the `Population<Order>[3]` node and its least-ordinal `Type` occurrence as the population of the `reaches_field` application. | Test (TC-1054) |
-| FR-380-AC-12 | When no `bound` names the population covering the edge's type, the emitter lowers a field-edge reachability with a `field` member holding exactly `kind`, `declaration` and `name`, no `population` key and no `model_population` node; over fixture R the `trail` application keeps the node id TC-1047 row 3 records. | Test (TC-1054) |
-| FR-380-AC-13 | When a clause on `Rush` under `quire.model.complete/v1` holds `reaches(self, self, trail)` over the inherited `trail` and `orders` is bounded at `3`, the emitter links the application to the `Population<Order>[3]` node, the edge type's, not a `Population<Rush>[3]` node. | Test (TC-1054) |
-| FR-380-AC-14 | When one package holds `reaches(self, self, trail)` and `reaches(self, self, next)` over `Order/next` with `orders` bounded at `3`, the emitter writes the same `population` id in both applications and emits one population node holding one `Type` occurrence for the bound. | Test (TC-1054) |
+| FR-380-AC-8 | When the package bounds `orders` at `4` and a clause on `Order` holds `reaches(self, self, chief)` over the field `chief: Reference<Order>`, the emitter lowers it to a `quire.op.model.reaches_field` application whose `field` member holds `population`, the id of the `Population<Order>[4]` `bounded_domain`/`model_population` node, and whose `dependencies` hold that node. | Test (TC-1054) |
+| FR-380-AC-9 | When the package bounds `orders` at `4` and a clause on `Order` holds `reaches(self, self, trail)` over the field `trail: Option<Reference<Order>>`, the emitter lowers it to a `quire.op.model.reaches_field` application whose `field` member holds `population`, the id of the `Population<Order>[4]` node, and whose `dependencies` hold that node. | Test (TC-1054) |
+| FR-380-AC-10 | When the package bounds `orders` at `4` and a clause on `Order` holds `reaches(self, self, chain)` over the field `chain: Sequence<Reference<Order>>[0, 3]`, the emitter lowers it to a `quire.op.model.reaches_field` application whose `field` member holds `population`, the id of the `Population<Order>[4]` node, and whose `dependencies` hold that node. | Test (TC-1054) |
+| FR-380-AC-11 | When the package bounds `orders` at `4` and a clause on `Order` holds `reaches(self, self, pair)` over the field `pair: Sequence<Reference<Order>>[2, 3]`, the emitter lowers it to a `quire.op.model.reaches_field` application whose `field` member holds `population`, the id of the `Population<Order>[4]` node, and whose `dependencies` hold that node; the package holds no `model_population` node of maximum `2` or `3`. | Test (TC-1054) |
+| FR-380-AC-12 | When IR's strict v2 reader reads a package emitted under FR-380-AC-8, FR-380-AC-9, FR-380-AC-10, FR-380-AC-11 or FR-380-AC-15, the reader admits it and selects the `Population<Order>[4]` node and its least-ordinal `Type` occurrence as the population of the `reaches_field` application, including in the FR-380-AC-15 package, whose member `declaration` is the `Rush` node. | Test (TC-1054) |
+| FR-380-AC-13 | When no `bound` names the population covering the edge's type, the emitter lowers a field-edge reachability with a `field` member holding exactly `kind`, `declaration` and `name`, no `population` key and no `model_population` node; over fixture R the `trail` application keeps the node id TC-1047 row 3 records. | Test (TC-1054) |
+| FR-380-AC-14 | When populations `orders` and `staff` both have member type `Order` and the clause `FavLoop` of FR-380-AC-18 holds `reaches(self.favourite, self.favourite, trail)`, the checker refuses `ambiguous_declaration`/`ambiguous-name` at the `reaches`, outside the `StateModel` family, naming `orders` and `staff` in ascending `DeclarationKey` order. | Test (TC-1054) |
+| FR-380-AC-15 | When a clause on `Rush` under `quire.model.complete/v1` holds `reaches(self, self, trail)` over the inherited `trail` and `orders` is bounded at `4`, the emitter links the application, whose member `declaration` is the `Rush` node, to the `Population<Order>[4]` node, the edge type's, not a `Population<Rush>[4]` node. | Test (TC-1054) |
+| FR-380-AC-16 | When the package declares only the populations `rushes` (member type `Rush`, bounded at `4`) and `people`, and a clause on `Rush` under `quire.model.complete/v1` holds `reaches(self, self, trail)` over `trail: Option<Reference<Order>>`, the emitter lowers the application with no `population` key and emits no `Population<Rush>[4]` or `Population<Order>[4]` node: no population covers `Order`, and `rushes`, which covers the operand's type, is not walked. | Test (TC-1054) |
+| FR-380-AC-17 | When the package declares only the populations `rushes` (member type `Rush`, bounded at `4` or unbounded) and `people`, and a clause on `Rush` under `quire.model.complete/v1` holds `reaches(self, self, trail)`, the checker admits the clause with no refusal and gives it a record whose only population domain is the context domain `rushes`. | Test (TC-1054) |
+| FR-380-AC-18 | When the package bounds `orders` at `4` and `invariant FavLoop using V on M::Person at current { not reaches(self.favourite, self.favourite, trail) }` reads `favourite: Reference<Order>`, the checker gives the clause a record holding the unbounded context domain `people` and the walked domain `orders` as `Population(Some(4))`. | Test (TC-1054) |
+| FR-380-AC-19 | When the clause of FR-380-AC-18 is evaluated over an observation whose `orders` population holds 5 objects, the evaluator refuses `cardinality_out_of_bound`/`above-maximum` naming `4` and `5` (`bound` `[0, 4]`, `collection` `set`, `count` `5`), and over one holding 4 it decides the clause as for an unbounded population. | Test (TC-1054) |
+| FR-380-AC-20 | When one package holds `reaches(self, self, trail)` and `reaches(self, self, next)` over `Order/next` with `orders` bounded at `4`, the emitter writes the same `population` id in both applications and emits one population node holding one `Type` occurrence for the bound. | Test (TC-1054) |
+| FR-380-AC-21 | When the package declares the populations `orders` (member type `Order`), `rushes` (member type `Rush`) and `people`, and `invariant RushFav using V on M::Person at current { not reaches(self.favRush, self.favRush, trail) }` under `quire.model.complete/v1` reads `favRush: Reference<Rush>`, the checker admits the clause with a record holding the domains `people` and `orders` and no `rushes` domain, with no `ambiguous-name` refusal. | Test (TC-1054) |
 
 ## Dependencies
 
@@ -224,7 +241,10 @@ one per reachability.
   above-maximum refusal; [FR-097](FR-097-classify-claim-extent-and-write-bounded-requests.md)
   owns the extent classification.
 - QSpec FR-153 (the population declaration), FR-322 (the `population` member
-  key of a `quire.op.model.reaches` application; its admission on a `field`
-  member of `quire.op.model.reaches_field` is the QSpec FR-322 amendment
-  FR-380-AC-11 reads through).
+  key of a `quire.op.model.reaches` application). PENDING: QSpec FR-322 today
+  admits `population` on a `relationship_end` member only; admitting it on
+  the `field` member of `quire.op.model.reaches_field`, checked against the
+  field owner `T` and not the member's `declaration`, is the open amendment
+  STD-663, and the IR reader change is IR-1533. FR-380-AC-12 reads through
+  both.
 - Linear QSL-819, QSL-1904.
