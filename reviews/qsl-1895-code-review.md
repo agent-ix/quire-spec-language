@@ -58,3 +58,11 @@ Checked and clean: ascending UTF-8 label order (FR-466 sorts `cases`/`branches` 
 | FND-007 | accepted-no-change | The lead kept the shared `classify`/`merge` in the replay arm and stated the limit in FR-573: the arm catches edited or stale counterexamples, not errors in the shared rules, which TC-1410 tests. That is acceptable for an Uncertified V1. FND-010 shows the cost: the arm confirms a false refutation. |
 | FND-008 | fixed | 66bed12d8: a missing path is `ProjectionRefusal::Inconsistent("a divergent action does not follow its choice")`, not an empty path. |
 | FND-009 | deferred | Moved to slice 5: FR-574 Outputs says "Remaining work: QSL-1897" for the `native-run-result/2` carriage. This is acceptable for an unserved kind. ADR-031 SW-7's "extends ... with its producer" should name QSL-1897 when that slice lands. |
+| FND-010 | fixed | bcb6cc197: `merge` splits each case into one run per selection of nested alternatives (`case_variants`, capped at 256) and requires every run pair to merge. Reviewer probes at the new head: the FND-010 probe is `Proved`; a nested choice in both branches with one unpartnered run is `Refuted` (the counterexample is the shorter inner one, and the replay agrees); both branches fully partnered is `Proved`; an alternative that differs in direction is `Refuted`; the original two high probes are still `Refuted`. `nested_alternatives_each_merge_with_the_other_branch` covers it. |
+| FND-011 | fixed | bcb6cc197: the four `reviews/qsl-1895-*.comment.md` files are deleted; `reviews/` holds only the four QSL-1895 SR files, and each passes `quire validate`. |
+
+## New findings (disposition pass 2)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-012 | low | A case that splits into more than 256 runs returns `BranchMerge::Cut`, which settles as `Inconclusive(InconclusiveCause::Horizon)`. Probe: `ship` with nine nested binary choices (512 runs) and `max_depth` 1000 returns `Inconclusive("Horizon")`, although no event is near the horizon. Give the cap its own cause (or state in FR-570 that it is reported as the horizon). Up to 256 x 256 `merge_runs` calls per case pair also run with no run limit charged. | qsl-replay/src/protocol_analysis/structure.rs:482-540,743-749 |

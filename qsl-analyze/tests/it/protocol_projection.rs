@@ -960,3 +960,39 @@ fn local_graphs_with_a_choice_equal_the_global_structure() {
         .iter()
         .any(|event| event.kind == LocalEventKind::ExternalChoice));
 }
+
+/// PA-14: comparing the runs of nested alternatives is charged to
+/// `max_transitions`; a run it stops settles `failed`, naming the limit.
+#[trace("TC-1410", "FR-570-AC-7")]
+#[test]
+fn comparing_nested_runs_is_charged_to_the_transition_limit() {
+    let inner = format!(
+        "choice Inner by Seller visible (got.ok) {{\n\
+           case a when {{ got.ok }} sequence InnerA {{ {PICK} }}\n\
+           case b when {{ not got.ok }} sequence InnerB {{ {PICK2} }}\n}}"
+    );
+    let package = worked(&inner, PICK3, "");
+    let built = GlobalStructure::from_package(&package, &clause(&package), RunBudget::default())
+        .unwrap()
+        .transition_count();
+    let mut tight = request(&package, "Warehouse");
+    tight.budget = RunBudget {
+        max_states: 4096,
+        max_transitions: built,
+    };
+    match project(&package, tight).unwrap().outcome {
+        AnalysisOutcome::Failed(limit) => {
+            assert_eq!((limit.limit, limit.value), ("max_transitions", built));
+        }
+        other => panic!("expected a run-limit failure: {other:?}"),
+    }
+    let mut enough = request(&package, "Warehouse");
+    enough.budget = RunBudget {
+        max_states: 4096,
+        max_transitions: built + 2,
+    };
+    assert!(matches!(
+        project(&package, enough).unwrap().outcome,
+        AnalysisOutcome::Proved(_)
+    ));
+}

@@ -405,6 +405,12 @@ impl GlobalStructure {
         self.depth.iter().any(|depth| *depth > max_depth)
     }
 
+    /// The number of covering edges (transitions) of the structure.
+    #[must_use]
+    pub fn transition_count(&self) -> u64 {
+        self.covers.iter().map(|row| row.len() as u64).sum()
+    }
+
     /// The covering edges of the structure, ascending.
     #[must_use]
     pub fn covering_edges(&self) -> Vec<(&PortRef, &PortRef)> {
@@ -641,6 +647,8 @@ pub enum BranchMerge {
     Diverged(Vec<Divergence>),
     /// A branch holds events beyond the horizon, so the pairing is not known.
     Cut,
+    /// The runs to compare exceed the caller's budget of run merges.
+    Exhausted,
 }
 
 impl GlobalStructure {
@@ -739,6 +747,7 @@ impl GlobalStructure {
         first: &CheckedNodeId,
         second: &CheckedNodeId,
         max_depth: u64,
+        calls: &mut u64,
     ) -> BranchMerge {
         let (Some(lefts), Some(rights)) = (
             self.case_variants(role, first, max_depth),
@@ -751,9 +760,14 @@ impl GlobalStructure {
         let mut cut = false;
         for left in &lefts {
             for right in &rights {
+                if *calls == 0 {
+                    return BranchMerge::Exhausted;
+                }
+                *calls -= 1;
                 match self.merge_runs(left.clone(), right.clone()) {
                     BranchMerge::Merged(pairs) => merged.extend(pairs),
                     BranchMerge::Cut => cut = true,
+                    BranchMerge::Exhausted => return BranchMerge::Exhausted,
                     BranchMerge::Diverged(found) => {
                         for divergence in found {
                             if !diverged.contains(&divergence) {

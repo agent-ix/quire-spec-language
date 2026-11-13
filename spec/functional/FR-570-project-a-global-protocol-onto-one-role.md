@@ -110,7 +110,13 @@ edges.
   branch to merge with every run of the other: each nested alternative is
   compared against the other branch on its own, never as an action concurrent
   with its sibling alternatives. A branch that splits into more than 256 runs
-  is `inconclusive`.
+  is reported as a horizon cut: `inconclusive` with the horizon cause, because
+  the comparison stops short of the whole branch. Nested runs merge by plain
+  V1 merging (equal direction, peer and message type); the engine does not
+  distinguish nested runs by the types of their first receives as it does at a
+  top-level choice, so a protocol that relies on that is refused with a
+  counterexample. Each comparison of two runs counts as a transition against
+  `max_transitions`, beyond the covering edges of the structure.
 - A merged choice's paired events are recorded in the local graph as
   alternatives (one behaviour of the role in two branches), not as concurrent
   events.

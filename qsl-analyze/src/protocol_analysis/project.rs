@@ -126,6 +126,12 @@ pub fn project(
     let role = &request.role;
 
     let mut cut = structure.is_cut(max_depth);
+    // Each comparison of two runs is a transition against the run limit,
+    // beyond the covering edges the structure already holds.
+    let mut merge_calls = request
+        .budget
+        .max_transitions
+        .saturating_sub(structure.transition_count());
     let mut evidence = Vec::new();
     let mut best: Option<Candidate> = None;
     for event in structure.events() {
@@ -145,9 +151,24 @@ pub fn project(
         if basis == ChoiceBasis::MustMerge {
             for (first, (_, case_first)) in cases.iter().enumerate() {
                 for (_, case_second) in &cases[first + 1..] {
-                    match structure.merge(role, case_first, case_second, max_depth) {
+                    match structure.merge(
+                        role,
+                        case_first,
+                        case_second,
+                        max_depth,
+                        &mut merge_calls,
+                    ) {
                         BranchMerge::Merged(pairs) => merged.extend(pairs),
                         BranchMerge::Cut => cut = true,
+                        BranchMerge::Exhausted => {
+                            return Ok(result(
+                                key,
+                                AnalysisOutcome::Failed(RunLimit {
+                                    limit: "max_transitions",
+                                    value: request.budget.max_transitions,
+                                }),
+                            ));
+                        }
                         BranchMerge::Diverged(divergences) => {
                             for divergence in divergences {
                                 let side = |action: Option<Action>, case: &CheckedNodeId| {
