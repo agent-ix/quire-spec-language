@@ -66,7 +66,8 @@ plays explored, the horizon and whether exploration closed (PA-19).
   build no transition system of its own and conclude from no sampled or
   replayed execution (PA-16, PA-22).
 - A role's observation shall be the records it sent and received, each
-  with its control, and the protocol captures; its own choice outcomes and
+  with its control, and the protocol captures of its instance, as bound
+  when the instance starts; its own choice outcomes and
   those visible to it are functions of these. Two histories of one
   role are indistinguishable exactly when their observation sequences are
   equal, computed by the single function `observation(role, history)`
@@ -85,7 +86,8 @@ plays explored, the horizon and whether exploration closed (PA-19).
   receive commits to the peer only, and the message that arrives, with its
   record, enters the observation. An observation records each record the
   role sent or received with its control, so a choice outcome is visible to
-  a role exactly through the records it exchanged.
+  a role exactly through the records it exchanged and the protocol
+  captures.
 - V1 defines no string a role-knowledge or environment premise may hold:
   a non-empty set of either shall be refused `invalid_runtime_input`/
   `invalid-value` until the strings these groups hold are specified;

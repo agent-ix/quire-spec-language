@@ -42,3 +42,24 @@ Read in full: `realize.rs` (949 lines), `strategy.rs`, the `mod.rs` and `protoco
 ## Verdict
 
 Not mergeable as is. FND-001 and FND-002 can return `refuted` where PA-18 requires `inconclusive`, or where the role can tell the histories apart. Fix those, plus FND-003 and FND-004; the low findings are cleanups. The `proved` direction looks sound: a `Win` root makes every play win, and the walk re-checks the table. Error types use `thiserror`, there is no `unwrap` on input-reachable paths, and the work is bounded by `max_states`/`max_transitions` on both explore and walk.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-009 | high | Regression from the FND-001 fix: a false `proved`. `observations` reads the captures from the current state through `ProtocolSystem::capture_bytes`, which encodes only live instances. The `Finish` step removes the instance (`qsl-eval/src/simulation/protocol/steps.rs:1864`), so at every terminal state the Captures item becomes the bytes of `[]`, unlike the live captures at every earlier node. Every role therefore "observes" that the protocol ended. Take ADR-036's hidden-choice example (`worked(PICK, "")`) and declare any capture: Warehouse's class at the cancel terminal is `[Captures([])]` (End), and at the ship receive it is `[Captures(live)]` (Receive). The classes differ, no forced pair exists, the walk passes and the result is `proved`, where FR-571-AC-2 requires `IndistinguishableHistories`. Fix: bind the Captures item once per play, from the instance's captures when it starts (the initial state under `on origin`), and carry it through `steps`; never recompute it from a later state. Add the hidden choice plus a capture as a test that must stay refuted. | qsl-analyze/src/protocol_analysis/realize.rs:396-414; qsl-eval/src/simulation/protocol.rs:1298-1337 |
+| FND-010 | low | `finding_value` now ignores `WeakAccessShape`. That finding comes with an empty successor list (`steps.rs:181-188`), so the terminal class then decides the node, and a `Deadlocked` class would make it a loss blamed on `finish`. This is unreachable under `Sc`, but `Value::Cut(Open::Undecided)` would be the sound value for a shape that stops expansion. | qsl-analyze/src/protocol_analysis/realize.rs:334-336 |
+| FND-011 | low | The payload is now RFC 8785, but it still round-trips the canonical bytes through `serde_json::Value` (`binder_record_json` parses them back). Without `arbitrary_precision`, an integer outside the i64/u64 range becomes f64 and re-encodes differently from the FR-181 bytes. Read the bytes from `qsl-eval` directly, as `capture_bytes` does. | qsl-analyze/src/protocol_analysis/realize.rs:367-373 |
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | ff413be91/44e8e3d35: `observations` puts `Observed::Captures` from `ProtocolSystem::capture_bytes` first in every role's class, and `a_capture_tells_initial_states_apart_for_every_role` decides a capture-read choice over two initial states as `proved`. The fix regresses at terminal states (FND-009). |
+| FND-002 | fixed | `Point` gains `not_lost` (winning plus cut-open actions), and `forced_pair` requires non-empty winning sets with disjoint `not_lost` sets. The unit test `a_disjointness_resting_on_a_cut_action_is_not_forced` covers the parallel cut case. Sound both ways: `not_lost` contains `winning`, so a forced pair still has disjoint winning sets. |
+| FND-003 | fixed | The match is now exhaustive: `InvariantViolated` gives Lose, the three undetermined findings give `Cut(Undecided)`, and the three weak-access records give nothing. `walk` fails on any `finding_value`. See FND-010 for the residue. |
+| FND-004 | fixed | `admit` refuses a non-empty role_knowledge or environment set with `RealizabilityRefusal::PremiseFact(member)` (`invalid_runtime_input`/`invalid-value`), after the key and profile checks and before the None check. `a_premise_that_holds_a_fact_is_refused` tests it. |
+| FND-005 | fixed | `Profile::from_wire` (`#[ix_trace_rs::string_edge]`) replaces `PROFILE` in both realize and project, and `Names::node`/`Names::channel` carry `#[ix_trace_rs::string_edge]`. |
+| FND-006 | fixed | The payload is encoded with `quire_canonical::to_vec`, and a failure is the new `RealizabilityRefusal::Unencodable(path)`. See FND-011 for the residue. |
+| FND-007 | fixed | `Value::Cut(Open)` carries Horizon or Undecided; `InconclusiveCause::Undecided` is added; terminal Undefined/Undecided and undetermined findings give Undecided, and NotTerminal-without-successors gives Horizon. The root's first open cause in move order settles. |
+| FND-008 | fixed | `explore` and `walk` carry each role's own steps and extend them by the one step taken (`Game::extended`); `observations` only prepends the captures. |

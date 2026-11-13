@@ -38,3 +38,18 @@ Matrix binders were read from `quoin matrix --json` at the PR head. The table be
 ## Verdict
 
 FR-571-AC-1 to AC-5, FR-572-AC-5, FR-574-AC-3/4 (realizability halves) and FR-575-AC-2 are backed. FR-571-AC-6 is a spec defect, not a missing test, and the spec-review amendment closes it. The replay-arm deferral needs QSL-1897 updated before merge. After that, together with the code-review blockers, the PR is mergeable.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | medium | `a_capture_tells_initial_states_apart_for_every_role` cannot fail for the reason it states. The `End` entry it finds under a lone `Captures` class comes from the terminal class `[Captures([])]` (the instance has been removed), not from the `big = false` initial state, where Warehouse never acts. The test passes unchanged under SR-2026111321481801 FND-009, a false `proved`. It needs a counterpart that must stay `refuted`: the hidden choice with a declared capture its guard does not read. | qsl-analyze/tests/it/protocol_realizability.rs:275-311 |
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | FR-571-AC-6 now states the profile fact and is testable, and `an_admitted_loss_is_an_environment_defeat` tags it and asserts one `defeats_per_branch` entry. TC-1411 step 6 is rewritten to match. |
+| FND-002 | deferred | QSL-1897 now names the realizability counterexample replay arm (ADR-036 PA-20, ADR-018 SM-7) in scope. The kind stays unserved until slice 5, so no refutation settles without it. |
+| FND-003 | fixed | `an_unstated_premise_or_the_horizon_is_inconclusive` adds a `max_states: 1` run that settles `Failed(RunLimit { limit: "max_states", value: 1 })`. `replay_strategy` now returns the gate's outcome, and the edited table settles `Inconclusive(StrategyReplayFailed)`. |
+| FND-004 | fixed | A two-initial-state capture fixture and a `forced_pair` unit test for the cut case are added. The capture test is defective (FND-005). |

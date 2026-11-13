@@ -47,3 +47,18 @@ The open-range bullet is correct: a refutation among explored counts is a real a
 - FR-571-AC-2: replace "with a defeating play per owner branch of the first lost owner node" with "with a defeating play per owner branch of the first lost owner node, one play in `bounded-static`".
 
 With these amendments the spec matches the code, and the PR is mergeable on the spec side.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | low | FR-571's action bullet still ends "so a choice outcome is visible to a role exactly through the records it exchanged", which contradicts the amended observation bullet (captures fix a branch too). Replace with "so a choice outcome is visible to a role exactly through the records it exchanged and the protocol captures". To match SR-2026111321481801 FND-009, the observation bullet should also say "the protocol captures of its instance, as bound when the instance starts". | spec/functional/FR-571-decide-whether-local-strategies-realize-a-global-protocol.md:86-88, 68-70 |
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | FR-571-AC-6 carries the review wording verbatim, and TC-1411 step 6 and its expected result are replaced. |
+| FND-002 | fixed | ADR-036 PA-16 to PA-19, the slice 4 row, FR-571 Outputs, the observation, evaluation and PA-18 bullets, and AC-2 are amended. PA-16 says "Slice 4 adds to `qsl-eval` only a read of a state's protocol capture values" instead of the review's "adds nothing". That is correct, because the FND-001 code fix needed `ProtocolSystem::capture_bytes`. |
+| FND-003 | fixed | The bullet now reads "the protocol captures and constants (FR-218) ... fixed by earlier environment moves or the initial state, through the captures". |
+| FND-004 | fixed | The premise bullet now reads "a non-empty set of either shall be refused `invalid_runtime_input`/`invalid-value` until the strings these groups hold are specified; declared-empty decides and absent is `inconclusive` (PA-8)", matching `PremiseFact`. |
