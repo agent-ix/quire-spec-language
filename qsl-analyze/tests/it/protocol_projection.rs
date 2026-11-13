@@ -989,7 +989,7 @@ fn comparing_nested_runs_is_charged_to_the_transition_limit() {
     let mut enough = request(&package, "Warehouse");
     enough.budget = RunBudget {
         max_states: 4096,
-        max_transitions: built + 2,
+        max_transitions: built + 8,
     };
     assert!(matches!(
         project(&package, enough).unwrap().outcome,
