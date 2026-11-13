@@ -556,7 +556,7 @@ fn constructs_outside_the_profile_answer_unsupported_with_no_graph() {
             "quorum",
         ),
         (
-            "role Buyer on M::Cell;\nrole Pool each M::Cell from cells max 2 lifetime workflow;",
+            "role Buyer on M::Cell;\nrole Warehouse on M::Cell;\nrole Pool each M::Cell from cells max 2 lifetime workflow;",
             "sequence Main { }",
             "Pool",
             UnsupportedSlug::DynamicRolePopulation,

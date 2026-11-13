@@ -87,9 +87,6 @@ impl<'p> Reader<'p> {
                     .filter(|(_, binder)| reads.contains(binder))
                     .map(|(receive, _)| receive.clone())
                     .collect();
-                for (_, body) in &cases {
-                    self.input.case_bodies.insert((*body).clone(), id.clone());
-                }
                 self.input.events.push(GlobalEvent {
                     at: enter.clone(),
                     out: enter,
