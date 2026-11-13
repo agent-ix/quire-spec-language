@@ -63,7 +63,7 @@ fn flow(run: &str) -> Box<CheckedPackageV2> {
     admitted_source(&source(MEMBERS, run))
 }
 
-fn clause(package: &CheckedPackageV2) -> CheckedNodeId {
+pub(crate) fn clause(package: &CheckedPackageV2) -> CheckedNodeId {
     package
         .resolved_graph()
         .nodes
@@ -74,7 +74,7 @@ fn clause(package: &CheckedPackageV2) -> CheckedNodeId {
         .clone()
 }
 
-fn named(package: &CheckedPackageV2, last: &str) -> CheckedNodeId {
+pub(crate) fn named(package: &CheckedPackageV2, last: &str) -> CheckedNodeId {
     package
         .resolved_graph()
         .nodes
@@ -89,7 +89,7 @@ fn named(package: &CheckedPackageV2, last: &str) -> CheckedNodeId {
         .clone()
 }
 
-fn root() -> AssessedRootDraft {
+pub(crate) fn root() -> AssessedRootDraft {
     AssessedRootDraft {
         observation: Some(ObservationIdentity {
             authority: "test".to_owned(),

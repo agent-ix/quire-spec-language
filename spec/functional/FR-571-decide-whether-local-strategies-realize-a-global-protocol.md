@@ -67,10 +67,29 @@ plays explored, the horizon and whether exploration closed (PA-19).
   role are indistinguishable exactly when their observation sequences are
   equal, computed by the single function `observation(role, history)`
   (PA-16, PA-19).
+- A `send` whose binder a case guard of a `choice` its sender owns reads
+  shall be that owner's branch selection, one branch per sent record. Every
+  other step shall be an environment move: the order in which threads step,
+  a record any other send carries, and each delivery alternative.
+- A role's action at a point where it can step shall be a `send` at its
+  control (with the sent record for an owner's branch selection) or a
+  receive from a peer, and at a terminal state the end of its part; a
+  receive commits to the peer only, and the message that arrives, with its
+  record, enters the observation. An observation records each record the
+  role sent or received with its control, so a choice outcome is visible to
+  a role exactly through the records it exchanged.
+- The declared shared facts are common to every history of every role and
+  so never split a class. The `bounded-static` profile admits no domain
+  `event`, so the admitted external events add no move beyond the channel
+  outcomes the delivery premises admit. Both premises must still be stated
+  (PA-8).
 - Each send shall have one alternative per delivery count in its channel's
   policy range (`0` loss, greater than `1` duplication); an open range shall
   be cut at the channel's literal capacity and `max_depth`, and a result that
-  depended on a cut count shall be non-conclusive (PA-7).
+  depended on a cut count shall be non-conclusive (PA-7). A strategy that
+  passes the walk under an open range depends on the cut, since a count
+  above it could defeat it, and shall be non-conclusive; a refutation found
+  among the explored counts stands.
 - Environment nodes shall win only if every environment move wins, and owner
   nodes if some branch wins. Per role and observation class the class shall
   commit to an action in the intersection of the winning actions at its

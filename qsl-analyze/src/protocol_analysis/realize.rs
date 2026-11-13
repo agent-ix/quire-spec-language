@@ -15,7 +15,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_eval::model_subject::ProtocolSubject;
-use qsl_eval::simulation::expansion::ExpansionStop;
+use qsl_eval::simulation::ExpansionStop;
 use qsl_eval::simulation::model::{ModelFinding, ModelSystem, TerminalClass};
 use qsl_eval::simulation::protocol::{
     ProtocolRefusal, ProtocolState, ProtocolSystem, ProtocolTransition, Sc, StepKind,
@@ -190,8 +190,10 @@ struct Node {
 
 /// The names the arena's steps resolve to in the linked package.
 struct Names {
-    /// Each control and channel by its `qsl-eval` declaration path.
-    nodes: BTreeMap<String, CheckedNodeId>,
+    /// Each control by its declared name; `None` for a shared name.
+    controls: BTreeMap<String, Option<CheckedNodeId>>,
+    /// Each channel by its declared name; `None` for a shared name.
+    channels: BTreeMap<String, Option<CheckedNodeId>>,
     /// Each channel's (sender, receiver) roles, by channel node.
     ends: BTreeMap<CheckedNodeId, (usize, usize)>,
     /// Each choice's owning role, by choice node.
@@ -212,25 +214,29 @@ impl Names {
     ) -> Result<Self, RealizabilityRefusal> {
         let view = protocol_view(package, protocol)?;
         let graph = package.resolved_graph();
-        let path_of = |id: &CheckedNodeId| {
+        // `qsl-eval` names a control by its path through the `run` tree with
+        // case labels (`Main/Decide/yes/Ship/PickIt`) and a channel by its
+        // qualified name (`Flow::Pick`); the package declares each under the
+        // clause by its own name, unique among the clause's controls and
+        // among its channels. A name two nodes share resolves to neither.
+        let name_of = |id: &CheckedNodeId| {
             graph
                 .nodes
                 .iter()
                 .find(|node| &node.node_id == id)
                 .and_then(|node| node.declaration.as_ref())
-                .map(|declaration| {
-                    declaration
-                        .qualified_name
-                        .iter()
-                        .map(|segment| segment.to_string())
-                        .collect::<Vec<_>>()
-                })
+                .and_then(|declaration| declaration.qualified_name.last())
+                .map(|segment| segment.to_string())
         };
-        let prefix = path_of(view.clause()).unwrap_or_default().len();
-        let mut nodes = BTreeMap::new();
-        for id in view.controls().iter().chain(view.channels()) {
-            if let Some(path) = path_of(id) {
-                nodes.insert(path.get(prefix..).unwrap_or_default().join("/"), (*id).clone());
+        let mut controls = BTreeMap::new();
+        let mut channels = BTreeMap::new();
+        for (held, ids) in [(&mut controls, view.controls()), (&mut channels, view.channels())] {
+            for id in ids {
+                if let Some(name) = name_of(id) {
+                    held.entry(name)
+                        .and_modify(|shared: &mut Option<CheckedNodeId>| *shared = None)
+                        .or_insert_with(|| Some((*id).clone()));
+                }
             }
         }
         let mut roles: Vec<CheckedNodeId> = view.roles().iter().map(|id| (*id).clone()).collect();
@@ -250,7 +256,8 @@ impl Names {
             }
         }
         Ok(Self {
-            nodes,
+            controls,
+            channels,
             ends,
             owners,
             finish: view.finish().clone(),
@@ -259,17 +266,25 @@ impl Names {
         })
     }
 
+    /// The control `qsl-eval` names by the path `path`.
     fn node(&self, path: &str) -> Result<&CheckedNodeId, RealizabilityRefusal> {
-        self.nodes
-            .get(path)
+        let name = path.rsplit('/').next().unwrap_or(path);
+        self.controls
+            .get(name)
+            .and_then(Option::as_ref)
             .ok_or_else(|| RealizabilityRefusal::UnnamedNode(path.to_owned()))
     }
 
-    fn channel(&self, path: &str) -> Result<(usize, usize), RealizabilityRefusal> {
-        self.ends
-            .get(self.node(path)?)
+    /// The (sender, receiver) roles of the channel `qsl-eval` names
+    /// `qualified`.
+    fn channel(&self, qualified: &str) -> Result<(usize, usize), RealizabilityRefusal> {
+        let name = qualified.rsplit("::").next().unwrap_or(qualified);
+        self.channels
+            .get(name)
+            .and_then(Option::as_ref)
+            .and_then(|channel| self.ends.get(channel))
             .copied()
-            .ok_or_else(|| RealizabilityRefusal::UnnamedNode(path.to_owned()))
+            .ok_or_else(|| RealizabilityRefusal::UnnamedNode(qualified.to_owned()))
     }
 }
 
