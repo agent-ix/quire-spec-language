@@ -350,16 +350,51 @@ pub enum EvaluatedValue {
     Boolean(bool),
 }
 
-/// QSpec FR-351's separating witness record (ADR-031 SW-5, SW-7): the
-/// deciding quantifier, the deciding element, its index, its value path and
-/// its trace position. Compared componentwise, the deciding element under
-/// ADR-013 O-13 semantic equality.
+/// The deciding element of a [`SeparatingWitnessRecord`] (ADR-031 SW-5 as
+/// amended by ADR-036 PA-24): the kernel value a quantifier bound, or the
+/// canonical string of a protocol node's checked node id.
+#[derive(Clone, Debug)]
+pub enum DecidingElement {
+    /// The kernel value bound to the quantifier's binder at the stop.
+    Value(Value),
+    /// The canonical string of a protocol element's checked node id.
+    Protocol(String),
+}
+
+impl DecidingElement {
+    /// The kernel value, `None` for a protocol element.
+    pub fn value(&self) -> Option<&Value> {
+        match self {
+            Self::Value(value) => Some(value),
+            Self::Protocol(_) => None,
+        }
+    }
+}
+
+impl PartialEq for DecidingElement {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Value(left), Self::Value(right)) => same_element(left, right),
+            (Self::Protocol(left), Self::Protocol(right)) => left == right,
+            _ => false,
+        }
+    }
+}
+
+impl Eq for DecidingElement {}
+
+/// QSpec FR-351's separating witness record (ADR-031 SW-5, SW-7, amended by
+/// ADR-036 PA-24): the deciding quantifier, the deciding element, its index,
+/// its value path and its trace position. Compared componentwise, a kernel
+/// deciding element under ADR-013 O-13 semantic equality.
 #[derive(Clone, Debug)]
 pub struct SeparatingWitnessRecord {
-    /// The decisive quantifier's occurrence key (ADR-013 O-07).
-    pub quantifier: OccurrenceKey,
-    /// The kernel value bound to the quantifier's binder at the stop.
-    pub deciding_element: Value,
+    /// The decisive quantifier's occurrence key (ADR-013 O-07); absent for a
+    /// family with no quantifier occurrence (a protocol analysis).
+    pub quantifier: Option<OccurrenceKey>,
+    /// The deciding element: the kernel value bound to the quantifier's
+    /// binder at the stop, or a protocol element.
+    pub deciding_element: DecidingElement,
     /// The element's zero-based position in its stored or built
     /// collection; absent for a family that assigns no position.
     pub index: Option<u64>,
@@ -373,7 +408,7 @@ pub struct SeparatingWitnessRecord {
 impl PartialEq for SeparatingWitnessRecord {
     fn eq(&self, other: &Self) -> bool {
         self.quantifier == other.quantifier
-            && same_element(&self.deciding_element, &other.deciding_element)
+            && self.deciding_element == other.deciding_element
             && self.index == other.index
             && self.value_path == other.value_path
             && self.trace_position == other.trace_position
@@ -487,8 +522,8 @@ impl SeparatingWitnessRecord {
     /// position.
     pub(crate) fn from_stop(report: &StopReport) -> Self {
         Self {
-            quantifier: report.quantifier.clone(),
-            deciding_element: report.element.clone(),
+            quantifier: Some(report.quantifier.clone()),
+            deciding_element: DecidingElement::Value(report.element.clone()),
             index: Some(report.index),
             value_path: report.value_path.clone(),
             trace_position: None,
@@ -528,9 +563,13 @@ impl SeparatingWitnessRecord {
                 ValuePathStep::Reference(object) => 64 + object.object().as_str().len(),
             })
             .sum();
-        32 + self.quantifier.origin().role().as_str().len()
-            + 8
-            + value_bytes(&self.deciding_element)
+        self.quantifier.as_ref().map_or(0, |quantifier| {
+            32 + quantifier.origin().role().as_str().len()
+        }) + 8
+            + match &self.deciding_element {
+                DecidingElement::Value(value) => value_bytes(value),
+                DecidingElement::Protocol(node) => node.len(),
+            }
             + 8
             + observation.authority.len()
             + observation.identity.len()
@@ -1260,11 +1299,13 @@ mod tests {
         use qsl_eval::value::ObservationIdentity;
         use quire_exact::{Origin, Role};
         SeparatingWitnessRecord {
-            quantifier: OccurrenceKey::new(
+            quantifier: Some(OccurrenceKey::new(
                 crate::fixture_node(7),
                 Origin::new(Role::new("expression"), 0),
-            ),
-            deciding_element: Value::Integer(quire_exact::Integer::from(600_i64)),
+            )),
+            deciding_element: DecidingElement::Value(Value::Integer(quire_exact::Integer::from(
+                600_i64,
+            ))),
             index: Some(2),
             value_path: RuntimeValuePath {
                 observation: ObservationIdentity {

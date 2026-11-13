@@ -70,6 +70,7 @@ pub mod planner;
 mod probability_certificate;
 mod product_action;
 mod proof_result;
+pub mod protocol_analysis;
 mod refinement;
 mod refinement_query;
 mod request;
@@ -473,11 +474,11 @@ pub use request::{
     StageLimitNameRefusal, StageLimits, StateEnvironment,
 };
 pub use result::{
-    read_bounded, CauseCodecError, DisagreementCause, EvaluatedValue, HybridTraceDisagreement,
-    InputArmResult, InputSettlement, ObservedTemporalParity, ObservedTemporalResult,
-    ObservedTemporalSettlement, ReplayResult, SeparatingWitnessRecord, SeparationReason,
-    SeparationRefusal, TemporalDecisive, Verdict, WitnessArmResult, WitnessCheck, WitnessFailure,
-    WitnessSettlement,
+    read_bounded, CauseCodecError, DecidingElement, DisagreementCause, EvaluatedValue,
+    HybridTraceDisagreement, InputArmResult, InputSettlement, ObservedTemporalParity,
+    ObservedTemporalResult, ObservedTemporalSettlement, ReplayResult, SeparatingWitnessRecord,
+    SeparationReason, SeparationRefusal, TemporalDecisive, Verdict, WitnessArmResult, WitnessCheck,
+    WitnessFailure, WitnessSettlement,
 };
 pub use supplied_limits::{read_supplied_limits, SuppliedLimitsRefusal};
 // QSpec FR-323: the replay target a packet, envelope and request each carry.

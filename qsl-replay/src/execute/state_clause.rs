@@ -31,8 +31,8 @@ use crate::bounds::ReplayLimits;
 use crate::identity::DefinitionSourceRef;
 use crate::request::{ReplayRequest, ReplayRequestWire};
 use crate::result::{
-    EvaluatedValue, InputArmResult, ReplayResult, SeparatingWitnessRecord, SeparationReason,
-    SeparationRefusal, Verdict, WitnessArmResult, WitnessCheck, WitnessFailure,
+    DecidingElement, EvaluatedValue, InputArmResult, ReplayResult, SeparatingWitnessRecord,
+    SeparationReason, SeparationRefusal, Verdict, WitnessArmResult, WitnessCheck, WitnessFailure,
 };
 use crate::spine::{
     check_clause_admitted, convert_outcome, CallOutcome, CallRefusal, CallValue, ClauseCheck,
@@ -548,9 +548,18 @@ pub(crate) fn separate(
     };
     let qualified =
         QualifiedName::unqualified(clause).map_err(|_| fault("state-clause-name-qualifies"))?;
+    // A state clause's record always names its quantifier and a kernel value.
+    let (Some(quantifier), DecidingElement::Value(element)) =
+        (&record.quantifier, &record.deciding_element)
+    else {
+        return Ok(SeparationOutcome::Failed(
+            SeparationStep::Element,
+            SeparationReason::Unmet,
+        ));
+    };
     let claim = WitnessClaim {
-        quantifier: &record.quantifier,
-        element: &record.deciding_element,
+        quantifier,
+        element,
         index,
         value_path: &record.value_path,
     };

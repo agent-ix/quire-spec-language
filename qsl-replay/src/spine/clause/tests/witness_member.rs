@@ -216,7 +216,7 @@ fn tc_740_a_member_domain_records_the_stored_member() {
     assert_eq!(witness.index, Some(1));
     assert_eq!(
         quire_exact::compare_keys(
-            &witness.deciding_element,
+            witness.deciding_element.value().expect("a kernel value"),
             &Value::Integer(quire_exact::Integer::from(600_i64))
         ),
         Some(std::cmp::Ordering::Equal)

@@ -4910,6 +4910,7 @@ mod link_replay;
 mod model_gate;
 mod one_source;
 mod pre_call_invocation;
+mod protocol_premises;
 pub(super) mod receiver_frames;
 mod refinement;
 mod state_clause_replay;

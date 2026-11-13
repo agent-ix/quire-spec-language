@@ -31,8 +31,8 @@ use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::value::RawValue;
 
 use super::{
-    DisagreementCause, HybridTraceDisagreement, SeparatingWitnessRecord, SeparationReason,
-    SeparationRefusal, Verdict, WitnessFailure,
+    DecidingElement, DisagreementCause, HybridTraceDisagreement, SeparatingWitnessRecord,
+    SeparationReason, SeparationRefusal, Verdict, WitnessFailure,
 };
 use crate::hybrid_replay::{
     ExactInterval, HybridCounterexample, HybridCounterexampleKind, HybridTrace, TraceBefore,
@@ -156,7 +156,7 @@ impl DisagreementCause {
             .elements
             .into_inner()
             .into_iter()
-            .map(|node| decode_element(node, keys).map(Some))
+            .map(|node| read_deciding(node, keys).map(Some))
             .collect::<Result<Vec<_>, _>>()?;
         wire.read(keys, &mut elements, hybrid_model)
     }
@@ -214,14 +214,28 @@ impl Encode for Splice<'_> {
 struct ElementSlot(usize);
 
 /// The deciding elements read from a document, each taken once.
-type Elements = [Option<Value>];
+type Elements = [Option<DecidingElement>];
 
 /// The deciding element at `slot`, moved out of `elements`.
-fn take(elements: &mut Elements, slot: ElementSlot) -> Result<Value, CauseCodecError> {
+fn take(elements: &mut Elements, slot: ElementSlot) -> Result<DecidingElement, CauseCodecError> {
     elements
         .get_mut(slot.0)
         .and_then(Option::take)
         .ok_or_else(|| malformed("a deciding element is read twice"))
+}
+
+/// A deciding element read from its document node: a JSON string is a
+/// protocol element's canonical string (ADR-036 PA-24), every other form a
+/// kernel value.
+fn read_deciding(node: NodeRef<'_>, keys: Keys<'_>) -> Result<DecidingElement, CauseCodecError> {
+    match node.node() {
+        Node::String(text) => {
+            crate::protocol_analysis::read_node_text(text)
+                .map_err(|_| CauseCodecError::Shape("deciding_element"))?;
+            Ok(DecidingElement::Protocol(text.to_owned()))
+        }
+        _ => decode_element(node, keys).map(DecidingElement::Value),
+    }
 }
 
 /// An optional member that must be absent rather than `null`: present, it
@@ -760,7 +774,12 @@ mod verdict_tests {
     bound(serialize = "E: Serialize", deserialize = "E: Deserialize<'de>")
 )]
 pub(crate) struct RecordWire<E> {
-    quantifier: OccurrenceWire,
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    quantifier: Option<OccurrenceWire>,
     deciding_element: E,
     #[serde(
         default,
@@ -779,12 +798,34 @@ pub(crate) struct RecordWire<E> {
 
 impl RecordWire<Box<RawValue>> {
     pub(crate) fn of(record: &SeparatingWitnessRecord) -> Result<Self, CauseCodecError> {
-        if record.index.is_none() {
-            return Err(CauseCodecError::MissingIndex);
-        }
+        let deciding_element = match &record.deciding_element {
+            DecidingElement::Value(value) => {
+                if record.index.is_none() {
+                    return Err(CauseCodecError::MissingIndex);
+                }
+                if record.quantifier.is_none() {
+                    return Err(CauseCodecError::Shape("quantifier"));
+                }
+                encode_element(value)?
+            }
+            DecidingElement::Protocol(node) => {
+                if record.quantifier.is_some() {
+                    return Err(CauseCodecError::Shape("quantifier"));
+                }
+                if record.index.is_some() {
+                    return Err(CauseCodecError::Shape("index"));
+                }
+                if record.trace_position.is_none() {
+                    return Err(CauseCodecError::Shape("trace_position"));
+                }
+                crate::protocol_analysis::read_node_text(node)
+                    .map_err(|_| CauseCodecError::Shape("deciding_element"))?;
+                RawValue::from_string(serde_json::to_string(node)?)?
+            }
+        };
         Ok(Self {
-            quantifier: OccurrenceWire::of(&record.quantifier),
-            deciding_element: encode_element(&record.deciding_element)?,
+            quantifier: record.quantifier.as_ref().map(OccurrenceWire::of),
+            deciding_element,
             index: record.index,
             value_path: PathWire::of(&record.value_path),
             trace_position: record
@@ -803,7 +844,10 @@ impl RecordWire<Box<RawValue>> {
         if self.trace_position.is_some() {
             return Err(CauseCodecError::Shape("trace_position"));
         }
-        self.quantifier.clone().read()?;
+        self.quantifier
+            .clone()
+            .ok_or(CauseCodecError::Shape("quantifier"))?
+            .read()?;
         let element = quire_canonical::read(self.deciding_element.get().as_bytes(), u64::MAX)
             .map_err(|_| CauseCodecError::Shape("deciding_element"))?;
         validate_element_shape(element.root())
@@ -824,8 +868,13 @@ impl RecordWire<Box<RawValue>> {
     ) -> Result<SeparatingWitnessRecord, CauseCodecError> {
         let keys = Keys::new(package);
         Ok(SeparatingWitnessRecord {
-            quantifier: self.quantifier.clone().read()?,
-            deciding_element: decode_element(element, keys)?,
+            quantifier: Some(
+                self.quantifier
+                    .clone()
+                    .ok_or(CauseCodecError::Shape("quantifier"))?
+                    .read()?,
+            ),
+            deciding_element: DecidingElement::Value(decode_element(element, keys)?),
             index: self.index,
             value_path: self.value_path.clone().read(keys)?,
             trace_position: self
@@ -847,13 +896,38 @@ impl RecordWire<ElementSlot> {
         keys: Keys<'_>,
         elements: &mut Elements,
     ) -> Result<SeparatingWitnessRecord, CauseCodecError> {
-        // The record names a deciding quantifier, so its family is a
-        // collection quantifier's, which assigns an index (QSpec FR-351).
-        let index = self.index.ok_or(CauseCodecError::MissingIndex)?;
+        let deciding_element = take(elements, self.deciding_element)?;
+        let (quantifier, index) = match &deciding_element {
+            // A record naming a deciding quantifier is a collection
+            // quantifier's family, which assigns an index (QSpec FR-351).
+            DecidingElement::Value(_) => (
+                Some(
+                    self.quantifier
+                        .ok_or(CauseCodecError::Shape("quantifier"))?
+                        .read()?,
+                ),
+                Some(self.index.ok_or(CauseCodecError::MissingIndex)?),
+            ),
+            // A protocol family has no quantifier occurrence and assigns no
+            // index, and always names a trace position (QSpec FR-351,
+            // ADR-036 PA-24).
+            DecidingElement::Protocol(_) => {
+                if self.quantifier.is_some() {
+                    return Err(CauseCodecError::Shape("quantifier"));
+                }
+                if self.index.is_some() {
+                    return Err(CauseCodecError::Shape("index"));
+                }
+                if self.trace_position.is_none() {
+                    return Err(CauseCodecError::Shape("trace_position"));
+                }
+                (None, None)
+            }
+        };
         Ok(SeparatingWitnessRecord {
-            quantifier: self.quantifier.read()?,
-            deciding_element: take(elements, self.deciding_element)?,
-            index: Some(index),
+            quantifier,
+            deciding_element,
+            index,
             value_path: self.value_path.read(keys)?,
             trace_position: self.trace_position.map(TracePosition::new),
         })

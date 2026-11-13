@@ -13,7 +13,7 @@ use super::frame_replay::{packet, request, unit_for, witness_source, Unit};
 use super::*;
 use crate::execute::{separate, settle_separation, stopped_reason, SeparationOutcome};
 use crate::proof_result::SettlementBasis;
-use crate::result::SeparatingWitnessRecord;
+use crate::result::{DecidingElement, SeparatingWitnessRecord};
 use crate::witness::{derive_separating_witness, Derived};
 use crate::{
     replay_state_clause, DisagreementCause, InputSettlement, ObservationIdentity, ReplayRefusal,
@@ -915,8 +915,8 @@ fn built_record(
     snapshot: Snapshot,
 ) -> SeparatingWitnessRecord {
     SeparatingWitnessRecord {
-        quantifier: occurrence(unit, clause, quantifier, Operator::Quantify),
-        deciding_element: element,
+        quantifier: Some(occurrence(unit, clause, quantifier, Operator::Quantify)),
+        deciding_element: DecidingElement::Value(element),
         index: Some(index),
         value_path: RuntimeValuePath {
             observation: observation(snapshot),
@@ -1597,7 +1597,7 @@ fn tc_743_a_differing_or_missing_record_settles_inconclusive() {
     let unit = witness_unit();
     let derived = all_below_record(&unit);
     let other_quantifier = SeparatingWitnessRecord {
-        quantifier: occurrence(&unit, "GuardedAll", &[1], Operator::Quantify),
+        quantifier: Some(occurrence(&unit, "GuardedAll", &[1], Operator::Quantify)),
         ..derived.clone()
     };
     for given in [Some(after_stop_record(&unit)), Some(other_quantifier), None] {
@@ -1642,6 +1642,36 @@ fn unmet(step: SeparationStep) -> SeparationOutcome {
     SeparationOutcome::Failed(step, SeparationReason::Unmet)
 }
 
+/// The state-clause separation check names no element of a protocol record
+/// (no index) or of a kernel record without a quantifier: it fails at the
+/// element step (ADR-031 SW-5 as amended by ADR-036 PA-24).
+#[trace("TC-1414")]
+#[test]
+fn a_protocol_record_or_a_quantifierless_record_fails_the_element_step() {
+    let unit = witness_unit();
+    let state = all_below_record(&unit);
+    let protocol = SeparatingWitnessRecord {
+        quantifier: None,
+        deciding_element: DecidingElement::Protocol("node".to_owned()),
+        index: None,
+        ..state.clone()
+    };
+    let quantifierless = SeparatingWitnessRecord {
+        quantifier: None,
+        ..state.clone()
+    };
+    let protocol_with_index = SeparatingWitnessRecord {
+        deciding_element: DecidingElement::Protocol("node".to_owned()),
+        ..state
+    };
+    for record in [protocol, quantifierless, protocol_with_index] {
+        assert_eq!(
+            check(&unit, "AllBelow", &record, 1_000_000),
+            unmet(SeparationStep::Element)
+        );
+    }
+}
+
 /// TC-743 step 3 and TC-744 step 2 (FR-268-AC-3, FR-269-AC-2): the
 /// separation check, called on its own.
 #[trace("TC-743", "FR-268-AC-3")]
@@ -1654,7 +1684,7 @@ fn tc_743_the_separation_check_names_its_failing_step() {
         SeparationOutcome::Holds
     );
     let outside = SeparatingWitnessRecord {
-        quantifier: occurrence(&unit, "SomeAtLeast", &[], Operator::Quantify),
+        quantifier: Some(occurrence(&unit, "SomeAtLeast", &[], Operator::Quantify)),
         ..record.clone()
     };
     let past_end = SeparatingWitnessRecord {
@@ -1676,7 +1706,7 @@ fn tc_743_the_separation_check_names_its_failing_step() {
         ..record.clone()
     };
     let other_element = SeparatingWitnessRecord {
-        deciding_element: integer(700),
+        deciding_element: DecidingElement::Value(integer(700)),
         ..record.clone()
     };
     let holding_element = built_record(
@@ -1700,7 +1730,7 @@ fn tc_743_the_separation_check_names_its_failing_step() {
 
     // A domain refused on `high`: `count<Zero>` of one element.
     let refused = SeparatingWitnessRecord {
-        quantifier: occurrence(&unit, "RefusedDomain", &[], Operator::Quantify),
+        quantifier: Some(occurrence(&unit, "RefusedDomain", &[], Operator::Quantify)),
         ..record.clone()
     };
     let SeparationOutcome::Failed(SeparationStep::Domain, SeparationReason::Refused(refusal)) =
@@ -1959,7 +1989,7 @@ fn cause_deciding(unit: &Unit, element: Value) -> DisagreementCause {
         proved: violation,
         replayed: violation,
         given: Some(Box::new(SeparatingWitnessRecord {
-            deciding_element: element,
+            deciding_element: DecidingElement::Value(element),
             ..all_below_record(unit)
         })),
         derived: None,
@@ -2018,7 +2048,7 @@ fn a_100000_deep_deciding_element_round_trips_on_a_small_stack() {
                         proved: violation,
                         replayed: violation,
                         given: Some(Box::new(SeparatingWitnessRecord {
-                            deciding_element: element,
+                            deciding_element: DecidingElement::Value(element),
                             ..template.clone()
                         })),
                         derived: None,
@@ -2441,7 +2471,7 @@ fn tc_743_long_text_or_object_identity_exceeds_the_reader_bound() {
         }
     };
     let text_record = SeparatingWitnessRecord {
-        deciding_element: long_text,
+        deciding_element: DecidingElement::Value(long_text),
         ..all_below_record(&unit)
     };
     let object = quire_exact::ObjectReference::new(
@@ -2465,6 +2495,158 @@ fn tc_743_long_text_or_object_identity_exceeds_the_reader_bound() {
             envelope,
             Err(crate::WitnessRefusal::BoundExceeded(_))
         ));
+    }
+}
+
+/// FR-574-AC-2, FR-574-AC-6 (TC-1414): a state-clause record with its
+/// quantifier and index round-trips unchanged through the amended record type
+/// and the cause codec; a protocol record omits both and round-trips; each
+/// mismatched combination and each missing component is refused with its own
+/// cause. The `native-run-result/2` reader stays state-only until the
+/// producer lands (QSL-1895).
+#[trace("FR-574-AC-2", "FR-574-AC-6", "TC-1414")]
+#[test]
+fn a_state_record_round_trips_unchanged_and_a_protocol_record_omits_quantifier_and_index() {
+    use crate::result::CauseCodecError;
+    let unit = codec_unit();
+    let package = &unit.compiled.package;
+    let violation = Verdict::from_category(Category::Violation);
+    let cause = |record: SeparatingWitnessRecord| DisagreementCause::Witness {
+        proved: violation,
+        replayed: violation,
+        given: Some(Box::new(record)),
+        derived: None,
+        failure: WitnessFailure::Mismatch,
+    };
+    let state = all_below_record(&unit);
+    assert!(state.quantifier.is_some() && state.index.is_some());
+    let text = cause(state.clone()).to_json(None).unwrap();
+    let read = DisagreementCause::from_json(&text, package, None).unwrap();
+    assert_eq!(read.to_json(None).unwrap(), text);
+    assert_eq!(read, cause(state.clone()));
+
+    let node = crate::protocol_analysis::node_text(&quire_contract_model::CheckedNodeId {
+        package: "pkg".into(),
+        path: vec![quire_contract_model::CheckedNodePathSegment::Name(
+            "c".into(),
+        )],
+        ordinal: 0,
+    })
+    .unwrap();
+    let protocol = SeparatingWitnessRecord {
+        quantifier: None,
+        deciding_element: DecidingElement::Protocol(node.clone()),
+        index: None,
+        trace_position: Some(crate::identity::TracePosition::new("2".to_owned())),
+        ..state.clone()
+    };
+    let text = cause(protocol.clone()).to_json(None).unwrap();
+    let record: serde_json::Value = serde_json::from_str(&text).unwrap();
+    let given = &record["given"];
+    assert!(given.get("quantifier").is_none() && given.get("index").is_none());
+    assert_eq!(given["deciding_element"], node);
+    let read = DisagreementCause::from_json(&text, package, None).unwrap();
+    assert_eq!(read, cause(protocol.clone()));
+    assert_eq!(read.to_json(None).unwrap(), text);
+
+    // The writer refuses what the reader would refuse, with the cause.
+    let shape = |record| match cause(record).to_json(None) {
+        Err(CauseCodecError::Shape(member)) => member,
+        other => panic!("a shape refusal, not {other:?}"),
+    };
+    assert_eq!(
+        shape(SeparatingWitnessRecord {
+            index: Some(0),
+            ..protocol.clone()
+        }),
+        "index"
+    );
+    assert_eq!(
+        shape(SeparatingWitnessRecord {
+            quantifier: state.quantifier.clone(),
+            ..protocol.clone()
+        }),
+        "quantifier"
+    );
+    assert_eq!(
+        shape(SeparatingWitnessRecord {
+            trace_position: None,
+            ..protocol.clone()
+        }),
+        "trace_position"
+    );
+    assert_eq!(
+        shape(SeparatingWitnessRecord {
+            deciding_element: DecidingElement::Protocol("node".to_owned()),
+            ..protocol.clone()
+        }),
+        "deciding_element"
+    );
+    assert_eq!(
+        shape(SeparatingWitnessRecord {
+            quantifier: None,
+            ..state.clone()
+        }),
+        "quantifier"
+    );
+    assert!(matches!(
+        cause(SeparatingWitnessRecord {
+            index: None,
+            ..state.clone()
+        })
+        .to_json(None),
+        Err(CauseCodecError::MissingIndex)
+    ));
+
+    // The reader: a present quantifier or index, a missing trace position,
+    // deciding element or value path, and a string that is no node id.
+    let read_with = |edit: &dyn Fn(&mut serde_json::Map<String, serde_json::Value>)| {
+        let mut value: serde_json::Value = serde_json::from_str(&text).unwrap();
+        edit(value["given"].as_object_mut().unwrap());
+        DisagreementCause::from_json(&value.to_string(), package, None)
+    };
+    let shaped = |result: Result<DisagreementCause, CauseCodecError>, member: &str| {
+        assert!(
+            matches!(&result, Err(CauseCodecError::Shape(found)) if *found == member),
+            "{member}: {result:?}"
+        );
+    };
+    shaped(
+        read_with(&|given| {
+            given.insert("index".to_owned(), serde_json::json!(0));
+        }),
+        "index",
+    );
+    shaped(
+        read_with(&|given| {
+            given.insert(
+                "quantifier".to_owned(),
+                serde_json::json!({"node_id": "x", "role": "r", "ordinal": 0}),
+            );
+        }),
+        "quantifier",
+    );
+    shaped(
+        read_with(&|given| {
+            given.remove("trace_position");
+        }),
+        "trace_position",
+    );
+    shaped(
+        read_with(&|given| {
+            given.insert("deciding_element".to_owned(), serde_json::json!("node"));
+        }),
+        "deciding_element",
+    );
+    for member in ["deciding_element", "value_path"] {
+        let result = read_with(&|given| {
+            given.remove(member);
+        });
+        assert!(
+            matches!(&result, Err(CauseCodecError::Malformed(error))
+                if error.to_string().contains(member)),
+            "{member}: {result:?}"
+        );
     }
 }
 
