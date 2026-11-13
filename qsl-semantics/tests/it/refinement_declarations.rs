@@ -140,7 +140,7 @@ pub(crate) fn object_type(
 }
 
 /// An object type declaring `supertypes` (names in the same package).
-fn object_type_under(
+pub(crate) fn object_type_under(
     package: &str,
     name: &str,
     supertypes: &[&str],

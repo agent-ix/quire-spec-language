@@ -167,26 +167,6 @@ fn orders_package(shape: Shape, declarations: &str) -> CheckedPackage {
             symmetric: false,
         }),
         DomainPackageRecord::OperationMember(OperationMemberRecord {
-            key: key("Person/watch"),
-            owner: key("Person"),
-            parameters: vec![OperationParameterRecord {
-                key: key("Person/watch/target"),
-                value_type: ValueTypeRef::Package(key("Order")),
-                multiplicity: Multiplicity {
-                    lower: 1,
-                    upper: Some(1),
-                    ordered: false,
-                    unique: true,
-                },
-            }],
-            result: None,
-            effect: OperationEffect::default(),
-            requires: Vec::new(),
-            ensures: Vec::new(),
-            has_body: false,
-            redefines: None,
-        }),
-        DomainPackageRecord::OperationMember(OperationMemberRecord {
             key: key("Order/reroute"),
             owner: key("Order"),
             parameters: vec![OperationParameterRecord {
@@ -468,6 +448,56 @@ impl Orders {
             self.observations(clause, start, goal, Some(environment), Some(environment))
         } else {
             self.observations(clause, start, goal, Some(environment), None)
+        };
+        let mut meter = Meter::new(limits);
+        let report = self
+            .package
+            .evaluate_clause(
+                &QualifiedName::unqualified(clause).unwrap(),
+                &observations,
+                &mut meter,
+            )
+            .expect("the evaluation does not fault");
+        (report.evaluation, meter)
+    }
+
+    /// The invariant `clause` of `self_object` over `environment` as its
+    /// `current` observation, under `limits`.
+    fn run_current(
+        &self,
+        clause: &str,
+        self_object: &ObjectReference,
+        environment: &ObjectEnvironment,
+        limits: ScalarLimits,
+    ) -> (Evaluation, Meter) {
+        let observations = AdmittedObservations {
+            usage: AdmissionUsage::default(),
+            clause: self
+                .package
+                .graph()
+                .state_clause(clause)
+                .expect("the clause is declared")
+                .identity(),
+            current: Some(Observation {
+                identity: DocumentRef {
+                    authority: "test".to_owned(),
+                    identity: "current".to_owned(),
+                },
+                environment: environment.clone(),
+                populations: BTreeMap::new(),
+                out_of_range: Vec::new(),
+            }),
+            pre: None,
+            post: None,
+            self_object: self_object.clone(),
+            invocation: None,
+            self_kind: SelfKind::Object,
+            receiver_pre: None,
+            receiver_post: None,
+            parameters: Vec::new(),
+            result: None,
+            created: Vec::new(),
+            deleted: Vec::new(),
         };
         let mut meter = Meter::new(limits);
         let report = self
@@ -1597,70 +1627,105 @@ fn a_ten_thousand_object_chain_reaches_its_far_end_on_a_512_kib_stack() {
         .expect("the evaluation does not overflow a 512 KiB stack");
 }
 
-/// TC-1054 row 27 (FR-380-AC-19): a field-edge walked population that is not
-/// the context population is a bounded domain of the clause's record, so an
-/// observation listing 5 objects of `orders` refuses `above-maximum` naming
-/// the bound 4 and the count 5, and one listing 4 is decided as for an
-/// unbounded population. The context population `people` is unbounded.
+/// TC-1054 row 27 (FR-380-AC-19): over the clause `FavLoop` of FR-380-AC-18,
+/// whose walked field-edge population `orders` is not its context population,
+/// an observation listing 5 objects of `orders` refuses `above-maximum` naming
+/// the bound 4 and the count 5 with no charge, and one listing 4 is decided
+/// exactly as the same clause over an unbounded `orders`, a real reachability
+/// result with the same charges.
 #[trace("TC-1054", "FR-380-AC-19")]
 #[test]
 fn a_walked_field_edge_population_refuses_above_its_bound() {
-    let orders = Orders::with_declarations(
+    const FAV_LOOP: &str =
+        "invariant FavLoop using v on M::Person at current { not reaches(self.fav, self.fav, trail) }\n";
+    let bounded = Orders::with_declarations(
         Shape::BASE,
-        "bound OrdersBound on M::orders [4]\n\
-         pre PreFav using v on M::Person::watch { true or reaches(self.fav, target, trail) }\n",
+        &format!("bound OrdersBound on M::orders [4]\n{FAV_LOOP}"),
     );
-    let person = orders.at("Person", "p1");
-    let held = orders
-        .held()
-        .into_iter()
-        .map(|object| (object, vec![]))
-        .chain([(
-            person.clone(),
-            vec![(
-                "fav",
-                FieldValue::Present(Value::Reference(orders.order("o1"))),
-            )],
-        )]);
-    let environment =
-        orders.observe_with(held, vec![links(&orders, next(), &[])], vec![orders.q()]);
+    let unbounded = Orders::with_declarations(Shape::BASE, FAV_LOOP);
     let population = key("orders").node;
-    for (count, refused) in [(4_u64, false), (5, true)] {
-        let observed = environment
-            .clone()
-            .with_population_sizes(BTreeMap::from([(population.clone(), count)]));
-        let (evaluation, meter) =
-            orders.run("PreFav", &person, &orders.order("o3"), &observed, UNLIMITED);
-        match (&evaluation.outcome, refused) {
-            (FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(true))), false) => {}
-            (FamilyOutcome::Evaluated(Outcome::Refused(refusal)), true) => {
-                assert!(
-                    matches!(
-                        refusal,
-                        quire_exact::Refusal::CardinalityOutOfBound {
-                            violation: quire_exact::BoundViolation::AboveMaximum,
-                            count: 5,
-                            ..
-                        }
-                    ),
-                    "{refusal:?}"
-                );
-                let record = qsl_eval::value::refusal_record(&evaluation, |location| {
-                    orders.package.graph().region(location)
-                })
-                .expect("cardinality_out_of_bound has a catalog code");
-                let fields: Vec<(&str, &str)> = record
-                    .fields()
-                    .iter()
-                    .map(|(name, value)| (*name, value.as_str()))
-                    .collect();
-                assert_eq!(
-                    fields,
-                    [("bound", "[0, 4]"), ("collection", "set"), ("count", "5")]
-                );
-                assert_charges(&meter, &[], 0, 0);
-            }
-            (other, _) => panic!("{count} objects: {other:?}"),
+    let environment = |orders: &Orders, count: u64| {
+        let person = orders.at("Person", "p1");
+        let held = orders
+            .held()
+            .into_iter()
+            .map(|object| {
+                // `o1.trail = o2`, so the edge walked from `p1.fav = o1` is real.
+                if object == orders.order("o1") {
+                    (
+                        object,
+                        vec![(
+                            "trail",
+                            FieldValue::Present(Value::Reference(orders.order("o2"))),
+                        )],
+                    )
+                } else {
+                    (object, vec![])
+                }
+            })
+            .chain([(
+                person,
+                vec![(
+                    "fav",
+                    FieldValue::Present(Value::Reference(orders.order("o1"))),
+                )],
+            )]);
+        orders
+            .observe_with(held, vec![links(orders, next(), &[])], vec![orders.q()])
+            .with_population_sizes(BTreeMap::from([(population.clone(), count)]))
+    };
+    let run = |orders: &Orders, count: u64| {
+        orders.run_current(
+            "FavLoop",
+            &orders.at("Person", "p1"),
+            &environment(orders, count),
+            UNLIMITED,
+        )
+    };
+
+    let (at_the_bound, meter) = run(&bounded, 4);
+    let (reference, reference_meter) = run(&unbounded, 4);
+    let FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(_))) = &at_the_bound.outcome
+    else {
+        panic!(
+            "a reachability result at the bound: {:?}",
+            at_the_bound.outcome
+        );
+    };
+    assert_eq!(
+        format!("{:?}", at_the_bound.outcome),
+        format!("{:?}", reference.outcome),
+        "decided as for an unbounded population"
+    );
+    assert_eq!(
+        admitted_charge_points(&meter),
+        admitted_charge_points(&reference_meter)
+    );
+
+    let (above, meter) = run(&bounded, 5);
+    let FamilyOutcome::Evaluated(Outcome::Refused(refusal)) = &above.outcome else {
+        panic!("expected a kernel refusal, got {:?}", above.outcome);
+    };
+    assert!(matches!(
+        refusal,
+        quire_exact::Refusal::CardinalityOutOfBound {
+            violation: quire_exact::BoundViolation::AboveMaximum,
+            count: 5,
+            ..
         }
-    }
+    ));
+    let record = qsl_eval::value::refusal_record(&above, |location| {
+        bounded.package.graph().region(location)
+    })
+    .expect("cardinality_out_of_bound has a catalog code");
+    let fields: Vec<(&str, &str)> = record
+        .fields()
+        .iter()
+        .map(|(name, value)| (*name, value.as_str()))
+        .collect();
+    assert_eq!(
+        fields,
+        [("bound", "[0, 4]"), ("collection", "set"), ("count", "5")]
+    );
+    assert_charges(&meter, &[], 0, 0);
 }

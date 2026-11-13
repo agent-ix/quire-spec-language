@@ -80,7 +80,7 @@ pub struct Node {
     /// linked by the state-clause checker (FR-380 "Field-edge
     /// reachability"); `None` on every other node. `NodeKind::Reaches`
     /// has no population field of its own.
-    pub(in crate::check) field_population: Option<AuthoredBound>,
+    pub(in crate::check) field_population: Option<Box<AuthoredBound>>,
 }
 
 /// QSL's pre-wire equality facts, retained from typing through lowering.
@@ -458,7 +458,7 @@ impl CheckedBody {
         };
         match &mut node.kind {
             NodeKind::ReachesEnd { population, .. } => *population = Some(bound),
-            NodeKind::Reaches { .. } => node.field_population = Some(bound),
+            NodeKind::Reaches { .. } => node.field_population = Some(Box::new(bound)),
             _ => {}
         }
     }
@@ -653,7 +653,7 @@ impl<'a> CheckedNode<'a> {
 
     /// The authored bound a field-edge `Reaches` is linked to (FR-380).
     pub(crate) fn field_population(self) -> Option<&'a AuthoredBound> {
-        self.node().field_population.as_ref()
+        self.node().field_population.as_deref()
     }
 
     /// The QSL producer facts for a checked equality, if typing selected any.

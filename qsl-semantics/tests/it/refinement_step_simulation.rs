@@ -20,8 +20,8 @@ use serde_json::Value;
 
 use super::refinement_declarations::{
     cas_refines_counter, check_with, checked_counter, counter_cas_with, counter_spec,
-    counter_spec_with, mutated, node, object_type, only_refinement, operation, population, Refused,
-    CAS, INTEGER, SPEC,
+    counter_spec_with, mutated, node, object_type, object_type_under, only_refinement, operation,
+    population, Refused, CAS, INTEGER, SPEC,
 };
 
 /// The refinement's V2 node, which keys its records.
@@ -461,6 +461,54 @@ fn contract_and_mapping_populations_enter_the_records() {
         keys.sort();
         expected.sort();
         assert_eq!(keys, expected, "{obligation:?}");
+    }
+}
+
+/// FR-380 "Field-edge reachability" under FR-146 "Claim extent": a field-edge
+/// `reaches` in the state mapping over an operand of the proper subtype `Sub`
+/// of the edge's owner `Tag` walks the population covering `Tag` (`tags`), not
+/// `subs`, which covers the operand's type; the walked population is the
+/// edge type's, so the refinement is not refused ambiguous (the operand type
+/// `Sub` is covered by both) and every record holds `tags` and no `subs`.
+#[trace("TC-551", "FR-146-AC-10", "FR-380-AC-21")]
+#[test]
+fn a_mapping_field_edge_over_a_subtype_operand_walks_the_edge_types_population() {
+    let tag_node = node(CAS, "Tag");
+    let tag = object_type_under(CAS, "Tag", &[], &[("next", tag_node.as_str())], Vec::new());
+    let sub = object_type_under(CAS, "Sub", &["Tag"], &[], Vec::new());
+    let cas = counter_cas_with(
+        plain_peek(),
+        &[("sub", &node(CAS, "Sub"))],
+        vec![tag, sub],
+        vec![
+            population(CAS, "tags", "Tag"),
+            population(CAS, "subs", "Sub"),
+        ],
+    );
+    let body = mutated(
+        &cas_refines_counter(),
+        "value = self.value;",
+        "value = if reaches(self.sub, self.sub, next) then self.value else self.value;",
+    );
+    let graph = check_with(
+        "",
+        &[("Spec", SPEC, &counter_spec()), ("Impl", CAS, &cas)],
+        &body,
+    )
+    .unwrap_or_else(|refusals| {
+        panic!(
+            "{body}: {:?}",
+            refusals.iter().map(|r| &r.refusal).collect::<Vec<_>>()
+        )
+    });
+    let (tags, subs) = (
+        population_key(&graph, "Impl", "tags"),
+        population_key(&graph, "Impl", "subs"),
+    );
+    for (obligation, domains) in domains(&graph) {
+        let keys: Vec<DomainKey> = domains.into_iter().map(|(key, _)| key).collect();
+        assert!(keys.contains(&tags), "{obligation:?}: tags is walked");
+        assert!(!keys.contains(&subs), "{obligation:?}: subs is not");
     }
 }
 

@@ -13,6 +13,10 @@ use super::population_bound::{self, assert_population_node, population_nodes, ty
 use super::reachability::{applications, lower_over, model_node, Lowered};
 use super::*;
 
+/// The structural key of the unbounded `reaches(self, self, trail)` node over
+/// `Order`, as `origin/main` computes it (TC-1047 row 3).
+const TRAIL_REACHES_KEY: &str = "NodeKey(pkg:[\"expression\",\"reachability\",node(pkg:[\"value\",\"parameter\",\"name\",node(pkg:[\"scalar_type\",\"text\",]:0),\"self\",\"level\",node(pkg:[\"scalar_type\",\"integer\",]:0),\"0\",node(pkg:[\"composite_type\",\"reference\",node(acme/orders:[\"model\",\"object_type\",\"ix://acme/orders/Order\",]:0),]:0),]:0),\"quire.op.model.reaches_field\",\"reaches\",node(pkg:[\"scalar_type\",\"boolean\",]:0),]:0)";
+
 const BOUND: &str = "bound OrdersBound on M::orders [4]";
 const FAV_LOOP: &str = "invariant FavLoop using v on M::Person at current \
                         { not reaches(self.favourite, self.favourite, trail) }";
@@ -138,11 +142,15 @@ fn unbounded_domains(graph: &CheckedGraph) -> Vec<usize> {
         .collect()
 }
 
-fn bound_labels(graph: &CheckedGraph) -> Vec<&str> {
+/// The label and maximum of each bounded population the clause `name`'s
+/// requirements record names (its `Population(Some(N))` domains).
+fn record_bounds(graph: &CheckedGraph, name: &str) -> Vec<(String, u64)> {
     graph
+        .state_clause(name)
+        .expect("the clause is checked")
         .population_bounds()
         .iter()
-        .map(|bound| bound.label.as_str())
+        .map(|bound| (bound.label.clone(), bound.maximum))
         .collect()
 }
 
@@ -243,17 +251,17 @@ fn an_unbounded_field_edge_keeps_its_member_and_node_identity() {
         );
         assert_eq!(population_nodes(&lowered.wire), Vec::<&Value>::new());
     }
-    // The application's node id is the one TC-1047 row 3 records: the same
-    // clause over R without the added fields.
-    let added = lower(&Populations::R, &loop_over("trail"));
-    let plain = super::reachability::lower(&loop_over("trail"));
-    let key = |wire: &Value| {
-        qsl_semantics::check::wire_id::WireGraph::of_package_value(wire)
-            .unwrap()
-            .key_of_value(&applications(wire, "quire.op.model.reaches_field")[0]["node_id"])
-            .unwrap()
-    };
-    assert_eq!(key(&added.wire), key(&plain.wire));
+    // The application's node id is the one TC-1047 row 3 records: the
+    // structural key `origin/main` gives the same clause, pinned here, so a
+    // change that re-keys field members fails.
+    let lowered = lower(&Populations::R, &loop_over("trail"));
+    let wire = &lowered.wire;
+    let id = &applications(wire, "quire.op.model.reaches_field")[0]["node_id"];
+    let key = qsl_semantics::check::wire_id::WireGraph::of_package_value(wire)
+        .unwrap()
+        .key_of_value(id)
+        .unwrap();
+    assert_eq!(format!("{key:?}"), TRAIL_REACHES_KEY);
 }
 
 /// Row 21 (FR-380-AC-14): two populations covering `T` refuse at the
@@ -273,6 +281,8 @@ fn two_populations_covering_the_edge_type_refuse_ambiguous_name() {
         qsl_foundation::diagnostic::Code::AmbiguousDeclaration
     );
     assert_eq!(refusal.cause.cause(), Some("ambiguous-name"));
+    // At the `reaches`: the one operand of the clause body's root `not`.
+    assert_eq!(refusal.location.path(), [0]);
     let qsl_semantics::check::CheckCause::AmbiguousName { name, .. } = &refusal.cause else {
         panic!("an ambiguous name outside the StateModel family: {refusal:?}");
     };
@@ -394,6 +404,11 @@ fn an_uncovered_edge_type_adds_no_domain_and_no_refusal() {
         &format!("bound RushesBound on M::rushes [4]\n{RUSH_TRAIL}"),
     );
     assert_eq!(unbounded_domains(&bounded), [0], "rushes alone, bounded");
+    assert_eq!(
+        record_bounds(&bounded, "RushTrail"),
+        [("RushesBound".to_owned(), 4)],
+        "the context domain is the only bounded domain"
+    );
     let unbounded = checked(&Populations::RushesInstead, RUSH_TRAIL);
     assert_eq!(
         unbounded_domains(&unbounded),
@@ -413,10 +428,13 @@ fn a_walked_field_edge_population_is_a_bounded_domain_of_the_record() {
         [1],
         "people alone is unbounded"
     );
-    assert_eq!(bound_labels(&bounded), ["OrdersBound"]);
+    assert_eq!(
+        record_bounds(&bounded, "FavLoop"),
+        [("OrdersBound".to_owned(), 4)]
+    );
     let unbounded = checked(&Populations::R, FAV_LOOP);
     assert_eq!(unbounded_domains(&unbounded), [2], "people and orders");
-    assert!(bound_labels(&unbounded).is_empty());
+    assert_eq!(record_bounds(&unbounded, "FavLoop"), []);
 }
 
 /// Row 28 (FR-380-AC-21): the walked population covers the edge type
@@ -429,7 +447,10 @@ fn the_edge_type_not_the_operand_type_names_the_walked_population() {
     assert_eq!(unbounded_domains(&plain), [2], "people and orders");
     let orders = checked(&Populations::WithRushes, &format!("{BOUND}\n{RUSH_FAV}"));
     assert_eq!(unbounded_domains(&orders), [1], "orders is bounded");
-    assert_eq!(bound_labels(&orders), ["OrdersBound"]);
+    assert_eq!(
+        record_bounds(&orders, "RushFav"),
+        [("OrdersBound".to_owned(), 4)]
+    );
     let rushes = checked(
         &Populations::WithRushes,
         &format!("bound RushesBound on M::rushes [4]\n{RUSH_FAV}"),
@@ -438,5 +459,10 @@ fn the_edge_type_not_the_operand_type_names_the_walked_population() {
         unbounded_domains(&rushes),
         [2],
         "rushes is not walked: people and the unbounded orders stay unbounded"
+    );
+    assert_eq!(
+        record_bounds(&rushes, "RushFav"),
+        [],
+        "the record holds no rushes(Some 4) domain"
     );
 }
