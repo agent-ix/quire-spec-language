@@ -6,14 +6,15 @@ use std::collections::BTreeSet;
 
 use ix_trace_rs::trace;
 use qsl_analyze::protocol_analysis::{
-    realize, replay_strategy, RealizabilityOutcome, RealizabilityRequest, StrategyReplayFailure,
+    realize, replay_strategy, RealizabilityOutcome, RealizabilityRefusal, RealizabilityRequest,
 };
 use qsl_eval::model_subject::{ProtocolSubject, RoleBinding};
 use qsl_eval::simulation::protocol::StepKind;
 use qsl_package::CheckedPackage;
 use qsl_replay::protocol_analysis::{
-    node_text, AnalysisOutcome, BoundsDraft, InconclusiveCause, RealizabilityCounterexample,
-    RealizabilityWitness, RunBudget, StrategyAction, UnsupportedSlug,
+    node_text, AnalysisOutcome, BoundsDraft, InconclusiveCause, Observed,
+    RealizabilityCounterexample, RealizabilityWitness, RunBudget, RunLimit, StrategyAction,
+    UnsupportedSlug,
 };
 use qsl_replay::{DecidingElement, SeparatingWitnessRecord};
 use qsl_semantics::model::observation::DocumentRef;
@@ -56,13 +57,23 @@ struct Fixture {
 
 impl Fixture {
     fn new(delivery: &str, run: &str) -> Self {
+        Self::over(delivery, "", run, &[0])
+    }
+
+    /// A fixture whose protocol declares `captures` first, with one initial
+    /// state per value of the cell `c` in `values`.
+    fn over(delivery: &str, captures: &str, run: &str, values: &[i64]) -> Self {
         let text = format!(
-            "{RECORDS}protocol Flow using pp over (k: M::Cell) on origin {{\n{}\nrun {run}\n\
+            "{RECORDS}protocol Flow using pp over (k: M::Cell) on origin {{\n{captures}{}\nrun {run}\n\
              finish Done as (zz: Boolean) {{ true }};\n}}\n",
             members(delivery)
         );
         let mut documents = Documents::new();
-        let initial = vec![documents.start("s0", &[("c", 0)])];
+        let initial = values
+            .iter()
+            .enumerate()
+            .map(|(at, value)| documents.start(&format!("s{at}"), &[("c", *value)]))
+            .collect();
         Self {
             checked: package(&text),
             admitted: admitted_source(&text),
@@ -240,10 +251,8 @@ fn the_repaired_example_is_realized_by_a_table_the_walk_accepts() {
             peer: fixture.named("Seller")
         })
     );
-    let walked = replay_strategy(&fixture.admitted, fixture.request(64), &found)
-        .expect("admitted")
-        .expect("the walk passes");
-    assert_eq!(walked, found.closure);
+    let walked = replay_strategy(&fixture.admitted, fixture.request(64), &found).expect("admitted");
+    assert_eq!(witness(walked), found);
 
     let mut edited = found.clone();
     for strategy in &mut edited.strategies {
@@ -253,9 +262,51 @@ fn the_repaired_example_is_realized_by_a_table_the_walk_accepts() {
     }
     let failed =
         replay_strategy(&fixture.admitted, fixture.request(64), &edited).expect("admitted");
-    assert!(
-        matches!(failed, Err(StrategyReplayFailure::Lost { .. })),
-        "{failed:?}"
+    assert_eq!(
+        inconclusive(failed),
+        InconclusiveCause::StrategyReplayFailed
+    );
+}
+
+/// FR-218: every role holds the protocol captures, so two initial states
+/// that differ in a capture the `Seller`'s guard reads are told apart by
+/// the `Warehouse` too: it ends under one and receives under the other.
+#[trace("TC-1411", "FR-571-AC-1")]
+#[test]
+fn a_capture_tells_initial_states_apart_for_every_role() {
+    let fixture = Fixture::over(
+        "exactly-once-premise",
+        "capture big: Boolean = k.v >= 1;\n",
+        &format!(
+            "sequence Main {{\n\
+             choice Decide by Seller visible (big) {{\n\
+               case no when {{ not big }} sequence Cancel {{ }}\n\
+               case yes when {{ big }} sequence Ship {{ {PICK} }}\n\
+             }} }}"
+        ),
+        &[0, 1],
+    );
+    let found = witness(fixture.run());
+    let warehouse = found
+        .strategies
+        .iter()
+        .find(|strategy| strategy.role == fixture.named("Warehouse"))
+        .expect("a Warehouse strategy");
+    let mut first: Vec<&StrategyAction> = warehouse
+        .table
+        .iter()
+        .filter(|(class, _)| matches!(class[..], [Observed::Captures { .. }]))
+        .map(|(_, action)| action)
+        .collect();
+    first.sort();
+    assert_eq!(
+        first,
+        [
+            &StrategyAction::Receive {
+                peer: fixture.named("Seller")
+            },
+            &StrategyAction::End,
+        ]
     );
 }
 
@@ -285,6 +336,32 @@ fn an_unstated_premise_or_the_horizon_is_inconclusive() {
         inconclusive(fixture.decide(fixture.request(3))),
         InconclusiveCause::Horizon
     );
+    let mut request = fixture.request(64);
+    request.budget = RunBudget {
+        max_states: 1,
+        ..RunBudget::default()
+    };
+    assert_eq!(
+        fixture.decide(request).outcome,
+        AnalysisOutcome::Failed(RunLimit {
+            limit: "max_states",
+            value: 1
+        })
+    );
+}
+
+/// V1 defines no fact a role-knowledge or environment premise may hold, so
+/// a non-empty set is refused rather than carried in the key and ignored.
+#[trace("TC-1411")]
+#[test]
+fn a_premise_that_holds_a_fact_is_refused() {
+    let fixture = worked("exactly-once-premise", PICK, CANCELLED);
+    let mut request = fixture.request(64);
+    request.environment = Some(Some(BTreeSet::from(["loss".to_owned()])));
+    assert!(matches!(
+        realize(&fixture.admitted, request),
+        Err(RealizabilityRefusal::PremiseFact("environment"))
+    ));
 }
 
 /// TC-1411 steps 2 and 5: an admitted loss defeats the protocol on every
@@ -293,6 +370,7 @@ fn an_unstated_premise_or_the_horizon_is_inconclusive() {
     "TC-1411",
     "FR-571-AC-2",
     "FR-571-AC-5",
+    "FR-571-AC-6",
     "FR-574-AC-3",
     "FR-574-AC-4",
     "QSpec-FR-175-AC-2",

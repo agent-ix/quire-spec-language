@@ -1,0 +1,40 @@
+---
+id: SR-2026111321481802
+title: "gap analysis of PR2701 realizability over the qsl-eval arena"
+type: SpecReview
+analysis: gap-analysis
+scope: "agent-ix/quire-spec-language; FR-571-AC-1..6, FR-572-AC-5, FR-574-AC-3/4, FR-575-AC-2, QSpec FR-175-AC-1..6 and the tests PR2701 tags to them; PR2701 76d8a5a1ce34b00a49bcdce11ffe1decf5e92d2f"
+review_set: subset
+---
+
+## Summary
+
+Ticket: QSL-1896 (ADR-036 slice 4). Plan completion: not assessed. This is a planless audit over `quoin matrix --json` (quoin 0.29.4) at the PR head, scoped to the criteria the PR tags. FR-571-AC-1 to AC-5 are tagged and backed; FR-571-AC-6 has no binder. Every tagged test calls the new API (`realize`, `replay_strategy`), so none can pass without the code. Tags use `#[trace]` only, with no `/// Trace:` lines, and every tag names an AC that its test exercises at least in part.
+
+## Findings
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-001 | high | FR-571-AC-6 has no tagged test and none can exist: the `bounded-static` arena has no owner branch, so its two `inconclusive` cases never arise. TC-1411 step 6 cannot be carried out either. The criterion must be restated as the profile fact (see SR-2026111321481803 FND-001 for the wording), and the existing environment-defeat test, which asserts one `defeats_per_branch` entry, then tags it. | spec/functional/FR-571-decide-whether-local-strategies-realize-a-global-protocol.md:123 |
+| FND-002 | medium | Realizability counterexamples have no replay arm. PA-20 (SM-7) settles a refutation only after it replays, but only the projection arm exists (`qsl-replay/src/spine/protocol_structure.rs:229-257`). Deferring this to slice 5 is acceptable because the kind stays unserved, so no refutation reaches settlement. However, QSL-1897's description names settlement through PA-20 and not this arm. Add it to QSL-1897 before merge so the deferral has an owner. | qsl-replay/src/protocol_analysis/strategy.rs:99-133 |
+| FND-003 | low | FR-571-AC-1's second half ("a table edited to fail the walk makes the result non-conclusive") is backed only through `replay_strategy` returning `Lost`. The `realize` mapping from walk failure to `Inconclusive(StrategyReplayFailed)` is not exercised. FR-571-AC-3's last sentence (a run limit settles `failed`) is also tagged but untested; one call with a one-state `RunBudget` would back it. `max_history`, `Unforced` and `NotClosed` are also untested, which is acceptable for this slice. | qsl-analyze/tests/it/protocol_realizability.rs:225-260, 263-288 |
+| FND-004 | low | No test covers soundness against FND-001 and FND-002 of SR-2026111321481801: no fixture has two initial states, and none has a role with two enabled actions under `parallel` near the horizon. The tests cover one false-proved guard (an edited table fails the walk) and one false-refuted guard (an open range gives `CutCount`, not `proved`). | qsl-analyze/tests/it/protocol_realizability.rs:50-118 |
+
+## Scope and evidence
+
+Matrix binders were read from `quoin matrix --json` at the PR head. The table below records each test-to-AC binding and the AC text.
+
+- FR-571-AC-1 (spec/functional/FR-571-decide-whether-local-strategies-realize-a-global-protocol.md): realizable protocol yields a witness whose replay walk passes; an edited table is non-conclusive. (examined)
+- FR-571-AC-2 (spec/functional/FR-571-decide-whether-local-strategies-realize-a-global-protocol.md): hidden choice yields IndistinguishableHistories; environment defeat yields EnvironmentDefeat per owner branch. (examined)
+- FR-571-AC-3 (spec/functional/FR-571-decide-whether-local-strategies-realize-a-global-protocol.md): absent premise inconclusive, declared-empty decides, horizon inconclusive, run limit failed. (examined)
+- FR-571-AC-4 (spec/functional/FR-571-decide-whether-local-strategies-realize-a-global-protocol.md): equal observation sequences get equal actions; no common winning action is refuted or inconclusive. (examined)
+- FR-571-AC-5 (spec/functional/FR-571-decide-whether-local-strategies-realize-a-global-protocol.md): quantifies over every admitted outcome; one admitted loss defeats; open range cut is inconclusive. (examined)
+- FR-571-AC-6 (spec/functional/FR-571-decide-whether-local-strategies-realize-a-global-protocol.md): avoidable histories and cut-dependent defeats are inconclusive. (examined)
+- FR-572-AC-5 (spec/functional/FR-572-key-protocol-analysis-results-structurally.md): two runs on one key return the same result. (examined)
+- FR-574-AC-3 (spec/functional/FR-574-carry-the-separating-witness-record-on-a-decisive-protocol-counterexample.md): deciding_element is the violated obligation's canonical node string. (examined)
+- FR-574-AC-4 (spec/functional/FR-574-carry-the-separating-witness-record-on-a-decisive-protocol-counterexample.md): trace_position for both realizability forms. (examined)
+- FR-575-AC-2 (spec/functional/FR-575-answer-unsupported-for-constructs-outside-the-bounded-static-profile.md): a qsl-eval-refused construct yields evaluator-unsupported with its cause. (examined)
+
+## Verdict
+
+FR-571-AC-1 to AC-5, FR-572-AC-5, FR-574-AC-3/4 (realizability halves) and FR-575-AC-2 are backed. FR-571-AC-6 is a spec defect, not a missing test, and the spec-review amendment closes it. The replay-arm deferral needs QSL-1897 updated before merge. After that, together with the code-review blockers, the PR is mergeable.

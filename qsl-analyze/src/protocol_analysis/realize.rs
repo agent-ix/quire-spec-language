@@ -121,22 +121,13 @@ impl From<ExpansionStop> for RealizabilityRefusal {
 pub type RealizabilityOutcome =
     ProtocolAnalysisResult<RealizabilityWitness, RealizabilityCounterexample>;
 
-/// Why a strategy table failed the replay walk (PA-19).
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum StrategyReplayFailure {
-    /// A role reached a class the table does not hold.
-    Unclassified {
-        /// The role.
-        role: CheckedNodeId,
-    },
-    /// A play under the table violated an obligation, stopped with a
-    /// committed action not enabled, or ended undecided.
-    Lost {
-        /// The play, in step order.
-        play: Vec<ProtocolTransition>,
-    },
-    /// A play reached the horizon or `max_history`: the walk did not close.
-    NotClosed,
+/// Why a strategy table did not pass the replay walk (PA-19).
+enum WalkFailure {
+    /// A role reached a class the table does not hold; a play under the
+    /// table violated an obligation, stopped with a committed action not
+    /// enabled or ended undecided; or a play reached `max_depth` or
+    /// `max_history`, so the walk did not close.
+    NotShown,
     /// A run limit stopped the walk.
     Limit(RunLimit),
 }
@@ -797,51 +788,33 @@ pub fn realize(
             Settled::Inconclusive(InconclusiveCause::Unforced),
         ));
     }
-    let closure = match game.walk(&strategies)? {
-        Ok(closure) => closure,
-        Err(StrategyReplayFailure::Limit(limit)) => {
-            return Ok(result(key, Settled::Failed(limit)));
-        }
-        Err(_) => {
-            return Ok(result(
-                key,
-                Settled::Inconclusive(InconclusiveCause::StrategyReplayFailed),
-            ));
-        }
-    };
-    if admitted.open_range {
-        return Ok(result(
-            key,
-            Settled::Inconclusive(InconclusiveCause::CutCount),
-        ));
-    }
     Ok(result(
         key,
-        Settled::Proved(RealizabilityWitness {
-            key: key.clone(),
-            strategies,
-            closure,
-        }),
+        game.gate(key, strategies, admitted.open_range)?,
     ))
 }
 
-/// Re-run the replay walk of PA-19 for `witness` over the request's arena.
+/// Settle the strategy table of `witness` over the request's arena by the
+/// gate [`realize`] settles its own table with (PA-19): `proved`, with the
+/// walk's closure, only after the replay walk passes; `inconclusive` for a
+/// table that fails it or under an open delivery range; `failed` when a
+/// run limit stops it. A request that reaches no arena settles as
+/// [`realize`] settles it.
 ///
 /// # Errors
 ///
-/// [`RealizabilityRefusal`] as [`realize`] refuses; the walk's own result is
-/// the inner `Result`. A request that reaches no arena (unsupported, or a
-/// premise not stated) has no walk and returns
-/// [`StrategyReplayFailure::NotClosed`].
+/// [`RealizabilityRefusal`] as [`realize`] refuses.
 pub fn replay_strategy(
     package: &CheckedPackageV2,
     request: RealizabilityRequest<'_>,
     witness: &RealizabilityWitness,
-) -> Result<Result<Closure, StrategyReplayFailure>, RealizabilityRefusal> {
+) -> Result<RealizabilityOutcome, RealizabilityRefusal> {
     let budget = request.budget;
     let admitted = admit(package, request)?;
-    let Ok(system) = admitted.system else {
-        return Ok(Err(StrategyReplayFailure::NotClosed));
+    let key = &admitted.key;
+    let system = match admitted.system {
+        Ok(system) => system,
+        Err(outcome) => return Ok(result(key, outcome)),
     };
     let game = Game {
         system: &system,
@@ -850,7 +823,10 @@ pub fn replay_strategy(
         max_history: admitted.max_history,
         budget,
     };
-    game.walk(&witness.strategies)
+    Ok(result(
+        key,
+        game.gate(key, witness.strategies.clone(), admitted.open_range)?,
+    ))
 }
 
 /// The first pair of points of one class whose winning sets are non-empty
@@ -939,45 +915,58 @@ impl Game<'_, '_> {
             .cloned()
     }
 
+    /// PA-19's gate over the finished table `strategies`.
+    fn gate(
+        &self,
+        key: &ProtocolAnalysisKey,
+        strategies: Vec<RoleStrategy>,
+        open_range: bool,
+    ) -> Result<Settled, RealizabilityRefusal> {
+        let closure = match self.walk(&strategies)? {
+            Ok(closure) => closure,
+            Err(WalkFailure::Limit(limit)) => return Ok(Settled::Failed(limit)),
+            Err(WalkFailure::NotShown) => {
+                return Ok(Settled::Inconclusive(
+                    InconclusiveCause::StrategyReplayFailed,
+                ))
+            }
+        };
+        if open_range {
+            return Ok(Settled::Inconclusive(InconclusiveCause::CutCount));
+        }
+        Ok(Settled::Proved(RealizabilityWitness {
+            key: key.clone(),
+            strategies,
+            closure,
+        }))
+    }
+
     /// PA-19: walk every environment play against the finished table,
     /// selecting each role's action by its recomputed class, and check that
     /// every play wins with every committed action enabled.
     fn walk(
         &self,
         strategies: &[RoleStrategy],
-    ) -> Result<Result<Closure, StrategyReplayFailure>, RealizabilityRefusal> {
+    ) -> Result<Result<Closure, WalkFailure>, RealizabilityRefusal> {
         let roles = self.names.roles.len();
         let mut plays = 0u64;
         let mut visited = 0usize;
-        // A pending state: the state, its play and each role's own steps.
-        type Pending = (
-            ProtocolState<Sc>,
-            Vec<ProtocolTransition>,
-            Vec<ObservationClass>,
-        );
-        let mut stack: Vec<Pending> = self
+        // A pending state: the state, its depth and each role's own steps.
+        let mut stack: Vec<(ProtocolState<Sc>, usize, Vec<ObservationClass>)> = self
             .system
             .initial()
             .into_iter()
             .rev()
-            .map(|state| (state, Vec::new(), vec![Vec::new(); roles]))
+            .map(|state| (state, 0, vec![Vec::new(); roles]))
             .collect();
-        while let Some((state, played, steps)) = stack.pop() {
+        while let Some((state, depth, steps)) = stack.pop() {
             visited += 1;
             if let Err(limit) = charge(visited, "max_states", self.budget.max_states) {
-                return Ok(Err(StrategyReplayFailure::Limit(limit)));
+                return Ok(Err(WalkFailure::Limit(limit)));
             }
-            let lost = || {
-                Err(StrategyReplayFailure::Lost {
-                    play: played.clone(),
-                })
-            };
             let (expansion, terminal) = self.system.successors_and_terminal(&state)?;
-            if finding_value(&expansion.findings).is_some() {
-                return Ok(lost());
-            }
-            if self.too_long(&steps) {
-                return Ok(Err(StrategyReplayFailure::NotClosed));
+            if finding_value(&expansion.findings).is_some() || self.too_long(&steps) {
+                return Ok(Err(WalkFailure::NotShown));
             }
             // A class the table lacks matters only where the role acts.
             let committed: Vec<Option<StrategyAction>> = self
@@ -993,40 +982,26 @@ impl Game<'_, '_> {
                     match &committed[step.role] {
                         Some(action) if *action == step.action => {}
                         Some(_) => continue,
-                        None => {
-                            return Ok(Err(StrategyReplayFailure::Unclassified {
-                                role: self.names.roles[step.role].clone(),
-                            }))
-                        }
+                        None => return Ok(Err(WalkFailure::NotShown)),
                     }
                 }
-                allowed.push((transition, next, step));
+                allowed.push((next, step));
             }
             if allowed.is_empty() {
-                if terminal != TerminalClass::Intended {
-                    return Ok(lost());
-                }
-                for (role, action) in committed.iter().enumerate() {
-                    match action {
-                        Some(StrategyAction::End) => {}
-                        Some(_) => return Ok(lost),
-                        None => {
-                            return Ok(Err(StrategyReplayFailure::Unclassified {
-                                role: self.names.roles[role].clone(),
-                            }))
-                        }
-                    }
+                let ended = committed
+                    .iter()
+                    .all(|action| action.as_ref() == Some(&StrategyAction::End));
+                if terminal != TerminalClass::Intended || !ended {
+                    return Ok(Err(WalkFailure::NotShown));
                 }
                 plays += 1;
                 continue;
             }
-            if exceeds(played.len() + 1, self.max_depth) {
-                return Ok(Err(StrategyReplayFailure::NotClosed));
+            if exceeds(depth + 1, self.max_depth) {
+                return Ok(Err(WalkFailure::NotShown));
             }
-            for (transition, next, step) in allowed.into_iter().rev() {
-                let mut extended = played.clone();
-                extended.push(transition);
-                stack.push((next, extended, Self::extended(&steps, step.as_ref())));
+            for (next, step) in allowed.into_iter().rev() {
+                stack.push((next, depth + 1, Self::extended(&steps, step.as_ref())));
             }
         }
         Ok(Ok(Closure {
@@ -1034,5 +1009,46 @@ impl Game<'_, '_> {
             horizon: self.max_depth,
             closed: true,
         }))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use quire_contract_model::CheckedNodePathSegment;
+
+    use super::*;
+
+    fn send(name: &str) -> StrategyAction {
+        StrategyAction::Send {
+            node: CheckedNodeId {
+                package: "pkg".into(),
+                path: vec![CheckedNodePathSegment::Name(name.into())],
+                ordinal: 0,
+            },
+        }
+    }
+
+    fn point(winning: &[StrategyAction], not_lost: &[StrategyAction]) -> Point {
+        Point {
+            node: 0,
+            winning: winning.iter().cloned().collect(),
+            not_lost: not_lost.iter().cloned().collect(),
+        }
+    }
+
+    /// PA-18 (i): disjoint winning sets force a refutation only when the
+    /// disjointness rests on no action a cut left open. Two `parallel`
+    /// sends of one role, one of them cut at the horizon at the first
+    /// history and winning at the second, force nothing.
+    #[test]
+    fn a_disjointness_resting_on_a_cut_action_is_not_forced() {
+        let (x, y) = (send("X"), send("Y"));
+        let cut = [
+            point(&[x.clone()], &[x.clone(), y.clone()]),
+            point(&[y.clone()], &[y.clone()]),
+        ];
+        assert!(forced_pair(&cut).is_none());
+        let decided = [point(&[x.clone()], &[x]), point(&[y.clone()], &[y])];
+        assert!(forced_pair(&decided).is_some());
     }
 }

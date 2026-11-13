@@ -15,5 +15,5 @@ pub use profile::{unsupported_construct, Profile};
 pub use project::{project, ProjectionOutcome, ProjectionRefusal, ProjectionRequest};
 pub use realize::{
     realize, replay_strategy, RealizabilityOutcome, RealizabilityRefusal, RealizabilityRequest,
-    StrategyReplayFailure, ANALYZER,
+    ANALYZER,
 };
