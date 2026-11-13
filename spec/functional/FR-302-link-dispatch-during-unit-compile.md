@@ -92,7 +92,8 @@ body type against the operation's declared result, are checked for every unit
 (FR-576), and for a called operation when dispatch linking first reads the
 body, before any consumer uses it; a mismatch refuses
 `ill_typed`/`type-mismatch` at the body (QSpec FR-151's arity row gives the
-same code and cause). Resolving a body to
+same code and cause). A body on an operation that declares no result type
+refuses the same way (FR-576). Resolving a body to
 its `DeclarationKey` and setting `has_body` do not depend on that check.
 
 Exactly one executable unit `operation-body` SHALL resolve to each
