@@ -226,7 +226,6 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                 .chain(Self::protocol_values(instance))
                 .collect()
         };
-        eprintln!("DBGLEAD {leading:?}");
         let mut captures: Vec<Bound> = Vec::with_capacity(template.registration.len());
         for (_, initializer) in &template.registration {
             let mut frame = leading.clone();

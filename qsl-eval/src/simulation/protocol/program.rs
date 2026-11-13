@@ -827,8 +827,11 @@ impl<'a> Program<'a> {
                 steps.then_some((owner.node, index))
             })
             .collect();
+        // A template's expressions read the activation binder too (FR-381),
+        // at their own frame positions, so any template keeps it.
         let trigger_read = activation_slot.is_some_and(|slot| {
-            readers.get(slot).is_some_and(|readers| !readers.is_empty())
+            !templates.is_empty()
+                || readers.get(slot).is_some_and(|readers| !readers.is_empty())
                 || replicated.iter().any(|(_, role)| {
                     matches!(role.lifetime, Lifetime::Until(until) if until.reads_local(slot))
                 })

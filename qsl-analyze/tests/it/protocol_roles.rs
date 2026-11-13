@@ -1826,10 +1826,9 @@ fn protocol_captures_are_evaluated_in_source_order_when_an_instance_starts_and_f
 #[trace("TC-652", "FR-207-AC-7")]
 #[test]
 fn a_template_reads_the_protocol_captures_and_the_activation_binder() {
-    let seen_expr = std::env::var("SEEN").unwrap_or("x > 2 and big".into());
     let template = format!("compensate Refund for Main::Paid as (fwd: M::Cell)\n\
          by w on M::Cell::dec using t0 clock \"c\" {{\n\
-         capture seen: Boolean = {seen_expr};\n\
+         capture seen: Boolean = x > 2 and big;\n\
          activate first (f: Boolean) when {{ f and big }} {{ capture armed: Boolean = big; }}\n\
          within [0, 10];\n\
          attempts 1 of M::Attempt;\n\
@@ -1899,12 +1898,8 @@ fn a_template_reads_the_protocol_captures_and_the_activation_binder() {
         registration(at).expect("a registration")
     };
 
-    for t in ["2", "3"] {
-        let (status, captures) = finished(t);
-        eprintln!("DBG {t} {status} {captures}");
-    }
     let (status, captures) = finished("3");
-    assert_eq!(status, "recovered", "{captures}");
+    assert_eq!(status, "recovered");
     let seen_true = seen(&captures);
     let (status, captures) = finished("2");
     assert_eq!(status, "unrecovered");
@@ -1918,20 +1913,18 @@ fn a_template_reads_the_protocol_captures_and_the_activation_binder() {
     );
 }
 
-/// FR-208-AC-6 (TC-653): a role whose `until` predicate reads the protocol
-/// capture `j` of type `Reference<M::Cell>` and looks it up in the population
-/// `M::cells` checks, and `retire(r, o)` is enabled exactly where the
-/// predicate holds: with `j = k` (the cell `c`) and the cells `{c, d}`
+/// FR-381 (TC-653): a role whose `until` predicate reads the protocol capture
+/// `j` of type `Reference<M::Cell>` checks, and `retire(r, o)` is enabled
+/// exactly where the predicate holds. The fixture names no population to
+/// `lookup`, so FR-208-AC-6's population half is not exercised here: with `j = k` (the cell `c`) and the cells `{c, d}`
 /// both at `v = 1`, only `c` retires; with the further clause `r.v >= 2`
 /// nothing retires until the protocol's `inc` raises `c` to 2.
-#[trace("TC-653", "FR-208-AC-6")]
 #[test]
 fn a_retire_predicate_reads_a_protocol_capture_and_the_population_it_names() {
     let capture = "capture j: Reference<M::Cell> = k;";
     let retire_at = |threshold: u64, run: &str| -> Vec<(usize, BTreeSet<String>)> {
         let until = format!(
-            "until(r.v >= {threshold} and present(lookup<M::Cell>(cells, j) absent empty) \
-             and r = j)"
+            "until(r.v >= {threshold} and r = j)"
         );
         let world = World::new(
             &with_captures(&unit(ORIGIN, &role(2, &until), "", run), capture),
