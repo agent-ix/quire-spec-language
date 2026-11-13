@@ -61,6 +61,9 @@ pub fn unsupported_construct(
     if let Some(template) = view.compensations().first() {
         return Ok(Some(cause(UnsupportedSlug::Compensation, template, None)));
     }
+    // The specific causes first, in layout order; a control the profile's
+    // list does not include is reported only when nothing more specific is.
+    let mut other = None;
     for id in view.controls() {
         let control = node(package, id)?;
         let found = match control_operation(control)? {
@@ -72,7 +75,10 @@ pub fn unsupported_construct(
             | ControlOperation::Effect
             | ControlOperation::Event
             | ControlOperation::Commit
-            | ControlOperation::Fence => Some(cause(UnsupportedSlug::UnsupportedControl, id, None)),
+            | ControlOperation::Fence => {
+                other.get_or_insert_with(|| cause(UnsupportedSlug::UnsupportedControl, id, None));
+                None
+            }
             _ => {
                 match control_body(control)? {
                     ControlBody::Parallel { join, .. } if join.policy != "all" => Some(cause(
@@ -83,9 +89,6 @@ pub fn unsupported_construct(
                     ControlBody::Parallel { join, .. } if join.outstanding.is_some() => Some(
                         cause(UnsupportedSlug::UnsupportedJoin, id, Some("outstanding")),
                     ),
-                    ControlBody::Choice { owner, .. } if !view.roles().contains(&owner) => {
-                        Some(cause(UnsupportedSlug::UnassignedLocalChoice, id, None))
-                    }
                     _ => None,
                 }
             }
@@ -94,5 +97,5 @@ pub fn unsupported_construct(
             return Ok(found);
         }
     }
-    Ok(None)
+    Ok(other)
 }

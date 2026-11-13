@@ -877,23 +877,20 @@ fn compensation_and_timed_await_answer_unsupported() {
     assert_eq!(cause.node, named(&waiting, "Wait"));
 }
 
-/// FR-575-AC-1: an `outstanding` policy with `join all`, and a choice owned
-/// by the protocol rather than a role.
+/// FR-575-AC-1: an `outstanding` policy under `join all` is admitted by the
+/// checker and answers `unsupported-join`.
 #[trace("TC-1415", "FR-575-AC-1")]
 #[test]
-fn probe_outstanding_under_join_all_and_a_protocol_owned_choice() {
-    let outstanding = admitted_source(&source(
+fn an_outstanding_policy_under_join_all_answers_unsupported() {
+    let package = admitted_source(&source(
         MEMBERS,
         "sequence Main { parallel Par { branch a sequence Ay { } branch b sequence Bee { } } \
          join all [a, b] outstanding cancel; }",
     ));
-    let found = unsupported_construct(&outstanding, &clause(&outstanding)).unwrap();
-    assert_eq!(found.map(|cause| cause.slug), Some(UnsupportedSlug::UnsupportedJoin));
-    let owned = admitted_source(&source(
-        MEMBERS,
-        "sequence Main { choice Pick by Flow visible () { case a when { true } sequence A { } \
-         case b when { false } sequence B { } } }",
-    ));
-    let found = unsupported_construct(&owned, &clause(&owned)).unwrap();
-    assert_eq!(found.map(|cause| cause.slug), Some(UnsupportedSlug::UnassignedLocalChoice));
+    let cause = unsupported_construct(&package, &clause(&package))
+        .unwrap()
+        .expect("an outstanding policy has no rule");
+    assert_eq!(cause.slug, UnsupportedSlug::UnsupportedJoin);
+    assert_eq!(cause.detail.as_deref(), Some("outstanding"));
+    assert_eq!(cause.node, named(&package, "Par"));
 }

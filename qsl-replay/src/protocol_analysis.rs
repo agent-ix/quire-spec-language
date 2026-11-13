@@ -711,8 +711,6 @@ pub enum UnsupportedSlug {
     Compensation,
     /// A timed `await`.
     TimedAwait,
-    /// A `choice` the protocol assigns to no role.
-    UnassignedLocalChoice,
     /// A control outside the profile's list: `check`, `attempt`, `effect`,
     /// `event`, `commit` or `fence`.
     UnsupportedControl,
@@ -731,7 +729,6 @@ impl UnsupportedSlug {
             Self::Repeat => "repeat",
             Self::Compensation => "compensation",
             Self::TimedAwait => "timed-await",
-            Self::UnassignedLocalChoice => "unassigned-local-choice",
             Self::UnsupportedControl => "unsupported-control",
             Self::EvaluatorUnsupported => "evaluator-unsupported",
         }
