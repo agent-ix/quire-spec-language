@@ -52,3 +52,5 @@ Checked at 7b0adbe07.
 | FND-002 | fixed | FR-577:183-185 now fixes the spelling `[lo, hi]`, with base-10 ends, `, ` as separator, and `-inf`/`+inf`. AC-5 covers the unbounded case. |
 | FND-003 | fixed | The "Today ..." sentence is gone. The Description now states the target rule and the bank example as a design statement. |
 | FND-004 | fixed | AC-1..AC-4 are now single checks (typing, reorder identity, refusal intervals, `call_site` message), and AC-4/AC-5's old fixtures are split into AC-14..AC-18. |
+| FND-005 | fixed | c5b1581c6: AC-29's `CanAfford` is `amount <= self.balance and self.limit <= self.balance`, so `Debited` still checks and the only refusal is `Room`'s at `self.balance - self.limit`. |
+| FND-006 | fixed | c5b1581c6: TC-1416:29-34 and steps 3 and 12 compile the function-only units through `call_site` with the function selections `g` and `f`. |
