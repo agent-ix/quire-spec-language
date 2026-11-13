@@ -79,7 +79,10 @@ plays explored, the horizon and whether exploration closed (PA-19).
   steps the one case whose guard holds, so the branch is fixed by earlier
   environment moves or the initial state, through the captures: an owner
   node has one branch, no earlier owner choice can avoid a history, and an
-  environment defeat carries one defeating play, for that branch.
+  environment defeat carries one defeating play, for that branch. The
+  profile activates a protocol `on origin` only, one instance started with
+  the initial state; `activation on each` is outside it and answers
+  `unsupported` (PA-21, FR-575 `activation-on-each`).
 - A role's action at a point where it can step shall be a `send` at its
   control or a receive from a peer, and at a terminal state the end of its
   part; a

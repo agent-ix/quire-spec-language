@@ -44,13 +44,15 @@ other than `bounded-static`, a refusal.
 
 ## Behavior
 
-The profile is `bounded-static`: static roles, literal queue capacities,
-sequence, send, receive, `choice`, and `parallel` with `join all`. The
+The profile is `bounded-static`: activation `on origin`, static roles,
+literal queue capacities, sequence, send, receive, `choice`, and `parallel`
+with `join all`. The
 causes, each a slug of `unsupported_projection` in the style of
 `unsupported-requested-capability` and `unbounded-extent` (FR-057), are:
 
 | Slug | Construct |
 | --- | --- |
+| `activation-on-each` | A protocol activated `on each` trigger: an instance per trigger, whose roles' steps would share one observation. |
 | `dynamic-role-population` | A role with a dynamic population. |
 | `symbolic-queue-capacity` | A queue with a symbolic capacity. |
 | `unsupported-join` | A `join` with policy `any`, `quorum` or `predicate`, or an `outstanding` policy with no rule; the policy is named. |
@@ -61,7 +63,7 @@ causes, each a slug of `unsupported_projection` in the style of
 | `evaluator-unsupported` | Realizability only: a construct `qsl-eval` refuses to step; the `qsl-eval` cause is carried. |
 
 When a protocol holds several such constructs the engine reports the first in
-the order roles, queues, compensations, then the other constructs in layout
+the order activation, roles, queues, compensations, then the other constructs in layout
 order; `unsupported-control` is reported only when no other construct is found.
 QSpec FR-466 lets a `protocol` node own a choice, but the QSL checker refuses
 such a choice (`NodeRole`) before any analysis, so the profile states no cause

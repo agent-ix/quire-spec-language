@@ -1042,6 +1042,41 @@ pub fn channel_ordering(channel: &CheckedSemanticNodeV2) -> Result<ChannelOrderi
         .ok_or_else(|| malformed(&channel.node_id, "ordering"))
 }
 
+/// A protocol clause's activation (FR-449).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ClauseActivation {
+    /// `on origin`: one instance, started with the initial state.
+    Origin,
+    /// `on each`: one instance per trigger record.
+    Each,
+}
+
+impl ClauseActivation {
+    /// The activation a wire word names, `None` for any other word.
+    #[ix_trace_rs::string_edge]
+    fn from_wire(word: &str) -> Option<Self> {
+        match word {
+            "origin" => Some(Self::Origin),
+            "each" => Some(Self::Each),
+            _ => None,
+        }
+    }
+}
+
+/// The activation the protocol clause node `clause` carries.
+///
+/// # Errors
+///
+/// [`ViewRefusal::MissingMember`] naming `activation` when the node has
+/// none, [`ViewRefusal::MalformedMember`] when it is no `kind` group of a
+/// known activation.
+pub fn clause_activation(clause: &CheckedSemanticNodeV2) -> Result<ClauseActivation, ViewRefusal> {
+    group_member(required(clause, "activation")?, "kind")
+        .and_then(text)
+        .and_then(ClauseActivation::from_wire)
+        .ok_or_else(|| malformed(&clause.node_id, "activation"))
+}
+
 /// The key of a FIFO channel: the parameter that stands for a message and the
 /// `expression` node that reads the key over it.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

@@ -63,8 +63,19 @@ impl Fixture {
     /// A fixture whose protocol declares `captures` first, with one initial
     /// state per value of the cell `c` in `values`.
     fn over(delivery: &str, captures: &str, run: &str, values: &[i64]) -> Self {
+        Self::activated("on origin", delivery, captures, run, values)
+    }
+
+    /// [`Self::over`] with the protocol's `activation`.
+    fn activated(
+        activation: &str,
+        delivery: &str,
+        captures: &str,
+        run: &str,
+        values: &[i64],
+    ) -> Self {
         let text = format!(
-            "{RECORDS}protocol Flow using pp over (k: M::Cell) on origin {{\n{captures}{}\nrun {run}\n\
+            "{RECORDS}protocol Flow using pp over (k: M::Cell) {activation} {{\n{captures}{}\nrun {run}\n\
              finish Done as (zz: Boolean) {{ true }};\n}}\n",
             members(delivery)
         );
@@ -485,6 +496,27 @@ fn an_unenumerable_step_binder_is_unsupported_with_the_evaluator_cause() {
                 cause.detail.as_deref(),
                 Some("step binder of an unenumerable record type")
             );
+        }
+        other => panic!("expected unsupported: {other:?}"),
+    }
+}
+
+/// TC-1415: `activation on each` starts an instance per trigger, outside the
+/// profile, so realizability answers `unsupported` at the clause.
+#[trace("TC-1415", "FR-575-AC-1")]
+#[test]
+fn an_activation_on_each_is_unsupported() {
+    let fixture = Fixture::activated(
+        "on each (t: M::Cell)",
+        "exactly-once-premise",
+        "",
+        &format!("sequence Main {{ {PICK} }}"),
+        &[0],
+    );
+    match fixture.run().outcome {
+        AnalysisOutcome::Unsupported(cause) => {
+            assert_eq!(cause.slug, UnsupportedSlug::ActivationOnEach);
+            assert_eq!(cause.node, clause(&fixture.admitted));
         }
         other => panic!("expected unsupported: {other:?}"),
     }

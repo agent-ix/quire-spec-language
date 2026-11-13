@@ -699,6 +699,8 @@ pub struct RunLimit {
 /// (FR-575), under the `unsupported_projection` code.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum UnsupportedSlug {
+    /// A protocol activated `on each` trigger rather than `on origin`.
+    ActivationOnEach,
     /// A role with a dynamic population.
     DynamicRolePopulation,
     /// A queue with a symbolic capacity.
@@ -723,6 +725,7 @@ impl UnsupportedSlug {
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
+            Self::ActivationOnEach => "activation-on-each",
             Self::DynamicRolePopulation => "dynamic-role-population",
             Self::SymbolicQueueCapacity => "symbolic-queue-capacity",
             Self::UnsupportedJoin => "unsupported-join",
