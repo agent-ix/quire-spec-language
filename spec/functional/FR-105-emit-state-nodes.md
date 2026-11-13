@@ -7,6 +7,8 @@ relationships:
     type: implements
   - target: ix://agent-ix/quire-spec-language/ADR-012
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-380
+    type: references
   - target: ix://agent-ix/quire-spec-language/ADR-013
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-088
@@ -103,7 +105,9 @@ source map (FR-095).
   `{kind: "field", declaration: <object_type node>, name: "<field>"}`.
   `pre(e)` lowers as `quire.op.state.pre`. `reaches(a, b, edge)` lowers as a
   `quire.op.model.reaches_field` application whose member is
-  `{kind: "field", declaration: <object_type node>, name: "<edge>"}`. A `reaches`
+  `{kind: "field", declaration: <object_type node>, name: "<edge>"}`, with
+  the added key `population` only when the population the edge walks has an
+  authored bound (FR-380 "Field-edge reachability"). A `reaches`
   over a relationship end lowers by FR-365 as a `quire.op.model.reaches`
   application whose member is a `relationship_end`.
 - The text literal's `type` is the `text` scalar type node.

@@ -16,22 +16,29 @@ relationships:
 
 Verify the `bound` declaration, the finite domain it gives the requirements
 records, the population node a reachability over a relationship end walks and
-the link from the reachability to that node. Scope: FR-380-AC-1 to FR-380-AC-7,
+the link from the reachability, over a relationship end or a field edge, to
+that node. Scope: FR-380-AC-1 to FR-380-AC-14,
 FR-365-AC-6, FR-365-AC-13, FR-104-AC-11.
 
 Catches a bound that is parsed and then ignored by the requirements record, a
 population node built over the population's canonical member type instead of
 the near end's type, a link written as `null` or a second node for the same
 `(E, N)`, a link for an unbounded population (which re-keys every existing
-reachability node), a bound that emits a node no reachability walks, and a
-bound converted into a resource outcome.
+reachability node), a bound that emits a node no reachability walks, a
+bound converted into a resource outcome, a field-edge reachability emitted
+without its link, and a link derived from a sequence's `[l, u]` or from the
+operand's subtype instead of the edge's type.
 
 ## Test Procedure
 
 Over TC-1046's fixture **R** (populations `orders` of `Order`, with `Rush` a
 subtype, and `people` of `Person`, both with no maximum), model alias `M` and
 profile alias `V`, compile one package per row and emit it, then read it with
-IR's v2 reader. `Order/next` is the relationship of TC-1046's table.
+IR's v2 reader. `Order/next` is the relationship of TC-1046's table. Rows 15
+to 21 add to `Order` the fields `chief: Reference<Order>`,
+`chain: Sequence<Reference<Order>>[0, 3]` and
+`pair: Sequence<Reference<Order>>[2, 3]` beside R's
+`trail: Option<Reference<Order>>`.
 
 | # | Input | Expected |
 | --- | --- | --- |
@@ -49,10 +56,17 @@ IR's v2 reader. `Order/next` is the relationship of TC-1046's table.
 | 12 | row 4 plus a bound `[3]` on a second population `staff` with member type `Order` | the clause refuses `ambiguous_declaration`/`ambiguous-name` at its `on` naming `orders` and `staff` (FR-104-AC-5); a reachability-only claim over `E` `Order` refuses the same at the form |
 | 13 | a bound `[2]` on `orders`; evaluate the clause of row 4 over an observation whose `orders` population holds 2 objects, and over one holding 3 | the first is decided as for an unbounded population; the second refuses `cardinality_out_of_bound`/`above-maximum` naming 2 and 3 (`bound` `[0, 2]`, `collection` `set`, `count` `3`), not an incomplete or resource outcome; a clause over the bounded context population alone, and one whose `reaches` a short-circuit skips, refuse the same |
 | 14 | `bound OrdersBound on M::orders [3]`, `bound PeopleBound on M::people [2]`, the invariant of row 4 and `invariant NoFriendLoop using V on M::Person at current { not reaches(self, self, friend) }` | the two reachability applications carry different `population` ids; the package holds two population nodes, each linked once, with one `Type` occurrence each, at `[3]` and `[2]` |
+| 15 | `bound OrdersBound on M::orders [3]` with `invariant ChiefLoop using V on M::Order at current { not reaches(self, self, chief) }` | a `quire.op.model.reaches_field` application whose `field` member holds `kind` `field`, `declaration` the `Order` node, `name` `chief` and `population` the id of row 5's `Population<Order>[3]` node, which its `dependencies` hold |
+| 16 | row 15 with `trail` in place of `chief` | the same, with `name` `trail` and the same `population` id |
+| 17 | row 15 with `chain`, and again with `pair` | the same, with `name` `chain` and `pair` and the same `population` id; no node over `[0, 3]` or `[2, 3]` is a population node |
+| 18 | the packages of rows 15 to 17, read by IR's strict v2 reader | each admitted; the population selection of the `reaches_field` application returns the `Population<Order>[3]` node and its least-ordinal `Type` occurrence |
+| 19 | rows 15 to 17 without the `bound` | each member holds exactly `kind`, `declaration` and `name`; no `model_population` node; row 16 without the bound, over R without the added fields, gives the application node id TC-1047 row 3 records |
+| 20 | `bound OrdersBound on M::orders [3]` under `quire.model.complete/v1` with `invariant RushTrail using V on M::Rush at current { not reaches(self, self, trail) }` | the link names the `Population<Order>[3]` node, not a `Population<Rush>[3]` node |
+| 21 | row 16 plus the invariant of row 4 in one package | both applications carry the same `population` id; the package holds one population node with one `Type` occurrence at the `[3]` span |
 
 ## Expected Results
 
 An authored bound makes the population a finite domain of the records that name
-it, and nothing else changes for an unbounded population. A reachability over a
-bounded population links to one node of `(E, N)`, the node every writer of that
+it, and nothing else changes for an unbounded population. A reachability, over
+a relationship end or a field edge, over a bounded population links to one node of `(E, N)`, the node every writer of that
 `(E, N)` shares, with the occurrence rule of FR-365 "The population link".
