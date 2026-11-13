@@ -153,6 +153,27 @@ naming `owner` or `visible` when the node lacks it, and `MalformedMember`
 naming that member when `owner` is not a reference or `visible` is not a set of
 references.
 
+Four more view functions read the channel and queue members the protocol
+analysis engine (ADR-036 PA-3) needs beyond the delivery and capacity above:
+
+```rust
+pub fn channel_ordering(channel: &CheckedSemanticNodeV2)
+    -> Result<ChannelOrdering, ViewRefusal>;
+pub fn fifo_key(channel: &CheckedSemanticNodeV2) -> Result<FifoKey<'_>, ViewRefusal>;
+pub fn queue_overflow(queue: &CheckedSemanticNodeV2) -> Result<Overflow, ViewRefusal>;
+pub fn queue_channel(queue: &CheckedSemanticNodeV2) -> Result<&CheckedNodeId, ViewRefusal>;
+```
+
+`channel_ordering` reads the `kind` of a channel's `ordering` Group:
+`ChannelOrdering::Unordered` or `Fifo`. `fifo_key` returns `FifoKey { binder,
+key }`, the message binder node and the key `expression` node of a FIFO
+channel, and refuses an `unordered` channel. `queue_overflow` reads a `queue`
+node's `overflow` and `loss`: `Overflow::Reject`, `Block` or `Loss(LossSelector)`
+with `Head`, `Tail` or `New`. `queue_channel` returns the `channel` node a queue belongs to, which pairs a queue with its channel's premises. Each refuses with `MissingMember` naming the
+absent member and `MalformedMember` naming a member in another shape. No
+function returns a value path for a protocol node: FR-207 has no step kind that
+selects one, and the FR-574 record identifies the node by its checked node id.
+
 ## Behavior
 
 ### The record-to-node map
@@ -164,7 +185,8 @@ reads directly and QSL publishes no view for it. The view functions are
 `protocol_view`, `causal_relation`, `control_operation`, `operation_identity`,
 `binder`, `locus`, `delivery`, `queue_capacity`, `owner_model`, `declaration`,
 `temporal_binding`, `dependency`, `source`, `selection`, `attempts_maximum`,
-`await_anchor`, `channel_endpoints` and `choice_visibility`.
+`await_anchor`, `channel_endpoints`, `choice_visibility`, `channel_ordering`,
+`fifo_key`, `queue_overflow` and `queue_channel`.
 `protocol_view`, `causal_relation`, `binder` and `attempts_maximum` take an
 admitted package; the others take the node, lock or source map they read.
 
@@ -225,6 +247,9 @@ admitted package; the others take the node, lock or source map they read.
 | FR-519-AC-18 | For a protocol with one `await` anchored after an `event` control and one anchored after a `compensation` template, `qsl_package::protocol_view::await_anchor` returns `AwaitAnchorKind::Event` with the event control's `CheckedNodeId` for the first and `AwaitAnchorKind::Compensation` with the template's `CheckedNodeId` for the second, each equal to the `after` Group the checked clause holds in memory, and `AwaitAnchor` and `AwaitAnchorKind` are public. On a copy of the node with `after` removed it refuses `ViewRefusal::MissingMember` naming `after`; with `kind` set to another text, and with `target` removed from the Group, it refuses `ViewRefusal::MalformedMember` naming `after`; no refusal returns a value. | Test (TC-1314) |
 | FR-519-AC-19 | For **R**'s channel `Decisions`, `qsl_package::protocol_view::channel_endpoints` returns the sending role node, the receiving role node and the message type node, each the `CheckedNodeId` the channel node's `from`, `to` and `carries` reference, equal to the checked clause in memory. On a copy of the node with `from`, `to` or `carries` removed it refuses `ViewRefusal::MissingMember` naming that member, and with `from` set to a text term that is not a reference it refuses `ViewRefusal::MalformedMember` naming `from`; neither returns a value. `ChannelEndpoints` has no internality field. | Test (TC-1314) |
 | FR-519-AC-20 | For **R**'s `choice` `Outcome`, `qsl_package::protocol_view::choice_visibility` returns the choice's own `CheckedNodeId`, the owner node and the visible `expression` nodes, each the `CheckedNodeId` the node's `owner` and `visible` reference, equal to the checked clause in memory; `ChoiceVisibility` is public and carries no FR-227 visibility record. On a copy with `owner` or `visible` removed it refuses `ViewRefusal::MissingMember` naming that member; with `owner` set to a non-reference and with `visible` set to a non-set it refuses `ViewRefusal::MalformedMember` naming that member; over a `repeat` node it refuses `MalformedMember` naming `operator`; no refusal returns a value. | Test (TC-1314) |
+| FR-519-AC-21 | For **R**'s FIFO channel `Charges`, `qsl_package::protocol_view::channel_ordering` returns `ChannelOrdering::Fifo` and `fifo_key` returns the message binder node and the key `expression` node, each the `CheckedNodeId` the channel's `ordering` Group references; for an `unordered` channel `channel_ordering` returns `Unordered` and `fifo_key` refuses `MalformedMember` naming `ordering`. On a copy with `ordering` removed both refuse `MissingMember` naming `ordering`; with an unknown `kind` they refuse `MalformedMember` naming `ordering`; no refusal returns a value. | Test (TC-1314) |
+| FR-519-AC-22 | For queues the test authors with overflow `reject`, `block`, and `loss` with each selector `head`, `tail` and `new` (**R** has `reject` only), `qsl_package::protocol_view::queue_overflow` returns `Overflow::Reject`, `Overflow::Block` and `Overflow::Loss` of that selector, equal to the overflow the checked clause holds in memory. On a copy with `overflow` or `loss` removed it refuses `MissingMember` naming that member; with an unknown overflow word, an unknown selector, a selector on `reject` or `block`, or no selector on `loss`, it refuses `MalformedMember` naming `overflow` or `loss`; `queue_channel` returns the channel node the queue's `channel` member references, refuses `MissingMember` naming `channel` when it is removed and `MalformedMember` when it is no reference; no refusal returns a value. | Test (TC-1314) |
+| FR-519-AC-23 | The protocol read surface adds no accessor that renders or derives a value path for a protocol node: FR-207 has no step kind that selects one, and FR-574 identifies the node by its checked node id (ADR-036 PA-24). | Test (TC-1314) |
 
 ## Dependencies
 

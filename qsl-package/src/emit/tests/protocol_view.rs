@@ -14,10 +14,11 @@ use super::protocol_requirements::fixture_w::{
 use super::*;
 use crate::protocol_view::{
     attempts_maximum, attempts_over, await_anchor, binder, causal_relation, channel_endpoints,
-    choice_visibility, control_operation, declaration, delivery, dependency, locus,
-    operation_identity, owner_model, protocol_view, queue_capacity, relation_over, selection,
-    source, temporal_binding, AwaitAnchor, AwaitAnchorKind, ChoiceVisibility, ControlOperation,
-    Delivery, QueueCapacity, Scheduling, ViewRefusal,
+    channel_ordering, choice_visibility, control_operation, declaration, delivery, dependency,
+    fifo_key, locus, operation_identity, owner_model, protocol_view, queue_capacity, queue_channel,
+    queue_overflow, relation_over, selection, source, temporal_binding, AwaitAnchor,
+    AwaitAnchorKind, ChannelOrdering, ChoiceVisibility, ControlOperation, Delivery, FifoKey,
+    LossSelector, Overflow, QueueCapacity, Scheduling, ViewRefusal,
 };
 
 /// The TC-134 workflow plus an `await` anchored at an event, so every edge
@@ -1924,5 +1925,234 @@ fn a_choices_owner_and_visible_set_are_the_nodes_it_references() {
             node: by_name(package, "Poll").node_id.clone(),
             member: "operator"
         }
+    );
+}
+
+/// The argument `name` of `node`, replaced by `value`.
+fn with_argument(
+    node: &CheckedSemanticNodeV2,
+    name: &str,
+    value: CheckedTerm,
+) -> CheckedSemanticNodeV2 {
+    let mut copy = node.clone();
+    let CheckedTerm::Application { arguments, .. } = &mut copy.body else {
+        panic!("an application body");
+    };
+    for argument in arguments {
+        if let CheckedTerm::Binding {
+            name: bound,
+            value: held,
+        } = argument
+        {
+            if &**bound == name {
+                **held = value.clone();
+            }
+        }
+    }
+    copy
+}
+
+/// A text literal term shaped like the emitter's.
+fn text_term(like: &CheckedTerm, word: &str) -> CheckedTerm {
+    let mut term = like.clone();
+    if let CheckedTerm::Literal { value, .. } = &mut term {
+        *value = quire_contract_model::CheckedJson::from_serializable(&json!(word)).unwrap();
+    }
+    term
+}
+
+/// FR-519-AC-21 (TC-1314 row 21): a channel's ordering policy and FIFO key.
+#[trace("FR-519-AC-21", "TC-1314")]
+#[test]
+fn a_channels_ordering_and_fifo_key_are_the_nodes_it_references() {
+    let fixture = fixture();
+    let package = &*fixture.admitted;
+    let charges = by_name(package, "Charges");
+    assert_eq!(channel_ordering(charges).unwrap(), ChannelOrdering::Fifo);
+    let ordering = channel_argument(charges, "ordering");
+    let referenced = |member: &str| match crate::protocol_view::group_member(ordering, member)
+        .expect("a member")
+    {
+        CheckedTerm::Reference { target } => target.clone(),
+        other => panic!("{member} is a reference, not {other:?}"),
+    };
+    let FifoKey { binder, key } = fifo_key(charges).unwrap();
+    assert_eq!(binder, &referenced("binder"));
+    assert_eq!(key, &referenced("key"));
+    assert_eq!(&*node(package, key).node_tag, "expression");
+
+    let members = "role Buyer on M::Order;\nrole Seller on M::Person;\n\
+         channel Pay from Buyer to Seller carries Boolean ordering unordered \
+         delivery unknown capacity 2 overflow block;";
+    let lowered = super::reachability::lower_with(
+        super::protocol_graph::model(),
+        super::protocol_graph::PROFILES,
+        &super::protocol_graph::flow_over("M::Order", "on origin", members),
+    );
+    let unordered = lowered.ir.as_ref().expect("the package is admitted");
+    let pay = by_name(unordered, "Pay");
+    assert_eq!(channel_ordering(pay).unwrap(), ChannelOrdering::Unordered);
+    let refused = ViewRefusal::MalformedMember {
+        node: pay.node_id.clone(),
+        member: "ordering",
+    };
+    assert_eq!(fifo_key(pay).unwrap_err(), refused);
+
+    let missing = ViewRefusal::MissingMember {
+        node: charges.node_id.clone(),
+        member: "ordering",
+    };
+    let removed = without_argument(charges, "ordering");
+    assert_eq!(channel_ordering(&removed).unwrap_err(), missing);
+    assert_eq!(fifo_key(&removed).unwrap_err(), missing);
+    let unknown = with_argument(
+        charges,
+        "ordering",
+        CheckedTerm::Aggregate {
+            members: vec![CheckedTerm::Binding {
+                name: "kind".into(),
+                value: Box::new(text_term(channel_argument(charges, "delivery"), "sorted")),
+            }],
+        },
+    );
+    let malformed = ViewRefusal::MalformedMember {
+        node: charges.node_id.clone(),
+        member: "ordering",
+    };
+    assert_eq!(channel_ordering(&unknown).unwrap_err(), malformed);
+    assert_eq!(fifo_key(&unknown).unwrap_err(), malformed);
+}
+
+/// FR-519-AC-22 (TC-1314 row 22): a queue's overflow policy and selector.
+#[trace("FR-519-AC-22", "TC-1314")]
+#[test]
+fn a_queues_overflow_policy_is_what_the_checked_clause_holds() {
+    let fixture = fixture();
+    let package = &*fixture.admitted;
+    let view = protocol_view(package, &clause(package).node_id).unwrap();
+    let [queue] = view.queues() else {
+        panic!("one queue");
+    };
+    assert_eq!(
+        queue_overflow(node(package, queue)).unwrap(),
+        Overflow::Reject
+    );
+    let held = node(package, queue);
+    assert_eq!(
+        queue_channel(held).unwrap(),
+        &by_name(package, "Charges").node_id
+    );
+    assert_eq!(
+        queue_channel(&with_argument(
+            held,
+            "channel",
+            text_term(channel_argument(held, "overflow"), "Charges")
+        ))
+        .unwrap_err(),
+        ViewRefusal::MalformedMember {
+            node: held.node_id.clone(),
+            member: "channel"
+        }
+    );
+    assert_eq!(
+        queue_channel(&without_argument(held, "channel")).unwrap_err(),
+        ViewRefusal::MissingMember {
+            node: held.node_id.clone(),
+            member: "channel"
+        }
+    );
+
+    for (words, expected) in [
+        ("overflow reject", Overflow::Reject),
+        ("overflow block", Overflow::Block),
+        ("overflow loss head", Overflow::Loss(LossSelector::Head)),
+        ("overflow loss tail", Overflow::Loss(LossSelector::Tail)),
+        ("overflow loss new", Overflow::Loss(LossSelector::New)),
+    ] {
+        let members = format!(
+            "role Buyer on M::Order;\nrole Seller on M::Person;\n\
+             channel Pay from Buyer to Seller carries Boolean ordering fifo by (m: Boolean) {{ m }} \
+             delivery unknown capacity 2 {words};"
+        );
+        let lowered = super::reachability::lower_with(
+            super::protocol_graph::model(),
+            super::protocol_graph::PROFILES,
+            &super::protocol_graph::flow_over("M::Order", "on origin", &members),
+        );
+        let package = lowered.ir.as_ref().expect("the package is admitted");
+        let view = protocol_view(package, &clause(package).node_id).unwrap();
+        let [queue] = view.queues() else {
+            panic!("one queue");
+        };
+        assert_eq!(
+            queue_overflow(node(package, queue)).unwrap(),
+            expected,
+            "{words}"
+        );
+    }
+
+    let queue = node(package, queue);
+    let overflow = channel_argument(queue, "overflow");
+    let selector = |word: &str| CheckedTerm::Aggregate {
+        members: vec![text_term(overflow, word)],
+    };
+    let node_id = &queue.node_id;
+    for member in ["overflow", "loss"] {
+        assert_eq!(
+            queue_overflow(&without_argument(queue, member)).unwrap_err(),
+            ViewRefusal::MissingMember {
+                node: node_id.clone(),
+                member
+            }
+        );
+    }
+    let cases = [
+        (
+            with_argument(queue, "overflow", text_term(overflow, "drop")),
+            "overflow",
+        ),
+        (with_argument(queue, "loss", selector("head")), "loss"),
+        (
+            with_argument(
+                &with_argument(queue, "overflow", text_term(overflow, "block")),
+                "loss",
+                selector("head"),
+            ),
+            "loss",
+        ),
+        (
+            with_argument(queue, "overflow", text_term(overflow, "loss")),
+            "loss",
+        ),
+        (
+            with_argument(
+                &with_argument(queue, "overflow", text_term(overflow, "loss")),
+                "loss",
+                selector("oldest"),
+            ),
+            "loss",
+        ),
+    ];
+    for (copy, member) in cases {
+        assert_eq!(
+            queue_overflow(&copy).unwrap_err(),
+            ViewRefusal::MalformedMember {
+                node: node_id.clone(),
+                member
+            }
+        );
+    }
+}
+
+/// FR-519-AC-23 (TC-1314 row 23): the surface renders no protocol-node value
+/// path.
+#[trace("FR-519-AC-23", "TC-1314")]
+#[test]
+fn the_protocol_view_surface_returns_no_value_path() {
+    let source = include_str!("../../protocol_view.rs");
+    assert!(
+        !source.to_lowercase().contains("value_path")
+            && !source.to_lowercase().contains("valuepath"),
+        "protocol_view names no value path"
     );
 }

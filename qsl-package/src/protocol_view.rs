@@ -1007,6 +1007,149 @@ pub fn queue_capacity(queue: &CheckedSemanticNodeV2) -> Result<QueueCapacity<'_>
     }
 }
 
+/// A channel's ordering policy (QSpec FR-465 "Channel", FR-054).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ChannelOrdering {
+    /// `unordered`.
+    Unordered,
+    /// `fifo`: receives follow the order of the FIFO key (see [`fifo_key`]).
+    Fifo,
+}
+
+impl ChannelOrdering {
+    /// The ordering a wire word names, `None` for any other word.
+    #[ix_trace_rs::string_edge]
+    fn from_wire(word: &str) -> Option<Self> {
+        match word {
+            "unordered" => Some(Self::Unordered),
+            "fifo" => Some(Self::Fifo),
+            _ => None,
+        }
+    }
+}
+
+/// The ordering policy the channel node `channel` carries.
+///
+/// # Errors
+///
+/// [`ViewRefusal::MissingMember`] naming `ordering` when the node has none,
+/// [`ViewRefusal::MalformedMember`] when it is no `kind` group of a known
+/// policy.
+pub fn channel_ordering(channel: &CheckedSemanticNodeV2) -> Result<ChannelOrdering, ViewRefusal> {
+    group_member(required(channel, "ordering")?, "kind")
+        .and_then(text)
+        .and_then(ChannelOrdering::from_wire)
+        .ok_or_else(|| malformed(&channel.node_id, "ordering"))
+}
+
+/// The key of a FIFO channel: the parameter that stands for a message and the
+/// `expression` node that reads the key over it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct FifoKey<'n> {
+    /// The binder node of the message parameter.
+    pub binder: &'n CheckedNodeId,
+    /// The key expression node.
+    pub key: &'n CheckedNodeId,
+}
+
+/// The FIFO key the channel node `channel` carries.
+///
+/// # Errors
+///
+/// As [`channel_ordering`]; [`ViewRefusal::MalformedMember`] naming
+/// `ordering` when the channel is `unordered`, which has no key, or when the
+/// `binder` or `key` member is no reference.
+pub fn fifo_key(channel: &CheckedSemanticNodeV2) -> Result<FifoKey<'_>, ViewRefusal> {
+    let wrong = || malformed(&channel.node_id, "ordering");
+    if channel_ordering(channel)? != ChannelOrdering::Fifo {
+        return Err(wrong());
+    }
+    let ordering = required(channel, "ordering")?;
+    Ok(FifoKey {
+        binder: group_member(ordering, "binder")
+            .and_then(reference)
+            .ok_or_else(wrong)?,
+        key: group_member(ordering, "key")
+            .and_then(reference)
+            .ok_or_else(wrong)?,
+    })
+}
+
+/// Which message a lossy queue drops when full (QSpec FR-465 "Queue").
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LossSelector {
+    /// `head`: the oldest queued message.
+    Head,
+    /// `tail`: the newest queued message.
+    Tail,
+    /// `new`: the arriving message.
+    New,
+}
+
+impl LossSelector {
+    /// The selector a wire word names, `None` for any other word.
+    #[ix_trace_rs::string_edge]
+    fn from_wire(word: &str) -> Option<Self> {
+        match word {
+            "head" => Some(Self::Head),
+            "tail" => Some(Self::Tail),
+            "new" => Some(Self::New),
+            _ => None,
+        }
+    }
+}
+
+/// A queue's overflow policy (QSpec FR-465 "Queue").
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Overflow {
+    /// `reject`: the send is refused.
+    Reject,
+    /// `block`: the send waits.
+    Block,
+    /// `loss`: a message is dropped, chosen by the selector.
+    Loss(LossSelector),
+}
+
+/// The overflow policy the queue node `queue` carries.
+///
+/// # Errors
+///
+/// [`ViewRefusal::MissingMember`] naming `overflow` or `loss` when the node
+/// lacks it, [`ViewRefusal::MalformedMember`] naming `overflow` when its word
+/// is unknown, or naming `loss` when a `loss` policy carries no known selector
+/// or another policy carries one.
+pub fn queue_overflow(queue: &CheckedSemanticNodeV2) -> Result<Overflow, ViewRefusal> {
+    let word =
+        text(required(queue, "overflow")?).ok_or_else(|| malformed(&queue.node_id, "overflow"))?;
+    let selector = members(queue, "loss", required(queue, "loss")?)?;
+    let selector = match selector {
+        [] => None,
+        [one] => Some(
+            text(one)
+                .and_then(LossSelector::from_wire)
+                .ok_or_else(|| malformed(&queue.node_id, "loss"))?,
+        ),
+        _ => return Err(malformed(&queue.node_id, "loss")),
+    };
+    match (word, selector) {
+        ("reject", None) => Ok(Overflow::Reject),
+        ("block", None) => Ok(Overflow::Block),
+        ("loss", Some(selector)) => Ok(Overflow::Loss(selector)),
+        ("reject" | "block", Some(_)) | ("loss", None) => Err(malformed(&queue.node_id, "loss")),
+        _ => Err(malformed(&queue.node_id, "overflow")),
+    }
+}
+
+/// The `channel` node the queue node `queue` belongs to.
+///
+/// # Errors
+///
+/// [`ViewRefusal::MissingMember`] naming `channel` when the node has none,
+/// [`ViewRefusal::MalformedMember`] when it is no reference.
+pub fn queue_channel(queue: &CheckedSemanticNodeV2) -> Result<&CheckedNodeId, ViewRefusal> {
+    single(queue, "channel")
+}
+
 /// The choice-visibility evidence of a `choice` control: who decides and which
 /// `expression` nodes that role sees at the decision (QSpec FR-466 "choice",
 /// FR-172-AC-6). It is not the FR-227 visibility record.
