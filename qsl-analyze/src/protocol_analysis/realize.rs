@@ -380,11 +380,14 @@ impl Game<'_, '_> {
         let mut nodes: Vec<Node> = Vec::new();
         let mut edges = 0usize;
         let roles = self.names.roles.len();
-        let mut stack: Vec<(
+        // A pending node: its state, the parent move it hangs off, and its
+        // history.
+        type Pending = (
             ProtocolState<Sc>,
             Option<(usize, usize)>,
             Vec<ProtocolTransition>,
-        )> = self
+        );
+        let mut stack: Vec<Pending> = self
             .system
             .initial()
             .into_iter()
