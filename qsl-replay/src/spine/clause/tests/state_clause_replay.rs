@@ -292,6 +292,7 @@ fn witness_arm(result: &StateClauseReplayResult) -> &crate::WitnessArmResult {
         ReplayResult::Input(arm) => panic!("expected the witness arm, got {arm:?}"),
         ReplayResult::ObservedTemporal(arm) => panic!("expected the witness arm, got {arm:?}"),
         ReplayResult::ModelGraph(arm) => panic!("expected the witness arm, got {arm:?}"),
+        ReplayResult::ProtocolAnalysis(_) => panic!("a protocol analysis arm"),
     }
 }
 
@@ -1142,6 +1143,9 @@ fn a_range_violation_settles_even_when_the_clause_completes_no_value() {
             ReplayResult::ObservedTemporal(_) => panic!("state-clause replay returned temporal"),
             ReplayResult::ModelGraph(_) => {
                 panic!("state-clause replay returned a state-graph result")
+            }
+            ReplayResult::ProtocolAnalysis(_) => {
+                panic!("state-clause replay returned a protocol analysis result")
             }
         };
         assert!(reproduced);

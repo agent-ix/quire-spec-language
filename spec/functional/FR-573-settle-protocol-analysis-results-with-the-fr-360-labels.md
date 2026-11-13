@@ -63,6 +63,12 @@ The settlement map is:
   graph and the premises, checks each step is an admitted successor and that
   the walk ends in the stated divergence or violation. An arm that
   disagrees settles `inconclusive` (ADR-018 SM-7).
+- The replay arm re-walks the stated paths with the structure's successor
+  relation and recomputes the actions' shapes, the role's basis at the choice
+  and the diverging layer with the same structure functions the engine uses.
+  It is independent of the engine's search, so it catches a counterexample
+  that was edited or stale, not an error in the shared classification or merge
+  rules; those are covered by their own tests (TC-1410).
 - No `proved` shall carry certification `Certified` or `Trusted` while no
   independent witness checker exists.
 - QSL shall apply the FR-360 labels to these two kinds exactly as FR-360

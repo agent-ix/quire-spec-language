@@ -42,7 +42,10 @@ not choose, derive or default it.
 
 ## Outputs
 
-One FR-351 record on the QSpec FR-352 `native-run-result/2` document. A
+One FR-351 record on the QSpec FR-352 `native-run-result/2` document. This
+slice builds the record and attaches it to the counterexample; the
+`native-run-result/2` carriage is part of serving the kinds. Remaining work:
+QSL-1897. A
 `closed-scope` result carries no record (quire-protocol FR-302).
 
 ## Behavior
@@ -55,7 +58,7 @@ The record has exactly these components:
 | `deciding_element` | The canonical string of the checked node id of the violated obligation (realizability) or of the divergent action's global node (projection). The canonical string of a checked node id is the RFC 8785 canonical text of its `CheckedNodeId` V2 wire object (`quire_canonical::to_vec` of the id). A reader refuses a string that does not read back as a checked node id and re-encode to the same bytes. |
 | `index` | Absent: the family assigns no positional index. |
 | `value_path` | An FR-207 runtime value path, derived below. |
-| `trace_position` | The decimal, zero-based index of the step at which the divergence or violation occurs in the counterexample's ordered event sequence: for indistinguishable histories the length of the longer of the two histories less one, for environment defeat the same index in the defeating play of the first owner branch (branches in canonical node order), and for a projection counterexample the index into `path_a` of the first divergent action, `path_a` being the canonically first of the two paths (FR-570). |
+| `trace_position` | The decimal, zero-based index of the step at which the divergence or violation occurs in the counterexample's ordered event sequence: for indistinguishable histories the length of the longer of the two histories less one, for environment defeat the same index in the defeating play of the first owner branch (branches in canonical node order), and for a projection counterexample the index into `path_a` of the first divergent action, which is `path_a`'s last event, `path_a` being the path FR-570 orders first. |
 
 The `value_path` derivation:
 

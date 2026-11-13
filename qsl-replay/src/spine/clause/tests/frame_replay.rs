@@ -369,6 +369,9 @@ pub(super) fn packet<P: FamilyPayload>(
             ReplaySource::ModelGraph(_) => {
                 panic!("a counterexample envelope cannot recursively carry a graph source")
             }
+            ReplaySource::ProtocolAnalysis(_) => {
+                panic!("a counterexample envelope cannot carry a protocol analysis source")
+            }
         }),
         family_payload: Some(payload),
     }
@@ -459,6 +462,7 @@ fn witness_arm(result: &FrameReplayResult) -> &crate::WitnessArmResult {
         ReplayResult::Input(arm) => panic!("expected the witness arm, got {arm:?}"),
         ReplayResult::ObservedTemporal(arm) => panic!("expected the witness arm, got {arm:?}"),
         ReplayResult::ModelGraph(arm) => panic!("expected the witness arm, got {arm:?}"),
+        ReplayResult::ProtocolAnalysis(_) => panic!("a protocol analysis arm"),
     }
 }
 

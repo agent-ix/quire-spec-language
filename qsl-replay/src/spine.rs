@@ -63,6 +63,7 @@ pub(crate) use lifecycle::{
     check_for_continuation, check_units_with_options, parse_for_continuation, ContinuationInputs,
     UnitCheckOptions,
 };
+pub use protocol_structure::{replay_protocol_analysis, ProtocolReplayRefusal, StructureError};
 pub use subject::{
     BuildProvenance, ComponentKind, DeclarationProfileComponent, DependencyComponent,
     DependencyReferenceComponent, ModelComponent, ProfileComponent, RoleComponent, RoleKind,
@@ -218,6 +219,7 @@ pub use refinement::{
 mod native_result;
 mod protocol_premises;
 mod protocol_proof;
+mod protocol_structure;
 pub(crate) use native_result::{item_record, ReasonWire};
 pub use native_result::{
     read_native_run_result, read_native_run_result_bounded, write_clause_run_result,

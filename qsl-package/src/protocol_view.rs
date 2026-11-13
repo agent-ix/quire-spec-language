@@ -1188,6 +1188,233 @@ pub fn choice_visibility(
     })
 }
 
+/// Whether the role node `role` is a replicated role, a template of role
+/// instances drawn from a population (QSpec FR-465 "Role"): its
+/// `replication` Group is not empty.
+///
+/// # Errors
+///
+/// [`ViewRefusal::MissingMember`] naming `replication` when the node has
+/// none, [`ViewRefusal::MalformedMember`] when it is no Group.
+pub fn role_is_replicated(role: &CheckedSemanticNodeV2) -> Result<bool, ViewRefusal> {
+    let replication = required(role, "replication")?;
+    Ok(!members(role, "replication", replication)?.is_empty())
+}
+
+/// A `parallel` control's join policy (QSpec FR-466 "parallel").
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ParallelJoinPolicy {
+    /// `all`.
+    All,
+    /// `any`.
+    Any,
+    /// `quorum`.
+    Quorum,
+    /// `predicate`.
+    Predicate,
+}
+
+impl ParallelJoinPolicy {
+    /// The policy a wire word names, `None` for any other word.
+    #[ix_trace_rs::string_edge]
+    fn from_wire(word: &str) -> Option<Self> {
+        match word {
+            "all" => Some(Self::All),
+            "any" => Some(Self::Any),
+            "quorum" => Some(Self::Quorum),
+            "predicate" => Some(Self::Predicate),
+            _ => None,
+        }
+    }
+
+    /// The policy's wire word.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::All => "all",
+            Self::Any => "any",
+            Self::Quorum => "quorum",
+            Self::Predicate => "predicate",
+        }
+    }
+}
+
+/// A `parallel` control's join (QSpec FR-466 "parallel").
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ParallelJoin<'n> {
+    /// The join policy.
+    pub policy: ParallelJoinPolicy,
+    /// The branch labels the join awaits, in ascending label order.
+    pub joined: Vec<&'n str>,
+    /// The `outstanding` policy word when written.
+    pub outstanding: Option<&'n str>,
+}
+
+/// The structure of a control: what the protocol analysis engine reads of a
+/// control's body beyond its causal edges (ADR-036 PA-3, PA-9).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ControlBody<'n> {
+    /// A `sequence` and its children in execution order.
+    Sequence {
+        /// The children.
+        children: Vec<&'n CheckedNodeId>,
+    },
+    /// A `choice`: its owner and its cases in label order.
+    Choice {
+        /// The owning `protocol` or `role` node.
+        owner: &'n CheckedNodeId,
+        /// The `(label, body)` cases, ascending by label bytes.
+        cases: Vec<(&'n str, &'n CheckedNodeId)>,
+    },
+    /// A `parallel`: its branches in label order and its join.
+    Parallel {
+        /// The `(label, body)` branches, ascending by label bytes.
+        branches: Vec<(&'n str, &'n CheckedNodeId)>,
+        /// The join.
+        join: ParallelJoin<'n>,
+    },
+    /// A `send` on a channel.
+    Send {
+        /// The `channel` node.
+        channel: &'n CheckedNodeId,
+        /// The payload binder node.
+        binder: &'n CheckedNodeId,
+    },
+    /// A `receive` of a `send` on a channel.
+    Receive {
+        /// The `channel` node.
+        channel: &'n CheckedNodeId,
+        /// The `send` control received.
+        of: &'n CheckedNodeId,
+        /// The payload binder node.
+        binder: &'n CheckedNodeId,
+    },
+    /// Any other control: the operation names it.
+    Other(ControlOperation),
+}
+
+/// The structure of the control `node`.
+///
+/// # Errors
+///
+/// [`ViewRefusal`] as [`control_operation`], naming the member a control of
+/// that operation lacks or holds in another shape.
+pub fn control_body(node: &CheckedSemanticNodeV2) -> Result<ControlBody<'_>, ViewRefusal> {
+    Ok(match control_operation(node)? {
+        ControlOperation::Sequence => ControlBody::Sequence {
+            children: references(node, "children")?,
+        },
+        ControlOperation::Choice => ControlBody::Choice {
+            owner: single(node, "owner")?,
+            cases: records(node, "cases")?,
+        },
+        ControlOperation::Parallel => {
+            let join = required(node, "join")?;
+            let policy = group_member(join, "policy")
+                .and_then(text)
+                .and_then(ParallelJoinPolicy::from_wire)
+                .ok_or_else(|| malformed(&node.node_id, "join"))?;
+            let outstanding = match optional(node, "outstanding")? {
+                None => None,
+                Some(word) => {
+                    Some(text(word).ok_or_else(|| malformed(&node.node_id, "outstanding"))?)
+                }
+            };
+            ControlBody::Parallel {
+                branches: records(node, "branches")?,
+                join: ParallelJoin {
+                    policy,
+                    joined: group_texts(node, "joined")?,
+                    outstanding,
+                },
+            }
+        }
+        ControlOperation::Send => ControlBody::Send {
+            channel: single(node, "channel")?,
+            binder: single(node, "binder")?,
+        },
+        ControlOperation::Receive => ControlBody::Receive {
+            channel: single(node, "channel")?,
+            of: single(node, "of")?,
+            binder: single(node, "binder")?,
+        },
+        other => ControlBody::Other(other),
+    })
+}
+
+/// Every node the decision facts of the `choice` control `choice` read: the
+/// nodes its `visible` expressions reference, followed through the value
+/// nodes (expressions) they reference in turn. A receive's payload binder in
+/// this set means the choice's outcome is a function of that message's payload
+/// (QSpec FR-053-AC-1, FR-466 "Decision facts").
+///
+/// # Errors
+///
+/// [`ViewRefusal`] as [`choice_visibility`]; [`ViewRefusal::MissingMember`]
+/// naming `visible` when a listed expression is absent from the package.
+pub fn decision_reads(
+    package: &CheckedPackageV2,
+    choice: &CheckedSemanticNodeV2,
+) -> Result<BTreeSet<CheckedNodeId>, ViewRefusal> {
+    let visible = choice_visibility(choice)?.visible;
+    reads_from(&Index::new(package), &choice.node_id, "visible", &visible)
+}
+
+/// Whether the FIFO key of the channel node `channel` reads the message
+/// binder: when it does not, every message of the channel carries an equal
+/// key value.
+///
+/// # Errors
+///
+/// [`ViewRefusal`] as [`fifo_key`]; [`ViewRefusal::MissingMember`] naming
+/// `ordering` when the key node is absent from the package.
+pub fn fifo_key_reads_message(
+    package: &CheckedPackageV2,
+    channel: &CheckedSemanticNodeV2,
+) -> Result<bool, ViewRefusal> {
+    let FifoKey { binder, key } = fifo_key(channel)?;
+    let reads = reads_from(&Index::new(package), &channel.node_id, "ordering", &[key])?;
+    Ok(reads.contains(binder))
+}
+
+/// The nodes referenced from `start`, followed through `value` nodes.
+fn reads_from(
+    index: &Index<'_>,
+    owner: &CheckedNodeId,
+    member: &'static str,
+    start: &[&CheckedNodeId],
+) -> Result<BTreeSet<CheckedNodeId>, ViewRefusal> {
+    fn collect<'t>(term: &'t CheckedTerm, out: &mut Vec<&'t CheckedNodeId>) {
+        match term {
+            CheckedTerm::Reference { target } => out.push(target),
+            CheckedTerm::Application { arguments, .. } => {
+                arguments.iter().for_each(|argument| collect(argument, out));
+            }
+            CheckedTerm::Aggregate { members } => {
+                members.iter().for_each(|held| collect(held, out));
+            }
+            CheckedTerm::Binding { value, .. } => collect(value, out),
+            _ => {}
+        }
+    }
+    let mut seen = BTreeSet::new();
+    // The start nodes are the expressions themselves and are always read;
+    // a node they reference is read through only when it is a value node.
+    let mut pending: Vec<(&CheckedNodeId, bool)> = start.iter().map(|id| (*id, true)).collect();
+    while let Some((id, forced)) = pending.pop() {
+        if !seen.insert(id.clone()) {
+            continue;
+        }
+        let node = index.target(owner, member, id)?;
+        if forced || has_tag(node, WireTag::Value) {
+            let mut found = Vec::new();
+            collect(&node.body, &mut found);
+            pending.extend(found.into_iter().map(|id| (id, false)));
+        }
+    }
+    Ok(seen)
+}
+
 /// A binder a control introduces: its node, name and level (QSpec FR-464
 /// "Binders").
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

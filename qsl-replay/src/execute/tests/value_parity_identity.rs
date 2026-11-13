@@ -322,6 +322,9 @@ fn tc_1252_the_input_arm_packet_round_trips_and_replays() {
             crate::ReplaySource::ModelGraph(_) => {
                 panic!("value-parity packets cannot carry state-graph sources")
             }
+            crate::ReplaySource::ProtocolAnalysis(_) => {
+                panic!("value-parity packets cannot carry protocol analysis sources")
+            }
         };
         let packet = WitnessPacket {
             obligation_identity: Some(identity),

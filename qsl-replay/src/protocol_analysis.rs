@@ -695,10 +695,63 @@ pub struct RunLimit {
     pub value: u64,
 }
 
-/// A construct outside the bounded static profile (FR-575), by the cause the
-/// engine states.
+/// The cause slug of a construct outside the `bounded-static` profile
+/// (FR-575), under the `unsupported_projection` code.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum UnsupportedSlug {
+    /// A role with a dynamic population.
+    DynamicRolePopulation,
+    /// A queue with a symbolic capacity.
+    SymbolicQueueCapacity,
+    /// A `join` that is not `all`, or carries an `outstanding` policy.
+    UnsupportedJoin,
+    /// A `repeat`.
+    Repeat,
+    /// A compensation.
+    Compensation,
+    /// A timed `await`.
+    TimedAwait,
+    /// A control outside the profile's list: `check`, `attempt`, `effect`,
+    /// `event`, `commit` or `fence`.
+    UnsupportedControl,
+    /// Realizability only: a construct `qsl-eval` refuses to step.
+    EvaluatorUnsupported,
+}
+
+impl UnsupportedSlug {
+    /// The slug's kebab-case spelling.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::DynamicRolePopulation => "dynamic-role-population",
+            Self::SymbolicQueueCapacity => "symbolic-queue-capacity",
+            Self::UnsupportedJoin => "unsupported-join",
+            Self::Repeat => "repeat",
+            Self::Compensation => "compensation",
+            Self::TimedAwait => "timed-await",
+            Self::UnsupportedControl => "unsupported-control",
+            Self::EvaluatorUnsupported => "evaluator-unsupported",
+        }
+    }
+
+    /// The catalog code every slug sits under.
+    #[must_use]
+    pub const fn code(self) -> &'static str {
+        "unsupported_projection"
+    }
+}
+
+/// A construct outside the bounded static profile (FR-575): its slug and
+/// the checked node id of the construct.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct UnsupportedCause(pub String);
+pub struct UnsupportedCause {
+    /// The construct's slug.
+    pub slug: UnsupportedSlug,
+    /// The construct's checked node id.
+    pub node: CheckedNodeId,
+    /// The named policy of an `unsupported-join`, or the `qsl-eval` cause.
+    pub detail: Option<String>,
+}
 
 /// Why a search is inconclusive (FR-573).
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -710,6 +763,9 @@ pub enum InconclusiveCause {
         /// `role_knowledge` or `environment`.
         member: &'static str,
     },
+    /// The counterexample's replay disagreed with the checked graph
+    /// (ADR-018 SM-7).
+    ReplayDisagreed,
 }
 
 /// The settlement of one analysis, by the FR-360 labels (PA-20). `A` is the
@@ -737,6 +793,11 @@ pub struct ProtocolAnalysisResult<A, C> {
     /// The settlement.
     pub outcome: AnalysisOutcome<A, C>,
 }
+
+mod artifact;
+mod structure;
+pub use artifact::*;
+pub use structure::*;
 
 #[cfg(test)]
 mod tests;

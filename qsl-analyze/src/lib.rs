@@ -31,6 +31,7 @@ pub mod monitor;
 pub mod monitor_entries;
 pub mod monitor_plan;
 pub mod monitor_root;
+pub mod protocol_analysis;
 pub mod provider;
 pub mod schedulability;
 pub mod statistical;

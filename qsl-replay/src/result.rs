@@ -1099,6 +1099,8 @@ pub enum ReplayResult {
     ObservedTemporal(ObservedTemporalResult),
     /// State-graph evidence replay (FR-170).
     ModelGraph(crate::model_check::graph_settle::GraphReplayResult),
+    /// A protocol analysis counterexample replay (ADR-036 PA-20).
+    ProtocolAnalysis(crate::protocol_analysis::ProtocolReplayResult),
 }
 
 impl ReplayResult {
@@ -1108,7 +1110,7 @@ impl ReplayResult {
             Self::Witness(result) => result.limit(),
             Self::Input(result) => result.limit(),
             Self::ObservedTemporal(result) => result.limit(),
-            Self::ModelGraph(_) => None,
+            Self::ModelGraph(_) | Self::ProtocolAnalysis(_) => None,
         }
     }
 
@@ -1121,6 +1123,7 @@ impl ReplayResult {
             Self::Input(result) => Self::Input(result.with_limit(limit)),
             Self::ObservedTemporal(result) => Self::ObservedTemporal(result.with_limit(limit)),
             Self::ModelGraph(result) => Self::ModelGraph(result),
+            Self::ProtocolAnalysis(result) => Self::ProtocolAnalysis(result),
         }
     }
 
@@ -1131,7 +1134,7 @@ impl ReplayResult {
             Self::Witness(result) => result.pre_call_limit(),
             Self::Input(result) => result.pre_call_limit(),
             Self::ObservedTemporal(_) => None,
-            Self::ModelGraph(_) => None,
+            Self::ModelGraph(_) | Self::ProtocolAnalysis(_) => None,
         }
     }
 
@@ -1143,6 +1146,7 @@ impl ReplayResult {
             Self::Witness(result) => Self::Witness(result.with_pre_call(stop)),
             Self::Input(result) => Self::Input(result.with_pre_call(stop)),
             Self::ModelGraph(result) => Self::ModelGraph(result),
+            Self::ProtocolAnalysis(result) => Self::ProtocolAnalysis(result),
             Self::ObservedTemporal(result) => Self::ObservedTemporal(result),
         }
     }
@@ -1164,6 +1168,7 @@ impl ReplayResult {
                     Category::Incomplete
                 }
             },
+            Self::ProtocolAnalysis(result) => result.category(),
         }
     }
 
@@ -1173,7 +1178,7 @@ impl ReplayResult {
         match self {
             Self::Witness(result) => result.disagreement(),
             Self::Input(result) => result.disagreement(),
-            Self::ObservedTemporal(_) => None,
+            Self::ObservedTemporal(_) | Self::ProtocolAnalysis(_) => None,
             Self::ModelGraph(result) => match &result.settlement {
                 crate::model_check::graph_settle::GraphReplaySettlement::Inconclusive(cause) => {
                     Some(cause)
@@ -1189,7 +1194,7 @@ impl ReplayResult {
             Self::Witness(result) => result.charges(),
             Self::Input(result) => result.charges(),
             Self::ObservedTemporal(result) => result.charges(),
-            Self::ModelGraph(_) => ScalarLimits {
+            Self::ModelGraph(_) | Self::ProtocolAnalysis(_) => ScalarLimits {
                 integer_bits: 0,
                 decimal_digits: 0,
                 scale_expansion: 0,
@@ -1242,6 +1247,7 @@ pub(crate) fn measured_encoded_bytes(result: &ReplayResult) -> usize {
         }
         ReplayResult::ObservedTemporal(arm) => arm.measured_bytes(),
         ReplayResult::ModelGraph(arm) => std::mem::size_of_val(arm),
+        ReplayResult::ProtocolAnalysis(arm) => std::mem::size_of_val(arm),
     };
     arm_bytes
         + result
