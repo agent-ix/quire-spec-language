@@ -1584,6 +1584,55 @@ impl CallableFunction<'_> {
     }
 }
 
+/// The precondition facts a state clause is checked under (FR-577): those of
+/// the unit preconditions on its own context and operation, for a
+/// postcondition outside a redefinition family. Every other clause (an
+/// invariant, a constraint, a precondition) is given none.
+fn clause_preconditions<'a, C: Ord + Clone, K: Ord + Clone, F>(
+    kind: qsl_forms::StateClauseKind,
+    context: &C,
+    operation_key: Option<&K>,
+    redefinition_family: &BTreeSet<K>,
+    facts: &'a BTreeMap<(C, K), Vec<F>>,
+) -> &'a [F] {
+    match (kind, operation_key) {
+        (qsl_forms::StateClauseKind::Postcondition, Some(key))
+            if !redefinition_family.contains(key) =>
+        {
+            facts
+                .get(&(context.clone(), key.clone()))
+                .map_or(&[], Vec::as_slice)
+        }
+        _ => &[],
+    }
+}
+
+/// The refusals of the clauses, in source order. Clauses were checked in
+/// another order (preconditions first), each recording the range of
+/// `refusals` it added; a stop at clause `s` reports what checking in source
+/// order would have: the refusals of the clauses up to and including `s`.
+fn refusals_in_source_order<T>(
+    refusals: Vec<T>,
+    mut clause_refusals: Vec<(usize, std::ops::Range<usize>)>,
+    stopped_at: Option<usize>,
+) -> Vec<T> {
+    clause_refusals.sort_by_key(|(index, _)| *index);
+    let mut held: Vec<Option<T>> = refusals.into_iter().map(Some).collect();
+    let mut ordered = Vec::new();
+    for (index, range) in clause_refusals {
+        if stopped_at.is_some_and(|stopped| index > stopped) {
+            continue;
+        }
+        ordered.extend(range.filter_map(|at| held.get_mut(at).and_then(Option::take)));
+    }
+    ordered
+}
+
+/// The earliest clause a stop has ended checking at.
+fn stopped_at_or(stopped: Option<usize>, index: usize) -> Option<usize> {
+    Some(stopped.map_or(index, |at| at.min(index)))
+}
+
 /// FR-577: the operations that redefine another operation or are redefined
 /// by one of the selected views' operations (QSpec FR-151). A postcondition
 /// of such an operation takes no precondition fact.
@@ -3205,6 +3254,7 @@ impl PackageDeclarations {
             }))
             .collect();
         let mut clause_refusals: Vec<(usize, std::ops::Range<usize>)> = Vec::new();
+        let loop_start = refusals.len();
         // The clause a stop (a reached limit, a cancel, a fault, an
         // exhausted resource) ended the checking at.
         let mut stopped_at: Option<usize> = None;
@@ -3214,22 +3264,23 @@ impl PackageDeclarations {
             Vec<facts::CheckedFacts>,
         > = BTreeMap::new();
         for index in clause_order {
+            // Source order would never have reached a clause after the stop.
+            // A stop at a precondition leaves the earlier postconditions and
+            // invariants (which run after every precondition here) to check.
+            if stopped_at.is_some_and(|stopped| index > stopped) {
+                continue;
+            }
             let clause = &state_clause_forms[index];
             let refusals_before = refusals.len();
             'clause: {
                 let location = clause_location(index, &clause.name);
-                let no_facts = Vec::new();
-                let preconditions: &[facts::CheckedFacts] =
-                    match (&clause.kind, &clause.operation_key) {
-                        (qsl_forms::StateClauseKind::Postcondition, Some(key))
-                            if !redefinition_family.contains(key) =>
-                        {
-                            precondition_facts
-                                .get(&(clause.context.clone(), key.clone()))
-                                .unwrap_or(&no_facts)
-                        }
-                        _ => &no_facts,
-                    };
+                let preconditions = clause_preconditions(
+                    clause.kind,
+                    &clause.context,
+                    clause.operation_key.as_ref(),
+                    &redefinition_family,
+                    &precondition_facts,
+                );
                 let declarations = state_clause::ClauseDeclarations {
                     unit: self.source_owners.get(&format!("state_clause:{index}")),
                     scope: &scope,
@@ -3289,7 +3340,7 @@ impl PackageDeclarations {
                             cause: limit_cause(&limit),
                         });
                         if cancel.tripped().is_some() {
-                            stopped_at = Some(index);
+                            stopped_at = stopped_at_or(stopped_at, index);
                         }
                     }
                     Err(StageFailure::LimitWithPayload(limit, _)) => {
@@ -3298,52 +3349,50 @@ impl PackageDeclarations {
                             cause: limit_cause(&limit),
                         });
                         if cancel.tripped().is_some() {
-                            stopped_at = Some(index);
+                            stopped_at = stopped_at_or(stopped_at, index);
                         }
                     }
-                    Err(StageFailure::Cancelled(_)) => stopped_at = Some(index),
+                    Err(StageFailure::Cancelled(_)) => {
+                        stopped_at = stopped_at_or(stopped_at, index)
+                    }
                     Err(StageFailure::Fault(fault)) => {
                         refusals.push(CheckRefusal {
                             location: location.clone(),
                             cause: CheckCause::InternalFault(Box::new(KeyFault::StageFault(fault))),
                         });
-                        stopped_at = Some(index);
+                        stopped_at = stopped_at_or(stopped_at, index);
                     }
                     Err(StageFailure::Refused(refusal)) => {
                         let exhausted = matches!(refusal.cause, CheckCause::ResourceExhausted(_));
                         refusals.push(refusal);
                         if exhausted {
-                            stopped_at = Some(index);
+                            stopped_at = stopped_at_or(stopped_at, index);
                         }
                     }
                     Err(StageFailure::RefusedWithPayload(refusal, _)) => {
                         let exhausted = matches!(refusal.cause, CheckCause::ResourceExhausted(_));
                         refusals.push(*refusal);
                         if exhausted {
-                            stopped_at = Some(index);
+                            stopped_at = stopped_at_or(stopped_at, index);
                         }
                     }
                 }
             }
-            clause_refusals.push((index, refusals_before..refusals.len()));
-            if stopped_at.is_some() {
-                break;
-            }
+            clause_refusals.push((
+                index,
+                refusals_before - loop_start..refusals.len() - loop_start,
+            ));
         }
         // Back to source order.
         typed_clauses.sort_by_key(|(index, _)| *index);
         let mut typed_clauses: Vec<state_clause::TypedStateClause> =
             typed_clauses.into_iter().map(|(_, typed)| typed).collect();
-        clause_refusals.sort_by_key(|(index, _)| *index);
-        let mut held: Vec<Option<CheckRefusal>> = refusals.drain(..).map(Some).collect();
-        // A stop reports what checking in source order would have: the
-        // refusals of the clauses up to the one it stopped at.
-        for (index, range) in clause_refusals {
-            if stopped_at.is_some_and(|stopped| index > stopped) {
-                continue;
-            }
-            refusals.extend(range.filter_map(|at| held.get_mut(at).and_then(Option::take)));
-        }
+        let clause_stage = refusals.split_off(loop_start);
+        refusals.extend(refusals_in_source_order(
+            clause_stage,
+            clause_refusals,
+            stopped_at,
+        ));
         if stopped_at.is_some() {
             return Err(refusals);
         }
@@ -10105,3 +10154,45 @@ use ix_trace_rs::trace;
 #[cfg(doctest)]
 #[trace("FR-401-AC-3")]
 struct Fr401Ac3Doctests;
+
+#[cfg(test)]
+mod precondition_slice_tests {
+    use super::*;
+    use qsl_forms::StateClauseKind;
+
+    /// FR-577: only a postcondition outside a redefinition family is checked
+    /// under precondition facts; every other clause kind gets an empty slice
+    /// even when facts are recorded for its context and operation.
+    #[test]
+    fn only_a_postcondition_receives_the_precondition_facts() {
+        let facts = BTreeMap::from([((1_u8, 7_u8), vec!["fact"])]);
+        let family = BTreeSet::from([9_u8]);
+        let slice = |kind, key| clause_preconditions(kind, &1_u8, key, &family, &facts);
+        assert_eq!(slice(StateClauseKind::Postcondition, Some(&7)), ["fact"]);
+        for kind in [
+            StateClauseKind::Invariant,
+            StateClauseKind::Constraint,
+            StateClauseKind::Precondition,
+        ] {
+            assert!(slice(kind, Some(&7)).is_empty(), "{kind:?}");
+        }
+        assert!(slice(StateClauseKind::Postcondition, Some(&9)).is_empty());
+        assert!(slice(StateClauseKind::Postcondition, None).is_empty());
+    }
+
+    /// A stop at a precondition (index 1, checked first) still reports the
+    /// refusals of the earlier postcondition (index 0, checked after it), in
+    /// source order; a clause after the stop reports nothing.
+    #[test]
+    fn a_stop_at_a_precondition_reports_the_earlier_clause_refusals_first() {
+        // Check order: pre 1 (refusal "B", the stop), post 0 ("A"), post 2 ("C").
+        let ordered = refusals_in_source_order(
+            vec!["B", "A", "C"],
+            vec![(1, 0..1), (0, 1..2), (2, 2..3)],
+            Some(1),
+        );
+        assert_eq!(ordered, ["A", "B"]);
+        assert_eq!(stopped_at_or(Some(3), 1), Some(1));
+        assert_eq!(stopped_at_or(Some(1), 3), Some(1));
+    }
+}

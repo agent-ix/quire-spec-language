@@ -34,3 +34,21 @@ Planless audit of the PR diff. Tests are linked by `#[trace]` tags; a grep found
 ## Verdict
 
 The tests cover the criteria they are tagged to, apart from FND-001 to FND-003. Fix FND-001 and FND-002 in the tests. FND-003 needs a spec change to AC-29.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-008 | low | Two new tests are traced to criteria they do not verify. `parameter_facts_follow_the_result_slot_of_a_postcondition` is tagged FR-577-AC-1, but it checks the "parameter of the same name" keying rule over a result-typed operation. `a_bound_refines_neither_a_sum_nor_a_difference_written_backwards` is tagged FR-577-AC-31, a positive "checks" criterion, but it verifies the Behavior exclusions for `+` and `-b + a`. Neither rule has an AC of its own. Add ACs for them, or tag the tests with the FR only. | qsl-replay/src/spine/clause/tests/postcondition_range.rs:1125-1175 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | cb8db168f: the AC-32 test runs `run_clause` on the `Debited` invocation and asserts `CallRefusal::Record` with code `integer_out_of_domain`, located exactly at the bytes of `pre(self.balance) - amount`. It then asserts the replay settles `Inconclusive` with category `Refusal` and `NoValue`. |
+| FND-002 | fixed | cb8db168f: `the_smaller_bound_is_kept_when_the_stricter_comes_first` (`amount < self.balance and amount <= self.balance`) and `..._across_clauses_when_the_stricter_clause_comes_first` (`Strict` before `CanAfford`) are added. A last-bound-wins mutation of `difference()` or `conjoin()` now fails one of them. |
+| FND-003 | still-open | The amended AC-29 (`CanAfford { self.balance >= 50 and amount <= self.balance }`, `invariant Room ... at current { self.limit = self.balance - 50 }`) still cannot fail. `observation_of(Precondition)` is `Pre` and `observation_of(Invariant)` is `Current` (state_clause.rs:57-62). The transferred fact is keyed `self.balance@Pre`, while the invariant reads `self.balance@Current`. An implementation that wrongly passes precondition facts to invariants still refuses at `self.balance - 50`. No invariant can read at `pre`, so a unit-level AC cannot tell the two apart. Either state the invariant and constraint exclusion as holding by construction and remove AC-29, or replace it with a qsl-semantics unit test that the clause declarations for a non-postcondition kind carry an empty `preconditions` slice. |
+| FND-004 | fixed | cb8db168f: the AC-1 test walks `Debited`'s body, finds the one `Coerce` over a binary `-`, and asserts its type is `Int[0, 100]`. |
+| FND-005 | fixed | cb8db168f: the FR-121-AC-37 assertion checks `region.source()` (authority `agent-ix`, identity `clause-run-fixture`) as well as the byte offsets. |
+| FND-006 | fixed | cb8db168f: `a_bound_refines_neither_a_sum_nor_a_difference_written_backwards` records `a <= b` and asserts that `a + b` and `b + a` are refused. Applying `difference_interval` to `Add` would narrow `a + b` to `[0, 0]` and make the test fail. `-b + a` is also refused. Unary `-` alone remains untested, which is acceptable. |
+| FND-007 | fixed | cb8db168f: the AC-2 test compiles both units through `call_site` (`bank_site`) and compares the sorted clause sites and the requirement record keys. |

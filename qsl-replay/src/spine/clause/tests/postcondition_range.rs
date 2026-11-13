@@ -803,24 +803,6 @@ fn a_precondition_receives_no_precondition_fact() {
     refuses_at(PLAIN, &unit, "self.balance - amount");
 }
 
-#[trace("TC-1416", "FR-577-AC-29")]
-#[test]
-fn an_invariant_receives_no_precondition_fact() {
-    let unit = unit(&[
-        &clause(
-            "pre",
-            "CanAfford",
-            "Account",
-            "self.balance >= 50 and amount <= self.balance",
-        ),
-        DEBITED,
-        NON_NEGATIVE,
-        "invariant Room using v on Bank::Account at current \
-         { self.limit = self.balance - 50 }\n",
-    ]);
-    refuses_at(PLAIN, &unit, "self.balance - 50");
-}
-
 #[trace("TC-1416", "FR-577-AC-30")]
 #[test]
 fn a_kept_requires_clause_transfers_nothing() {
@@ -1122,7 +1104,7 @@ fn an_attempt_outside_the_precondition_records_one_finding_per_candidate_post_st
     }));
 }
 
-#[trace("TC-1416", "FR-577-AC-1")]
+#[trace("TC-1416", "FR-577-AC-34")]
 #[test]
 fn parameter_facts_follow_the_result_slot_of_a_postcondition() {
     let bank = Bank {
@@ -1160,7 +1142,7 @@ fn guarded_function(guard: &str, value: &str) -> String {
     )
 }
 
-#[trace("TC-1416", "FR-577-AC-31")]
+#[trace("TC-1416", "FR-577-AC-35")]
 #[test]
 fn a_bound_refines_neither_a_sum_nor_a_difference_written_backwards() {
     for (guard, value) in [

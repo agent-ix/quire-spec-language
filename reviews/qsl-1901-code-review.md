@@ -36,3 +36,15 @@ Dependents (concern 5): FR-577 only adds facts, so a unit that checked before st
 ## Verdict
 
 No high-severity soundness defect was found. Fix the three medium findings in this PR before merging.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | still-open | cb8db168f records `stopped_at`, breaks out of the loop and keeps only the refusals of clauses at or before the stop, in source order. That is exact when the stop is at a non-precondition clause. When the stop is at a precondition at index s, the non-precondition clauses with index < s have not been checked yet, so their refusals are missing. `[post A refused, pre B exhausted]` still returns `[B]`, where source order gives `[A, B]`. The code comment ("reports what checking in source order would have") is therefore wrong for that case. Fix: on a stop at a precondition, still check the earlier non-precondition clauses before returning, or document the difference as accepted. |
+| FND-002 | fixed | cb8db168f: `name_operand` returns early when `required` has neither end bounded, so a Rational or Decimal carried-sum refusal gets no operand, and `check_message` renders the operand only when `operand.text()` is `Some` (lifecycle.rs:741-745, spine.rs:1440-1450). |
+| FND-003 | fixed | cb8db168f: `parameter_facts_follow_the_result_slot_of_a_postcondition` gives `withdraw` a Boolean result. A shift of 0 would key `amount`'s fact on slot 1 (`result`), and the `checks` assertion would fail. |
+| FND-004 | fixed | cb8db168f: the "A readable account of the checker's first refusal" doc comment is back on `check_message`. |
+| FND-005 | fixed | cb8db168f: `operand` is an `OperandText` newtype. Its `PartialEq` is always true and its `Hash` is empty, so a refusal compares and hashes the same with or without the text. |
+| FND-006 | fixed | cb8db168f: `redefinition_family_keys` builds the family set once. Precondition facts go into a map keyed by (context, operation key) as each precondition is checked (mod.rs:3205-3280). The behaviour is the same as before. |
+| FND-007 | fixed | cb8db168f: p09 is renamed `p09_intervals_come_from_declared_types_literal_guards_and_difference_bounds`. It now asserts that `a < b` narrows `a - b` only to `[-3, -1]` (still refused) and leaves `b + (0 - a)` at `[-3, 3]`. |
