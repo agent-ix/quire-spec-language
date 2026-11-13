@@ -279,9 +279,9 @@ fn a_capture_tells_initial_states_apart_for_every_role() {
         "capture big: Boolean = k.v >= 1;\n",
         &format!(
             "sequence Main {{\n\
-             choice Decide by Seller visible (big) {{\n\
-               case no when {{ not big }} sequence Cancel {{ }}\n\
-               case yes when {{ big }} sequence Ship {{ {PICK} }}\n\
+             choice Decide by Seller visible (big = true) {{\n\
+               case no when {{ not (big = true) }} sequence Cancel {{ }}\n\
+               case yes when {{ big = true }} sequence Ship {{ {PICK} }}\n\
              }} }}"
         ),
         &[0, 1],
