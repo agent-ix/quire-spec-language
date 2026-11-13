@@ -1295,6 +1295,32 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
         Ok(binders)
     }
 
+    /// ADR-036 PA-16: the `choice` controls whose case guards read the
+    /// binder `transition`'s step binds, by static declaration path in node
+    /// order. A step whose binder a choice reads fixes that choice's branch,
+    /// so a realizability search classifies it as the choice's selection.
+    /// Empty for a step that binds no binder or one no guard reads.
+    pub fn deciding_choices(&self, transition: &ProtocolTransition) -> Vec<&str> {
+        let Some(text) = transition.node() else {
+            return Vec::new();
+        };
+        let Some(slot) = self
+            .program
+            .controls
+            .iter()
+            .find(|(_, control)| control.text == text)
+            .and_then(|(node, _)| self.program.binder_of.get(node))
+        else {
+            return Vec::new();
+        };
+        self.program
+            .choices
+            .keys()
+            .filter(|choice| self.program.reads(*slot, **choice))
+            .filter_map(|choice| self.program.text(*choice).ok())
+            .collect()
+    }
+
     /// QSpec FR-425's `<rest>` of `rest`.
     fn rest_point(&self, rest: Rest) -> Result<RestPoint, ProtocolRefusal> {
         let named = |kind, node| -> Result<RestPoint, ProtocolRefusal> {

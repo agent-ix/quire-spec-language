@@ -41,7 +41,7 @@ fn source(members: &str, run: &str) -> String {
     )
 }
 
-fn admitted_source(text: &str) -> Box<CheckedPackageV2> {
+pub(crate) fn admitted_source(text: &str) -> Box<CheckedPackageV2> {
     let checked = package(text);
     let emission = qsl_package::emit_checked(&checked, qsl_package::EmitLimits::fixture())
         .expect("the protocol package emits");

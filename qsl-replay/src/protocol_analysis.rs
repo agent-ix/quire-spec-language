@@ -766,6 +766,15 @@ pub enum InconclusiveCause {
     /// The counterexample's replay disagreed with the checked graph
     /// (ADR-018 SM-7).
     ReplayDisagreed,
+    /// Realizability: a role's observation class has no common winning
+    /// action and no refutation is forced (PA-18).
+    Unforced,
+    /// Realizability: the strategy table failed the in-engine replay walk
+    /// (PA-19).
+    StrategyReplayFailed,
+    /// Realizability: a channel's open delivery range was cut at its
+    /// capacity and the horizon, and the result depended on it (PA-7).
+    CutCount,
 }
 
 /// The settlement of one analysis, by the FR-360 labels (PA-20). `A` is the
@@ -795,8 +804,10 @@ pub struct ProtocolAnalysisResult<A, C> {
 }
 
 mod artifact;
+mod strategy;
 mod structure;
 pub use artifact::*;
+pub use strategy::*;
 pub use structure::*;
 
 #[cfg(test)]

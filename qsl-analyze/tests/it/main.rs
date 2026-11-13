@@ -65,6 +65,7 @@ mod protocol_constructs;
 mod protocol_counted_steps;
 mod protocol_footprints;
 mod protocol_projection;
+mod protocol_realizability;
 mod protocol_roles;
 mod protocol_system;
 mod provider_external_contract;
