@@ -1899,7 +1899,7 @@ fn a_template_reads_the_protocol_captures_and_the_activation_binder() {
     };
 
     let (status, captures) = finished("3");
-    assert_eq!(status, "recovered");
+    assert_eq!(status, "recovered", "{captures}");
     let seen_true = seen(&captures);
     let (status, captures) = finished("2");
     assert_eq!(status, "unrecovered");
@@ -1925,7 +1925,7 @@ fn a_retire_predicate_reads_a_protocol_capture_and_the_population_it_names() {
     let capture = "capture j: Reference<M::Cell> = k;";
     let retire_at = |threshold: u64, run: &str| -> Vec<(usize, BTreeSet<String>)> {
         let until = format!(
-            "until(r.v >= {threshold} and present(lookup<M::Cell>(M::cells, j) absent empty) \
+            "until(r.v >= {threshold} and present(lookup<M::Cell>(cells, j) absent empty) \
              and r = j)"
         );
         let world = World::new(
