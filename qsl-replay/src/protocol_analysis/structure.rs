@@ -297,7 +297,8 @@ impl GlobalStructure {
                 if first == second || first_comm.channel != second_comm.channel {
                     continue;
                 }
-                let (Some(send_first), Some(send_second)) = (sent_by.get(first), sent_by.get(second))
+                let (Some(send_first), Some(send_second)) =
+                    (sent_by.get(first), sent_by.get(second))
                 else {
                     continue;
                 };
@@ -625,13 +626,10 @@ impl GlobalStructure {
                 node: carrier.clone(),
                 port: Port::Enter,
             };
-            let Some(GlobalEventKind::Receive(comm)) = self.event(&receive).map(|e| &e.kind)
-            else {
+            let Some(GlobalEventKind::Receive(comm)) = self.event(&receive).map(|e| &e.kind) else {
                 continue;
             };
-            if (&comm.sender == role || &comm.receiver == role)
-                && self.precedes(&receive, choice)
-            {
+            if (&comm.sender == role || &comm.receiver == role) && self.precedes(&receive, choice) {
                 return Some(ChoiceBasis::Informed {
                     carrier: carrier.clone(),
                 });
@@ -666,11 +664,10 @@ impl GlobalStructure {
                 })
                 .collect();
             let every_branch = types.iter().all(|held| !held.is_empty());
-            let disjoint = types.iter().enumerate().all(|(at, held)| {
-                types[at + 1..]
-                    .iter()
-                    .all(|other| held.is_disjoint(other))
-            });
+            let disjoint = types
+                .iter()
+                .enumerate()
+                .all(|(at, held)| types[at + 1..].iter().all(|other| held.is_disjoint(other)));
             if every_branch && disjoint {
                 return Some(ChoiceBasis::ReceiveDistinguished { peer: peer.clone() });
             }

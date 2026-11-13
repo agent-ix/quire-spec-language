@@ -42,7 +42,11 @@ pub fn unsupported_construct(
     let view = protocol_view(package, protocol)?;
     for role in view.roles() {
         if role_is_replicated(node(package, role)?)? {
-            return Ok(Some(cause(UnsupportedSlug::DynamicRolePopulation, role, None)));
+            return Ok(Some(cause(
+                UnsupportedSlug::DynamicRolePopulation,
+                role,
+                None,
+            )));
         }
     }
     for queue in view.queues() {
@@ -69,22 +73,22 @@ pub fn unsupported_construct(
             | ControlOperation::Event
             | ControlOperation::Commit
             | ControlOperation::Fence => Some(cause(UnsupportedSlug::UnsupportedControl, id, None)),
-            _ => match control_body(control)? {
-                ControlBody::Parallel { join, .. } if join.policy != "all" => {
-                    Some(cause(UnsupportedSlug::UnsupportedJoin, id, Some(join.policy)))
+            _ => {
+                match control_body(control)? {
+                    ControlBody::Parallel { join, .. } if join.policy != "all" => Some(cause(
+                        UnsupportedSlug::UnsupportedJoin,
+                        id,
+                        Some(join.policy),
+                    )),
+                    ControlBody::Parallel { join, .. } if join.outstanding.is_some() => Some(
+                        cause(UnsupportedSlug::UnsupportedJoin, id, Some("outstanding")),
+                    ),
+                    ControlBody::Choice { owner, .. } if !view.roles().contains(&owner) => {
+                        Some(cause(UnsupportedSlug::UnassignedLocalChoice, id, None))
+                    }
+                    _ => None,
                 }
-                ControlBody::Parallel { join, .. } if join.outstanding.is_some() => Some(cause(
-                    UnsupportedSlug::UnsupportedJoin,
-                    id,
-                    Some("outstanding"),
-                )),
-                ControlBody::Choice { owner, .. }
-                    if !view.roles().contains(&owner) =>
-                {
-                    Some(cause(UnsupportedSlug::UnassignedLocalChoice, id, None))
-                }
-                _ => None,
-            },
+            }
         };
         if found.is_some() {
             return Ok(found);

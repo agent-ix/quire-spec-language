@@ -58,7 +58,11 @@ impl<'p> Reader<'p> {
         })
     }
 
-    fn walk(&mut self, id: &CheckedNodeId, within: &mut Vec<CheckedNodeId>) -> Result<(), StructureError> {
+    fn walk(
+        &mut self,
+        id: &CheckedNodeId,
+        within: &mut Vec<CheckedNodeId>,
+    ) -> Result<(), StructureError> {
         within.push(id.clone());
         let enter = PortRef {
             node: id.clone(),
@@ -188,7 +192,12 @@ impl GlobalStructure {
             if channel_ordering(node)? == ChannelOrdering::Fifo
                 && !fifo_key_reads_message(package, node)?
             {
-                fifo.insert((*id).clone(), UniformFifo { channel: (*id).clone() });
+                fifo.insert(
+                    (*id).clone(),
+                    UniformFifo {
+                        channel: (*id).clone(),
+                    },
+                );
             }
         }
         reader.input.uniform_fifo = fifo.into_values().collect();

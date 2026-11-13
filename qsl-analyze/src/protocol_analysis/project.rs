@@ -48,7 +48,9 @@ pub enum ProjectionRefusal {
     #[error(transparent)]
     Missing(#[from] MissingMember),
     /// The profile word is not `bounded-static`.
-    #[error("invalid_runtime_input/invalid-value: the member `profile` is `{0}`, not `bounded-static`")]
+    #[error(
+        "invalid_runtime_input/invalid-value: the member `profile` is `{0}`, not `bounded-static`"
+    )]
     InvalidProfile(String),
     /// The role is not a role of the clause.
     #[error("invalid_runtime_input/invalid-value: the member `role` names no role of the clause")]
@@ -84,8 +86,7 @@ pub fn project(
     request: ProjectionRequest,
 ) -> Result<ProjectionOutcome, ProjectionRefusal> {
     let premises = ProtocolPremises::from_view(package, &request.protocol)?;
-    let role_text = node_text(&request.role)
-        .map_err(|_| MissingMember::new("role"))?;
+    let role_text = node_text(&request.role).map_err(|_| MissingMember::new("role"))?;
     let key = ProtocolAnalysisKey::projection(ProjectionKeyDraft {
         definition_key: request.definition_key,
         role: Some(role_text),
@@ -128,7 +129,10 @@ pub fn project(
         let GlobalEventKind::Choice { cases, .. } = &event.kind else {
             continue;
         };
-        if structure.depth(&event.at).is_some_and(|depth| depth > max_depth) {
+        if structure
+            .depth(&event.at)
+            .is_some_and(|depth| depth > max_depth)
+        {
             continue;
         }
         let Some(basis) = structure.classify(role, &event.at, max_depth) else {
@@ -162,7 +166,10 @@ pub fn project(
                                     side(divergence.first, case_first),
                                     side(divergence.second, case_second),
                                 );
-                                if best.as_ref().is_none_or(|held| candidate.rank() < held.rank()) {
+                                if best
+                                    .as_ref()
+                                    .is_none_or(|held| candidate.rank() < held.rank())
+                                {
                                     best = Some(candidate);
                                 }
                             }
@@ -261,8 +268,7 @@ impl Candidate {
             .action
             .as_ref()
             .map_or_else(|| self.choice.node.clone(), |action| action.at.node.clone());
-        let separating_witness =
-            root.record(&deciding, self.a.path.len().saturating_sub(1))?;
+        let separating_witness = root.record(&deciding, self.a.path.len().saturating_sub(1))?;
         Ok(ProjectionCounterexample {
             key,
             choice: self.choice.node,
@@ -295,7 +301,9 @@ fn witness(
             GlobalEventKind::Send(_) | GlobalEventKind::Receive(_) => {
                 let action = structure.action_of(&event.at, role);
                 match action {
-                    Some(action) if action.direction == qsl_replay::protocol_analysis::Direction::Send => {
+                    Some(action)
+                        if action.direction == qsl_replay::protocol_analysis::Direction::Send =>
+                    {
                         LocalEventKind::Send {
                             peer: action.peer,
                             message_type: action.message_type,
@@ -345,4 +353,3 @@ fn witness(
         merge_evidence,
     }
 }
-

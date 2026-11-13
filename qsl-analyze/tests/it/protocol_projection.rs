@@ -168,7 +168,11 @@ fn the_worked_example_without_a_distinguishing_message_has_a_counterexample() {
     assert_eq!(action.at.node, named(&package, "PickedUp"));
     assert_eq!(found.action_b, None, "B is the end of the branch");
     assert_eq!(
-        found.path_a.iter().map(|at| at.node.clone()).collect::<Vec<_>>(),
+        found
+            .path_a
+            .iter()
+            .map(|at| at.node.clone())
+            .collect::<Vec<_>>(),
         [named(&package, "PickIt"), named(&package, "PickedUp")]
     );
     assert!(found.path_b.is_empty());
@@ -255,9 +259,12 @@ fn equal_first_actions_merge_and_recurse_on_their_continuations() {
     // A continuation that differs after an equal first action does not merge.
     let longer = format!("{PICK}\nsend Tail via Back as (t: Ack) {{ true }};");
     let other = PICK2;
-    let package = worked(&longer, &other, "");
+    let package = worked(&longer, other, "");
     let found = counterexample(run(&package, "Warehouse"));
-    assert_eq!(found.action_a.as_ref().map(|a| a.at.node.clone()), Some(named(&package, "Tail")));
+    assert_eq!(
+        found.action_a.as_ref().map(|a| a.at.node.clone()),
+        Some(named(&package, "Tail"))
+    );
     assert_eq!(found.action_b, None);
 }
 
@@ -313,7 +320,10 @@ fn the_counterexample_is_the_shortest_then_the_first_choice() {
         choice("First", &receive("1")),
         choice("Second", &receive("2"))
     ));
-    assert_eq!(counterexample(run(&package, "Warehouse")).choice, named(&package, "First"));
+    assert_eq!(
+        counterexample(run(&package, "Warehouse")).choice,
+        named(&package, "First")
+    );
     // A shorter path in the later choice wins over the earlier choice.
     let package = flow(&format!(
         "sequence Main {{\n{}\n{}\n}}",
@@ -376,7 +386,14 @@ fn parallel_flow(key: &str) -> Box<CheckedPackageV2> {
 /// global structure restricted through the correspondence table; one send and
 /// one receive per communication; a `parallel` stays a partial order; two
 /// receives of one FIFO key keep their order.
-#[trace("TC-1410", "FR-570-AC-1", "FR-570-AC-2", "FR-570-AC-3", "FR-174-AC-1", "FR-174-AC-4")]
+#[trace(
+    "TC-1410",
+    "FR-570-AC-1",
+    "FR-570-AC-2",
+    "FR-570-AC-3",
+    "FR-174-AC-1",
+    "FR-174-AC-4"
+)]
 #[test]
 fn local_graphs_equal_the_global_structure_restricted_to_the_role() {
     for (key, ordered) in [
@@ -385,12 +402,9 @@ fn local_graphs_equal_the_global_structure_restricted_to_the_role() {
         ("unordered", false),
     ] {
         let package = parallel_flow(key);
-        let structure = GlobalStructure::from_package(
-            &package,
-            &clause(&package),
-            RunBudget::default(),
-        )
-        .unwrap();
+        let structure =
+            GlobalStructure::from_package(&package, &clause(&package), RunBudget::default())
+                .unwrap();
         for role in ["Buyer", "Seller", "Warehouse"] {
             let found = witness(run(&package, role));
             let table = &found.correspondence.0;
@@ -406,7 +420,12 @@ fn local_graphs_equal_the_global_structure_restricted_to_the_role() {
             }
             assert_eq!(table.len(), found.local_graph.events.len(), "total and 1:1");
             let count = |wanted: fn(&LocalEventKind) -> bool| {
-                found.local_graph.events.iter().filter(|e| wanted(&e.kind)).count()
+                found
+                    .local_graph
+                    .events
+                    .iter()
+                    .filter(|e| wanted(&e.kind))
+                    .count()
             };
             let is_send = |kind: &LocalEventKind| matches!(kind, LocalEventKind::Send { .. });
             let is_receive = |kind: &LocalEventKind| matches!(kind, LocalEventKind::Receive { .. });
@@ -423,7 +442,10 @@ fn local_graphs_equal_the_global_structure_restricted_to_the_role() {
             .iter()
             .filter(|e| matches!(e.kind, LocalEventKind::ParallelRegion))
             .count();
-        assert_eq!(region_events, 1, "the parallel is a region, not interleavings");
+        assert_eq!(
+            region_events, 1,
+            "the parallel is a region, not interleavings"
+        );
         let [r1, r2] = [named(&package, "R1"), named(&package, "R2")].map(|node| {
             seller.correspondence.0[&qsl_package::protocol_view::PortRef {
                 node,
@@ -560,7 +582,15 @@ fn constructs_outside_the_profile_answer_unsupported_with_no_graph() {
 
 /// FR-574-AC-1..5: the record of a decisive counterexample, and the root it
 /// copies; a missing root or component is refused naming it.
-#[trace("TC-1414", "FR-574-AC-1", "FR-574-AC-2", "FR-574-AC-3", "FR-574-AC-4", "FR-574-AC-5", "FR-574-AC-7")]
+#[trace(
+    "TC-1414",
+    "FR-574-AC-1",
+    "FR-574-AC-2",
+    "FR-574-AC-3",
+    "FR-574-AC-4",
+    "FR-574-AC-5",
+    "FR-574-AC-7"
+)]
 #[test]
 fn a_decisive_counterexample_carries_one_record_and_a_missing_root_is_refused() {
     let package = worked(PICK, "", "");
@@ -573,7 +603,10 @@ fn a_decisive_counterexample_carries_one_record_and_a_missing_root_is_refused() 
             qsl_replay::protocol_analysis::node_text(&named(&package, "PickedUp")).unwrap()
         )
     );
-    assert_eq!(record.trace_position.as_ref().map(|p| p.as_str()), Some("1"));
+    assert_eq!(
+        record.trace_position.as_ref().map(|p| p.as_str()),
+        Some("1")
+    );
     assert!(record.value_path.steps.is_empty());
     assert_eq!(record.value_path.observation.identity, "protocol-claim");
     // A sound projection carries no record.
@@ -618,13 +651,24 @@ fn the_trace_position_is_the_divergent_actions_index_in_path_a() {
     );
     let package = worked(&long, "", "");
     let found = counterexample(run(&package, "Warehouse"));
-    assert_eq!(found.path_a.len(), 4, "two events of other roles precede the divergence");
     assert_eq!(
-        found.separating_witness.trace_position.as_ref().map(|p| p.as_str()),
+        found.path_a.len(),
+        4,
+        "two events of other roles precede the divergence"
+    );
+    assert_eq!(
+        found
+            .separating_witness
+            .trace_position
+            .as_ref()
+            .map(|p| p.as_str()),
         Some("3")
     );
     // The first divergent action is the Decision receive, third event on.
-    assert_eq!(found.action_a.as_ref().unwrap().at.node, named(&package, "Early2"));
+    assert_eq!(
+        found.action_a.as_ref().unwrap().at.node,
+        named(&package, "Early2")
+    );
     assert_eq!(found.path_a.last().unwrap().node, named(&package, "Early2"));
 }
 
@@ -637,17 +681,16 @@ fn the_replay_arm_reproduces_a_counterexample_and_refuses_an_edited_one() {
     let found = counterexample(run(&package, "Warehouse"));
     let structure =
         GlobalStructure::from_package(&package, &clause(&package), RunBudget::default()).unwrap();
-    assert_eq!(replay_projection_counterexample(&structure, &found, 64), Ok(()));
+    assert_eq!(
+        replay_projection_counterexample(&structure, &found, 64),
+        Ok(())
+    );
     let source = ReplaySource::ProtocolAnalysis(Box::new(ProtocolAnalysisEvidence {
         counterexample: found.clone(),
     }));
-    let replayed = replay_protocol_analysis(
-        &package,
-        &clause(&package),
-        &source,
-        RunBudget::default(),
-    )
-    .unwrap();
+    let replayed =
+        replay_protocol_analysis(&package, &clause(&package), &source, RunBudget::default())
+            .unwrap();
     assert_eq!(
         replayed.category(),
         quire_semantic_value::catalog::Category::Success
@@ -670,13 +713,9 @@ fn the_replay_arm_reproduces_a_counterexample_and_refuses_an_edited_one() {
     let source = ReplaySource::ProtocolAnalysis(Box::new(ProtocolAnalysisEvidence {
         counterexample: early,
     }));
-    let replayed = replay_protocol_analysis(
-        &package,
-        &clause(&package),
-        &source,
-        RunBudget::default(),
-    )
-    .unwrap();
+    let replayed =
+        replay_protocol_analysis(&package, &clause(&package), &source, RunBudget::default())
+            .unwrap();
     assert_eq!(
         replayed.category(),
         quire_semantic_value::catalog::Category::Inconclusive
