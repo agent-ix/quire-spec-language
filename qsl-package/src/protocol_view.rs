@@ -1201,11 +1201,49 @@ pub fn role_is_replicated(role: &CheckedSemanticNodeV2) -> Result<bool, ViewRefu
     Ok(!members(role, "replication", replication)?.is_empty())
 }
 
+/// A `parallel` control's join policy (QSpec FR-466 "parallel").
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ParallelJoinPolicy {
+    /// `all`.
+    All,
+    /// `any`.
+    Any,
+    /// `quorum`.
+    Quorum,
+    /// `predicate`.
+    Predicate,
+}
+
+impl ParallelJoinPolicy {
+    /// The policy a wire word names, `None` for any other word.
+    #[ix_trace_rs::string_edge]
+    fn from_wire(word: &str) -> Option<Self> {
+        match word {
+            "all" => Some(Self::All),
+            "any" => Some(Self::Any),
+            "quorum" => Some(Self::Quorum),
+            "predicate" => Some(Self::Predicate),
+            _ => None,
+        }
+    }
+
+    /// The policy's wire word.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::All => "all",
+            Self::Any => "any",
+            Self::Quorum => "quorum",
+            Self::Predicate => "predicate",
+        }
+    }
+}
+
 /// A `parallel` control's join (QSpec FR-466 "parallel").
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ParallelJoin<'n> {
-    /// The join policy word: `all`, `any`, `quorum` or `predicate`.
-    pub policy: &'n str,
+    /// The join policy.
+    pub policy: ParallelJoinPolicy,
     /// The branch labels the join awaits, in ascending label order.
     pub joined: Vec<&'n str>,
     /// The `outstanding` policy word when written.
@@ -1274,6 +1312,7 @@ pub fn control_body(node: &CheckedSemanticNodeV2) -> Result<ControlBody<'_>, Vie
             let join = required(node, "join")?;
             let policy = group_member(join, "policy")
                 .and_then(text)
+                .and_then(ParallelJoinPolicy::from_wire)
                 .ok_or_else(|| malformed(&node.node_id, "join"))?;
             let outstanding = match optional(node, "outstanding")? {
                 None => None,

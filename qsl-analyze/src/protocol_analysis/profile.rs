@@ -3,7 +3,7 @@
 
 use qsl_package::protocol_view::{
     control_body, control_operation, protocol_view, queue_capacity, role_is_replicated,
-    ControlBody, ControlOperation, QueueCapacity, ViewRefusal,
+    ControlBody, ControlOperation, ParallelJoinPolicy, QueueCapacity, ViewRefusal,
 };
 use qsl_replay::protocol_analysis::{UnsupportedCause, UnsupportedSlug};
 use quire_contract_model::{CheckedNodeId, CheckedPackageV2, CheckedSemanticNodeV2};
@@ -79,19 +79,21 @@ pub fn unsupported_construct(
                 other.get_or_insert_with(|| cause(UnsupportedSlug::UnsupportedControl, id, None));
                 None
             }
-            _ => {
-                match control_body(control)? {
-                    ControlBody::Parallel { join, .. } if join.policy != "all" => Some(cause(
+            _ => match control_body(control)? {
+                ControlBody::Parallel { join, .. } if join.policy != ParallelJoinPolicy::All => {
+                    Some(cause(
                         UnsupportedSlug::UnsupportedJoin,
                         id,
-                        Some(join.policy),
-                    )),
-                    ControlBody::Parallel { join, .. } if join.outstanding.is_some() => Some(
-                        cause(UnsupportedSlug::UnsupportedJoin, id, Some("outstanding")),
-                    ),
-                    _ => None,
+                        Some(join.policy.as_str()),
+                    ))
                 }
-            }
+                ControlBody::Parallel { join, .. } if join.outstanding.is_some() => Some(cause(
+                    UnsupportedSlug::UnsupportedJoin,
+                    id,
+                    Some("outstanding"),
+                )),
+                _ => None,
+            },
         };
         if found.is_some() {
             return Ok(found);
