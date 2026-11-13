@@ -73,12 +73,7 @@ impl Fixture {
 
     fn subject(&self) -> ProtocolSubject<'_> {
         ProtocolSubject {
-            model: model_subject(
-                &self.checked,
-                &self.documents,
-                self.initial.clone(),
-                &["c"],
-            ),
+            model: model_subject(&self.checked, &self.documents, self.initial.clone(), &["c"]),
             protocol: "Flow".to_owned(),
             over: instance("c"),
             roles: ["Buyer", "Seller", "Warehouse"]
@@ -318,10 +313,7 @@ fn an_admitted_loss_is_an_environment_defeat() {
     let [defeat] = &defeats_per_branch[..] else {
         panic!("one branch: the environment fixes the choice");
     };
-    assert!(defeat
-        .play
-        .iter()
-        .any(|step| step.kind() == StepKind::Lose));
+    assert!(defeat.play.iter().any(|step| step.kind() == StepKind::Lose));
     assert_eq!(obligation, fixture.named("Done"));
     assert_eq!(
         separating_witness.deciding_element,

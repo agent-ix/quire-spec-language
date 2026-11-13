@@ -22,11 +22,11 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_eval::model_subject::ProtocolSubject;
-use qsl_eval::simulation::ExpansionStop;
 use qsl_eval::simulation::model::{ModelFinding, ModelSystem, TerminalClass};
 use qsl_eval::simulation::protocol::{
     ProtocolRefusal, ProtocolState, ProtocolSystem, ProtocolTransition, Sc, StepKind,
 };
+use qsl_eval::simulation::ExpansionStop;
 use qsl_eval::simulation::TransitionSystem;
 use qsl_package::protocol_view::{protocol_view, ViewRefusal};
 use qsl_replay::protocol_analysis::{
@@ -380,13 +380,17 @@ impl Game<'_, '_> {
         let mut nodes: Vec<Node> = Vec::new();
         let mut edges = 0usize;
         let roles = self.names.roles.len();
-        let mut stack: Vec<(ProtocolState<Sc>, Option<(usize, usize)>, Vec<ProtocolTransition>)> =
-            self.system
-                .initial()
-                .into_iter()
-                .rev()
-                .map(|state| (state, None, Vec::new()))
-                .collect();
+        let mut stack: Vec<(
+            ProtocolState<Sc>,
+            Option<(usize, usize)>,
+            Vec<ProtocolTransition>,
+        )> = self
+            .system
+            .initial()
+            .into_iter()
+            .rev()
+            .map(|state| (state, None, Vec::new()))
+            .collect();
         // Depth first, children in the system's canonical successor order;
         // a child's id is larger than its parent's.
         while let Some((state, parent, played)) = stack.pop() {
@@ -430,13 +434,10 @@ impl Game<'_, '_> {
             } else {
                 node.leaf = false;
                 edges += expansion.successors.len();
-                if let Err(limit) = charge(edges, "max_transitions", self.budget.max_transitions)
-                {
+                if let Err(limit) = charge(edges, "max_transitions", self.budget.max_transitions) {
                     return Ok(Err(limit));
                 }
-                for (at, (transition, next)) in
-                    expansion.successors.into_iter().enumerate().rev()
-                {
+                for (at, (transition, next)) in expansion.successors.into_iter().enumerate().rev() {
                     let mut extended = played.clone();
                     extended.push(transition.clone());
                     stack.push((next, Some((id, at)), extended));
@@ -598,8 +599,9 @@ fn admit<'a>(
     let root = AssessedRoot::new(request.assessed_root)?;
     let names = Names::new(package, &request.protocol, &premises)?;
     let not_stated = |member: &'static str, value: &Option<Option<BTreeSet<String>>>| {
-        matches!(value, Some(None))
-            .then_some(Settled::Inconclusive(InconclusiveCause::PremiseNotStated { member }))
+        matches!(value, Some(None)).then_some(Settled::Inconclusive(
+            InconclusiveCause::PremiseNotStated { member },
+        ))
     };
     let system = if let Some(cause) = unsupported_construct(package, &request.protocol)? {
         Err(Settled::Unsupported(cause))
@@ -774,9 +776,7 @@ fn forced_pair(points: &[Point]) -> Option<(&Point, &Point)> {
         points[at + 1..]
             .iter()
             .find(|b| {
-                !a.winning.is_empty()
-                    && !b.winning.is_empty()
-                    && a.winning.is_disjoint(&b.winning)
+                !a.winning.is_empty() && !b.winning.is_empty() && a.winning.is_disjoint(&b.winning)
             })
             .map(|b| (a, b))
     })
