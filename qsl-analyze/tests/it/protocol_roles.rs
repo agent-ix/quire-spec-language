@@ -1994,6 +1994,11 @@ fn a_retire_predicate_reads_a_protocol_capture() {
     );
 }
 
+/// The undecided initializer `6 mod (1 - 1)` relies on S3 accepting a divisor
+/// it cannot prove non-zero, which FR-381 "Captures" refuses (QSL-1903). No
+/// other route reaches this path: a meter stop is an `ExpansionStop`, not an
+/// undecided evaluation. Replace the initializer once QSL-1903 lands.
+///
 /// An undecided protocol capture (`6 mod (1 - 1)` is undefined): under `on
 /// each` no `activate` step starts an instance and each trigger records a
 /// `ProtocolExpressionUndetermined` finding naming the capture; under `on

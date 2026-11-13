@@ -30,3 +30,11 @@ remaining gaps are in rules this PR now relies on but did not update.
 | FND-001 | medium | ADR-027 FO-3 (initial states) says the initial state holds "no binders". It does not say that an `on origin` instance's protocol captures are evaluated there, nor what an undecided capture gives. The stepper now does both (it evaluates them in `start`, and gives `UndecidedInitialGuard` on undecided), and PS-8 now keys captures for every live instance. ST-13 covers `on each` only | spec/decisions/ADR-027-protocol-transition-system-for-parallel.md:150 |
 | FND-002 | low | PS-8's new phrase "maps each live instance's protocol captures to their frozen values" gives no key shape, while every other map in PS-8 names its key tuple. The code keys it by (instance ordinal, capture name) | spec/decisions/ADR-027-protocol-transition-system-for-parallel.md:140 |
 | FND-003 | low | ADR-036 PA-16 still lists "protocol captures, `activation on each` with compensation" among the constructs `qsl-eval` refuses. This PR removes both refusals, so that example list is now stale | spec/decisions/ADR-036-protocol-local-projection-and-realizability-engine.md:144 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | e305ec25d: FO-3 now states that under `on origin` the captures are evaluated in source order at the initial state and frozen, and that an undecided capture settles `unsupported` before any state is explored |
+| FND-002 | fixed | e305ec25d: PS-8 now keys the captures map by (instance ordinal, capture name) |
+| FND-003 | fixed | e305ec25d: PA-16's G7 list now names only the unordered head/tail loss channel and the unenumerable step binder |

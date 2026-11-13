@@ -25,3 +25,10 @@ FR-209-AC-9, TC-652 step 7 and TC-654 step 9 are clean.
 | --- | --- | --- | --- |
 | FND-001 | low | FR-207-AC-7's long subject ("a variant of §7.1's `Refund` with ... the recovery predicate `seen and armed` reads ...") reads as if only the recovery predicate reads the capture and binder. Splitting the setup sentence from the claim would make the subject unambiguous | spec/functional/FR-207-run-compensation-templates-as-protocol-threads.md:89 |
 | FND-002 | low | FR-207-AC-7 states outcomes for triggers 3, 2 and 1 but not 0, although `Level` is `Int[0, 3]` and `activate(Level)` is enabled for 0 too | spec/functional/FR-207-run-compensation-templates-as-protocol-threads.md:89 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | e305ec25d: FR-207-AC-7 now ends its setup at the recovery predicate and states the claim separately: only the registration-capture stage reads `x`; the guard, the activation capture and the recovery predicate read `big` |
+| FND-002 | fixed | e305ec25d: FR-207-AC-7 states that `Level` is `Int[0, 3]` and gives the trigger 0 or 1 outcome; TC-652 step 7 covers triggers 3, 2, 1 and 0 |

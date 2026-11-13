@@ -64,3 +64,12 @@ in this PR.
 - `cargo fmt --check -p qsl-eval -p qsl-analyze`: FAIL (FND-001).
 - `cargo test -p qsl-analyze --test it -- protocol_roles::` (flock, `-j2`): PASS, 29 passed and 0 failed, including the three new tests.
 - `make ci` and full clippy were not run, per the dispatch brief.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | e305ec25d: `cargo fmt --check -p qsl-eval -p qsl-analyze` exits 0; both diffs are formatted |
+| FND-002 | fixed | e305ec25d: `trigger_read` now asks whether any template's registration-capture body `reads_local(2)` (the activation binder's frame position after forward and `over`), instead of `!templates.is_empty()` |
+| FND-003 | fixed | e305ec25d: `compensation()` passes an `AttemptOf { instance, compensating, registration }`; `attempt_records` no longer repeats the lookup |
+| FND-004 | fixed | e305ec25d: the test asserts `seen` equals `{boolean true}` for trigger 3 and `{boolean false}` for trigger 2, and walks triggers 0 and 1 through `finish`, checking `registered`, `seen` false and no `cattempt` at every state |

@@ -47,3 +47,17 @@ returns or `todo!()` were found in the diff.
 - FR-381-AC-1 to FR-381-AC-15: tagged.
 - Semantic review: not run. The dispatch scoped this to the PR diff, and intent was checked by hand for the two new ACs only.
 - Plan completion: not assessed
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | medium | The new undecided-capture test depends on S3 admitting the capture initializer `6 mod (1 - 1) >= 0`. FR-381 "Captures" says S3 SHALL refuse an initializer with an undischarged definedness obligation (`undefined_expression`/`unproved-nonzero`). The test passes, so the checker admits it: a pre-existing S3 conformance gap that this test now builds on, and the test breaks when S3 conforms | qsl-analyze/tests/it/protocol_roles.rs:2005, spec/functional/FR-381-check-protocol-captures-activation-and-compensation-recovery-at-s3.md:145 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | deferred | QSL-1902 (child of QSL-1886) carries the FR-208-AC-6 population half, which needs S3 `type_named_body` to call `with_named_populations` and `evaluate_protocol_slot` to pass population reads. The PR no longer claims the criterion: the test is untagged, its doc comment says it is not a test of FR-208-AC-6, and the PR body says "Remaining work: QSL-1902". QSL-1886 must not close as Done on that criterion |
+| FND-002 | fixed | e305ec25d: the doc comment no longer cites "FR-381 (TC-653)"; it now reads "Not a test of FR-208-AC-6, so it cites no criterion" |
+| FND-003 | fixed | e305ec25d: `an_undecided_protocol_capture_is_a_finding_on_each_and_a_refusal_on_origin` asserts that no `activate` succeeds and that a `ProtocolExpressionUndetermined` finding names `::z` under `on each`, and that `ProtocolSystem::new` returns `Unsupported::UndecidedInitialGuard` under `on origin`; it passes |
