@@ -13,8 +13,9 @@ relationships:
 ## Description
 
 Verify that a body whose parameter count differs from its operation's
-signature, or whose type does not match the operation's declared result,
-refuses, whether or not a dispatched call reaches its operation. Scope: FR-302-AC-8, FR-576-AC-10.
+signature, whose type does not match the operation's declared result, or that
+is declared on an operation with no result type, refuses, whether or not a
+dispatched call reaches its operation. Scope: FR-302-AC-8, FR-576-AC-10.
 
 ## Test Procedure
 
@@ -28,11 +29,19 @@ refuses, whether or not a dispatched call reaches its operation. Scope: FR-302-A
 4. Remove the precondition call so no dispatched call reaches `A.add`, and
    compile once with `tooMany` and once with `wrongType`.
 5. Add operation `A.touch()` declaring no result type and declare
-   `body noResult using V on M::A::touch() { true }`. Compile with and without
-   a dispatched call reaching `A.touch`.
+   `body noResult using V on M::A::touch() { true }`, with no clause calling
+   `touch`. Compile the unit.
+6. Start from the `ok` body on `A.add` and the unit of step 5 with
+   `noResult` removed. Compile it and read `operation_bodies`.
+7. Give `A.touch` the declared result `Boolean` and the body
+   `body touchOk using V on M::A::touch() { true }`. Compile and read
+   `operation_bodies`.
 
 ## Expected Results
 
-Each of the four compiles in steps 1 to 4, and both compiles in step 5, refuse at S3 as `ill_typed`/`type-mismatch` located at the
-body, and produce no checked package and no partial dispatch table. With the body `body ok using V on M::A::add(amount) { amount }`
-the compile succeeds.
+Each of the four compiles in steps 1 to 4, and the compile in step 5, refuse at
+S3 as `ill_typed`/`type-mismatch` located at the body, and produce no checked
+package and no partial dispatch table. With the body
+`body ok using V on M::A::add(amount) { amount }` the compile succeeds. In
+step 6 `operation_bodies` holds a `no_body` row for `A.touch`. In step 7 it
+holds a row for `A.touch` whose `body` references the body function node.

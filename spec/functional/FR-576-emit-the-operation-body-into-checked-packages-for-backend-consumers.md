@@ -80,23 +80,24 @@ repositories.
   one key. It SHALL sort the rows by `(document, declaring, operation)` as
   FR-496 does, independent of source declaration order, and an operation
   reached through two model aliases of one document has one row.
-- While an operation has `has_body` true, `check` SHALL build the FR-094 body
-  clause function for it and check the body as FR-302 does (parameter count and
-  result type), whether or not any dispatched call reaches the operation, and
-  the emitter SHALL set the row's `body` to a reference to that function node.
-  A body that fails the check refuses the compile as FR-302 states, with no
-  package. Because every body is checked, a unit whose uncalled body contains
-  a dispatched call refuses `ill_typed`/`operator-ineligible` at that body
-  (FR-302), where it compiled before this requirement; the body check has no
-  other new refusal.
-- While an operation declares no result type, an `operation-body` resolved to
-  it SHALL refuse the compile `ill_typed`/`type-mismatch`, located at the body,
-  with no package, as for a body whose type differs from the declared result
-  (FR-302): FR-094 builds a body function only against a declared result, so
-  such an operation has no body function and no row can reference one. The
-  emitter SHALL NOT withhold `operation_bodies`, emit a partial member, or
-  write `no_body` for it, since `no_body` states that the operation has no
-  authored body.
+- While an operation with `has_body` true declares a result type, `check` SHALL
+  build the FR-094 body clause function for it and check the body as
+  FR-302 does (parameter count and result type), whether or not any dispatched
+  call reaches the operation, and the emitter SHALL set the row's `body` to a
+  reference to that function node. A body that fails the check refuses the
+  compile as FR-302 states, with no package. Because every body is checked, a
+  unit whose uncalled body contains a dispatched call refuses
+  `ill_typed`/`operator-ineligible` at that body (FR-302), where it compiled
+  before this requirement. The body check's only other new refusal is the
+  resultless refusal below.
+- While an operation with `has_body` true declares no result type, `check` SHALL
+  refuse the compile `ill_typed`/`type-mismatch`, located at the body,
+  with no package, as FR-302 refuses a body whose type differs from the
+  declared result. The emitter SHALL NOT withhold `operation_bodies`, emit a
+  partial member, or write `no_body` for that operation.
+  *Rationale:* FR-094 builds a body function only against a declared result,
+  so such an operation has no body function for a row to reference, and
+  `no_body` states that the operation has no authored body.
 - While an operation has `has_body` false, the emitter SHALL set the row's
   `body` to the typed absence `no_body`. It SHALL NOT omit the row, write a
   default or empty body, or substitute the body of another operation.
@@ -124,7 +125,7 @@ repositories.
 | FR-576-AC-7 | For an operation that is a candidate in an FR-494 dispatch table, the row's body reference equals that candidate's operation-body identity; for each operation the member's `(document, declaring, operation)` set equals the `operation_effects` row set of the same package. | Test |
 | FR-576-AC-8 | A unit whose uncalled `A.empty` body contains a dispatched call refuses `ill_typed`/`operator-ineligible` located at that body and emits no package; the same unit with the call removed compiles. | Test |
 | FR-576-AC-9 | Each row, together with the graph node it names, yields the operation identity and the body expression with source provenance by lookup alone: for the AC-1 package, resolving the row's `body` in the package graph returns the authored body for the row's operation, and for a `no_body` row no node lookup is needed. | Test |
-| FR-576-AC-10 | Operation `A.touch` declares no result type and has an `operation-body`, with or without a dispatched call reaching it: the compile refuses `ill_typed`/`type-mismatch` located at that body and emits no package, so `operation_bodies` is never withheld or partial for it; the same unit with the body removed emits a `no_body` row for `A.touch`, and with a declared result and a matching body emits a row referencing the body function. | Test (TC-1011) |
+| FR-576-AC-10 | Operation `A.touch` declares no result type and has an `operation-body`: the compile refuses `ill_typed`/`type-mismatch` located at that body and emits no package. The same unit with the body removed emits a `no_body` row for `A.touch` in `operation_bodies`; with a declared result and a matching body it emits a row referencing the body function. | Test (TC-1011) |
 
 ## Dependencies
 

@@ -117,7 +117,8 @@ operation `pre`/`post` text is shape-checked and not kept (QSL-726).
   body against the operation's declared result. The parameter count and
   types and the body type are checked for every body, whether or not a
   dispatched call reaches it (FR-302, FR-576), before any consumer uses it, and a mismatch refuses
-  `ill_typed`/`type-mismatch` at the body; resolving the body to its
+  `ill_typed`/`type-mismatch` at the body, as is a body on an operation that
+  declares no result (FR-576); resolving the body to its
   `DeclarationKey` and setting `has_body` do not depend on that check. At most one unit
   `operation-body` SHALL resolve to a given `DeclarationKey`; FR-302 defines
   the duplicate refusal. This multiplicity rule applies to executable bodies,
