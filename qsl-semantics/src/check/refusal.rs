@@ -2372,6 +2372,37 @@ pub struct ProvedInterval {
     pub upper: Option<Integer>,
 }
 
+/// The source text of the expression an obligation is about, kept beside the
+/// obligation for its message only. It is display text, not part of the
+/// refusal: every `OperandText` is equal to every other and hashes to
+/// nothing, so a refusal compares and hashes the same with or without it.
+#[derive(Clone, Debug, Default)]
+pub struct OperandText(Option<Box<str>>);
+
+impl OperandText {
+    /// The text of `source`.
+    pub fn new(source: &str) -> Self {
+        Self(Some(source.into()))
+    }
+
+    /// The text, when a stage supplied it.
+    pub fn text(&self) -> Option<&str> {
+        self.0.as_deref()
+    }
+}
+
+impl PartialEq for OperandText {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
+impl Eq for OperandText {}
+
+impl std::hash::Hash for OperandText {
+    fn hash<H: std::hash::Hasher>(&self, _: &mut H) {}
+}
+
 /// The definedness obligation that could not be proved.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum Obligation {
@@ -2386,6 +2417,9 @@ pub enum Obligation {
         required: Box<ProvedInterval>,
         /// The interval the accepted proof forms establish.
         proved: Box<ProvedInterval>,
+        /// The arithmetic node's source text (FR-577), which the stage that
+        /// holds the unit's source fills in; the checker leaves it empty.
+        operand: OperandText,
     },
     /// A rational quotient may lie outside its `Rational[..]` domain:
     /// `unproved-range`.

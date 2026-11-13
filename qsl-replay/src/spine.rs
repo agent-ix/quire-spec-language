@@ -34,8 +34,8 @@ use qsl_package::{EmitRefusal, ImportViewRefusal, LinkRefusal, OmittedNode};
 use qsl_semantics::check::AssemblyLimits;
 use qsl_semantics::check::{
     AccessClass, AssemblyCause, AssemblyRefusal, CheckCause, CheckRefusal, ExtensionCause,
-    ProbabilisticCause, ProfileRefusal, ProtocolAnchorCause, ShadowedDeclaration,
-    SourceObjectFault, TemporalCause, TimeUnitCause, TopologyRetained,
+    Obligation, ProbabilisticCause, ProfileRefusal, ProtocolAnchorCause, ProvedInterval,
+    ShadowedDeclaration, SourceObjectFault, TemporalCause, TimeUnitCause, TopologyRetained,
 };
 use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
@@ -1049,6 +1049,20 @@ fn assembly_message(refusal: &AssemblyRefusal) -> String {
     with_more(message, refusal.errors.len())
 }
 
+/// An interval as FR-577 spells it: `[lo, hi]`, each end a base-10 integer,
+/// an unbounded lower end `-inf` and an unbounded upper end `+inf`.
+fn interval_source(interval: &ProvedInterval) -> String {
+    let end = |end: &Option<quire_exact::Integer>, unbounded: &str| {
+        end.as_ref()
+            .map_or_else(|| unbounded.to_owned(), ToString::to_string)
+    };
+    format!(
+        "[{}, {}]",
+        end(&interval.lower, "-inf"),
+        end(&interval.upper, "+inf")
+    )
+}
+
 /// A readable account of the checker's first refusal, and how many more.
 fn check_message(refusals: &[CheckRefusal]) -> String {
     let Some(first) = refusals.first() else {
@@ -1420,6 +1434,20 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                     "{message}: `requires temporal {temporal}` reaches `protocol {protocol}` again"
                 ),
             };
+        }
+        // FR-577: name the unproved arithmetic operand with the interval it
+        // must lie in and the interval the accepted proof forms establish.
+        CheckCause::Unproved(Obligation::Range {
+            required,
+            proved,
+            operand,
+        }) if operand.text().is_some() => {
+            message = format!(
+                "{message}: `{}` must lie in {} but is proved only in {}",
+                operand.text().unwrap_or_default(),
+                interval_source(required),
+                interval_source(proved)
+            );
         }
         CheckCause::Extension(cause) => {
             message = match cause.as_ref() {

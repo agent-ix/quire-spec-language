@@ -115,6 +115,24 @@ impl<K: Eq + Hash + Clone, V: Clone> PersistentMap<K, V> {
         self.root = Some(insert_at(&self.root, 0, hash_of(&key), key, value));
     }
 
+    /// Every entry, in no particular order. The walk is on an explicit
+    /// stack: the trie is at most [`HASH_BITS`] deep, but nothing here
+    /// depends on that.
+    pub(super) fn entries(&self) -> Vec<(K, V)> {
+        let mut found = Vec::new();
+        let mut pending: Vec<&Node<K, V>> = self.root.as_deref().into_iter().collect();
+        while let Some(node) = pending.pop() {
+            match node {
+                Node::Leaf { entries, .. } => found.extend(entries.iter().cloned()),
+                Node::Branch { left, right } => {
+                    pending.extend(left.as_deref());
+                    pending.extend(right.as_deref());
+                }
+            }
+        }
+        found
+    }
+
     /// The entries both maps hold, each valued by `combine` of the two
     /// values; an entry only one map holds is dropped. `combine` must be
     /// idempotent, `combine(v, v)` equal to `v`, since a subtree the two maps

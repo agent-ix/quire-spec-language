@@ -96,7 +96,7 @@ use qsl_package as pkg;
 use qsl_package::{read_import_view, AdmittedPackages, Emission, Import, ImportViewRefusal};
 use qsl_semantics::check::{
     resolve_profiles, AdmittedImport, AssemblyCause, AssemblyError, CheckCause, CheckRefusal,
-    CorrespondenceConflict, KeyFault, PackageDeclarations,
+    CorrespondenceConflict, KeyFault, Obligation, OperandText, PackageDeclarations,
 };
 use qsl_semantics::library::extension::{CoreVocabulary, HeldExtensions};
 use qsl_semantics::library::{ImportView, LibraryName};
@@ -715,6 +715,47 @@ impl ParsedUnitSource {
     /// the unit after an attributable protocol refusal.
     pub fn protocol_results(&self) -> &[super::ProtocolResult] {
         &self.protocol_results
+    }
+}
+
+/// FR-577: when the first refusal is an unproved range, give it the source
+/// text its region spans, the arithmetic node it is located at.
+fn name_operand(
+    refusals: &mut [CheckRefusal],
+    region: Option<&SourceRegion>,
+    sources: &[ParsedUnitSource],
+) {
+    let (
+        Some(CheckRefusal {
+            cause:
+                CheckCause::Unproved(Obligation::Range {
+                    required, operand, ..
+                }),
+            ..
+        }),
+        Some(region),
+    ) = (refusals.first_mut(), region)
+    else {
+        return;
+    };
+    // A range refusal that carries no interval (a rational or decimal sum)
+    // has no operand to name.
+    if required.lower.is_none() && required.upper.is_none() {
+        return;
+    }
+    let (Ok(start), Ok(end)) = (
+        usize::try_from(region.start()),
+        usize::try_from(region.end()),
+    ) else {
+        return;
+    };
+    if let Some(text) = sources
+        .iter()
+        .map(ParsedUnitSource::source)
+        .find(|source| source.render(region).is_some())
+        .and_then(|source| source.slice(qsl_foundation::Span { start, end }))
+    {
+        *operand = OperandText::new(text);
     }
 }
 
@@ -3722,6 +3763,8 @@ impl<'a> Resolution<'a> {
                         _ => None,
                     })
             });
+            let mut refusals = refusals;
+            name_operand(&mut refusals, region.as_ref(), &frame.source_units);
             Box::new(CompileRefusal::Check { region, refusals })
         })?;
         // The protocol continuation check keeps a refused state clause on the
@@ -3729,10 +3772,11 @@ impl<'a> Resolution<'a> {
         let graph = if graph.unit_refusals().is_empty() {
             graph
         } else {
-            let refusals = pending.report(graph.unit_refusals().to_vec());
+            let mut refusals = pending.report(graph.unit_refusals().to_vec());
             let region = refusals
                 .first()
                 .and_then(|refusal| regions.refusal_region(refusal));
+            name_operand(&mut refusals, region.as_ref(), &frame.source_units);
             graph.with_unit_refusals(refusals, region)
         };
         charged(cancel, &mut self.work.s4, || {

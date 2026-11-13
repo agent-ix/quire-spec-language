@@ -22,7 +22,7 @@ unreachable facts), each form that yields or transfers no fact, the
 redefinition-family and context exclusions, and evaluation outside the
 precondition.
 
-Scope: FR-577-AC-1 to FR-577-AC-33; FR-121-AC-37.
+Scope: FR-577-AC-1 to FR-577-AC-35 (AC-29 retired); FR-121-AC-37.
 
 ## Test Procedure
 
@@ -55,7 +55,7 @@ function's selection (`g`, `f`).
     AC-25 (`Premium` inheriting `withdraw`), AC-26 and AC-27 (`Premium`
     redefining `withdraw`).
 11. Compile the non-postcondition targets: AC-28 (another precondition),
-    AC-29 (an invariant), AC-30 (a kept `requires`).
+    AC-30 (a kept `requires`). AC-29 is retired.
 12. Compile a unit declaring only FR-577-AC-31's function `f`, with the
     function selection `f` (AC-31).
 13. From step 1's package, replay a `Debited` envelope through
@@ -65,6 +65,10 @@ function's selection (`g`, `f`).
     `contracts [Debited]` only, and explore it from a state with
     `balance = 3` and `limit = 0`, applying the attempt with `amount = 5`
     (AC-33).
+15. Compile the bank unit over the fixture whose `withdraw` returns a Boolean
+    `result`, with and without `CanAfford` (AC-34).
+16. Compile the AC-35 function `f` for each of its three guard and value
+    pairs, with the function selection `f`.
 
 Tag each test `#[trace("TC-1416", "FR-577-AC-n")]` for the criterion it
 checks, and step 2's region assertion also
@@ -89,9 +93,8 @@ checks, and step 2's region assertion also
 - Step 8: AC-20 refuses at `pre(self.balance) - x`; AC-21 compiles.
 - Step 9: both refuse at `pre(self.balance) - amount`.
 - Step 10: each refuses at `pre(self.balance) - amount`.
-- Step 11: AC-28 refuses at `self.balance - amount` in `Fits`; AC-29 refuses
-  at `self.balance - self.limit`; AC-30 refuses at
-  `pre(self.balance) - amount`.
+- Step 11: AC-28 refuses at `self.balance - amount` in `Fits`; AC-30 refuses
+  at `pre(self.balance) - amount`.
 - Step 12: compiles.
 - Step 13: the evaluation refuses `IntegerOutOfDomain` at
   `pre(self.balance) - amount`; the replay is `inconclusive` with cause
@@ -99,6 +102,10 @@ checks, and step 2's region assertion also
 - Step 14: one `ModelFinding::ContractUndetermined` for `Debited` per
   candidate post-state of the frame, 101 in all (one per `balance` value in
   `[0, 100]`), and no successor for that application.
+- Step 15: with `CanAfford` the unit checks; without it, it refuses at
+  `pre(self.balance) - amount`.
+- Step 16: each pair refuses at its value expression (`a + b`, `b + a`,
+  `-b + a`).
 
 Every refusal above is `undefined_expression`/`unproved-range` unless the
 step names another.

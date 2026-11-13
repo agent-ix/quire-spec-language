@@ -109,14 +109,20 @@ This requirement does not change FR-103's refinement guard facts
   facts are keyed at `self` or a parameter.
 - The checker SHALL transfer no fact from a precondition whose true outcome is
   unreachable.
-- The checker SHALL NOT carry precondition facts into an invariant, a state
-  constraint, another precondition, a postcondition of another operation, or
-  a postcondition naming the same operation through another context type
-  (a subtype or supertype of `M::T`).
+- The checker SHALL NOT carry precondition facts into another precondition,
+  a postcondition of another operation, or a postcondition naming the same
+  operation through another context type (a subtype or supertype of `M::T`).
+  An invariant and a state constraint receive no precondition fact by
+  construction: they cannot read at `pre`, so no fact keyed on an observation
+  of `pre` can apply to them, and the checker passes them no preconditions.
 - The checker SHALL NOT take facts from a domain package's kept `requires`
   clause (FR-103), and SHALL give none to a kept `ensures` clause.
 - The checker SHALL add no node, occurrence, obligation record or
   requirement record for a transferred fact.
+- The checker counts expression nodes against `s3.nodes` over the whole
+  package, and checks preconditions before postconditions, so a node limit
+  may trip at a different clause than source-order checking would; this
+  difference is accepted.
 
 Precondition reads are `pre` (FR-104 "Observations of reads"), so a
 transferred fact matches a read under `pre(e)` in `Q` and never one of `Q`'s
@@ -229,11 +235,13 @@ the refusal located at the node `D`.
 | FR-577-AC-26 | Over the AC-24 fixture with `Premium` redeclaring `withdraw(amount: Int[0, 100])` with `redefines` `Account/withdraw` and frame `modifies [Account/balance]`, the bank unit refuses at `pre(self.balance) - amount`. | Test (TC-1416) |
 | FR-577-AC-27 | Over the AC-26 fixture, the bank unit with `CanAfford` and `Debited` both on `Bank::Premium::withdraw` refuses at `pre(self.balance) - amount`. | Test (TC-1416) |
 | FR-577-AC-28 | The bank unit with `pre Fits using v on Bank::Account::withdraw { self.limit = self.balance - amount }` added refuses at `self.balance - amount` in `Fits`. | Test (TC-1416) |
-| FR-577-AC-29 | The bank unit with `CanAfford`'s body `amount <= self.balance and self.limit <= self.balance` and `invariant Room using v on Bank::Account at current { self.limit = self.balance - self.limit }` added refuses at `self.balance - self.limit`. | Test (TC-1416) |
+| FR-577-AC-29 | Retired. An invariant cannot read at `pre`, so no unit distinguishes giving it precondition facts; the rule holds by construction and a checker unit test shows a non-postcondition clause is checked with no precondition facts. | Test (qsl-semantics unit) |
 | FR-577-AC-30 | Over the bank fixture whose `withdraw` keeps the `quire` `requires` clause `amount <= self.balance`, the AC-3 unit refuses at `pre(self.balance) - amount`. | Test (TC-1416) |
 | FR-577-AC-31 | `function f using v(a: Int[0, 100], b: Int[0, 100], r: Int[0, 100]): Boolean pure { a <= b implies r = b - a }` checks. | Test (TC-1416) |
 | FR-577-AC-32 | `qsl_replay::replay_state_clause` over a `Debited` envelope (FR-122) of the bank unit's package whose invocation has pre `balance = 3`, `amount = 5` and post `balance = 0` refuses `IntegerOutOfDomain` at `pre(self.balance) - amount` and settles `inconclusive` with cause `NoValue`, not a reproduced violation. | Test (TC-1416) |
 | FR-577-AC-33 | A protocol over the bank package whose attempt of `withdraw` lists `contracts` `[Debited]` only, applied at a state with `balance = 3` and `limit = 0` and the argument `amount = 5`, records one `ModelFinding::ContractUndetermined` for `Debited` per candidate post-state of the frame, 101 findings (one per `balance` value in `[0, 100]`), and gives that application no successor. | Test (TC-1416) |
+| FR-577-AC-34 | Over the bank fixture whose `withdraw` returns a Boolean `result`, the unit with `CanAfford` and `post Debited using v on Bank::Account::withdraw { result implies self.balance = pre(self.balance) - amount }` checks, and without `CanAfford` it refuses at `pre(self.balance) - amount`. | Test (TC-1416) |
+| FR-577-AC-35 | `function f using v(a: Int[0, 100], b: Int[0, 100], r: Int[0, 100]): Boolean pure { G implies r = E }` refuses at `E` for `G`/`E` of `a <= b`/`a + b`, `a <= b`/`b + a` and `b <= a`/`-b + a`. | Test (TC-1416) |
 
 ## Dependencies
 

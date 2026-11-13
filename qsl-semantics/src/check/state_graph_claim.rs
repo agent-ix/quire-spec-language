@@ -615,6 +615,7 @@ fn check_predicate<'a>(
         nodes_used,
         cancel: declarations.cancel,
         staged: declarations.staged,
+        preconditions: &[],
     };
     let view = view_of(declaration, body);
     let typed = check_clause(&view, declarations, &mut cx.reborrow(declarations.scope))

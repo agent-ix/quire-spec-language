@@ -57,11 +57,11 @@ fn next_ordinal(occurrence: &OccurrenceKey) -> OccurrenceKey {
 
 /// An observation's documents: what the payload names and the byte
 /// provision holds.
-struct Documents {
-    observation: ClauseSelectionInput,
+pub(super) struct Documents {
+    pub(super) observation: ClauseSelectionInput,
     /// The documents admission reads, in read order.
-    read: Vec<DocumentRef>,
-    bytes: Vec<(DocumentRef, Vec<u8>)>,
+    pub(super) read: Vec<DocumentRef>,
+    pub(super) bytes: Vec<(DocumentRef, Vec<u8>)>,
 }
 
 /// An `attemptUpdate` invocation with self `child` over `pre_objects` and
@@ -207,14 +207,14 @@ fn reference(key: &str) -> SnapshotValue {
 /// One replay case: the request over `unit` with `documents` in the byte
 /// provision, and the envelope for `clause` over `documents`' observation,
 /// its clause node and occurrence key the compiled clause's.
-struct Case {
+pub(super) struct Case {
     unit: Unit,
     documents: Documents,
     wire: ReplayRequestWire,
     envelope: WitnessEnvelope<StateClauseCounterexample>,
 }
 
-fn case(unit: Unit, clause: &str, documents: Documents) -> Case {
+pub(super) fn case(unit: Unit, clause: &str, documents: Documents) -> Case {
     case_with(unit, clause, documents, witness_source(), |_, _| {})
 }
 
@@ -282,11 +282,11 @@ fn case_targeting(
     }
 }
 
-fn replay(case: Case) -> Result<StateClauseReplayResult, ReplayRefusal> {
+pub(super) fn replay(case: Case) -> Result<StateClauseReplayResult, ReplayRefusal> {
     replay_state_clause(case.wire, &case.envelope, crate::ReplayLimits::default())
 }
 
-fn witness_arm(result: &StateClauseReplayResult) -> &crate::WitnessArmResult {
+pub(super) fn witness_arm(result: &StateClauseReplayResult) -> &crate::WitnessArmResult {
     match result.result() {
         ReplayResult::Witness(arm) => arm,
         ReplayResult::Input(arm) => panic!("expected the witness arm, got {arm:?}"),
