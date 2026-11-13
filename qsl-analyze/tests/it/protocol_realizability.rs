@@ -9,6 +9,7 @@ use qsl_analyze::protocol_analysis::{
     realize, replay_strategy, RealizabilityOutcome, RealizabilityRequest, StrategyReplayFailure,
 };
 use qsl_eval::model_subject::{ProtocolSubject, RoleBinding};
+use qsl_eval::simulation::protocol::StepKind;
 use qsl_package::CheckedPackage;
 use qsl_replay::protocol_analysis::{
     node_text, AnalysisOutcome, BoundsDraft, InconclusiveCause, RealizabilityCounterexample,
@@ -132,23 +133,6 @@ fn worked(delivery: &str, ship: &str, cancel: &str) -> Fixture {
              choice Decide by Seller visible (got.ok) {{\n\
                case no when {{ not got.ok }} sequence Cancel {{ {cancel} }}\n\
                case yes when {{ got.ok }} sequence Ship {{ {ship} }}\n\
-             }} }}"
-        ),
-    )
-}
-
-/// `Seller` picks the record it tells `Buyer`, and its choice reads it: the
-/// send is `Seller`'s branch selection.
-fn owned(delivery: &str, ship: &str, cancel: &str) -> Fixture {
-    Fixture::new(
-        delivery,
-        &format!(
-            "sequence Main {{\n\
-             send Told via Tell as (told: Ack) {{ true }};\n\
-             receive Heard via Tell of Told as (heard: Ack) {{ true }};\n\
-             choice Decide by Seller visible (told.ok) {{\n\
-               case no when {{ not told.ok }} sequence Cancel {{ {cancel} }}\n\
-               case yes when {{ told.ok }} sequence Ship {{ {ship} }}\n\
              }} }}"
         ),
     )
@@ -308,18 +292,20 @@ fn an_unstated_premise_or_the_horizon_is_inconclusive() {
     );
 }
 
-/// TC-1411 steps 2 and 5: an admitted loss defeats every owner branch.
+/// TC-1411 steps 2 and 5: an admitted loss defeats the protocol on every
+/// run of the environment's choosing, though every lossless run completes.
 #[trace(
     "TC-1411",
     "FR-571-AC-2",
     "FR-571-AC-5",
+    "FR-574-AC-3",
     "FR-574-AC-4",
     "QSpec-FR-175-AC-2",
     "QSpec-FR-175-AC-5"
 )]
 #[test]
-fn an_admitted_loss_defeats_every_owner_branch() {
-    let fixture = owned("at-most-once", PICK, CANCELLED);
+fn an_admitted_loss_is_an_environment_defeat() {
+    let fixture = worked("at-most-once", PICK, CANCELLED);
     let RealizabilityCounterexample::EnvironmentDefeat {
         defeats_per_branch,
         obligation,
@@ -329,18 +315,22 @@ fn an_admitted_loss_defeats_every_owner_branch() {
     else {
         panic!("expected an environment defeat");
     };
-    assert_eq!(defeats_per_branch.len(), 2, "one play per owner branch");
-    for defeat in &defeats_per_branch {
-        assert_eq!(defeat.owner, Some(fixture.named("Seller")));
-        assert!(defeat.branch.is_some());
-    }
+    let [defeat] = &defeats_per_branch[..] else {
+        panic!("one branch: the environment fixes the choice");
+    };
+    assert!(defeat
+        .play
+        .iter()
+        .any(|step| step.kind() == StepKind::Lose));
     assert_eq!(obligation, fixture.named("Done"));
     assert_eq!(
-        position(&separating_witness),
-        Some((defeats_per_branch[0].play.len() - 1).to_string())
+        separating_witness.deciding_element,
+        DecidingElement::Protocol(node_text(&obligation).expect("the node encodes"))
     );
-    // Under exactly-once the same protocol is realized.
-    witness(owned("exactly-once-premise", PICK, CANCELLED).run());
+    assert_eq!(
+        position(&separating_witness),
+        Some((defeat.play.len() - 1).to_string())
+    );
 }
 
 /// TC-1411 step 5: an open delivery range is cut, so a passing table is
@@ -350,31 +340,6 @@ fn an_admitted_loss_defeats_every_owner_branch() {
 fn an_open_delivery_range_leaves_a_strategy_inconclusive() {
     let fixture = worked("at-least-once", PICK, CANCELLED);
     assert_eq!(inconclusive(fixture.run()), InconclusiveCause::CutCount);
-}
-
-/// TC-1411 step 6: an owner choice that can avoid the conflicting histories,
-/// and a defeat that depends on a cut branch.
-#[trace("TC-1411", "FR-571-AC-6")]
-#[test]
-fn an_avoidable_history_or_a_cut_defeat_is_inconclusive() {
-    let avoidable = owned("exactly-once-premise", PICK, "");
-    assert_eq!(inconclusive(avoidable.run()), InconclusiveCause::Unforced);
-
-    // The `cancel` branch runs past the horizon; the `ship` branch's pick
-    // can be lost.
-    let long: String = (1..=3)
-        .map(|at| {
-            format!(
-                "send T{at} via Tell as (t{at}: Ack) {{ true }};\n\
-                 receive R{at} via Tell of T{at} as (r{at}: Ack) {{ true }};\n"
-            )
-        })
-        .collect();
-    let cut = owned("at-most-once", PICK, &long);
-    assert_eq!(
-        inconclusive(cut.decide(cut.request(6))),
-        InconclusiveCause::Horizon
-    );
 }
 
 /// TC-1412: two runs on one key return one result.

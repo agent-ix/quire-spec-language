@@ -4,13 +4,20 @@
 //!
 //! The arena is the protocol's state graph under the one `qsl-eval`
 //! protocol transition system, explored as a tree of plays to the bounds;
-//! nothing here steps the protocol (PA-22). A `send` whose binder a guard of
-//! a `choice` its sender owns reads is that owner's branch selection; every
-//! other step, the scheduling of threads, sent payloads and delivery
-//! alternatives included, is the environment's. Backward induction gives
-//! each node a value; each role's histories are grouped by the one
-//! [`observation`] function and every class commits to a common winning
-//! action, which the replay walk then re-executes before `proved`.
+//! nothing here steps the protocol (PA-22).
+//!
+//! In the `bounded-static` profile no step is an owner's free branch
+//! selection. A `choice`'s decision may read only what its owner received,
+//! the protocol's captures and its input (FR-218: a `send` binder is never
+//! an observable fact of a decision), and `qsl-eval` steps the one case
+//! whose guard holds. Each branch is so fixed by records other roles sent,
+//! which the environment picks, or by the initial state. Every node is
+//! therefore an environment node, an owner node of PA-17 has one branch, no
+//! earlier owner choice can avoid a history (PA-18 (i)), and an environment
+//! defeat has one defeating play. The roles' actions are their sends and
+//! receives; each role's histories are grouped by the one
+//! `observation` function, every class commits to a common winning action,
+//! and the replay walk re-executes the table before `proved` (PA-19).
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -123,8 +130,8 @@ pub enum StrategyReplayFailure {
     Limit(RunLimit),
 }
 
-/// A node's value under backward induction. `Cut` is a value a bound or an
-/// undecided evaluation leaves open.
+/// A node's value under backward induction. `Cut` is the value a bound or
+/// an undecided evaluation leaves open.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Value {
     Win,
@@ -145,35 +152,19 @@ fn every(values: impl IntoIterator<Item = Value>) -> Value {
     joined
 }
 
-/// An owner's join: some branch must win.
-fn some(values: impl IntoIterator<Item = Value>) -> Value {
-    let mut joined = Value::Lose;
-    for value in values {
-        match value {
-            Value::Win => return Value::Win,
-            Value::Cut => joined = Value::Cut,
-            Value::Lose => {}
-        }
-    }
-    joined
-}
-
-/// Who moves a step and what it is to the mover.
+/// A role's step: the role, its action and what it observes.
 #[derive(Clone, Debug)]
-enum Mover {
-    Environment,
-    Role {
-        role: usize,
-        action: StrategyAction,
-        observed: Observed,
-        owner: bool,
-    },
+struct RoleStep {
+    role: usize,
+    action: StrategyAction,
+    observed: Observed,
 }
 
-/// One explored move: its step, its mover and the child node.
+/// One explored move: its step, the role that takes it (none for an
+/// environment step) and the child node.
 struct Move {
     transition: ProtocolTransition,
-    mover: Mover,
+    step: Option<RoleStep>,
     child: usize,
 }
 
@@ -182,7 +173,7 @@ struct Node {
     parent: Option<(usize, usize)>,
     observations: Vec<ObservationClass>,
     moves: Vec<Move>,
-    /// For a leaf, the obligation a lost play violates.
+    /// For a lost leaf, the obligation the play violates.
     lost: Option<CheckedNodeId>,
     leaf: bool,
     value: Value,
@@ -196,13 +187,11 @@ struct Names {
     channels: BTreeMap<String, Option<CheckedNodeId>>,
     /// Each channel's (sender, receiver) roles, by channel node.
     ends: BTreeMap<CheckedNodeId, (usize, usize)>,
-    /// Each choice's owning role, by choice node.
-    owners: BTreeMap<CheckedNodeId, usize>,
     /// The roles, ascending.
     roles: Vec<CheckedNodeId>,
     /// The progress and terminal obligation: the `finish` member.
     finish: CheckedNodeId,
-    /// The safety obligations' holder: the clause.
+    /// The holder of the safety obligations: the clause.
     clause: CheckedNodeId,
 }
 
@@ -217,8 +206,7 @@ impl Names {
         // `qsl-eval` names a control by its path through the `run` tree with
         // case labels (`Main/Decide/yes/Ship/PickIt`) and a channel by its
         // qualified name (`Flow::Pick`); the package declares each under the
-        // clause by its own name, unique among the clause's controls and
-        // among its channels. A name two nodes share resolves to neither.
+        // clause by its own name. A name two nodes share resolves to neither.
         let name_of = |id: &CheckedNodeId| {
             graph
                 .nodes
@@ -230,7 +218,10 @@ impl Names {
         };
         let mut controls = BTreeMap::new();
         let mut channels = BTreeMap::new();
-        for (held, ids) in [(&mut controls, view.controls()), (&mut channels, view.channels())] {
+        for (held, ids) in [
+            (&mut controls, view.controls()),
+            (&mut channels, view.channels()),
+        ] {
             for id in ids {
                 if let Some(name) = name_of(id) {
                     held.entry(name)
@@ -244,22 +235,16 @@ impl Names {
         let index = |id: &CheckedNodeId| roles.binary_search(id).ok();
         let mut ends = BTreeMap::new();
         for channel in &premises.channels {
-            if let (Some(sender), Some(receiver)) = (index(&channel.sender), index(&channel.receiver))
+            if let (Some(sender), Some(receiver)) =
+                (index(&channel.sender), index(&channel.receiver))
             {
                 ends.insert(channel.channel.clone(), (sender, receiver));
-            }
-        }
-        let mut owners = BTreeMap::new();
-        for choice in &premises.choices {
-            if let Some(owner) = index(&choice.owner) {
-                owners.insert(choice.choice.clone(), owner);
             }
         }
         Ok(Self {
             controls,
             channels,
             ends,
-            owners,
             finish: view.finish().clone(),
             clause: view.clause().clone(),
             roles,
@@ -297,156 +282,138 @@ struct Game<'s, 'a> {
     budget: RunBudget,
 }
 
-/// The observation of `role` after `history`: its own sends and receives,
-/// with their records, in step order (PA-16). An owner's branch selection
-/// is the record of the send that fixes it, so its choices are in its own
-/// sends; an outcome is visible to a role exactly through the records it
-/// sent or received.
-fn observation(
-    role: usize,
-    history: &[ProtocolTransition],
-    classify: impl Fn(&ProtocolTransition) -> Result<Mover, RealizabilityRefusal>,
-) -> Result<ObservationClass, RealizabilityRefusal> {
-    let mut class = Vec::new();
-    for step in history {
-        if let Mover::Role {
-            role: mover,
-            observed,
-            ..
-        } = classify(step)?
-        {
-            if mover == role {
-                class.push(observed);
+fn exceeds(count: usize, bound: u64) -> bool {
+    u64::try_from(count).unwrap_or(u64::MAX) > bound
+}
+
+fn charge(count: usize, limit: &'static str, value: u64) -> Result<(), RunLimit> {
+    if exceeds(count, value) {
+        Err(RunLimit { limit, value })
+    } else {
+        Ok(())
+    }
+}
+
+/// A finding's value: an undecided evaluation leaves the play open, any
+/// other finding violates a safety obligation.
+fn finding_value(findings: &[ModelFinding]) -> Option<Value> {
+    let mut value = None;
+    for finding in findings {
+        match finding {
+            ModelFinding::InvariantUndetermined { .. }
+            | ModelFinding::ProtocolExpressionUndetermined { .. }
+            | ModelFinding::ContractUndetermined { .. } => {
+                value.get_or_insert(Value::Cut);
             }
+            _ => return Some(Value::Lose),
         }
     }
-    Ok(class)
+    value
 }
 
 impl Game<'_, '_> {
-    /// Who moves `transition`, with the mover's action and observation.
-    fn classify(&self, transition: &ProtocolTransition) -> Result<Mover, RealizabilityRefusal> {
-        let (role, peer, sending) = match transition.kind() {
+    /// The role that takes `transition`, with its action and observation;
+    /// `None` for an environment step (PA-16).
+    fn classify(
+        &self,
+        transition: &ProtocolTransition,
+    ) -> Result<Option<RoleStep>, RealizabilityRefusal> {
+        let unnamed = |what: &str| RealizabilityRefusal::UnnamedNode(what.to_owned());
+        let path = transition.node().unwrap_or_default();
+        let (role, receive_from) = match transition.kind() {
             StepKind::Send => {
                 let channel = transition
                     .send_record()
                     .map(|record| record.channel())
-                    .ok_or_else(|| RealizabilityRefusal::UnnamedNode("send".to_owned()))?;
-                let (sender, receiver) = self.names.channel(channel)?;
-                (sender, receiver, true)
+                    .ok_or_else(|| unnamed(path))?;
+                (self.names.channel(channel)?.0, None)
             }
             StepKind::Receive => {
-                let (channel, _, _) = transition
-                    .received()
-                    .ok_or_else(|| RealizabilityRefusal::UnnamedNode("receive".to_owned()))?;
+                let (channel, _, _) = transition.received().ok_or_else(|| unnamed(path))?;
                 let (sender, receiver) = self.names.channel(channel)?;
-                (receiver, sender, false)
+                (receiver, Some(sender))
             }
-            _ => return Ok(Mover::Environment),
+            _ => return Ok(None),
         };
-        let path = transition.node().unwrap_or_default();
         let node = self.names.node(path)?.clone();
         let payload = match self.system.binder_record_json(transition)? {
-            Some(record) => serde_json::to_vec(&record)
-                .map_err(|_| RealizabilityRefusal::UnnamedNode(path.to_owned()))?,
+            Some(record) => serde_json::to_vec(&record).map_err(|_| unnamed(path))?,
             None => Vec::new(),
         };
-        if !sending {
-            return Ok(Mover::Role {
+        Ok(Some(match receive_from {
+            Some(sender) => RoleStep {
                 role,
                 action: StrategyAction::Receive {
-                    peer: self.names.roles[peer].clone(),
+                    peer: self.names.roles[sender].clone(),
                 },
                 observed: Observed::Received { node, payload },
-                owner: false,
-            });
-        }
-        let mut owner = false;
-        for choice in self.system.deciding_choices(transition) {
-            owner |= self.names.owners.get(self.names.node(choice)?) == Some(&role);
-        }
-        Ok(Mover::Role {
-            role,
-            action: StrategyAction::Send {
-                node: node.clone(),
-                payload: owner.then(|| payload.clone()),
             },
-            observed: Observed::Sent { node, payload },
-            owner,
-        })
+            None => RoleStep {
+                role,
+                action: StrategyAction::Send { node: node.clone() },
+                observed: Observed::Sent { node, payload },
+            },
+        }))
     }
 
-    /// A finding's value: undecided evaluations leave the play open.
-    fn finding_value(findings: &[ModelFinding]) -> Option<Value> {
-        let mut value = None;
-        for finding in findings {
-            match finding {
-                ModelFinding::InvariantUndetermined { .. }
-                | ModelFinding::ProtocolExpressionUndetermined { .. }
-                | ModelFinding::ContractUndetermined { .. } => {
-                    value.get_or_insert(Value::Cut);
+    /// The observation of `role` after `history`: its own sends and
+    /// receives with their records, in step order (PA-16). The one function
+    /// both the search and the replay walk compute classes with.
+    fn observation(
+        &self,
+        role: usize,
+        history: &[ProtocolTransition],
+    ) -> Result<ObservationClass, RealizabilityRefusal> {
+        let mut class = Vec::new();
+        for transition in history {
+            if let Some(step) = self.classify(transition)? {
+                if step.role == role {
+                    class.push(step.observed);
                 }
-                _ => return Some(Value::Lose),
             }
         }
-        value
-    }
-
-    fn charge(count: usize, limit: &'static str, value: u64) -> Result<(), RunLimit> {
-        if u64::try_from(count).unwrap_or(u64::MAX) > value {
-            Err(RunLimit { limit, value })
-        } else {
-            Ok(())
-        }
+        Ok(class)
     }
 
     /// Explore the arena to the bounds and evaluate every node (PA-17).
     fn explore(&self) -> Result<Result<Vec<Node>, RunLimit>, RealizabilityRefusal> {
-        let mut nodes = Vec::new();
+        let mut nodes: Vec<Node> = Vec::new();
         let mut edges = 0usize;
         let roles = self.names.roles.len();
-        let mut stack: Vec<(ProtocolState<Sc>, Option<(usize, usize)>, u64)> = self
-            .system
-            .initial()
-            .into_iter()
-            .rev()
-            .map(|state| (state, None, 0))
-            .collect();
-        // Depth-first, children in the system's canonical successor order.
-        while let Some((state, parent, depth)) = stack.pop() {
+        let mut stack: Vec<(ProtocolState<Sc>, Option<(usize, usize)>, Vec<ProtocolTransition>)> =
+            self.system
+                .initial()
+                .into_iter()
+                .rev()
+                .map(|state| (state, None, Vec::new()))
+                .collect();
+        // Depth first, children in the system's canonical successor order;
+        // a child's id is larger than its parent's.
+        while let Some((state, parent, played)) = stack.pop() {
             let id = nodes.len();
-            if let Err(limit) = Self::charge(id + 1, "max_states", self.budget.max_states) {
+            if let Err(limit) = charge(id + 1, "max_states", self.budget.max_states) {
                 return Ok(Err(limit));
             }
-            let observations = match parent {
-                None => vec![Vec::new(); roles],
-                Some((from, at)) => {
-                    let parent: &Node = &nodes[from];
-                    let mut observations = parent.observations.clone();
-                    if let Mover::Role { role, observed, .. } = &parent.moves[at].mover {
-                        observations[*role].push(observed.clone());
-                    }
-                    observations
-                }
-            };
             if let Some((from, at)) = parent {
-                let held: &mut Node = &mut nodes[from];
-                held.moves[at].child = id;
+                nodes[from].moves[at].child = id;
             }
+            let observations = (0..roles)
+                .map(|role| self.observation(role, &played))
+                .collect::<Result<Vec<_>, _>>()?;
             let (expansion, terminal) = self.system.successors_and_terminal(&state)?;
             let mut node = Node {
                 parent,
-                observations,
                 moves: Vec::new(),
                 lost: None,
                 leaf: true,
                 value: Value::Cut,
+                observations,
             };
             let too_long = node
                 .observations
                 .iter()
-                .any(|class| u64::try_from(class.len()).unwrap_or(u64::MAX) > self.max_history);
-            if let Some(value) = Self::finding_value(&expansion.findings) {
+                .any(|class| exceeds(class.len(), self.max_history));
+            if let Some(value) = finding_value(&expansion.findings) {
                 node.value = value;
                 node.lost = Some(self.names.clause.clone());
             } else if expansion.successors.is_empty() {
@@ -458,21 +425,23 @@ impl Game<'_, '_> {
                     }
                     _ => Value::Cut,
                 };
-            } else if depth >= self.max_depth || too_long {
+            } else if exceeds(played.len() + 1, self.max_depth) || too_long {
                 node.value = Value::Cut;
             } else {
                 node.leaf = false;
                 edges += expansion.successors.len();
-                if let Err(limit) =
-                    Self::charge(edges, "max_transitions", self.budget.max_transitions)
+                if let Err(limit) = charge(edges, "max_transitions", self.budget.max_transitions)
                 {
                     return Ok(Err(limit));
                 }
-                for (at, (transition, next)) in expansion.successors.into_iter().enumerate().rev()
+                for (at, (transition, next)) in
+                    expansion.successors.into_iter().enumerate().rev()
                 {
-                    stack.push((next, Some((id, at)), depth + 1));
+                    let mut extended = played.clone();
+                    extended.push(transition.clone());
+                    stack.push((next, Some((id, at)), extended));
                     node.moves.push(Move {
-                        mover: self.classify(&transition)?,
+                        step: self.classify(&transition)?,
                         transition,
                         child: usize::MAX,
                     });
@@ -481,163 +450,64 @@ impl Game<'_, '_> {
             }
             nodes.push(node);
         }
-        // Children have larger ids than their parents: evaluate in reverse.
         for id in (0..nodes.len()).rev() {
-            if nodes[id].leaf {
-                continue;
+            if !nodes[id].leaf {
+                nodes[id].value = every(nodes[id].moves.iter().map(|held| nodes[held.child].value));
             }
-            let value = {
-                let node = &nodes[id];
-                let mut environment = Vec::new();
-                let mut owned: BTreeMap<(usize, &StrategyAction), Vec<Value>> = BTreeMap::new();
-                let mut groups: BTreeMap<usize, BTreeSet<&StrategyAction>> = BTreeMap::new();
-                for held in &node.moves {
-                    let child = nodes[held.child].value;
-                    match &held.mover {
-                        Mover::Role {
-                            role,
-                            action,
-                            owner: true,
-                            ..
-                        } => {
-                            owned.entry((*role, action)).or_default().push(child);
-                            groups.entry(*role).or_default().insert(action);
-                        }
-                        _ => environment.push(child),
-                    }
-                }
-                let branches = |role: usize| {
-                    groups[&role]
-                        .iter()
-                        .map(|action| every(owned[&(role, *action)].iter().copied()))
-                        .collect::<Vec<_>>()
-                };
-                every(
-                    environment
-                        .into_iter()
-                        .chain(groups.keys().map(|role| some(branches(*role)))),
-                )
-            };
-            nodes[id].value = value;
         }
         Ok(Ok(nodes))
     }
 }
 
-/// One decision point of one role: its history's node, the winning
-/// actions there, and whether an earlier owner choice could avoid it.
+/// One decision point of one role: its history's node and the winning
+/// actions there.
 struct Point {
     node: usize,
     winning: BTreeSet<StrategyAction>,
-    avoidable: bool,
 }
 
-/// The value of the owner branch `action` of `role` at `node`.
-fn branch_value(nodes: &[Node], node: &Node, role: usize, action: &StrategyAction) -> Value {
-    every(node.moves.iter().filter_map(|held| match &held.mover {
-        Mover::Role {
-            role: mover,
-            action: taken,
-            owner: true,
-            ..
-        } if *mover == role && taken == action => Some(nodes[held.child].value),
-        _ => None,
-    }))
-}
-
-/// Every decision point of every role on the plays an owner does not
-/// abandon, by role then observation class (PA-17).
-fn decision_points(
-    nodes: &[Node],
-    roots: &[usize],
-    roles: usize,
-) -> Vec<BTreeMap<ObservationClass, Vec<Point>>> {
+/// Every decision point of every role at the nodes not lost, by role then
+/// observation class (PA-17): a node where the role can step, with the
+/// actions whose every move wins, and a won terminal node, where every role
+/// ends.
+fn decision_points(nodes: &[Node], roles: usize) -> Vec<BTreeMap<ObservationClass, Vec<Point>>> {
     let mut points: Vec<BTreeMap<ObservationClass, Vec<Point>>> =
         (0..roles).map(|_| BTreeMap::new()).collect();
-    let mut stack: Vec<(usize, bool)> = roots.iter().rev().map(|root| (*root, false)).collect();
-    while let Some((id, avoidable)) = stack.pop() {
-        let node = &nodes[id];
+    for (id, node) in nodes.iter().enumerate() {
         if node.value == Value::Lose {
             continue;
         }
-        let mut winning: Vec<Option<BTreeSet<StrategyAction>>> = vec![None; roles];
+        let mut stepping: Vec<Option<BTreeMap<&StrategyAction, bool>>> = vec![None; roles];
         if node.leaf && node.value == Value::Win {
-            for held in &mut winning {
-                *held = Some(BTreeSet::from([StrategyAction::End]));
+            for held in &mut stepping {
+                *held = Some(BTreeMap::from([(&StrategyAction::End, true)]));
             }
         }
-        let mut next = Vec::new();
         for held in &node.moves {
-            let child = nodes[held.child].value;
-            match &held.mover {
-                Mover::Environment => next.push((held.child, avoidable)),
-                Mover::Role {
-                    role,
-                    action,
-                    owner,
-                    ..
-                } => {
-                    let set = winning[*role].get_or_insert_with(BTreeSet::new);
-                    let value = if *owner {
-                        branch_value(nodes, node, *role, action)
-                    } else {
-                        child
-                    };
-                    if value == Value::Win {
-                        set.insert(action.clone());
-                    }
-                    if *owner {
-                        if value != Value::Lose {
-                            let other = node.moves.iter().any(|sibling| match &sibling.mover {
-                                Mover::Role {
-                                    role: mover,
-                                    action: taken,
-                                    owner: true,
-                                    ..
-                                } => {
-                                    mover == role
-                                        && taken != action
-                                        && branch_value(nodes, node, *role, taken) != Value::Lose
-                                }
-                                Mover::Environment | Mover::Role { .. } => false,
-                            });
-                            next.push((held.child, avoidable || other));
-                        }
-                    } else {
-                        next.push((held.child, avoidable));
-                    }
-                }
+            if let Some(step) = &held.step {
+                let won = nodes[held.child].value == Value::Win;
+                stepping[step.role]
+                    .get_or_insert_with(BTreeMap::new)
+                    .entry(&step.action)
+                    .and_modify(|all: &mut bool| *all &= won)
+                    .or_insert(won);
             }
         }
-        // A non-owner role's action is lost when any of its moves loses.
-        for held in &node.moves {
-            if let Mover::Role {
-                role,
-                action,
-                owner: false,
-                ..
-            } = &held.mover
-            {
-                if nodes[held.child].value != Value::Win {
-                    if let Some(set) = winning[*role].as_mut() {
-                        set.remove(action);
-                    }
-                }
-            }
-        }
-        for (role, held) in winning.into_iter().enumerate() {
-            if let Some(winning) = held {
+        for (role, held) in stepping.into_iter().enumerate() {
+            if let Some(actions) = held {
                 points[role]
                     .entry(node.observations[role].clone())
                     .or_default()
                     .push(Point {
                         node: id,
-                        winning,
-                        avoidable,
+                        winning: actions
+                            .into_iter()
+                            .filter(|(_, won)| *won)
+                            .map(|(action, _)| action.clone())
+                            .collect(),
                     });
             }
         }
-        stack.extend(next.into_iter().rev());
     }
     points
 }
@@ -653,72 +523,16 @@ fn history(nodes: &[Node], mut id: usize) -> Vec<ProtocolTransition> {
     steps
 }
 
-/// From the lost node `id`, the first losing move, down to a lost leaf.
+/// The first lost leaf below the lost node `id`, by the first losing move.
 fn defeat(nodes: &[Node], mut id: usize) -> usize {
-    while !nodes[id].leaf {
-        let Some(held) = nodes[id]
-            .moves
-            .iter()
-            .find(|held| nodes[held.child].value == Value::Lose)
-        else {
-            break;
-        };
+    while let Some(held) = nodes[id]
+        .moves
+        .iter()
+        .find(|held| nodes[held.child].value == Value::Lose)
+    {
         id = held.child;
     }
     id
-}
-
-/// The first lost owner node from the lost roots, as (node, owner role),
-/// or the lost leaf when no owner move lies on the defeat.
-fn first_lost_owner(nodes: &[Node], roots: &[usize]) -> Result<(usize, usize), usize> {
-    let mut id = roots
-        .iter()
-        .copied()
-        .find(|root| nodes[*root].value == Value::Lose)
-        .unwrap_or_default();
-    loop {
-        let node = &nodes[id];
-        if node.leaf {
-            return Err(id);
-        }
-        let mut found = None;
-        for held in &node.moves {
-            match &held.mover {
-                Mover::Role {
-                    role,
-                    action,
-                    owner: true,
-                    ..
-                } => {
-                    let lost = node.moves.iter().all(|sibling| match &sibling.mover {
-                        Mover::Role {
-                            role: mover,
-                            action: taken,
-                            owner: true,
-                            ..
-                        } if mover == role => {
-                            branch_value(nodes, node, *role, taken) == Value::Lose
-                        }
-                        _ => true,
-                    });
-                    let _ = action;
-                    if lost {
-                        return Ok((id, *role));
-                    }
-                }
-                Mover::Environment | Mover::Role { .. } => {
-                    if nodes[held.child].value == Value::Lose {
-                        found = Some(held.child);
-                        break;
-                    }
-                }
-            }
-        }
-        match found {
-            Some(child) => id = child,
-            None => return Err(defeat(nodes, id)),
-        }
-    }
 }
 
 fn result(
@@ -731,12 +545,15 @@ fn result(
     }
 }
 
-/// The admitted pieces of a request: its key, root and arena system.
+type Settled = AnalysisOutcome<RealizabilityWitness, RealizabilityCounterexample>;
+
+/// The admitted pieces of a request: its key, root, names and arena system,
+/// or the outcome a request settles before any arena.
 struct Admitted<'a> {
     key: ProtocolAnalysisKey,
     root: AssessedRoot,
     names: Names,
-    system: Result<ProtocolSystem<'a, Sc>, AnalysisOutcome<RealizabilityWitness, RealizabilityCounterexample>>,
+    system: Result<ProtocolSystem<'a, Sc>, Settled>,
     max_depth: u64,
     max_history: u64,
     open_range: bool,
@@ -780,16 +597,14 @@ fn admit<'a>(
     }
     let root = AssessedRoot::new(request.assessed_root)?;
     let names = Names::new(package, &request.protocol, &premises)?;
-    let stated = |member: &'static str, value: &Option<Option<BTreeSet<String>>>| {
-        value
-            .as_ref()
-            .is_some_and(Option::is_none)
-            .then_some(AnalysisOutcome::Inconclusive(InconclusiveCause::PremiseNotStated { member }))
+    let not_stated = |member: &'static str, value: &Option<Option<BTreeSet<String>>>| {
+        matches!(value, Some(None))
+            .then_some(Settled::Inconclusive(InconclusiveCause::PremiseNotStated { member }))
     };
     let system = if let Some(cause) = unsupported_construct(package, &request.protocol)? {
-        Err(AnalysisOutcome::Unsupported(cause))
-    } else if let Some(outcome) = stated("role_knowledge", &request.role_knowledge)
-        .or_else(|| stated("environment", &request.environment))
+        Err(Settled::Unsupported(cause))
+    } else if let Some(outcome) = not_stated("role_knowledge", &request.role_knowledge)
+        .or_else(|| not_stated("environment", &request.environment))
     {
         Err(outcome)
     } else {
@@ -798,7 +613,7 @@ fn admit<'a>(
         match ProtocolSystem::new(model, &request.subject, Sc) {
             Ok(system) => Ok(system),
             Err(ProtocolRefusal::Unsupported(construct)) => {
-                Err(AnalysisOutcome::Unsupported(UnsupportedCause {
+                Err(Settled::Unsupported(UnsupportedCause {
                     slug: UnsupportedSlug::EvaluatorUnsupported,
                     node: names.clause.clone(),
                     detail: Some(construct.construct().to_owned()),
@@ -843,77 +658,79 @@ pub fn realize(
     };
     let nodes = match game.explore()? {
         Ok(nodes) => nodes,
-        Err(limit) => return Ok(result(key, AnalysisOutcome::Failed(limit))),
+        Err(limit) => return Ok(result(key, Settled::Failed(limit))),
     };
     let roots: Vec<usize> = (0..nodes.len())
         .filter(|id| nodes[*id].parent.is_none())
         .collect();
     let root_value = every(roots.iter().map(|root| nodes[*root].value));
-    let roles = &game.names.roles;
-
     if root_value == Value::Lose {
         let counterexample = environment_defeat(&nodes, &roots, &game, key, &admitted.root)?;
-        return Ok(result(key, AnalysisOutcome::Refuted(counterexample)));
+        return Ok(result(key, Settled::Refuted(counterexample)));
     }
-    let points = decision_points(&nodes, &roots, roles.len());
     let mut strategies = Vec::new();
     let mut unforced = false;
-    for (role, classes) in points.iter().enumerate() {
+    for (role, classes) in decision_points(&nodes, game.names.roles.len())
+        .into_iter()
+        .enumerate()
+    {
         let mut table = BTreeMap::new();
         for (class, held) in classes {
-            let mut common = held.first().map(|point| point.winning.clone()).unwrap_or_default();
-            for point in held {
+            let mut common = held
+                .first()
+                .map(|point| point.winning.clone())
+                .unwrap_or_default();
+            for point in &held {
                 common.retain(|action| point.winning.contains(action));
             }
             if let Some(action) = common.into_iter().next() {
-                table.insert(class.clone(), action);
-                continue;
-            }
-            if let Some((a, b)) = forced_pair(held) {
+                table.insert(class, action);
+            } else if let Some((a, b)) = forced_pair(&held) {
                 let counterexample =
                     indistinguishable(&nodes, &game, key, &admitted.root, role, a, b)?;
-                return Ok(result(key, AnalysisOutcome::Refuted(counterexample)));
+                return Ok(result(key, Settled::Refuted(counterexample)));
+            } else {
+                unforced = true;
             }
-            unforced = true;
         }
         strategies.push(RoleStrategy {
-            role: roles[role].clone(),
+            role: game.names.roles[role].clone(),
             table,
         });
     }
     if root_value == Value::Cut {
         return Ok(result(
             key,
-            AnalysisOutcome::Inconclusive(InconclusiveCause::Horizon),
+            Settled::Inconclusive(InconclusiveCause::Horizon),
         ));
     }
     if unforced {
         return Ok(result(
             key,
-            AnalysisOutcome::Inconclusive(InconclusiveCause::Unforced),
+            Settled::Inconclusive(InconclusiveCause::Unforced),
         ));
     }
     let closure = match game.walk(&strategies)? {
         Ok(closure) => closure,
         Err(StrategyReplayFailure::Limit(limit)) => {
-            return Ok(result(key, AnalysisOutcome::Failed(limit)));
+            return Ok(result(key, Settled::Failed(limit)));
         }
         Err(_) => {
             return Ok(result(
                 key,
-                AnalysisOutcome::Inconclusive(InconclusiveCause::StrategyReplayFailed),
+                Settled::Inconclusive(InconclusiveCause::StrategyReplayFailed),
             ));
         }
     };
     if admitted.open_range {
         return Ok(result(
             key,
-            AnalysisOutcome::Inconclusive(InconclusiveCause::CutCount),
+            Settled::Inconclusive(InconclusiveCause::CutCount),
         ));
     }
     Ok(result(
         key,
-        AnalysisOutcome::Proved(RealizabilityWitness {
+        Settled::Proved(RealizabilityWitness {
             key: key.clone(),
             strategies,
             closure,
@@ -926,8 +743,8 @@ pub fn realize(
 /// # Errors
 ///
 /// [`RealizabilityRefusal`] as [`realize`] refuses; the walk's own result is
-/// the inner `Result`. A request that does not reach the arena (unsupported,
-/// a premise not stated) has no walk and returns
+/// the inner `Result`. A request that reaches no arena (unsupported, or a
+/// premise not stated) has no walk and returns
 /// [`StrategyReplayFailure::NotClosed`].
 pub fn replay_strategy(
     package: &CheckedPackageV2,
@@ -949,22 +766,20 @@ pub fn replay_strategy(
     game.walk(&witness.strategies)
 }
 
-/// The first pair of points of one class whose winning sets are disjoint
-/// and non-empty and neither of which an earlier owner choice avoids.
+/// The first pair of points of one class whose winning sets are non-empty
+/// and disjoint (PA-18 (i)). No owner move exists in the profile (see the
+/// module), so no earlier owner choice can avoid either history.
 fn forced_pair(points: &[Point]) -> Option<(&Point, &Point)> {
-    for (at, a) in points.iter().enumerate() {
-        for b in &points[at + 1..] {
-            if !a.avoidable
-                && !b.avoidable
-                && !a.winning.is_empty()
-                && !b.winning.is_empty()
-                && a.winning.is_disjoint(&b.winning)
-            {
-                return Some((a, b));
-            }
-        }
-    }
-    None
+    points.iter().enumerate().find_map(|(at, a)| {
+        points[at + 1..]
+            .iter()
+            .find(|b| {
+                !a.winning.is_empty()
+                    && !b.winning.is_empty()
+                    && a.winning.is_disjoint(&b.winning)
+            })
+            .map(|b| (a, b))
+    })
 }
 
 fn indistinguishable(
@@ -991,6 +806,9 @@ fn indistinguishable(
     })
 }
 
+/// PA-18 (ii). No owner move exists in the profile, so the first lost
+/// owner node has one branch: the defeating play from the first lost
+/// initial state.
 fn environment_defeat(
     nodes: &[Node],
     roots: &[usize],
@@ -998,65 +816,44 @@ fn environment_defeat(
     key: &ProtocolAnalysisKey,
     root: &AssessedRoot,
 ) -> Result<RealizabilityCounterexample, RealizabilityRefusal> {
-    let mut defeats = Vec::new();
-    match first_lost_owner(nodes, roots) {
-        Err(leaf) => defeats.push((leaf, None, None)),
-        Ok((id, owner)) => {
-            let node = &nodes[id];
-            let mut branches = BTreeSet::new();
-            for held in &node.moves {
-                if let Mover::Role {
-                    role,
-                    action,
-                    owner: true,
-                    ..
-                } = &held.mover
-                {
-                    if *role == owner && branches.insert(action.clone()) {
-                        let lost = node
-                            .moves
-                            .iter()
-                            .find(|sibling| {
-                                matches!(&sibling.mover, Mover::Role { role: mover, action: taken, owner: true, .. }
-                                    if *mover == owner && taken == action)
-                                    && nodes[sibling.child].value == Value::Lose
-                            })
-                            .map_or(held.child, |sibling| sibling.child);
-                        defeats.push((
-                            defeat(nodes, lost),
-                            Some(game.names.roles[owner].clone()),
-                            Some(action.clone()),
-                        ));
-                    }
-                }
-            }
-        }
-    }
-    let first = defeats.first().map_or(0, |(leaf, _, _)| *leaf);
-    let obligation = nodes[first]
+    let lost = roots
+        .iter()
+        .copied()
+        .find(|root| nodes[*root].value == Value::Lose)
+        .map_or(0, |root| defeat(nodes, root));
+    let obligation = nodes[lost]
         .lost
         .clone()
         .unwrap_or_else(|| game.names.finish.clone());
-    let defeats_per_branch: Vec<BranchDefeat> = defeats
-        .into_iter()
-        .map(|(leaf, owner, branch)| BranchDefeat {
-            owner,
-            branch,
-            play: history(nodes, leaf),
-        })
-        .collect();
-    let position = defeats_per_branch
-        .first()
-        .map_or(0, |held| held.play.len().saturating_sub(1));
+    let play = history(nodes, lost);
+    let position = play.len().saturating_sub(1);
     Ok(RealizabilityCounterexample::EnvironmentDefeat {
         key: key.clone(),
-        defeats_per_branch,
+        defeats_per_branch: vec![BranchDefeat { play }],
         separating_witness: root.record(&obligation, position)?,
         obligation,
     })
 }
 
 impl Game<'_, '_> {
+    /// The action `strategies` commit `role` to after `history`, by the
+    /// recomputed class.
+    fn committed(
+        &self,
+        strategies: &[RoleStrategy],
+        role: usize,
+        history: &[ProtocolTransition],
+    ) -> Result<Result<StrategyAction, StrategyReplayFailure>, RealizabilityRefusal> {
+        let class = self.observation(role, history)?;
+        let role = &self.names.roles[role];
+        Ok(strategies
+            .iter()
+            .find(|strategy| &strategy.role == role)
+            .and_then(|strategy| strategy.table.get(&class))
+            .cloned()
+            .ok_or_else(|| StrategyReplayFailure::Unclassified { role: role.clone() }))
+    }
+
     /// PA-19: walk every environment play against the finished table,
     /// selecting each role's action by its recomputed class, and check that
     /// every play wins with every committed action enabled.
@@ -1064,17 +861,7 @@ impl Game<'_, '_> {
         &self,
         strategies: &[RoleStrategy],
     ) -> Result<Result<Closure, StrategyReplayFailure>, RealizabilityRefusal> {
-        let classify = |transition: &ProtocolTransition| self.classify(transition);
-        let committed = |role: usize, history: &[ProtocolTransition]| {
-            let class = observation(role, history, &classify)?;
-            Ok::<_, RealizabilityRefusal>(
-                strategies
-                    .iter()
-                    .find(|strategy| strategy.role == self.names.roles[role])
-                    .and_then(|strategy| strategy.table.get(&class))
-                    .cloned(),
-            )
-        };
+        let roles = self.names.roles.len();
         let mut plays = 0u64;
         let mut visited = 0usize;
         let mut stack: Vec<(ProtocolState<Sc>, Vec<ProtocolTransition>)> = self
@@ -1086,49 +873,51 @@ impl Game<'_, '_> {
             .collect();
         while let Some((state, played)) = stack.pop() {
             visited += 1;
-            if let Err(limit) = Self::charge(visited, "max_states", self.budget.max_states) {
+            if let Err(limit) = charge(visited, "max_states", self.budget.max_states) {
                 return Ok(Err(StrategyReplayFailure::Limit(limit)));
             }
-            let lost = |play: &[ProtocolTransition]| {
-                Ok(Err(StrategyReplayFailure::Lost {
-                    play: play.to_vec(),
-                }))
-            };
+            let lost = Err(StrategyReplayFailure::Lost {
+                play: played.clone(),
+            });
             let (expansion, terminal) = self.system.successors_and_terminal(&state)?;
             if !expansion.findings.is_empty() {
-                return lost(&played);
+                return Ok(lost);
             }
-            for role in 0..self.names.roles.len() {
-                let length = observation(role, &played, &classify)?.len();
-                if u64::try_from(length).unwrap_or(u64::MAX) > self.max_history {
+            let mut committed = Vec::with_capacity(roles);
+            for role in 0..roles {
+                if exceeds(self.observation(role, &played)?.len(), self.max_history) {
                     return Ok(Err(StrategyReplayFailure::NotClosed));
+                }
+                match self.committed(strategies, role, &played)? {
+                    Ok(action) => committed.push(Some(action)),
+                    // A class the table lacks matters only where the role
+                    // acts.
+                    Err(_) => committed.push(None),
                 }
             }
             let mut allowed = Vec::new();
             for (transition, next) in expansion.successors {
-                let take = match self.classify(&transition)? {
-                    Mover::Environment => true,
-                    Mover::Role { role, action, .. } => match committed(role, &played)? {
-                        Some(held) => held == action,
+                if let Some(step) = self.classify(&transition)? {
+                    match &committed[step.role] {
+                        Some(action) if *action == step.action => {}
+                        Some(_) => continue,
                         None => {
                             return Ok(Err(StrategyReplayFailure::Unclassified {
-                                role: self.names.roles[role].clone(),
+                                role: self.names.roles[step.role].clone(),
                             }))
                         }
-                    },
-                };
-                if take {
-                    allowed.push((transition, next));
+                    }
                 }
+                allowed.push((transition, next));
             }
             if allowed.is_empty() {
                 if terminal != TerminalClass::Intended {
-                    return lost(&played);
+                    return Ok(lost);
                 }
-                for role in 0..self.names.roles.len() {
-                    match committed(role, &played)? {
+                for (role, action) in committed.iter().enumerate() {
+                    match action {
                         Some(StrategyAction::End) => {}
-                        Some(_) => return lost(&played),
+                        Some(_) => return Ok(lost),
                         None => {
                             return Ok(Err(StrategyReplayFailure::Unclassified {
                                 role: self.names.roles[role].clone(),
@@ -1139,7 +928,7 @@ impl Game<'_, '_> {
                 plays += 1;
                 continue;
             }
-            if u64::try_from(played.len()).unwrap_or(u64::MAX) >= self.max_depth {
+            if exceeds(played.len() + 1, self.max_depth) {
                 return Ok(Err(StrategyReplayFailure::NotClosed));
             }
             for (transition, next) in allowed.into_iter().rev() {

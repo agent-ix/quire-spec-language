@@ -14,15 +14,10 @@ use crate::result::SeparatingWitnessRecord;
 /// What a role does next at one of its decision points (FR-571).
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum StrategyAction {
-    /// The `send` control `node`. `payload` holds the FR-181 typed canonical JSON bytes of the
-    /// sent record when the send fixes the branch of a choice the role owns
-    /// (the owner's branch selection); `None` for any other send, whose
-    /// payload the environment picks.
+    /// The `send` control `node`; the record sent is the environment's.
     Send {
         /// The `send` control.
         node: CheckedNodeId,
-        /// The chosen record, for an owner's branch selection.
-        payload: Option<Vec<u8>>,
     },
     /// Take the next message from `peer`: an external choice keyed by the
     /// message that arrives (PA-10).
@@ -92,14 +87,12 @@ pub struct RealizabilityWitness {
     pub closure: Closure,
 }
 
-/// One owner branch of the first lost owner node and an environment play
-/// that defeats it (PA-18 (ii)).
+/// The defeating play of one owner branch of the first lost owner node
+/// (PA-18 (ii)). In the `bounded-static` profile a choice's branch is fixed
+/// by the environment's moves, so that node has one branch and the
+/// counterexample one entry.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BranchDefeat {
-    /// The owner role, `None` when no owner move lies on the defeat.
-    pub owner: Option<CheckedNodeId>,
-    /// The owner's branch selection, `None` as for `owner`.
-    pub branch: Option<StrategyAction>,
     /// The defeating play from an initial state, in step order.
     pub play: Vec<ProtocolTransition>,
 }

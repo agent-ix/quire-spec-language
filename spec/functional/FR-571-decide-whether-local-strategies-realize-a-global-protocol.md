@@ -15,6 +15,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-575
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-218
+    type: depends_on
   - target: ix://agent-ix/quire-specification/FR-175
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-170
@@ -67,13 +69,17 @@ plays explored, the horizon and whether exploration closed (PA-19).
   role are indistinguishable exactly when their observation sequences are
   equal, computed by the single function `observation(role, history)`
   (PA-16, PA-19).
-- A `send` whose binder a case guard of a `choice` its sender owns reads
-  shall be that owner's branch selection, one branch per sent record. Every
-  other step shall be an environment move: the order in which threads step,
-  a record any other send carries, and each delivery alternative.
+- Every step of the `bounded-static` arena shall be an environment move:
+  the order in which threads step, the record a send carries, and each
+  delivery alternative. A `choice`'s decision reads only what its owner
+  received, the captures and the input (FR-218), and `qsl-eval` steps
+  the one case whose guard holds, so the branch is fixed by earlier
+  environment moves: an owner node has one branch, no earlier owner choice
+  can avoid a history, and an environment defeat carries one defeating
+  play, for that branch.
 - A role's action at a point where it can step shall be a `send` at its
-  control (with the sent record for an owner's branch selection) or a
-  receive from a peer, and at a terminal state the end of its part; a
+  control or a receive from a peer, and at a terminal state the end of its
+  part; a
   receive commits to the peer only, and the message that arrives, with its
   record, enters the observation. An observation records each record the
   role sent or received with its control, so a choice outcome is visible to
