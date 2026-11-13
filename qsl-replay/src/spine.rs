@@ -48,6 +48,7 @@ use quire_semantic_value::declaration::StorageUnit;
 
 mod lifecycle;
 mod subject;
+pub use protocol_structure::StructureError;
 pub use lifecycle::{
     admit_parsed_unit_list, check, check_units, check_units_with_refinement_internals,
     check_with_execution_points, check_with_execution_points_and_refinement_internals,
@@ -217,6 +218,7 @@ pub use refinement::{
 };
 mod native_result;
 mod protocol_premises;
+mod protocol_structure;
 mod protocol_proof;
 pub(crate) use native_result::{item_record, ReasonWire};
 pub use native_result::{
