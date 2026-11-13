@@ -2386,6 +2386,9 @@ pub enum Obligation {
         required: Box<ProvedInterval>,
         /// The interval the accepted proof forms establish.
         proved: Box<ProvedInterval>,
+        /// The arithmetic node's source text (FR-577), which the stage that
+        /// holds the unit's source fills in; the checker leaves it `None`.
+        operand: Option<Box<str>>,
     },
     /// A rational quotient may lie outside its `Rational[..]` domain:
     /// `unproved-range`.

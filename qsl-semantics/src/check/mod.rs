@@ -1584,6 +1584,25 @@ impl CallableFunction<'_> {
     }
 }
 
+/// FR-577: whether the operation `key` redefines another operation or is
+/// redefined by one of the selected views' operations (QSpec FR-151). A
+/// postcondition of such an operation takes no precondition fact.
+fn in_redefinition_family(
+    views: &BTreeMap<String, crate::model::normalize::EffectiveView>,
+    key: &quire_checked::key::DeclarationKey,
+) -> bool {
+    views.values().any(|view| {
+        view.domain_package().records.iter().any(|record| {
+            matches!(
+                record,
+                crate::model::domain_package::DomainPackageRecord::OperationMember(operation)
+                    if (&operation.key == key && operation.redefines.is_some())
+                        || operation.redefines.as_ref() == Some(key)
+            )
+        })
+    })
+}
+
 /// A family `check`'s stage limit as a checking refusal's cause (L6): `CheckingLimitKind::try_from(Setting)` is the named reverse of
 /// `CheckingLimitKind::setting`, and a setting no checking limit has is a
 /// fault in the family, not in the input.
@@ -3165,98 +3184,146 @@ impl PackageDeclarations {
         // clause body may call a function), against the same package-wide
         // node total and contract meter.
         let mut state_clause_forms = self.state_clauses;
-        let mut typed_clauses = Vec::with_capacity(state_clause_forms.len());
+        let mut typed_clauses: Vec<(usize, state_clause::TypedStateClause)> =
+            Vec::with_capacity(state_clause_forms.len());
         // FR-185: every read of an operation parameter by a checked
         // precondition, so a read of a random parameter refuses.
         let mut precondition_reads = Vec::new();
-        for (index, clause) in state_clause_forms.iter().enumerate() {
-            let location = clause_location(index, &clause.name);
-            let declarations = state_clause::ClauseDeclarations {
-                unit: self.source_owners.get(&format!("state_clause:{index}")),
-                scope: &scope,
-                signatures: &signatures,
-                dispatch_tables: &dispatch_tables,
-                models: &models,
-                checking_limits: limits,
-                location: &location,
-                nodes_used,
-                cancel: Some(cancel),
-                staged: pending_types.as_ref(),
-            };
-            let mut contract_cx = crate::family::CheckContext::new(
-                &declarations,
-                contract_limits,
-                &mut contract_meter,
-                &mut contract_diagnostics,
-                &mut contract_scopes,
-            );
-            match state_clause::ProtocolClauseFamily::check(clause, &mut contract_cx) {
-                Ok(staged) => {
-                    let checked = staged.into_value();
-                    nodes_used = checked.nodes_used;
-                    if let Some(refusal) = layer::typed_equalities(
-                        &checked.body,
-                        Some(&clause.selection),
-                        scope.types(),
-                        Some(&clause.spans.body),
-                    ) {
+        // FR-577: a postcondition starts from the facts of its operation's
+        // unit preconditions, whatever their source order, so the
+        // preconditions are checked first. The checked clauses and their
+        // refusals are put back in source order below.
+        let clause_order: Vec<usize> = (0..state_clause_forms.len())
+            .filter(|index| {
+                state_clause_forms[*index].kind == qsl_forms::StateClauseKind::Precondition
+            })
+            .chain((0..state_clause_forms.len()).filter(|index| {
+                state_clause_forms[*index].kind != qsl_forms::StateClauseKind::Precondition
+            }))
+            .collect();
+        let mut clause_refusals: Vec<(usize, std::ops::Range<usize>)> = Vec::new();
+        for index in clause_order {
+            let clause = &state_clause_forms[index];
+            let refusals_before = refusals.len();
+            'clause: {
+                let location = clause_location(index, &clause.name);
+                let preconditions: Vec<facts::CheckedFacts> =
+                    match (&clause.kind, &clause.operation_key) {
+                        (qsl_forms::StateClauseKind::Postcondition, Some(key))
+                            if !in_redefinition_family(&self.selected_views, key) =>
+                        {
+                            typed_clauses
+                                .iter()
+                                .filter(|(earlier, _)| {
+                                    let earlier = &state_clause_forms[*earlier];
+                                    earlier.kind == qsl_forms::StateClauseKind::Precondition
+                                        && earlier.context == clause.context
+                                        && earlier.operation_key.as_ref() == Some(key)
+                                })
+                                .map(|(_, typed)| typed.facts.clone())
+                                .collect()
+                        }
+                        _ => Vec::new(),
+                    };
+                let declarations = state_clause::ClauseDeclarations {
+                    unit: self.source_owners.get(&format!("state_clause:{index}")),
+                    scope: &scope,
+                    signatures: &signatures,
+                    dispatch_tables: &dispatch_tables,
+                    models: &models,
+                    checking_limits: limits,
+                    location: &location,
+                    nodes_used,
+                    cancel: Some(cancel),
+                    staged: pending_types.as_ref(),
+                    preconditions: &preconditions,
+                };
+                let mut contract_cx = crate::family::CheckContext::new(
+                    &declarations,
+                    contract_limits,
+                    &mut contract_meter,
+                    &mut contract_diagnostics,
+                    &mut contract_scopes,
+                );
+                match state_clause::ProtocolClauseFamily::check(clause, &mut contract_cx) {
+                    Ok(staged) => {
+                        let checked = staged.into_value();
+                        nodes_used = checked.nodes_used;
+                        if let Some(refusal) = layer::typed_equalities(
+                            &checked.body,
+                            Some(&clause.selection),
+                            scope.types(),
+                            Some(&clause.spans.body),
+                        ) {
+                            refusals.push(refusal);
+                            break 'clause;
+                        }
+                        if let (qsl_forms::StateClauseKind::Precondition, Some(operation)) =
+                            (clause.kind, &clause.operation)
+                        {
+                            precondition_reads.extend(probabilistic::precondition_reads(
+                                operation,
+                                &checked.parameters,
+                                checked.body.root(),
+                                &probabilistic::PreconditionSite::Clause(clause.name.clone()),
+                            ));
+                        }
+                        typed_clauses.push((index, checked));
+                    }
+                    Err(StageFailure::Limit(limit)) => {
+                        refusals.push(CheckRefusal {
+                            location,
+                            cause: limit_cause(&limit),
+                        });
+                        if cancel.tripped().is_some() {
+                            return Err(refusals);
+                        }
+                    }
+                    Err(StageFailure::LimitWithPayload(limit, _)) => {
+                        refusals.push(CheckRefusal {
+                            location,
+                            cause: limit_cause(&limit),
+                        });
+                        if cancel.tripped().is_some() {
+                            return Err(refusals);
+                        }
+                    }
+                    Err(StageFailure::Cancelled(_)) => return Err(refusals),
+                    Err(StageFailure::Fault(fault)) => {
+                        refusals.push(CheckRefusal {
+                            location: location.clone(),
+                            cause: CheckCause::InternalFault(Box::new(KeyFault::StageFault(fault))),
+                        });
+                        return Err(refusals);
+                    }
+                    Err(StageFailure::Refused(refusal)) => {
+                        let exhausted = matches!(refusal.cause, CheckCause::ResourceExhausted(_));
                         refusals.push(refusal);
-                        continue;
+                        if exhausted {
+                            return Err(refusals);
+                        }
                     }
-                    if let (qsl_forms::StateClauseKind::Precondition, Some(operation)) =
-                        (clause.kind, &clause.operation)
-                    {
-                        precondition_reads.extend(probabilistic::precondition_reads(
-                            operation,
-                            &checked.parameters,
-                            checked.body.root(),
-                            &probabilistic::PreconditionSite::Clause(clause.name.clone()),
-                        ));
-                    }
-                    typed_clauses.push(checked);
-                }
-                Err(StageFailure::Limit(limit)) => {
-                    refusals.push(CheckRefusal {
-                        location,
-                        cause: limit_cause(&limit),
-                    });
-                    if cancel.tripped().is_some() {
-                        return Err(refusals);
-                    }
-                }
-                Err(StageFailure::LimitWithPayload(limit, _)) => {
-                    refusals.push(CheckRefusal {
-                        location,
-                        cause: limit_cause(&limit),
-                    });
-                    if cancel.tripped().is_some() {
-                        return Err(refusals);
-                    }
-                }
-                Err(StageFailure::Cancelled(_)) => return Err(refusals),
-                Err(StageFailure::Fault(fault)) => {
-                    refusals.push(CheckRefusal {
-                        location: location.clone(),
-                        cause: CheckCause::InternalFault(Box::new(KeyFault::StageFault(fault))),
-                    });
-                    return Err(refusals);
-                }
-                Err(StageFailure::Refused(refusal)) => {
-                    let exhausted = matches!(refusal.cause, CheckCause::ResourceExhausted(_));
-                    refusals.push(refusal);
-                    if exhausted {
-                        return Err(refusals);
-                    }
-                }
-                Err(StageFailure::RefusedWithPayload(refusal, _)) => {
-                    let exhausted = matches!(refusal.cause, CheckCause::ResourceExhausted(_));
-                    refusals.push(*refusal);
-                    if exhausted {
-                        return Err(refusals);
+                    Err(StageFailure::RefusedWithPayload(refusal, _)) => {
+                        let exhausted = matches!(refusal.cause, CheckCause::ResourceExhausted(_));
+                        refusals.push(*refusal);
+                        if exhausted {
+                            return Err(refusals);
+                        }
                     }
                 }
             }
+            clause_refusals.push((index, refusals_before..refusals.len()));
         }
+        // Back to source order.
+        typed_clauses.sort_by_key(|(index, _)| *index);
+        let mut typed_clauses: Vec<state_clause::TypedStateClause> =
+            typed_clauses.into_iter().map(|(_, typed)| typed).collect();
+        clause_refusals.sort_by_key(|(index, _)| *index);
+        let mut held: Vec<Option<CheckRefusal>> = refusals.drain(..).map(Some).collect();
+        for (_, range) in clause_refusals {
+            refusals.extend(range.filter_map(|at| held.get_mut(at).and_then(Option::take)));
+        }
+        refusals.extend(held.into_iter().flatten());
         // FR-103: each kept operation `requires`/`ensures`, checked as a
         // Boolean under the clause kind its position gives. A kept clause
         // adds no checked state clause, claim or requirement record: it
@@ -3274,6 +3341,7 @@ impl PackageDeclarations {
                 nodes_used,
                 cancel: Some(cancel),
                 staged: None,
+                preconditions: &[],
             };
             let mut contract_cx = crate::family::CheckContext::new(
                 &declarations,
@@ -3325,6 +3393,7 @@ impl PackageDeclarations {
                 nodes_used,
                 cancel: Some(cancel),
                 staged: None,
+                preconditions: &[],
             };
             let mut contract_cx = crate::family::CheckContext::new(
                 &declarations,
@@ -3403,6 +3472,7 @@ impl PackageDeclarations {
                 nodes_used,
                 cancel: Some(cancel),
                 staged: None,
+                preconditions: &[],
             };
             let mut contract_cx = crate::family::CheckContext::new(
                 &declarations,
@@ -3460,6 +3530,7 @@ impl PackageDeclarations {
                 nodes_used,
                 cancel: Some(cancel),
                 staged: None,
+                preconditions: &[],
             };
             let mut contract_cx = crate::family::CheckContext::new(
                 &declarations,
@@ -3554,6 +3625,7 @@ impl PackageDeclarations {
                     nodes_used,
                     cancel: Some(cancel),
                     staged: None,
+                    preconditions: &[],
                 };
                 let mut contract_cx = crate::family::CheckContext::new(
                     &declarations,
@@ -3893,6 +3965,7 @@ impl PackageDeclarations {
                 nodes_used,
                 cancel: Some(cancel),
                 staged: None,
+                preconditions: &[],
             };
             let mut obligation_cx = crate::family::CheckContext::new(
                 &obligation_declarations,
@@ -4215,6 +4288,7 @@ impl PackageDeclarations {
                 nodes_used,
                 cancel: Some(cancel),
                 staged: None,
+                preconditions: &[],
             };
             let mut contract_cx = crate::family::CheckContext::new(
                 &declarations,
@@ -4254,6 +4328,7 @@ impl PackageDeclarations {
                 nodes_used,
                 cancel: Some(cancel),
                 staged: None,
+                preconditions: &[],
             };
             for (checked, selected) in refinement_slots.iter_mut().zip(&selected_protocols) {
                 let Some(checked) = checked.as_mut().filter(|_| selected.is_none()) else {
@@ -4354,6 +4429,7 @@ impl PackageDeclarations {
                     nodes_used,
                     cancel: Some(cancel),
                     staged: None,
+                    preconditions: &[],
                 };
                 let mut condition_cx = crate::family::CheckContext::new(
                     &condition_declarations,
@@ -4391,6 +4467,7 @@ impl PackageDeclarations {
                         nodes_used,
                         cancel: Some(cancel),
                         staged: None,
+                        preconditions: &[],
                     };
                     let mut condition_cx = crate::family::CheckContext::new(
                         &condition_declarations,
@@ -4530,6 +4607,7 @@ impl PackageDeclarations {
                 nodes_used,
                 cancel: Some(cancel),
                 staged: pending_types.as_ref(),
+                preconditions: &[],
             };
             let mut contract_cx = crate::family::CheckContext::new(
                 &declarations,

@@ -3,10 +3,14 @@
 //! the call sites termination checking consumes.
 //!
 //! Facts are only ever added by the accepted guard forms: `present(p)` for a
-//! stable path `p`, `contains(c, v)` for stable paths `c` and `v`, and an
+//! stable path `p`, `contains(c, v)` for stable paths `c` and `v`, an
 //! integer ordering or equality between a stable integer path (or
-//! `size(p)`) and an integer literal. A comparison of two
-//! non-literal operands yields no fact. The walk and every guard-fact helper
+//! `size(p)`) and an integer literal, and (FR-577) a difference bound
+//! `u - v <= c` from an integer ordering between two non-literal stable
+//! paths, which bounds only a binary `-` of those two paths. Every other
+//! comparison of two non-literal operands yields no fact. A postcondition's
+//! walk also begins with the facts its operation's unit preconditions
+//! establish (FR-577). The walk and every guard-fact helper
 //! it calls run on the walker toolkit, and each path's facts are persistent
 //! (one trie path more than its parent's), so no depth of typed expression is
 //! a limit and no chain of nested guards copies facts per level (ADR-030
@@ -81,6 +85,9 @@ struct Facts {
     /// The membership facts `contains(c, v)`: each stable collection path
     /// `c` with the stable paths `v` it is proved to hold.
     members: PersistentMap<StablePath, Rc<BTreeSet<StablePath>>>,
+    /// FR-577 difference bounds: `(u, v) -> c` records `u - v <= c` for two
+    /// integer value paths.
+    differences: PersistentMap<(StablePath, StablePath), Integer>,
 }
 
 /// How a call argument relates to the caller's parameters.
@@ -474,6 +481,13 @@ fn join(left: Option<Rc<Facts>>, right: Option<Rc<Facts>>) -> Option<Rc<Facts>> 
             members: left.members.intersect_with(&right.members, &|left, right| {
                 Rc::new(left.intersection(right).cloned().collect())
             }),
+            // A bound holds on a join only when it holds on both sides, as
+            // the larger of the two.
+            differences: left
+                .differences
+                .intersect_with(&right.differences, &|left, right| {
+                    left.clone().max(right.clone())
+                }),
         })),
     }
 }
@@ -532,6 +546,9 @@ pub(crate) struct Definedness<'a> {
     /// body, so one table serves every path of the walk and no `let` copies
     /// the facts of the paths above it.
     aliases: BTreeMap<Slot, StablePath>,
+    /// The facts the walk begins with: a postcondition's transferred
+    /// precondition facts (FR-577), empty elsewhere.
+    initial: Facts,
 }
 
 impl<'a> Definedness<'a> {
@@ -548,7 +565,22 @@ impl<'a> Definedness<'a> {
             observations: None,
             components: None,
             aliases: BTreeMap::new(),
+            initial: Facts::default(),
         }
+    }
+
+    /// Begin the walk with the facts the unit preconditions of the
+    /// postcondition's operation establish, `shift` slots over (FR-577
+    /// "Precondition facts"). The facts reach the body's guards and
+    /// obligations only; the closure [`Self::check_and_retain`] keeps is the
+    /// body's own.
+    pub(crate) fn with_preconditions(
+        mut self,
+        preconditions: &[CheckedFacts],
+        shift: usize,
+    ) -> Self {
+        self.initial = precondition_facts(preconditions, shift);
+        self
     }
 
     /// Treat each model read of a `hyper` atom as its own observation, the
@@ -568,7 +600,7 @@ impl<'a> Definedness<'a> {
     /// Check every obligation on a path that can execute.
     pub(crate) fn check(&mut self, root: CheckedNode<'_>) -> Result<(), CheckRefusal> {
         self.aliases.clear();
-        self.walk(root, Facts::default())
+        self.walk(root, self.initial.clone())
     }
 
     /// Admit the body and retain its true-outcome closure on this same
@@ -579,7 +611,10 @@ impl<'a> Definedness<'a> {
     ) -> Result<CheckedFacts, CheckRefusal> {
         self.check(root)?;
         let (when_true, _) = self.outcomes(root, &Rc::new(Facts::default()));
-        Ok(CheckedFacts { when_true })
+        Ok(CheckedFacts {
+            when_true,
+            parameters: self.parameters,
+        })
     }
 
     /// The stable path `node` reads under `facts`, if it reads one: the
@@ -805,7 +840,8 @@ impl<'a> Definedness<'a> {
         let (subject, relation, literal) = match (Self::literal(left), Self::literal(right)) {
             (None, Some(literal)) => (left, relation, literal),
             (Some(literal), None) => (right, relation.flipped(), literal),
-            (Some(_), Some(_)) | (None, None) => {
+            (None, None) => return self.difference(left, right, relation, facts),
+            (Some(_), Some(_)) => {
                 return (Some(Rc::clone(facts)), Some(Rc::clone(facts)));
             }
         };
@@ -813,6 +849,80 @@ impl<'a> Definedness<'a> {
             self.relate(subject, relation, &literal, facts),
             self.relate(subject, relation.negated(), &literal, facts),
         )
+    }
+
+    /// FR-577: the outcomes of an integer ordering `left relation right`
+    /// between two non-literal paths. Each outcome records the difference
+    /// bound of the ordering it asserts; `=`, `!=` and any operand that is not
+    /// a path an integer interval fact is keyed on record nothing.
+    fn difference(
+        &self,
+        left: CheckedNode<'_>,
+        right: CheckedNode<'_>,
+        relation: Relation,
+        facts: &Rc<Facts>,
+    ) -> Outcomes {
+        let unchanged = || Some(Rc::clone(facts));
+        if matches!(relation, Relation::Equal | Relation::NotEqual) {
+            return (unchanged(), unchanged());
+        }
+        let (Some(Subject::Value(x)), Some(Subject::Value(y))) =
+            (self.subject(left, facts), self.subject(right, facts))
+        else {
+            return (unchanged(), unchanged());
+        };
+        if x == y {
+            return (unchanged(), unchanged());
+        }
+        let bounded = |relation: Relation| {
+            let (upper, lower, bound) = match relation {
+                Relation::Less => (&x, &y, Integer::one().neg()),
+                Relation::LessOrEqual => (&x, &y, Integer::zero()),
+                Relation::Greater => (&y, &x, Integer::one().neg()),
+                Relation::GreaterOrEqual => (&y, &x, Integer::zero()),
+                Relation::Equal | Relation::NotEqual => return unchanged(),
+            };
+            let mut bounded = Facts::clone(facts);
+            let key = (upper.clone(), lower.clone());
+            let bound = match bounded.differences.get(&key) {
+                Some(held) => held.clone().min(bound),
+                None => bound,
+            };
+            bounded.differences.insert(key, bound);
+            Some(Rc::new(bounded))
+        };
+        (bounded(relation), bounded(relation.negated()))
+    }
+
+    /// FR-577: the interval a binary `-` of the paths `minuend` and
+    /// `subtrahend` is bounded to by a recorded difference bound, if any:
+    /// `u - v <= c` gives an upper end of at most `c`, and `v - u <= c` a
+    /// lower end of at least `-c`.
+    fn difference_interval(
+        &self,
+        minuend: CheckedNode<'_>,
+        subtrahend: CheckedNode<'_>,
+        facts: &Facts,
+    ) -> Option<Interval> {
+        let (Some(Subject::Value(u)), Some(Subject::Value(v))) = (
+            self.subject(Self::through_conversion(minuend), facts),
+            self.subject(Self::through_conversion(subtrahend), facts),
+        ) else {
+            return None;
+        };
+        let upper = facts.differences.get(&(u.clone(), v.clone()));
+        let lower = facts.differences.get(&(v, u));
+        if upper.is_none() && lower.is_none() {
+            return None;
+        }
+        let mut bound = Interval::unbounded();
+        if let Some(upper) = upper {
+            bound.upper = End::Finite(upper.clone());
+        }
+        if let Some(lower) = lower {
+            bound.lower = End::Finite(lower.neg());
+        }
+        Some(bound)
     }
 
     /// The facts on the true and false outcomes of a reachable condition,
@@ -1058,6 +1168,7 @@ impl<'a> Definedness<'a> {
                 Obligation::Range {
                     required: Box::new(ProvedInterval::default()),
                     proved: Box::new(ProvedInterval::default()),
+                    operand: None,
                 },
             )
         })
@@ -1194,6 +1305,7 @@ impl<'a> Definedness<'a> {
                         Obligation::Range {
                             required: Box::new(required.proved()),
                             proved: Box::new(proved.proved()),
+                            operand: None,
                         },
                     ))
                 }
@@ -1341,6 +1453,7 @@ impl<'a> Definedness<'a> {
                                 Obligation::Range {
                                     required: Box::new(required.proved()),
                                     proved: Box::new(proved.proved()),
+                                    operand: None,
                                 },
                             ))
                         }
@@ -1354,6 +1467,7 @@ impl<'a> Definedness<'a> {
                                 Obligation::Range {
                                     required: Box::new(ProvedInterval::default()),
                                     proved: Box::new(ProvedInterval::default()),
+                                    operand: None,
                                 },
                             ))
                         }
@@ -1367,6 +1481,7 @@ impl<'a> Definedness<'a> {
                                 Obligation::Range {
                                     required: Box::new(ProvedInterval::default()),
                                     proved: Box::new(ProvedInterval::default()),
+                                    operand: None,
                                 },
                             ))
                         }
@@ -1387,6 +1502,7 @@ impl<'a> Definedness<'a> {
                                     Obligation::Range {
                                         required: Box::new(required.proved()),
                                         proved: Box::new(proved.proved()),
+                                        operand: None,
                                     },
                                 ))
                             }
@@ -1618,7 +1734,9 @@ struct IntervalWalk<'d, 'a, 'f, 'n> {
 enum IntervalFrame {
     /// The node's interval is already on `values`.
     Done,
-    Arithmetic(Arithmetic),
+    /// An arithmetic node, with the interval a difference bound confines a
+    /// `-` to (FR-577).
+    Arithmetic(Arithmetic, Option<Interval>),
     Negate,
 }
 
@@ -1643,7 +1761,13 @@ impl<'n> quire_walk::Walk for IntervalWalk<'_, '_, '_, 'n> {
             NodeKind::Arithmetic(operator, left, right) => {
                 children.push(node.at(*left));
                 children.push(node.at(*right));
-                return ControlFlow::Continue(IntervalFrame::Arithmetic(*operator));
+                let bound = match operator {
+                    Arithmetic::Subtract => {
+                        definedness.difference_interval(node.at(*left), node.at(*right), facts)
+                    }
+                    Arithmetic::Add | Arithmetic::Multiply => None,
+                };
+                return ControlFlow::Continue(IntervalFrame::Arithmetic(*operator, bound));
             }
             NodeKind::Negate(operand) => {
                 children.push(node.at(*operand));
@@ -1679,13 +1803,17 @@ impl<'n> quire_walk::Walk for IntervalWalk<'_, '_, '_, 'n> {
     fn exit(&mut self, frame: IntervalFrame) -> ControlFlow<Infallible> {
         match frame {
             IntervalFrame::Done => {}
-            IntervalFrame::Arithmetic(operator) => {
+            IntervalFrame::Arithmetic(operator, bound) => {
                 let right = self.values.pop().unwrap_or_else(Interval::unbounded);
                 let left = self.values.pop().unwrap_or_else(Interval::unbounded);
-                self.values.push(match operator {
+                let exact = match operator {
                     Arithmetic::Add => left.add(&right),
                     Arithmetic::Subtract => left.add(&right.negate()),
                     Arithmetic::Multiply => left.mul(&right),
+                };
+                self.values.push(match bound {
+                    Some(bound) => exact.intersect(&bound),
+                    None => exact,
                 });
             }
             IntervalFrame::Negate => {
@@ -1756,6 +1884,13 @@ impl<'n> quire_walk::Walk for OutcomeWalk<'_, '_, 'n> {
                     children.push(OutcomeNode::Right(*connective, node.at(*right)));
                     ControlFlow::Continue(OutcomeFrame::Connective(*connective))
                 }
+                // FR-577: a `let` that aliases a stable path keys the facts of
+                // its body on the aliased path, so the body's outcomes are the
+                // `let`'s.
+                NodeKind::Let { body, .. } => {
+                    children.push(OutcomeNode::Evaluate(node.at(*body), facts));
+                    ControlFlow::Continue(OutcomeFrame::Done)
+                }
                 _ => {
                     self.results.push(definedness.guard(node, &facts));
                     ControlFlow::Continue(OutcomeFrame::Done)
@@ -1825,8 +1960,11 @@ pub(crate) struct Established {
 /// The actual FR-146 closure of an admitted clause. Its constructor and
 /// underlying facts are private to the checker; callers can only query a
 /// model attribute at its exact root and observation.
+#[derive(Clone)]
 pub(crate) struct CheckedFacts {
     when_true: Option<Rc<Facts>>,
+    /// The slots the clause binds: `self`, then its parameters.
+    parameters: usize,
 }
 
 impl std::fmt::Debug for CheckedFacts {
@@ -1884,4 +2022,116 @@ impl Established {
             (Some(_), None) => {}
         }
     }
+}
+
+/// FR-577 "Precondition facts": the facts the true outcomes of an operation's
+/// unit `pre` clauses establish together, as a postcondition of the same
+/// operation starts from them: the conjunction of `preconditions`'
+/// true-outcome facts, keyed for a
+/// postcondition whose parameters sit `shift` slots later than a
+/// precondition's. Empty when there is no precondition, when any true
+/// outcome is unreachable, or when the interval facts of one key
+/// intersect to nothing.
+fn precondition_facts(preconditions: &[CheckedFacts], shift: usize) -> Facts {
+    let mut conjunction = Facts::default();
+    for precondition in preconditions {
+        let Some(facts) = &precondition.when_true else {
+            return Facts::default();
+        };
+        let rekeyed = rekey(facts, precondition.parameters, shift);
+        if !conjoin(&mut conjunction, &rekeyed) {
+            return Facts::default();
+        }
+    }
+    conjunction
+}
+
+/// `facts` with every path moved to its postcondition slot, keeping only
+/// a fact keyed on a path rooted at `self` or at an operation parameter.
+/// A `let`, quantifier or comprehension binder of the precondition sits
+/// at or after slot `parameters`.
+fn rekey(facts: &Facts, parameters: usize, shift: usize) -> Facts {
+    let path = |path: &StablePath| -> Option<StablePath> {
+        let root = match path.root {
+            0 => 0,
+            root if root < parameters => root + shift,
+            _ => return None,
+        };
+        Some(StablePath {
+            root,
+            steps: path.steps.clone(),
+        })
+    };
+    let subject = |subject: &Subject| match subject {
+        Subject::Value(inner) => path(inner).map(Subject::Value),
+        Subject::Size(inner) => path(inner).map(Subject::Size),
+    };
+    let mut kept = Facts::default();
+    for (key, interval) in facts.intervals.entries() {
+        if let Some(key) = subject(&key) {
+            kept.intervals.insert(key, interval);
+        }
+    }
+    for (key, ()) in facts.present.entries() {
+        if let Some(key) = path(&key) {
+            kept.present.insert(key, ());
+        }
+    }
+    for (key, ()) in facts.nonzero.entries() {
+        if let Some(key) = path(&key) {
+            kept.nonzero.insert(key, ());
+        }
+    }
+    for (key, held) in facts.members.entries() {
+        if let Some(key) = path(&key) {
+            let held: BTreeSet<StablePath> = held.iter().filter_map(&path).collect();
+            if !held.is_empty() {
+                kept.members.insert(key, Rc::new(held));
+            }
+        }
+    }
+    for ((upper, lower), bound) in facts.differences.entries() {
+        if let (Some(upper), Some(lower)) = (path(&upper), path(&lower)) {
+            kept.differences.insert((upper, lower), bound);
+        }
+    }
+    kept
+}
+
+/// Add `other`'s facts to `into`: the intervals of one key intersect, a
+/// bound on one ordered pair keeps the smaller `c`. `false` when an
+/// intersection is empty.
+fn conjoin(into: &mut Facts, other: &Facts) -> bool {
+    for (key, interval) in other.intervals.entries() {
+        let incoming = Interval::of_proved(&interval);
+        let merged = match into.intervals.get(&key) {
+            Some(held) => Interval::of_proved(held).intersect(&incoming),
+            None => incoming,
+        };
+        if merged.is_empty() {
+            return false;
+        }
+        into.intervals.insert(key, merged.proved());
+    }
+    for (key, ()) in other.present.entries() {
+        into.present.insert(key, ());
+    }
+    for (key, ()) in other.nonzero.entries() {
+        into.nonzero.insert(key, ());
+    }
+    for (key, incoming) in other.members.entries() {
+        let merged: BTreeSet<StablePath> = match into.members.get(&key) {
+            Some(held) => held.union(&incoming).cloned().collect(),
+            None => (*incoming).clone(),
+        };
+        into.members.insert(key, Rc::new(merged));
+    }
+    for (key, incoming) in other.differences.entries() {
+        let merged = match into.differences.get(&key) {
+            Some(held) => held.clone().min(incoming),
+            None => incoming,
+        };
+        into.differences.insert(key, merged);
+    }
+    true
 }

@@ -890,6 +890,7 @@ fn p09_intervals_come_only_from_declared_types_and_literal_guards() {
                     lower: Some(integer(lower)),
                     upper: Some(integer(upper)),
                 }),
+                operand: None,
             },
             "unproved-range",
         )
@@ -901,14 +902,23 @@ fn p09_intervals_come_only_from_declared_types_and_literal_guards() {
         literal(0),
     ))])
     .unwrap();
+    // Two non-literal operands give an interval no fact: an equality adds no
+    // difference bound (FR-577), and an ordering's bound reaches only the `-`
+    // of the same two paths.
     assert_eq!(
         unproved(check(vec![body(if_then(
-            binary(BinaryOperator::Less, name("a"), name("b")),
+            binary(BinaryOperator::Equal, name("a"), name("b")),
             binary(BinaryOperator::Subtract, name("b"), name("a")),
             literal(0),
         ))])),
         range(-3, 3)
     );
+    check(vec![body(if_then(
+        binary(BinaryOperator::Less, name("a"), name("b")),
+        binary(BinaryOperator::Subtract, name("b"), name("a")),
+        literal(0),
+    ))])
+    .unwrap();
     check(vec![body(binary(
         BinaryOperator::Add,
         Expression::negate(name("a")),
