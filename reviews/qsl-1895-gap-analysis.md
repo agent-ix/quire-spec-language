@@ -36,3 +36,11 @@ Tests are linked by `#[trace]` tags; the focused run of `protocol_projection` is
 - FR-574-AC-1..5, AC-7 (spec/functional/FR-574-carry-the-separating-witness-record-on-a-decisive-protocol-counterexample.md): the projection record, its components and the assessed-subject root. (examined)
 - FR-575-AC-1 (spec/functional/FR-575-answer-unsupported-for-constructs-outside-the-bounded-static-profile.md): For each construct row other than evaluator-unsupported, a protocol using it yields that slug and node. (examined)
 - FR-575-AC-3 (spec/functional/FR-575-answer-unsupported-for-constructs-outside-the-bounded-static-profile.md): A profile word other than bounded-static is refused naming profile. (examined)
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | 66bed12d8/a0a95b4aa/ea3fb99bc: the FR-575-AC-1 tests now cover `dynamic-role-population` (`Pool each ... from cells`), a `predicate` join, `compensation` (`Refund` template), `timed-await` (`Wait`) and `outstanding` under `join all`. `unassigned-local-choice` was removed as unreachable (lead decision 3). |
+| FND-002 | fixed | 66bed12d8: the FR-573-AC-2 and FR-573-AC-5 tags were removed. The tests keep only FR-573-AC-3 and FR-570-AC-7, which they show. This is acceptable while the FR-360 label map is unwired (slice 5). |
+| FND-003 | still-open | The nested-choice and two-sender tests landed, but nothing covers a nested choice whose alternatives must each be compared against one equal action, where the engine gives a false `Refuted` (SR-2026111306075601 FND-010). The AC-1 graph-equality test still uses only the choice-free `parallel_flow` fixture. Add both. |

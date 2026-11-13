@@ -15,7 +15,7 @@ relationships:
 Verify the projection result's graph, correspondence, choice and merge rule,
 counterexample and non-conclusive paths over the `bounded-static` profile.
 
-Scope: FR-570-AC-1 to FR-570-AC-7; QSpec FR-174-AC-1 to AC-5.
+Scope: FR-570-AC-1 to FR-570-AC-8; QSpec FR-174-AC-1 to AC-5.
 
 ## Test Procedure
 
@@ -32,7 +32,10 @@ Scope: FR-570-AC-1 to FR-570-AC-7; QSpec FR-174-AC-1 to AC-5.
 5. Project a protocol whose `first` sets are a send against a receive, an
    empty set against a non-empty one, and two sends with differing message
    types or peers.
-6. Project with `max_depth` smaller than the protocol needs, and a protocol
+6. Project onto `Warehouse` a protocol whose `ship` branch holds a nested
+   choice of two receives and whose `cancel` branch holds one equal receive,
+   then the same with `cancel` empty.
+7. Project with `max_depth` smaller than the protocol needs, and a protocol
    with a construct outside the profile.
 
 Tag the tests `#[trace("TC-1410", "FR-570-AC-n")]`.
@@ -48,4 +51,5 @@ Tag the tests `#[trace("TC-1410", "FR-570-AC-n")]`.
 - Step 4: the counterexample names the choice the tie-break orders first, of
   smallest length.
 - Step 5: none merges; each returns a counterexample and no graph.
-- Step 6: a non-conclusive result with no graph in both cases.
+- Step 6: the witness, then the counterexample.
+- Step 7: a non-conclusive result with no graph in both cases.

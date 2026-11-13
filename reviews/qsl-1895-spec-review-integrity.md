@@ -32,3 +32,20 @@ The diff `origin/main...HEAD` at c75876074, spec files only. Each edited line wa
 - FR-574 `trace_position` row (spec/functional/FR-574-carry-the-separating-witness-record-on-a-decisive-protocol-counterexample.md). (examined)
 - FR-575 `unsupported-control` row and first-construct order (spec/functional/FR-575-answer-unsupported-for-constructs-outside-the-bounded-static-profile.md). (examined)
 - ADR-036 PA-7, PA-10, PA-11, PA-14, PA-21, PA-24, Worked example (spec/decisions/ADR-036-protocol-local-projection-and-realizability-engine.md). (context_only)
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | medium | The new nested-choice rule ("The actions of a branch include those inside a choice nested in the branch: every alternative of the nested choice is a possible first action of the branch"; PA-10 "The actions of a branch include those of a choice nested in it") does not say how alternatives pair off. Read as written, and as implemented, all alternatives must be matched like concurrent events, which refutes a projectable protocol (SR-2026111306075601 FND-010). State that each alternative of a nested choice is compared against the other branch on its own, so that the merge holds when every alternative pairs off. | spec/functional/FR-570-project-a-global-protocol-onto-one-role.md:108-110; spec/decisions/ADR-036-protocol-local-projection-and-realizability-engine.md:128 |
+| FND-006 | low | FR-575 and ADR-036 PA-21 say a choice assigned to no role is "not a construct a checked package can hold". QSpec FR-466 lets `choice.owner` be a `protocol` node. It is the QSL checker (`ProtocolAnchorCause::NodeRole`) that refuses one. A package from another producer can hold one, and the engine would then treat every role as `MustMerge`. Say "the QSL checker refuses", or refuse a non-role owner at admission. | spec/functional/FR-575-answer-unsupported-for-constructs-outside-the-bounded-static-profile.md:66-68; spec/decisions/ADR-036-protocol-local-projection-and-realizability-engine.md:154 |
+| FND-007 | low | The ADR edits left broken grammar: PA-10 ends a clause with "... keyed by the message type), (PA-7)." and PA-21 runs a full sentence ("a protocol where ... cannot be written, because ...") into the list of causes. FR-570-AC-6 now bundles the worked example with the nested-choice and partial-read rules. Fix the two ADR sentences and move the nested-choice clause to its own AC. | spec/decisions/ADR-036-protocol-local-projection-and-realizability-engine.md:128,154; spec/functional/FR-570-project-a-global-protocol-onto-one-role.md:128 |
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | 66bed12d8: FR-570 now reads "only when every earlier message whose payload binder the choice's decision facts read is a message the role sent or received ... A decision that also reads a message the role took no part in does not inform the role", and ADR-036 PA-7 and PA-10 match. |
+| FND-002 | fixed | 66bed12d8: ADR-036 PA-7, PA-10 and the worked example are amended: the decision reads the payload of `Buyer -> Seller: order`, the repair is `Warehouse -> Seller: report`, and a decision that also reads another message does not inform. FR-570-AC-6 states the direction ("a message that Warehouse sends to Seller and Seller receives"). |
+| FND-003 | fixed | 66bed12d8: the horizon bullet now compares layer by layer, stops at the first layer that holds an event beyond the horizon, and reports a divergence at an earlier layer as a counterexample. |
+| FND-004 | fixed | 66bed12d8: FR-570-AC-4 reads "owner, an earlier message the role took part in that carries the whole decision, or distinct first-receive message types ..."; `visible` is no longer listed as its own basis. |

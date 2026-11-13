@@ -105,9 +105,12 @@ edges.
   horizon; a divergence at an earlier layer is a counterexample, and a search
   that finds no counterexample and stops at such a layer, or meets any event
   beyond the horizon, is `inconclusive`.
-- The actions of a branch include those inside a choice nested in the branch:
-  every alternative of the nested choice is a possible first action of the
-  branch.
+- When a branch holds a choice, the engine shall treat the branch as one run
+  per alternative of each nested choice and shall require every run of one
+  branch to merge with every run of the other: each nested alternative is
+  compared against the other branch on its own, never as an action concurrent
+  with its sibling alternatives. A branch that splits into more than 256 runs
+  is `inconclusive`.
 - A merged choice's paired events are recorded in the local graph as
   alternatives (one behaviour of the role in two branches), not as concurrent
   events.
@@ -125,8 +128,9 @@ edges.
 | FR-570-AC-3 | A `parallel` region with `join all` projects to a local partial order with no enumerated interleaving, and two receives on one channel with equal evaluated FIFO key keep their global order as local receive order (PA-9). | Test (TC-1410) |
 | FR-570-AC-4 | A choice branch merges for the role only by the PA-10 rule: owner, an earlier message the role took part in that carries the whole decision, or distinct first-receive message types, or pairwise equal (direction, peer, message type) first events recursing on their continuations; a send against a receive, an empty first set against a non-empty one, and differing peers or send message types do not merge (implements FR-174-AC-5). | Test (TC-1410) |
 | FR-570-AC-5 | A choice the role cannot distinguish returns a counterexample naming the choice, owner, role, the two paths and the two actions, of smallest length with the PA-11 tie-break, and returns no `local_graph` and no substitute graph; for two failing choices the counterexample names the one the tie-break orders first (implements FR-174-AC-2). | Test (TC-1410) |
-| FR-570-AC-6 | For `Seller` owning `ship \| cancel` with `ship` sending `pick` to `Warehouse`, projection onto `Warehouse` returns the counterexample (`receive pick` against end); with `cancel` sending `cancelled` to `Warehouse`, or with an earlier message that `Warehouse` sends to `Seller` and `Seller` receives, whose payload binder the choice's `visible` fact reads (and no other message is read), it returns the witness; when the decision also reads a message `Warehouse` took no part in it returns the counterexample; a choice nested in a branch contributes its alternatives to that branch's actions; an earlier `decision` message of one type in both branches that no decision fact reads returns the counterexample (ADR-036 worked example). | Test (TC-1410) |
+| FR-570-AC-6 | For `Seller` owning `ship \| cancel` with `ship` sending `pick` to `Warehouse`, projection onto `Warehouse` returns the counterexample (`receive pick` against end); with `cancel` sending `cancelled` to `Warehouse`, or with an earlier message that `Warehouse` sends to `Seller` and `Seller` receives, whose payload binder the choice's `visible` fact reads (and no other message is read), it returns the witness; when the decision also reads a message `Warehouse` took no part in it returns the counterexample; an earlier `decision` message of one type in both branches that no decision fact reads returns the counterexample (ADR-036 worked example). | Test (TC-1410) |
 | FR-570-AC-7 | A request the engine cannot decide (FR-575) or whose search reaches `max_depth` returns a non-conclusive result with no graph, and the result carries no substitute for the missing graph (implements FR-174-AC-3). | Test (TC-1410) |
+| FR-570-AC-8 | A choice nested in a branch contributes one run per alternative, and each run merges with the other branch on its own: with `cancel` sending `pick3` to `Warehouse` and `ship` holding a nested choice of `pick` or `pick2` to `Warehouse`, projection onto `Warehouse` returns the witness; with `cancel` empty and the same `ship`, it returns the counterexample (implements FR-174-AC-5). | Test (TC-1410) |
 
 ## Dependencies
 

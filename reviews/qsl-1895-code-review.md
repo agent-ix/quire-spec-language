@@ -37,3 +37,24 @@ Checked and clean: ascending UTF-8 label order (FR-466 sorts `cases`/`branches` 
 - FR-574-AC-1..5, AC-7 (spec/functional/FR-574-carry-the-separating-witness-record-on-a-decisive-protocol-counterexample.md): the projection record. (examined)
 - FR-575-AC-1, AC-3 (spec/functional/FR-575-answer-unsupported-for-constructs-outside-the-bounded-static-profile.md): unsupported causes and profile refusal. (examined)
 - ADR-036 PA-9 to PA-12, PA-14, PA-15, PA-20 to PA-22, PA-24, PA-25 (spec/decisions/ADR-036-protocol-local-projection-and-realizability-engine.md). (context_only)
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-010 | high | The nested-choice fix treats the alternatives of a nested choice as concurrent actions of the outer branch, so `merge` requires all of them to pair off, which gives a false `Refuted`. Probe (`probe_nested_alternatives_against_one_equal_action_merge`): `Decide` by Seller, `cancel` = `pick3`, `ship` = `choice Inner { a: pick | b: pick2 }`, all `Seller -> Warehouse: PickMsg`. Warehouse receives exactly one `PickMsg` on every path, so the projection is sound, but the result is `Refuted` with `action_a = PickedUp2`, `action_b = None`. The replay arm uses the same `merge`, so it confirms the false counterexample. Compare each alternative of a nested choice against the other branch separately (or recurse into the nested choice's cases), not their union. | qsl-replay/src/protocol_analysis/structure.rs:479-497,672-755 |
+| FND-011 | medium | The fix round committed the Linear comment bodies as `reviews/qsl-1895-*.comment.md`. They are not SpecReview artifacts, have no frontmatter, and fail `quire validate` ("required 'type' is missing from frontmatter"), so a repo-wide validation of `reviews/` fails. Delete the four `.comment.md` files and commit only the SR files. | reviews/qsl-1895-code-review.comment.md; reviews/qsl-1895-gap-analysis.comment.md; reviews/qsl-1895-spec-review-ears.comment.md; reviews/qsl-1895-spec-review-integrity.comment.md |
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | 66bed12d8: `case_actions` now keeps every event with `event.within.contains(body)`, nested cases included. The reviewer probe `probe_nested_choice_hides_outer_divergence` now returns `Refuted`, and `a_choice_nested_in_a_branch_counts_toward_the_outer_merge` covers it. The fix introduces FND-010. |
+| FND-002 | fixed | 66bed12d8: `classify` returns `Informed` only when `carriers.iter().all(knows)`. The reviewer probe `probe_partial_carrier_informs_role` now returns `Refuted`, and `a_decision_reading_a_message_the_role_took_no_part_in_does_not_inform_it` covers both directions. |
+| FND-003 | fixed | 66bed12d8: `LocalGraph.alternatives` records each merged pair as `(min, max)` local ids. `equal_first_actions_merge...` asserts one alternative. The membership of owned or external choice cases is still read through the correspondence table, which FR-570 now states. |
+| FND-004 | fixed | 66bed12d8: `induced_cover` masks the structure's `below` bitsets to the kept events and stops at `max_transitions` (`Failed` on overflow). `shortest_path` walks a precomputed `back` adjacency. |
+| FND-005 | fixed | 66bed12d8: `merge` returns `Cut` only when a front layer holds an event beyond the horizon, so a divergence in an earlier layer is reported. `a_divergence_before_the_horizon_is_found_though_later_events_are_cut` covers it. |
+| FND-006 | fixed | 66bed12d8/c34e9448a: `replay_protocol_analysis` returns `ReplayResult::ProtocolAnalysis`, and the facade refuses the source as the new `WrongProtocolAnalysisEntry` (`invalid_runtime_input`/`invalid-value` at `/replay/source`). |
+| FND-007 | accepted-no-change | The lead kept the shared `classify`/`merge` in the replay arm and stated the limit in FR-573: the arm catches edited or stale counterexamples, not errors in the shared rules, which TC-1410 tests. That is acceptable for an Uncertified V1. FND-010 shows the cost: the arm confirms a false refutation. |
+| FND-008 | fixed | 66bed12d8: a missing path is `ProjectionRefusal::Inconsistent("a divergent action does not follow its choice")`, not an empty path. |
+| FND-009 | deferred | Moved to slice 5: FR-574 Outputs says "Remaining work: QSL-1897" for the `native-run-result/2` carriage. This is acceptable for an unserved kind. ADR-031 SW-7's "extends ... with its producer" should name QSL-1897 when that slice lands. |

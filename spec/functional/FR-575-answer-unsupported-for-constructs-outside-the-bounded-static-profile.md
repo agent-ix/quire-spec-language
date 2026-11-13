@@ -63,9 +63,9 @@ causes, each a slug of `unsupported_projection` in the style of
 When a protocol holds several such constructs the engine reports the first in
 the order roles, queues, compensations, then the other constructs in layout
 order; `unsupported-control` is reported only when no other construct is found.
-A choice the protocol assigns to no role is not a construct a checked package
-can hold (the checker refuses a choice whose owner is not a role), so the
-profile needs no cause for it.
+QSpec FR-466 lets a `protocol` node own a choice, but the QSL checker refuses
+such a choice (`NodeRole`) before any analysis, so the profile states no cause
+for a choice the protocol assigns to no role.
 
 Names are chosen as the construct's own name, kebab case, one slug per
 construct, so a corpus author reads the construct from the slug; `join any`,

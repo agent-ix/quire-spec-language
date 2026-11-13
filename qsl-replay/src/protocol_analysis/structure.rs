@@ -17,6 +17,9 @@ use quire_contract_model::CheckedNodeId;
 
 use super::RunLimit;
 
+/// The most runs a case may split into over its nested choices.
+const MAX_VARIANTS: usize = 256;
+
 /// The run limits a structure build counts against (PA-14). They are outside
 /// every key: a run one of them stops settles `failed`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -476,9 +479,70 @@ impl GlobalStructure {
         }
     }
 
+    /// The runs of the case `body` seen by `role`: the communications it
+    /// performs inside the body, once for each way of selecting one
+    /// alternative of every choice nested in the body, each with whether it
+    /// lies beyond a horizon of `max_depth`. `None` when the selections
+    /// exceed [`MAX_VARIANTS`].
+    fn case_variants(
+        &self,
+        role: &CheckedNodeId,
+        body: &CheckedNodeId,
+        max_depth: u64,
+    ) -> Option<Vec<Vec<(Action, bool)>>> {
+        let inside: Vec<usize> = (0..self.events.len())
+            .filter(|position| self.events[*position].within.contains(body))
+            .collect();
+        let mut work = vec![inside];
+        let mut done: Vec<Vec<usize>> = Vec::new();
+        while let Some(set) = work.pop() {
+            let nested = set.iter().copied().find(|position| {
+                matches!(self.events[*position].kind, GlobalEventKind::Choice { .. })
+            });
+            let Some(choice) = nested else {
+                done.push(set);
+                continue;
+            };
+            let GlobalEventKind::Choice { cases, .. } = &self.events[choice].kind else {
+                continue;
+            };
+            for (_, selected) in cases {
+                work.push(
+                    set.iter()
+                        .copied()
+                        .filter(|position| {
+                            *position != choice
+                                && cases.iter().all(|(_, other)| {
+                                    other == selected
+                                        || !self.events[*position].within.contains(other)
+                                })
+                        })
+                        .collect(),
+                );
+            }
+            if done.len() + work.len() > MAX_VARIANTS {
+                return None;
+            }
+        }
+        done.sort();
+        Some(
+            done.into_iter()
+                .map(|set| {
+                    set.into_iter()
+                        .filter_map(|position| {
+                            self.action_of(&self.events[position].at, role)
+                                .map(|action| (action, self.depth[position] > max_depth))
+                        })
+                        .collect()
+                })
+                .collect(),
+        )
+    }
+
     /// Every communication `role` performs inside the case `body`, nested
-    /// choices included (a nested alternative is a possible first action of
-    /// the case), each with whether it lies beyond a horizon of `max_depth`.
+    /// choices included, each with whether it lies beyond a horizon of
+    /// `max_depth`. Used to classify a choice, where every alternative may
+    /// start the branch.
     fn case_actions(
         &self,
         role: &CheckedNodeId,
@@ -664,10 +728,10 @@ impl GlobalStructure {
         Some(ChoiceBasis::MustMerge)
     }
 
-    /// Merge the cases `first` and `second` of the choice `choice` for
-    /// `role` (PA-10): layer by layer, the minimal actions of the two cases
-    /// pair off by (direction, peer, message type), matched pairs leave, and
-    /// the rest recurse; the first layer that does not pair off diverges.
+    /// Merge the cases `first` and `second` for `role` (PA-10). A choice
+    /// nested in a case contributes one run per alternative, and every run of
+    /// one case must merge with every run of the other: each nested
+    /// alternative is compared on its own, never as a concurrent action.
     #[must_use]
     pub fn merge(
         &self,
@@ -676,8 +740,45 @@ impl GlobalStructure {
         second: &CheckedNodeId,
         max_depth: u64,
     ) -> BranchMerge {
-        let held = |body: &CheckedNodeId| self.case_actions(role, body, max_depth);
-        let (left, right) = (held(first), held(second));
+        let (Some(lefts), Some(rights)) = (
+            self.case_variants(role, first, max_depth),
+            self.case_variants(role, second, max_depth),
+        ) else {
+            return BranchMerge::Cut;
+        };
+        let mut merged = Vec::new();
+        let mut diverged: Vec<Divergence> = Vec::new();
+        let mut cut = false;
+        for left in &lefts {
+            for right in &rights {
+                match self.merge_runs(left.clone(), right.clone()) {
+                    BranchMerge::Merged(pairs) => merged.extend(pairs),
+                    BranchMerge::Cut => cut = true,
+                    BranchMerge::Diverged(found) => {
+                        for divergence in found {
+                            if !diverged.contains(&divergence) {
+                                diverged.push(divergence);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if !diverged.is_empty() {
+            BranchMerge::Diverged(diverged)
+        } else if cut {
+            BranchMerge::Cut
+        } else {
+            merged.sort();
+            merged.dedup();
+            BranchMerge::Merged(merged)
+        }
+    }
+
+    /// Merge two runs layer by layer: the minimal actions pair off by
+    /// (direction, peer, message type), matched pairs leave, and the rest
+    /// recurse; the first layer that does not pair off diverges.
+    fn merge_runs(&self, left: Vec<(Action, bool)>, right: Vec<(Action, bool)>) -> BranchMerge {
         let hidden: BTreeSet<PortRef> = left
             .iter()
             .chain(&right)

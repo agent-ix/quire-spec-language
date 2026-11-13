@@ -152,6 +152,8 @@ const PICK: &str = "send PickIt via Pick as (p: PickMsg) { true };\n\
     receive PickedUp via Pick of PickIt as (q: PickMsg) { true };";
 const PICK2: &str = "send PickIt2 via Pick as (p2: PickMsg) { true };\n\
     receive PickedUp2 via Pick of PickIt2 as (q2: PickMsg) { true };";
+const PICK3: &str = "send PickIt3 via Pick as (p3: PickMsg) { true };\n\
+    receive PickedUp3 via Pick of PickIt3 as (q3: PickMsg) { true };";
 const CANCELLED: &str = "send Cn via Cancelled as (c: CancelMsg) { true };\n\
     receive Cn2 via Cancelled of Cn as (d: CancelMsg) { true };";
 
@@ -766,7 +768,7 @@ fn two_runs_on_one_key_give_one_result() {
 /// FR-570 (nested choice): a choice nested in a branch contributes its
 /// alternatives to the branch's actions, so a role that receives in one
 /// branch and nothing in the other is not projectable.
-#[trace("TC-1410", "FR-570-AC-4", "FR-570-AC-5")]
+#[trace("TC-1410", "FR-570-AC-8", "FR-570-AC-5")]
 #[test]
 fn a_choice_nested_in_a_branch_counts_toward_the_outer_merge() {
     let inner = format!(
@@ -893,4 +895,68 @@ fn an_outstanding_policy_under_join_all_answers_unsupported() {
     assert_eq!(cause.slug, UnsupportedSlug::UnsupportedJoin);
     assert_eq!(cause.detail.as_deref(), Some("outstanding"));
     assert_eq!(cause.node, named(&package, "Par"));
+}
+
+/// FR-570 (nested alternatives): each alternative of a nested choice is
+/// compared against the other branch on its own. `Warehouse` receives exactly
+/// one `PickMsg` on every path, so the projection is sound.
+#[trace("TC-1410", "FR-570-AC-8", "FR-570-AC-4")]
+#[test]
+fn nested_alternatives_each_merge_with_the_other_branch() {
+    let inner = format!(
+        "choice Inner by Seller visible (got.ok) {{\n\
+           case a when {{ got.ok }} sequence InnerA {{ {PICK} }}\n\
+           case b when {{ not got.ok }} sequence InnerB {{ {PICK2} }}\n}}"
+    );
+    let package = worked(&inner, PICK3, "");
+    let found = witness(run(&package, "Warehouse"));
+    let [outer, ..] = &found.merge_evidence[..] else {
+        panic!("the outer choice");
+    };
+    assert_eq!(outer.basis, ChoiceBasis::MustMerge);
+    assert_eq!(outer.merged.len(), 2, "each alternative pairs with pick3");
+}
+
+fn assert_graph_equals_structure(package: &CheckedPackageV2, roles: &[&str]) {
+    let structure =
+        GlobalStructure::from_package(package, &clause(package), RunBudget::default()).unwrap();
+    for role in roles {
+        let found = witness(run(package, role));
+        let table = &found.correspondence.0;
+        let local = closure(&found);
+        for (first, a) in table {
+            for (second, b) in table {
+                assert_eq!(
+                    structure.precedes(first, second),
+                    local.contains(&(a.0, b.0)),
+                    "{role}: {first:?} -> {second:?}"
+                );
+            }
+        }
+        assert_eq!(table.len(), found.local_graph.events.len(), "total and 1:1");
+    }
+}
+
+/// FR-570-AC-1 with a choice: the local graph equals the global structure
+/// through the correspondence table when the role owns, is told, or learns
+/// the choice by a receive.
+#[trace("TC-1410", "FR-570-AC-1", "FR-174-AC-1")]
+#[test]
+fn local_graphs_with_a_choice_equal_the_global_structure() {
+    let distinguished = worked(PICK, CANCELLED, "");
+    assert_graph_equals_structure(&distinguished, &["Buyer", "Seller", "Warehouse"]);
+    let merged = worked(PICK, PICK2, "");
+    assert_graph_equals_structure(&merged, &["Buyer", "Seller", "Warehouse"]);
+    let seller = witness(run(&distinguished, "Seller"));
+    assert!(seller
+        .local_graph
+        .events
+        .iter()
+        .any(|event| event.kind == LocalEventKind::InternalChoice));
+    let warehouse = witness(run(&distinguished, "Warehouse"));
+    assert!(warehouse
+        .local_graph
+        .events
+        .iter()
+        .any(|event| event.kind == LocalEventKind::ExternalChoice));
 }

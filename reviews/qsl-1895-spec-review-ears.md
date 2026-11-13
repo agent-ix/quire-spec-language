@@ -28,3 +28,10 @@ Each edited statement was read for one subject, one condition and one observable
 - FR-570 Behavior "An event deeper than max_depth" (spec/functional/FR-570-project-a-global-protocol-onto-one-role.md). (examined)
 - FR-574 `trace_position` row (spec/functional/FR-574-carry-the-separating-witness-record-on-a-decisive-protocol-counterexample.md). (examined)
 - FR-575 `unsupported-control` row and the first-construct sentence (spec/functional/FR-575-answer-unsupported-for-constructs-outside-the-bounded-static-profile.md). (examined)
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | 66bed12d8: the bullet reads "as external choice when, in every branch, the first events include a receive from one peer and the message types of those receives differ across branches". |
+| FND-002 | fixed | 66bed12d8: the "At a choice" bullet is split into three shall-statements, and the rationale is a plain sentence ("a checked package's `visible` holds expression nodes, not roles"). |
