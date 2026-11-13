@@ -32,10 +32,14 @@ pub enum StrategyAction {
 /// One item of a role's local observation (PA-16).
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum Observed {
-    /// The protocol captures every role holds (FR-218), as the RFC 8785
-    /// bytes of each live instance's capture names and FR-181 typed values.
-    /// First in an observation, and only for a protocol that declares one.
+    /// The protocol captures of one instance, which every role of it holds
+    /// (FR-218), as bound when the instance starts: the RFC 8785 bytes of
+    /// the capture names and FR-181 typed values. They lead an observation,
+    /// one per instance the play has started, and only for a protocol that
+    /// declares a capture.
     Captures {
+        /// The instance's ordinal.
+        instance: u64,
         /// The capture bytes.
         payload: Vec<u8>,
     },

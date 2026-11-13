@@ -106,9 +106,6 @@ pub enum RealizabilityRefusal {
     /// A step names a node the linked package does not hold.
     #[error("the step at `{0}` names no node of the linked package")]
     UnnamedNode(String),
-    /// A step's binder record has no RFC 8785 encoding.
-    #[error("the record of the step at `{0}` has no canonical encoding")]
-    Unencodable(String),
 }
 
 impl From<ExpansionStop> for RealizabilityRefusal {
@@ -297,6 +294,33 @@ impl Names {
     }
 }
 
+/// What a play has shown its roles: each started instance's captures, as
+/// bound when the play first reached the instance live, by ordinal, and
+/// each role's own sends and receives with their records, in step order.
+#[derive(Clone)]
+struct Seen {
+    captures: BTreeMap<u64, Vec<u8>>,
+    steps: Vec<ObservationClass>,
+}
+
+impl Seen {
+    fn new(roles: usize) -> Self {
+        Self {
+            captures: BTreeMap::new(),
+            steps: vec![Vec::new(); roles],
+        }
+    }
+
+    /// This play extended by `step`, when a role takes it.
+    fn extended(&self, step: Option<&RoleStep>) -> Self {
+        let mut next = self.clone();
+        if let Some(step) = step {
+            next.steps[step.role].push(step.observed.clone());
+        }
+        next
+    }
+}
+
 /// The game: the arena's system, the names and the bounds.
 struct Game<'s, 'a> {
     system: &'s ProtocolSystem<'a, Sc>,
@@ -318,9 +342,11 @@ fn charge(count: usize, limit: &'static str, value: u64) -> Result<(), RunLimit>
     }
 }
 
-/// The findings' value: a violated invariant loses the play, an undecided
-/// evaluation leaves it open, and the FR-220 weak-access records classify
-/// accesses without violating an obligation.
+/// The findings' value: a violated invariant loses the play; an undecided
+/// evaluation, or a weak-access shape (which `qsl-eval` reports with no
+/// successor, so the terminal class would otherwise blame `finish`), leaves
+/// it open; the FR-220 deferred and shared records classify accesses
+/// without violating an obligation.
 fn finding_value(findings: &[ModelFinding]) -> Option<Value> {
     let mut value = None;
     for finding in findings {
@@ -328,12 +354,11 @@ fn finding_value(findings: &[ModelFinding]) -> Option<Value> {
             ModelFinding::InvariantViolated { .. } => return Some(Value::Lose),
             ModelFinding::InvariantUndetermined { .. }
             | ModelFinding::ProtocolExpressionUndetermined { .. }
-            | ModelFinding::ContractUndetermined { .. } => {
+            | ModelFinding::ContractUndetermined { .. }
+            | ModelFinding::WeakAccessShape(_) => {
                 value.get_or_insert(Value::Cut(Open::Undecided));
             }
-            ModelFinding::WeakAccessShape(_)
-            | ModelFinding::WeakAccessDeferred { .. }
-            | ModelFinding::WeakAccessShared { .. } => {}
+            ModelFinding::WeakAccessDeferred { .. } | ModelFinding::WeakAccessShared { .. } => {}
         }
     }
     value
@@ -364,13 +389,10 @@ impl Game<'_, '_> {
             _ => return Ok(None),
         };
         let node = self.names.node(path)?.clone();
-        let payload = match self.system.binder_record_json(transition)? {
-            Some(record) => {
-                quire_canonical::to_vec(&record, quire_canonical::Limits::new(u64::MAX))
-                    .map_err(|_| RealizabilityRefusal::Unencodable(path.to_owned()))?
-            }
-            None => Vec::new(),
-        };
+        let payload = self
+            .system
+            .binder_record_bytes(transition)?
+            .unwrap_or_default();
         Ok(Some(match receive_from {
             Some(sender) => RoleStep {
                 role,
@@ -387,44 +409,46 @@ impl Game<'_, '_> {
         }))
     }
 
-    /// The observation of every role at `state`, whose own sends and
-    /// receives with their records are `steps[role]` in step order: the
-    /// protocol captures every role holds (FR-218), then the role's steps
-    /// (PA-16). The one function both the search and the replay walk
-    /// compute classes with; each extends its parent's `steps` by the one
-    /// step taken.
-    fn observations(
+    /// `seen` with the captures of every instance live at `state` that it
+    /// has not bound yet. An instance's captures are bound once, when the
+    /// play first reaches it live, and never re-read: they are frozen while
+    /// it lives and gone once it finishes.
+    fn bind(
         &self,
         state: &ProtocolState<Sc>,
-        steps: &[ObservationClass],
-    ) -> Result<Vec<ObservationClass>, RealizabilityRefusal> {
-        let captures = self.system.capture_bytes(state)?;
-        Ok(steps
+        mut seen: Seen,
+    ) -> Result<Seen, RealizabilityRefusal> {
+        for (instance, payload) in self.system.capture_bytes(state)? {
+            seen.captures.entry(instance).or_insert(payload);
+        }
+        Ok(seen)
+    }
+
+    /// The observation of every role after the play that showed it `seen`:
+    /// the bound captures every role holds (FR-218), then the role's own
+    /// sends and receives in step order (PA-16). The one function both the
+    /// search and the replay walk compute classes with.
+    fn observations(seen: &Seen) -> Vec<ObservationClass> {
+        seen.steps
             .iter()
             .map(|own| {
-                captures
+                seen.captures
                     .iter()
-                    .map(|payload| Observed::Captures {
+                    .map(|(instance, payload)| Observed::Captures {
+                        instance: *instance,
                         payload: payload.clone(),
                     })
                     .chain(own.iter().cloned())
                     .collect()
             })
-            .collect())
+            .collect()
     }
 
     /// Whether some role's own steps exceed `max_history`.
-    fn too_long(&self, steps: &[ObservationClass]) -> bool {
-        steps.iter().any(|own| exceeds(own.len(), self.max_history))
-    }
-
-    /// `steps` extended by `step`, when a role takes it.
-    fn extended(steps: &[ObservationClass], step: Option<&RoleStep>) -> Vec<ObservationClass> {
-        let mut next = steps.to_vec();
-        if let Some(step) = step {
-            next[step.role].push(step.observed.clone());
-        }
-        next
+    fn too_long(&self, seen: &Seen) -> bool {
+        seen.steps
+            .iter()
+            .any(|own| exceeds(own.len(), self.max_history))
     }
 
     /// Explore the arena to the bounds and evaluate every node (PA-17).
@@ -433,23 +457,18 @@ impl Game<'_, '_> {
         let mut edges = 0usize;
         let roles = self.names.roles.len();
         // A pending node: its state, the parent move it hangs off, its
-        // depth and each role's own steps.
-        type Pending = (
-            ProtocolState<Sc>,
-            Option<(usize, usize)>,
-            usize,
-            Vec<ObservationClass>,
-        );
+        // depth and what its play showed the roles.
+        type Pending = (ProtocolState<Sc>, Option<(usize, usize)>, usize, Seen);
         let mut stack: Vec<Pending> = self
             .system
             .initial()
             .into_iter()
             .rev()
-            .map(|state| (state, None, 0, vec![Vec::new(); roles]))
+            .map(|state| (state, None, 0, Seen::new(roles)))
             .collect();
         // Depth first, children in the system's canonical successor order;
         // a child's id is larger than its parent's.
-        while let Some((state, parent, depth, steps)) = stack.pop() {
+        while let Some((state, parent, depth, seen)) = stack.pop() {
             let id = nodes.len();
             if let Err(limit) = charge(id + 1, "max_states", self.budget.max_states) {
                 return Ok(Err(limit));
@@ -457,6 +476,7 @@ impl Game<'_, '_> {
             if let Some((from, at)) = parent {
                 nodes[from].moves[at].child = id;
             }
+            let seen = self.bind(&state, seen)?;
             let (expansion, terminal) = self.system.successors_and_terminal(&state)?;
             let mut node = Node {
                 parent,
@@ -464,7 +484,7 @@ impl Game<'_, '_> {
                 lost: None,
                 leaf: true,
                 value: Value::Cut(Open::Horizon),
-                observations: self.observations(&state, &steps)?,
+                observations: Self::observations(&seen),
             };
             if let Some(value) = finding_value(&expansion.findings) {
                 node.value = value;
@@ -485,7 +505,7 @@ impl Game<'_, '_> {
                     // of `qsl-eval` cut it.
                     TerminalClass::NotTerminal => Value::Cut(Open::Horizon),
                 };
-            } else if exceeds(depth + 1, self.max_depth) || self.too_long(&steps) {
+            } else if exceeds(depth + 1, self.max_depth) || self.too_long(&seen) {
                 node.value = Value::Cut(Open::Horizon);
             } else {
                 node.leaf = false;
@@ -499,7 +519,7 @@ impl Game<'_, '_> {
                         next,
                         Some((id, at)),
                         depth + 1,
-                        Self::extended(&steps, step.as_ref()),
+                        seen.extended(step.as_ref()),
                     ));
                     node.moves.push(Move {
                         step,
@@ -951,26 +971,27 @@ impl Game<'_, '_> {
         let roles = self.names.roles.len();
         let mut plays = 0u64;
         let mut visited = 0usize;
-        // A pending state: the state, its depth and each role's own steps.
-        let mut stack: Vec<(ProtocolState<Sc>, usize, Vec<ObservationClass>)> = self
+        // A pending state: the state, its depth and what its play showed
+        // the roles.
+        let mut stack: Vec<(ProtocolState<Sc>, usize, Seen)> = self
             .system
             .initial()
             .into_iter()
             .rev()
-            .map(|state| (state, 0, vec![Vec::new(); roles]))
+            .map(|state| (state, 0, Seen::new(roles)))
             .collect();
-        while let Some((state, depth, steps)) = stack.pop() {
+        while let Some((state, depth, seen)) = stack.pop() {
             visited += 1;
             if let Err(limit) = charge(visited, "max_states", self.budget.max_states) {
                 return Ok(Err(WalkFailure::Limit(limit)));
             }
+            let seen = self.bind(&state, seen)?;
             let (expansion, terminal) = self.system.successors_and_terminal(&state)?;
-            if finding_value(&expansion.findings).is_some() || self.too_long(&steps) {
+            if finding_value(&expansion.findings).is_some() || self.too_long(&seen) {
                 return Ok(Err(WalkFailure::NotShown));
             }
             // A class the table lacks matters only where the role acts.
-            let committed: Vec<Option<StrategyAction>> = self
-                .observations(&state, &steps)?
+            let committed: Vec<Option<StrategyAction>> = Self::observations(&seen)
                 .iter()
                 .enumerate()
                 .map(|(role, class)| self.committed(strategies, role, class))
@@ -1001,7 +1022,7 @@ impl Game<'_, '_> {
                 return Ok(Err(WalkFailure::NotShown));
             }
             for (next, step) in allowed.into_iter().rev() {
-                stack.push((next, depth + 1, Self::extended(&steps, step.as_ref())));
+                stack.push((next, depth + 1, seen.extended(step.as_ref())));
             }
         }
         Ok(Ok(Closure {

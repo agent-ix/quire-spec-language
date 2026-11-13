@@ -151,13 +151,30 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         &self,
         transition: &ProtocolTransition,
     ) -> Result<Option<serde_json::Value>, ExpansionStop> {
+        let Some(bytes) = self.binder_record_bytes(transition)? else {
+            return Ok(None);
+        };
+        serde_json::from_slice(&bytes)
+            .map(Some)
+            .map_err(|_| super::broken())
+    }
+
+    /// The protocol transition's complete binder record as FR-181's typed
+    /// canonical bytes. `None` means the transition has no record binder.
+    ///
+    /// # Errors
+    ///
+    /// An [`ExpansionStop`] when the admitted binder has no typed canonical
+    /// representation.
+    pub fn binder_record_bytes(
+        &self,
+        transition: &ProtocolTransition,
+    ) -> Result<Option<Vec<u8>>, ExpansionStop> {
         let Some(record) = transition.binder_record() else {
             return Ok(None);
         };
         let encoded = value_enc(record, self.model.typing());
-        let bytes = quire_canonical::to_vec(&encoded, quire_canonical::Limits::new(u64::MAX))
-            .map_err(|_| super::broken())?;
-        serde_json::from_slice(&bytes)
+        quire_canonical::to_vec(&encoded, quire_canonical::Limits::new(u64::MAX))
             .map(Some)
             .map_err(|_| super::broken())
     }

@@ -1295,26 +1295,33 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
         Ok(binders)
     }
 
-    /// The RFC 8785 bytes of the protocol captures of `state` (ADR-027
-    /// ST-13): per live instance, ascending by ordinal, each capture's name
-    /// and FR-181 typed value, the values every role of the instance holds
-    /// (FR-218). `None` when the protocol declares no capture.
+    /// The protocol captures of each instance live at `state` (ADR-027
+    /// ST-13), ascending by ordinal: the instance's ordinal and the RFC 8785
+    /// bytes of each capture's name and FR-181 typed value, the values every
+    /// role of the instance holds (FR-218). A capture is evaluated once when
+    /// its instance starts and is gone once the instance finishes, so a
+    /// reader binds each instance's bytes when it first sees the instance.
+    /// Empty when the protocol declares no capture.
     ///
     /// # Errors
     ///
-    /// An [`ExpansionStop`] when a capture value has no typed canonical
-    /// representation.
+    /// An [`ExpansionStop`] when an instance holds a different number of
+    /// captures than the protocol declares, or a capture value has no typed
+    /// canonical representation.
     pub fn capture_bytes(
         &self,
         state: &ProtocolState<M>,
-    ) -> Result<Option<Vec<u8>>, ExpansionStop> {
+    ) -> Result<Vec<(u64, Vec<u8>)>, ExpansionStop> {
         if self.program.captures.is_empty() {
-            return Ok(None);
+            return Ok(Vec::new());
         }
-        let instances = state
+        state
             .instances
             .iter()
             .map(|(ordinal, instance)| {
+                if instance.captures.len() != self.program.captures.len() {
+                    return Err(broken());
+                }
                 let captures = self
                     .program
                     .captures
@@ -1322,18 +1329,11 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
                     .zip(&instance.captures)
                     .map(|(capture, bound)| (Enc::text(capture.name.clone()), bound.enc.clone()))
                     .collect();
-                Enc::Object(vec![
-                    ("instance", Enc::text(ordinal.to_string())),
-                    ("captures", map_enc(captures)),
-                ])
+                quire_canonical::to_vec(&map_enc(captures), quire_canonical::Limits::new(u64::MAX))
+                    .map(|bytes| (*ordinal, bytes))
+                    .map_err(|_| broken())
             })
-            .collect();
-        quire_canonical::to_vec(
-            &Enc::Array(instances),
-            quire_canonical::Limits::new(u64::MAX),
-        )
-        .map(Some)
-        .map_err(|_| broken())
+            .collect()
     }
 
     /// QSpec FR-425's `<rest>` of `rest`.

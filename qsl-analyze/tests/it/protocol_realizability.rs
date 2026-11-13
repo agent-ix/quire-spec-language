@@ -130,8 +130,14 @@ impl Fixture {
 
 /// `Buyer` places an order; `Seller` reads it and owns `ship | cancel`.
 fn worked(delivery: &str, ship: &str, cancel: &str) -> Fixture {
-    Fixture::new(
+    worked_over(delivery, "", ship, cancel)
+}
+
+/// [`worked`] with the protocol declaring `captures` first.
+fn worked_over(delivery: &str, captures: &str, ship: &str, cancel: &str) -> Fixture {
+    Fixture::over(
         delivery,
+        captures,
         &format!(
             "sequence Main {{\n\
              send Placed via Order as (placed: Ack) {{ true }};\n\
@@ -141,6 +147,7 @@ fn worked(delivery: &str, ship: &str, cancel: &str) -> Fixture {
                case yes when {{ got.ok }} sequence Ship {{ {ship} }}\n\
              }} }}"
         ),
+        &[0],
     )
 }
 
@@ -268,9 +275,13 @@ fn the_repaired_example_is_realized_by_a_table_the_walk_accepts() {
     );
 }
 
-/// FR-218: every role holds the protocol captures, so two initial states
-/// that differ in a capture the `Seller`'s guard reads are told apart by
-/// the `Warehouse` too: it ends under one and receives under the other.
+/// FR-218: every role holds the protocol captures, bound once when its
+/// instance starts, so two initial states that differ in a capture the
+/// `Seller`'s guard reads are told apart by the `Warehouse` too: before any
+/// message it ends under `big = false` and receives under `big = true`. The
+/// end is the `big = false` state's, at the terminal state the `finish`
+/// step reaches after the instance has gone, so it shows the captures are
+/// held, not re-read from a state.
 #[trace("TC-1411", "FR-571-AC-1")]
 #[test]
 fn a_capture_tells_initial_states_apart_for_every_role() {
@@ -292,22 +303,55 @@ fn a_capture_tells_initial_states_apart_for_every_role() {
         .iter()
         .find(|strategy| strategy.role == fixture.named("Warehouse"))
         .expect("a Warehouse strategy");
-    let mut first: Vec<&StrategyAction> = warehouse
+    assert!(
+        warehouse
+            .table
+            .keys()
+            .all(|class| matches!(class.first(), Some(Observed::Captures { instance: 0, .. }))),
+        "every class leads with the bound captures: {:?}",
+        warehouse.table.keys()
+    );
+    let first: Vec<(&Vec<u8>, &StrategyAction)> = warehouse
         .table
         .iter()
-        .filter(|(class, _)| matches!(class[..], [Observed::Captures { .. }]))
-        .map(|(_, action)| action)
+        .filter_map(|(class, action)| match &class[..] {
+            [Observed::Captures { payload, .. }] => Some((payload, action)),
+            _ => None,
+        })
         .collect();
-    first.sort();
+    let [(small, end), (big, receive)] = match &first[..] {
+        [a, b] if *a.1 == StrategyAction::End => [*a, *b],
+        [a, b] => [*b, *a],
+        other => panic!("two classes before any message: {other:?}"),
+    };
+    assert_ne!(small, big);
+    assert_eq!(*end, StrategyAction::End);
     assert_eq!(
-        first,
-        [
-            &StrategyAction::Receive {
-                peer: fixture.named("Seller")
-            },
-            &StrategyAction::End,
-        ]
+        *receive,
+        StrategyAction::Receive {
+            peer: fixture.named("Seller")
+        }
     );
+}
+
+/// The hidden choice stays refuted when the protocol declares a capture its
+/// guard does not read: the `Warehouse` holds the same captures under both
+/// branches, at the terminal state too.
+#[trace("TC-1411", "FR-571-AC-2", "FR-571-AC-4")]
+#[test]
+fn a_capture_the_guard_does_not_read_leaves_the_hidden_choice_refuted() {
+    let fixture = worked_over(
+        "exactly-once-premise",
+        "capture big: Boolean = k.v >= 1;\n",
+        PICK,
+        "",
+    );
+    let RealizabilityCounterexample::IndistinguishableHistories { role, .. } =
+        refuted(fixture.run())
+    else {
+        panic!("expected indistinguishable histories");
+    };
+    assert_eq!(role, fixture.named("Warehouse"));
 }
 
 /// TC-1411 step 3: absent premises and the horizon.
