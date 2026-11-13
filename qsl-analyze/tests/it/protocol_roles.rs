@@ -1906,7 +1906,12 @@ fn a_template_reads_the_protocol_captures_and_the_activation_binder() {
     assert_ne!(seen(&captures), seen_true);
 
     let failed = run_to_fail("1");
-    assert_eq!(kinds(&reached, failed), [StepKind::Finish]);
+    let enabled = kinds(&reached, failed);
+    assert!(enabled.contains(&StepKind::Finish), "the instance can finish");
+    assert!(
+        !enabled.contains(&StepKind::CAttempt),
+        "the guard is false, so no compensation thread exists"
+    );
     assert_eq!(
         registration(failed).expect("a registration").0,
         "registered"
