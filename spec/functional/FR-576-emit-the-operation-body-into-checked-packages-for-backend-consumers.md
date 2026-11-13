@@ -32,7 +32,8 @@ declaration's expression tree, [FR-103](./FR-103-admit-model-operations-and-fram
 associates it with the operation's `DeclarationKey` and sets `has_body`,
 [FR-302](./FR-302-link-dispatch-during-unit-compile.md) checks every body,
 [FR-094](./FR-094-key-model-owned-reference-population-and-quantity-nodes.md)
-builds a body clause function for every operation with `has_body`, and
+builds a body clause function for every operation with `has_body` that
+declares a result type, and
 [FR-494](./FR-494-emit-producer-dispatch-decisions-into-checked-packages.md)
 carries a body identity inside a dispatch candidate. None of them makes a
 checked package say, for every operation, whether it has an authored body and
@@ -42,7 +43,7 @@ operation and would have to rebuild one. FR-302, FR-094 and FR-103 are
 widened to every body in the same change as this requirement.
 
 This requirement owns the QSL producer side: that `check` builds and checks the
-body of every operation with `has_body`, and that emission writes one record per
+body of every operation with `has_body` that declares a result type, and that emission writes one record per
 operation carrying that body or its explicit absence. It follows the
 [FR-496](./FR-496-emit-model-operation-effects-into-checked-packages.md)
 precedent: the record is a top-level checked-package member, the
@@ -131,7 +132,8 @@ repositories.
 
 - **Upstream:** [FR-094](./FR-094-key-model-owned-reference-population-and-quantity-nodes.md)
   builds the body clause function, and this requirement extends the operations it
-  is built for to every operation with `has_body`; [FR-302](./FR-302-link-dispatch-during-unit-compile.md)
+  is built for to every operation with `has_body` that declares a result
+  type; [FR-302](./FR-302-link-dispatch-during-unit-compile.md)
   states the body check this requirement requires for every body;
   [FR-103](./FR-103-admit-model-operations-and-frames-on-the-spine.md) sets
   `has_body`; [FR-494](./FR-494-emit-producer-dispatch-decisions-into-checked-packages.md)

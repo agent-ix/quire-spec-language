@@ -30,3 +30,9 @@ warning on the file.
 PASS with one low finding. The statement is state-driven and singular, and
 its outcomes can be tested. Only the subject of the first SHALL needs
 rewording.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | e74a9feb0: FR-576:93-100 now reads "While an operation with `has_body` true declares no result type, `check` SHALL refuse the compile ...", and the FR-094 rationale is a separate *Rationale:* sentence. |

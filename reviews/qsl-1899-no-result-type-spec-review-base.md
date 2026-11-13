@@ -65,3 +65,23 @@ FR-102, FR-103 and FR-494 are not contradicted. However, FND-001 and FND-002
 leave FR-576's own `has_body` rule and FR-094 requiring a body function that
 the new bullet says does not exist. AC-10 is not fully verifiable through
 TC-1011 (FND-003 to FND-005). Fix FND-001 to FND-005 in this PR.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-009 | low | The Description and Dependencies prose of FR-576 still say FR-094 builds a body function "for every operation with `has_body`", and that this requirement extends FR-094 "to every operation with `has_body`". Both statements contradict the amended FR-094:267-270 and FR-576's own Behavior bullet at lines 93-100, which give a resultless operation with a body no body function. Fix: say "every operation with `has_body` that declares a result type". | spec/functional/FR-576-emit-the-operation-body-into-checked-packages-for-backend-consumers.md:35, 44-45, 133-134 |
+| FND-010 | low | TC-1011's Description says that all three cases refuse "whether or not a dispatched call reaches its operation". The resultless case is now tested uncalled only, and a call to it cannot be made at all: FR-151 allows calls only to query operations. Fix: limit the "whether or not" clause to the two mismatch cases. | spec/test-cases/TC-1011-unit-compile-checks-body-arity-and-type-against-the-operation.md:15-18 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | e74a9feb0: the two `has_body`-true bullets are now split by whether the operation declares a result (FR-576:83-100), and line 91-92 names the resultless refusal as the body check's only other new refusal. |
+| FND-002 | fixed | e74a9feb0: FR-094:267-270 builds the body function only for an operation that declares a result type, and states that a resultless operation with a body has none and refuses at the body (FR-576). |
+| FND-003 | fixed | e74a9feb0: AC-10 and TC-1011 step 5 drop the with-call variant. Step 5 now declares no clause calling `touch`. |
+| FND-004 | still-open | Step 5 still starts from the step-4 unit, whose `A.add` holds the `wrongType` (or `tooMany`) body, so the step-5 compile also refuses at `A.add`'s body and the `A.touch` refusal is not isolated. Only step 6 says "Start from the `ok` body". Move that phrase into step 5. The call-placement half of the finding is resolved. |
+| FND-005 | fixed | e74a9feb0: TC-1011 steps 6 and 7, with their Expected Results, cover the `no_body` row and the referencing row for `A.touch`. |
+| FND-006 | fixed | e74a9feb0: FR-302:95-96 and FR-103:120-121 now state that a body on an operation that declares no result refuses `ill_typed`/`type-mismatch` (FR-576). |
+| FND-007 | fixed | e74a9feb0: the "never withheld or partial" clause is removed from AC-10. |
+| FND-008 | fixed | e74a9feb0: TC-1011's Description names the case of an operation with no result type. The title still reads correctly, because it covers checking a body's type against its operation. |

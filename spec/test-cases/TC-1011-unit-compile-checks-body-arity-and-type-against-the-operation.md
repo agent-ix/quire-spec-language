@@ -14,8 +14,9 @@ relationships:
 
 Verify that a body whose parameter count differs from its operation's
 signature, whose type does not match the operation's declared result, or that
-is declared on an operation with no result type, refuses, whether or not a
-dispatched call reaches its operation. Scope: FR-302-AC-8, FR-576-AC-10.
+is declared on an operation with no result type, refuses. The two mismatch
+cases refuse whether or not a dispatched call reaches the operation; an
+operation with no result cannot be called (FR-151). Scope: FR-302-AC-8, FR-576-AC-10.
 
 ## Test Procedure
 
@@ -28,11 +29,10 @@ dispatched call reaches its operation. Scope: FR-302-AC-8, FR-576-AC-10.
    and compile again.
 4. Remove the precondition call so no dispatched call reaches `A.add`, and
    compile once with `tooMany` and once with `wrongType`.
-5. Add operation `A.touch()` declaring no result type and declare
-   `body noResult using V on M::A::touch() { true }`, with no clause calling
+5. Start from the `ok` body on `A.add`. Add operation `A.touch()` declaring no
+   result type and declare `body noResult using V on M::A::touch() { true }`, with no clause calling
    `touch`. Compile the unit.
-6. Start from the `ok` body on `A.add` and the unit of step 5 with
-   `noResult` removed. Compile it and read `operation_bodies`.
+6. Take the unit of step 5 with `noResult` removed. Compile it and read `operation_bodies`.
 7. Give `A.touch` the declared result `Boolean` and the body
    `body touchOk using V on M::A::touch() { true }`. Compile and read
    `operation_bodies`.
