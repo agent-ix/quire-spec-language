@@ -835,3 +835,65 @@ fn a_divergence_before_the_horizon_is_found_though_later_events_are_cut() {
         named(&package, "PickedUp")
     );
 }
+
+/// FR-575-AC-1: constructs that need the counter model, taken from the
+/// existing protocol fixtures (`protocol_compensation`, `protocol_system`).
+#[trace("TC-1415", "FR-575-AC-1")]
+#[test]
+fn compensation_and_timed_await_answer_unsupported() {
+    use crate::fill::{contracts, protocol};
+    let compensating = admitted_source(&crate::protocol_compensation::pay("false"));
+    let cause = unsupported_construct(&compensating, &clause(&compensating))
+        .unwrap()
+        .expect("a compensation is outside the profile");
+    assert_eq!(cause.slug, UnsupportedSlug::Compensation);
+    assert_eq!(cause.node, named(&compensating, "Refund"));
+    let outcome = run(&compensating, "w");
+    assert!(matches!(
+        outcome.outcome,
+        AnalysisOutcome::Unsupported(ref found) if found.slug == UnsupportedSlug::Compensation
+    ));
+
+    let touch = crate::protocol_system::touch;
+    let waiting = admitted_source(
+        &(contracts("self.v = 0")
+            + &protocol(
+                "P",
+                "",
+                &format!(
+                    "sequence Main {{ {} await Wait after Start using t0 clock \"c\" within [0,1] \
+                     match event Seen by w as (seen: Boolean) {{ true }}; then {} timeout {} }}",
+                    touch("Start"),
+                    touch("Fine"),
+                    touch("Late"),
+                ),
+                "d",
+            )),
+    );
+    let cause = unsupported_construct(&waiting, &clause(&waiting))
+        .unwrap()
+        .expect("a timed await is outside the profile");
+    assert_eq!(cause.slug, UnsupportedSlug::TimedAwait);
+    assert_eq!(cause.node, named(&waiting, "Wait"));
+}
+
+/// FR-575-AC-1: an `outstanding` policy with `join all`, and a choice owned
+/// by the protocol rather than a role.
+#[trace("TC-1415", "FR-575-AC-1")]
+#[test]
+fn probe_outstanding_under_join_all_and_a_protocol_owned_choice() {
+    let outstanding = admitted_source(&source(
+        MEMBERS,
+        "sequence Main { parallel Par { branch a sequence Ay { } branch b sequence Bee { } } \
+         join all [a, b] outstanding cancel; }",
+    ));
+    let found = unsupported_construct(&outstanding, &clause(&outstanding)).unwrap();
+    assert_eq!(found.map(|cause| cause.slug), Some(UnsupportedSlug::UnsupportedJoin));
+    let owned = admitted_source(&source(
+        MEMBERS,
+        "sequence Main { choice Pick by Flow visible () { case a when { true } sequence A { } \
+         case b when { false } sequence B { } } }",
+    ));
+    let found = unsupported_construct(&owned, &clause(&owned)).unwrap();
+    assert_eq!(found.map(|cause| cause.slug), Some(UnsupportedSlug::UnassignedLocalChoice));
+}
