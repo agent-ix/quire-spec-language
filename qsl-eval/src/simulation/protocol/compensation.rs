@@ -39,6 +39,15 @@ use crate::simulation::model::{
 };
 use crate::value::evaluate_protocol_slot;
 
+/// The instance, compensation thread and registration an attempt step is
+/// enumerated for.
+#[derive(Clone, Copy)]
+struct AttemptOf<'a> {
+    instance: &'a Instance,
+    compensating: &'a Compensating,
+    registration: &'a Registration,
+}
+
 /// A template expression's value, or the finding of an undecided one.
 pub(super) enum Decided {
     Value(Value),
@@ -420,8 +429,17 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         if compensating.count >= template.attempts || Self::closed(instance, template) {
             return Ok(());
         }
-        let records =
-            self.attempt_records(state, instance, template, compensating, retry, gathered)?;
+        let records = self.attempt_records(
+            state,
+            AttemptOf {
+                instance,
+                compensating,
+                registration,
+            },
+            template,
+            retry,
+            gathered,
+        )?;
         if !self.gate(state, path, GatedStep::Attempt) {
             return Ok(());
         }
@@ -494,16 +512,16 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
     fn attempt_records(
         &self,
         state: &ProtocolState<M>,
-        instance: &Instance,
+        of: AttemptOf<'_>,
         template: &Template<'_>,
-        compensating: &Compensating,
         retry: bool,
         gathered: &mut Gathered<M>,
     ) -> Result<Vec<Bound>, ExpansionStop> {
-        let registration = instance
-            .registrations
-            .get(&compensating.registration)
-            .ok_or_else(|| ProtocolRefusal::fault("a-compensation-thread-has-its-registration"))?;
+        let AttemptOf {
+            instance,
+            compensating,
+            registration,
+        } = of;
         let values = self
             .model
             .values_of(template.attempt_type, &state.model, &mut gathered.budget)?

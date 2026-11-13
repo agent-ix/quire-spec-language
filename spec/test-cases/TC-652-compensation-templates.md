@@ -29,7 +29,7 @@ Scope: FR-207-AC-1 to FR-207-AC-7.
 7. Run FR-207-AC-7's `on each` variant with a protocol capture read by the
    template's activation guard, activation capture and recovery predicate,
    and the activation binder read by its registration capture, for the
-   triggers 3, 2 and 1.
+   triggers 3, 2, 1 and 0.
 
 Tag the tests `#[trace("TC-652", "FR-207-AC-n")]`.
 
@@ -49,5 +49,5 @@ Tag the tests `#[trace("TC-652", "FR-207-AC-n")]`.
   and `cend` alone after `ok` true; under `l.ok`, one retry `cattempt` with
   `ok` true and `cend` after either first attempt.
 - Step 7: `recovered` with `seen` true for the trigger 3, `unrecovered` with
-  `seen` false for the trigger 2, and `registered` until `finish` for the
-  trigger 1.
+  `seen` false for the trigger 2, and `registered` with `seen` false until
+  `finish` for the triggers 1 and 0.

@@ -17,10 +17,13 @@ use qsl_analyze::model_check::{
 use qsl_eval::model_subject::{
     AtomStop, ModelInstance, ModelLetters, ProtocolSubject, RoleBinding,
 };
-use qsl_eval::simulation::model::{ExpansionLimits, ModelSimState, TerminalClass};
+use qsl_eval::simulation::model::{
+    ExpansionLimits, ModelFinding, ModelSimState, ModelSystem, TerminalClass,
+};
 use qsl_eval::simulation::protocol::{
-    visible, AnchorName, BlockedThread, ClaimReads, ProtocolLocation, ProtocolSystem,
-    ProtocolTransition, RestKind, RestPoint, Sc, StepKind, ThreadPath, WaitCause,
+    visible, AnchorName, BlockedThread, ClaimReads, ProtocolLocation, ProtocolRefusal,
+    ProtocolSystem, ProtocolTransition, RestKind, RestPoint, Sc, StepKind, ThreadPath, Unsupported,
+    WaitCause,
 };
 use qsl_eval::simulation::{Location, SubjectSystem, TransitionSystem};
 use qsl_eval::temporal::AtomReading;
@@ -1898,39 +1901,60 @@ fn a_template_reads_the_protocol_captures_and_the_activation_binder() {
         registration(at).expect("a registration")
     };
 
+    let flag = |value: bool| serde_json::json!({"type": "boolean", "value": value});
     let (status, captures) = finished("3");
     assert_eq!(status, "recovered");
-    let seen_true = seen(&captures);
+    assert_eq!(seen(&captures), flag(true));
     let (status, captures) = finished("2");
     assert_eq!(status, "unrecovered");
-    assert_ne!(seen(&captures), seen_true);
+    assert_eq!(seen(&captures), flag(false));
 
-    let failed = run_to_fail("1");
-    let enabled = kinds(&reached, failed);
-    assert!(enabled.contains(&StepKind::Finish), "the instance can finish");
-    assert!(
-        !enabled.contains(&StepKind::CAttempt),
-        "the guard is false, so no compensation thread exists"
-    );
-    assert_eq!(
-        registration(failed).expect("a registration").0,
-        "registered"
-    );
+    // Triggers 0 and 1 make `big` false, so the guard `f and big` is false:
+    // along the whole run the registration stays `registered`, its `seen`
+    // false, and no `cattempt` is ever enabled.
+    for trigger in ["0", "1"] {
+        let mut at = started[trigger];
+        let mut states = vec![at];
+        for kind in [
+            StepKind::Attempt,
+            StepKind::Event,
+            StepKind::Event,
+            StepKind::Finish,
+        ] {
+            at = first_after(&reached, at, kind);
+            states.push(at);
+        }
+        let mut registered = 0;
+        for state in states {
+            assert!(
+                !kinds(&reached, state).contains(&StepKind::CAttempt),
+                "trigger {trigger}: no compensation thread"
+            );
+            if let Some((status, captures)) = registration(state) {
+                assert_eq!(status, "registered", "trigger {trigger}");
+                assert_eq!(seen(&captures), flag(false), "trigger {trigger}");
+                registered += 1;
+            }
+        }
+        assert!(
+            registered >= 2,
+            "trigger {trigger}: registered until finish"
+        );
+    }
 }
 
-/// FR-381 (TC-653): a role whose `until` predicate reads the protocol capture
-/// `j` of type `Reference<M::Cell>` checks, and `retire(r, o)` is enabled
-/// exactly where the predicate holds. The fixture names no population to
-/// `lookup`, so FR-208-AC-6's population half is not exercised here. With
+/// Not a test of FR-208-AC-6, so it cites no criterion: a role whose `until`
+/// predicate reads the protocol capture `j` of type `Reference<M::Cell>`
+/// checks, and `retire(r, o)` is enabled exactly where the predicate holds.
+/// FR-208-AC-6 itself needs `lookup` over a named population in a role
+/// predicate, which the protocol slot checker does not yet resolve (QSL-968). With
 /// `j = k` (the cell `c`) and the cells `{c, d}` both at `v = 1`, only `c` retires; with the further clause `r.v >= 2`
 /// nothing retires until the protocol's `inc` raises `c` to 2.
 #[test]
 fn a_retire_predicate_reads_a_protocol_capture() {
     let capture = "capture j: Reference<M::Cell> = k;";
     let retire_at = |threshold: u64, run: &str| -> Vec<(usize, BTreeSet<String>)> {
-        let until = format!(
-            "until(r.v >= {threshold} and r = j)"
-        );
+        let until = format!("until(r.v >= {threshold} and r = j)");
         let world = World::new(
             &with_captures(&unit(ORIGIN, &role(2, &until), "", run), capture),
             &["c", "d"],
@@ -1967,5 +1991,59 @@ fn a_retire_predicate_reads_a_protocol_capture() {
         gated[1].1,
         BTreeSet::from(["c".to_owned()]),
         "retires once r.v reaches 2"
+    );
+}
+
+/// An undecided protocol capture (`6 mod (1 - 1)` is undefined): under `on
+/// each` no `activate` step starts an instance and each trigger records a
+/// `ProtocolExpressionUndetermined` finding naming the capture; under `on
+/// origin` the system refuses at its initial state with
+/// `Unsupported::UndecidedInitialGuard`.
+#[trace("TC-654")]
+#[test]
+fn an_undecided_protocol_capture_is_a_finding_on_each_and_a_refusal_on_origin() {
+    let capture = "capture z: Boolean = 6 mod (1 - 1) >= 0;";
+    let run = "sequence Main { attempt T by w on M::Cell::inc contracts [IncPre, IncPost] \
+               as (t: Boolean) { true }; }";
+    let each = World::new(
+        &with_captures(&unit(EACH, "", "", run), capture),
+        &["c"],
+        &[0],
+    );
+    let subject = each.subject();
+    let system = sc_system(&subject).with_max_live_instances(1);
+    let reached = reachable(&system);
+    assert!(
+        activations(&system, &reached).is_empty(),
+        "no instance starts"
+    );
+    let findings = system
+        .successors(&reached[0].state)
+        .expect("expands")
+        .findings;
+    assert!(
+        findings.iter().any(|finding| matches!(
+            finding,
+            ModelFinding::ProtocolExpressionUndetermined { node, .. } if node.ends_with("::z")
+        )),
+        "{findings:?}"
+    );
+
+    let origin = World::new(
+        &with_captures(&unit(ORIGIN, "", "", run), capture),
+        &["c"],
+        &[0],
+    );
+    let subject = origin.subject();
+    let model = ModelSystem::new(subject.model.simulation.clone()).expect("the subject admits");
+    let refusal = ProtocolSystem::new(model, &subject, Sc)
+        .err()
+        .expect("refuses");
+    assert!(
+        matches!(
+            refusal,
+            ProtocolRefusal::Unsupported(Unsupported::UndecidedInitialGuard)
+        ),
+        "{refusal:?}"
     );
 }

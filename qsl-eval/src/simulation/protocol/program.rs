@@ -827,10 +827,16 @@ impl<'a> Program<'a> {
                 steps.then_some((owner.node, index))
             })
             .collect();
-        // A template's expressions read the activation binder too (FR-381),
-        // at their own frame positions, so any template keeps it.
+        // Of a template's stages only a registration capture reads the
+        // activation binder (FR-381's stage table), at frame position 2 after
+        // the forward binder and `over`.
         let trigger_read = activation_slot.is_some_and(|slot| {
-            !templates.is_empty()
+            templates.iter().any(|template| {
+                template
+                    .registration
+                    .iter()
+                    .any(|(_, initializer)| initializer.reads_local(2))
+            })
                 || readers.get(slot).is_some_and(|readers| !readers.is_empty())
                 || replicated.iter().any(|(_, role)| {
                     matches!(role.lifetime, Lifetime::Until(until) if until.reads_local(slot))
