@@ -1879,7 +1879,7 @@ fn a_template_reads_the_protocol_captures_and_the_activation_binder() {
             .as_array()
             .expect("a map")
             .iter()
-            .find(|entry| entry["key"] == "seen")
+            .find(|entry| entry["key"]["value"] == "seen")
             .map(|entry| entry["value"].clone())
             .expect("the registration capture seen")
     };
@@ -1916,11 +1916,11 @@ fn a_template_reads_the_protocol_captures_and_the_activation_binder() {
 /// FR-381 (TC-653): a role whose `until` predicate reads the protocol capture
 /// `j` of type `Reference<M::Cell>` checks, and `retire(r, o)` is enabled
 /// exactly where the predicate holds. The fixture names no population to
-/// `lookup`, so FR-208-AC-6's population half is not exercised here: with `j = k` (the cell `c`) and the cells `{c, d}`
-/// both at `v = 1`, only `c` retires; with the further clause `r.v >= 2`
+/// `lookup`, so FR-208-AC-6's population half is not exercised here. With
+/// `j = k` (the cell `c`) and the cells `{c, d}` both at `v = 1`, only `c` retires; with the further clause `r.v >= 2`
 /// nothing retires until the protocol's `inc` raises `c` to 2.
 #[test]
-fn a_retire_predicate_reads_a_protocol_capture_and_the_population_it_names() {
+fn a_retire_predicate_reads_a_protocol_capture() {
     let capture = "capture j: Reference<M::Cell> = k;";
     let retire_at = |threshold: u64, run: &str| -> Vec<(usize, BTreeSet<String>)> {
         let until = format!(
