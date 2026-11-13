@@ -23,6 +23,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/ADR-015
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-577
+    type: references
   - target: ix://agent-ix/quire-specification/FR-322
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-323
@@ -176,6 +178,12 @@ site from text.
   - a supplied library's own refusal: `Dependency`, with the library path;
   - the unit's own source, forms, profile, assembly, check, link or emit
     refusal: `Compile`.
+- `call_site` SHALL carry on `CallSiteRefusal::Compile`, beside its code and
+  rendered message, `region: Option<SourceRegion>` (the `qsl_replay` root type): the
+  region the spine `CompileRefusal` names for its first refusal, or `None`
+  when it names none. For a check refusal located at an expression, such as
+  FR-577's `unproved-range` at an arithmetic node, the region SHALL span
+  exactly that expression's source bytes in the unit.
 - For a function selection, `call_site` SHALL resolve the name by
   one-segment name lookup in the compiled package's declarations (OQ-5). A
   name with zero or more than one segment, or naming no declared function,
@@ -456,6 +464,7 @@ site from text.
 | FR-121-AC-34 | For the AC-32 unit with its own `function big using v(x: Int[0, 9]): Boolean pure { x < 2 }` added, `{test/units, big}` returns the library's `function` node (the `dependency_reference` `node` of `q`'s call), which differs from the `function` the `QualifiedName` `big` selection returns for the unit's own `big`; neither selection answers with the other's node. | Test (TC-516) |
 | FR-121-AC-35 | For the AC-32 unit, `{test/other, big}` with `test/other` also supplied but imported by no `import`, `{test/absent, big}` naming no supplied library, and, for a unit importing only `test/wrap` whose source imports `test/units`, `{test/units, big}` (a transitive-only library) each refuse `CallSiteRefusal::UnknownImport`, pairing the `ImportedFunctionName` with the unit's compiled package's own `package_id`, with code `missing_import` and a message leading with `missing_import/missing-selection`; each maps by `TerminalValue::from_call_site_refusal` to `Declined` with `InvalidInput` and its code. | Test (TC-516) |
 | FR-121-AC-36 | For the AC-32 unit, `{test/units, nope}` refuses `CallSiteRefusal::UnknownImportedFunction` (code `missing_declaration`, message leading with `missing_declaration/missing-name`), pairing the `ImportedFunctionName` with `test/units`'s `package_id`. With `test/units` also declaring a record `R` and `function first using v(r: R): Boolean pure { true }`, `{test/units, first}` refuses `CallSiteRefusal::NotImportable` (code `ill_typed`, message leading with `ill_typed/operator-ineligible`), paired with `test/units`'s `package_id`. | Test (TC-516) |
+| FR-121-AC-37 | For FR-577-AC-3's unit (the bank withdrawal postcondition with no precondition), `call_site` refuses `CallSiteRefusal::Compile` whose `region` is `Some`, names the unit's source and spans exactly the byte offsets of the text `pre(self.balance) - amount`, and whose `code` is `undefined_expression`. | Test (TC-1416) |
 
 ## Dependencies
 

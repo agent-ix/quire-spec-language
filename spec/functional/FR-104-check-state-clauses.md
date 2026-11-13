@@ -27,6 +27,8 @@ relationships:
     type: references
   - target: ix://agent-ix/quire-spec-language/FR-093
     type: traces_to
+  - target: ix://agent-ix/quire-spec-language/FR-577
+    type: references
   - target: ix://agent-ix/quire-specification/FR-153
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-149
@@ -206,7 +208,11 @@ body is typed, so S3 resolves and refuses it (see "Requirements").
   type `Int[lo,hi]` and the other, ignoring parentheses, is a binary `+`, `-`
   or `*` whose operands are `Integer` or `Int[..]`, the checker SHALL type the
   arithmetic node `Int[lo,hi]` with the obligation that its interval, under the
-  facts that hold where it executes, lies inside `[lo,hi]`, and SHALL refuse an
+  facts that hold where it executes, lies inside `[lo,hi]`. Those facts are
+  the guard facts of "Definedness facts" below, the difference facts
+  [FR-577](./FR-577-discharge-a-postcondition-s-range-obligations-from-its-operation-s-preconditions.md)
+  adds, and, in a postcondition, the facts of its operation's preconditions
+  that FR-577 transfers. The checker SHALL refuse an
   unproved obligation with `undefined_expression`/`unproved-range` located at
   the arithmetic node, never at the equality, without clamping, wrapping or
   widening the value.
@@ -317,6 +323,12 @@ body is typed, so S3 resolves and refuses it (see "Requirements").
   the checker SHALL refuse `undefined_expression`/`unproved-presence` at the
   `value`. QSpec's `present(pre(self.parent)) implies value(self.parent)`
   refuses this way.
+- An integer ordering or equality against an integer literal adds an
+  interval fact. An integer ordering between two non-literal paths adds the
+  difference bound FR-577 defines, and only that bound. A precondition's
+  facts reach a postcondition of the same operation and context only as
+  FR-577 states. Every other comparison of two non-literal operands adds no
+  fact.
 
 ### Requirements
 

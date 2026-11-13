@@ -582,9 +582,10 @@ split across two units in both link orders, FR-120-AC-20 for D10's
 `absent-key` form). The dispatch path conjoins the own
 clauses through `view_clauses` (`dispatch_link.rs`) and disjoins the result
 with the redefined member's through `effective_terms`
-(`checked_dispatch.rs`). On the spine every operation record's `redefines` is
-`None` (`qsl-semantics/src/model/intake.rs:1444`), so the applicable clauses
-are the selected member's own.
+(`checked_dispatch.rs`). On the spine intake reads an operation's inline
+`redefines` property as the key of the operation it redefines (FR-103-AC-10),
+so a member that redefines another, or is redefined, has the redefinition
+family's applicable clauses; a member in no family has its own.
 The effective postcondition is the conjunction of the applicable `post`
 clauses, and `true` when none applies.
 
