@@ -1156,12 +1156,14 @@ fn a_bound_refines_neither_a_sum_nor_a_difference_written_backwards() {
     }
 }
 
-/// A node ceiling below one large precondition's body, after a small
-/// postcondition that fits under it: checking trips the ceiling at the
-/// precondition on every run and the stage limit is the refusal returned.
+/// The documented node-meter order (FR-577 Outputs): the `s3.nodes` meter is
+/// cumulative over the package and preconditions are checked first, so `Big`
+/// uses the ceiling up and the earlier, small `Credit` is the first clause to
+/// trip it. Source-order checking would trip only at `Big`; the difference is
+/// accepted.
 #[trace("TC-1416", "FR-577")]
 #[test]
-fn a_node_limit_tripped_at_a_precondition_returns_the_limit_refusal() {
+fn the_cumulative_node_meter_trips_at_the_earlier_postcondition() {
     let credit = "post Credit using v on Bank::Account::deposit \
                   { self.balance = pre(self.balance) - amount }\n";
     let big = clause(
@@ -1192,6 +1194,16 @@ fn a_node_limit_tripped_at_a_precondition_returns_the_limit_refusal() {
         limits,
     )
     .expect_err("the unit is refused");
-    let message = format!("{refused:?}");
-    assert!(message.contains("S3Nodes"), "{message}");
+    let crate::spine::CompileRefusal::Limit(limit) = &*refused else {
+        panic!("expected the stage limit, got {refused:?}");
+    };
+    assert!(format!("{limit:?}").contains("S3Nodes"), "{limit:?}");
+    let Some(qsl_foundation::diagnostic::Locus::Region(region)) = limit.locus() else {
+        panic!("the limit is located: {refused:?}");
+    };
+    // The first refusal is inside `Credit`, which precedes `Big` in the unit.
+    assert!(
+        (region.start() as usize) < text.find("pre Big").unwrap(),
+        "{refused:?}"
+    );
 }

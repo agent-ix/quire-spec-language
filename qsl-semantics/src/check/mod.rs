@@ -3357,7 +3357,7 @@ impl PackageDeclarations {
                         }
                     }
                     Err(StageFailure::Cancelled(_)) => {
-                        stopped_at = stopped_at_or(stopped_at, index)
+                        stopped_at.get_or_insert(index);
                     }
                     Err(StageFailure::Fault(fault)) => {
                         refusals.push(CheckRefusal {
