@@ -2150,7 +2150,8 @@ mod tests {
     }
 
     /// FR-489-AC-5: linked registrations are borrowed from the EN-1, EN-4, EN-5
-    /// and EN-6 engines and retain each engine's own identity and advertised kind.
+    /// and EN-6 engines, the two check arms and the protocol analysis engine,
+    /// and retain each engine's own identity and advertised kinds.
     #[trace("TC-1272", "FR-489-AC-5")]
     #[test]
     fn linked_engine_registrations_expose_the_owned_descriptors() {
@@ -2168,11 +2169,15 @@ mod tests {
                 "en-5",
                 "en-6",
                 "value-checker",
-                "contract-checker"
+                "contract-checker",
+                "protocol-analysis"
             ]
         );
-        let [en1, en4, en5, _en6, value, contract] = registrations.as_slice() else {
-            panic!("the linked engine set contains EN-1, EN-4, EN-5, EN-6 and the two check arms");
+        let [en1, en4, en5, _en6, value, contract, protocol] = registrations.as_slice() else {
+            panic!(
+                "the linked engine set contains EN-1, EN-4, EN-5, EN-6, the two check arms and \
+                 the protocol analysis engine"
+            );
         };
         assert!(registrations
             .iter()
@@ -2192,6 +2197,12 @@ mod tests {
         assert!(contract
             .advertises()
             .any(|(kind, _)| kind == Capability::OperationContract));
+        let mut kinds: Vec<_> = protocol.advertises().map(|(kind, _)| kind).collect();
+        kinds.sort_by_key(|kind| kind.to_wire());
+        assert_eq!(
+            kinds,
+            [Capability::LocalProjection, Capability::Realizability]
+        );
     }
 
     /// FR-281-AC-10: a second engine of one `BackendId` is refused as
