@@ -16,7 +16,7 @@ use qsl_replay::protocol_analysis::{
     RealizabilityCounterexample, RealizabilityWitness, RunBudget, RunLimit, StrategyAction,
     UnsupportedSlug,
 };
-use qsl_replay::{DecidingElement, SeparatingWitnessRecord};
+use qsl_replay::{DecidingElement, ModelCheckLimit, SeparatingWitnessRecord};
 use qsl_semantics::model::observation::DocumentRef;
 use quire_contract_model::{CheckedNodeId, CheckedPackageV2};
 
@@ -399,7 +399,7 @@ fn an_unstated_premise_or_the_horizon_is_inconclusive() {
     assert_eq!(
         fixture.decide(request).outcome,
         AnalysisOutcome::Failed(RunLimit {
-            limit: "max_states",
+            limit: ModelCheckLimit::MaxStates,
             value: 1
         })
     );

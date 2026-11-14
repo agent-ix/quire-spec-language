@@ -81,7 +81,9 @@ impl ResultLabel {
             (Self::Inconclusive, _) => Category::Inconclusive,
             (Self::Unsupported, _) => Category::Unsupported,
             (Self::Failed, Execution::ResourceIncomplete) => Category::Incomplete,
-            (Self::Failed, Execution::Completed | Execution::Failed) => Category::InternalFailure,
+            (Self::Failed, Execution::Completed | Execution::Failed | Execution::Unsupported) => {
+                Category::InternalFailure
+            }
         }
     }
 }
@@ -95,6 +97,8 @@ pub enum Execution {
     ResourceIncomplete,
     /// The tool failed.
     Failed,
+    /// The provider does not decide the item: `unsupported` (QSpec FR-241).
+    Unsupported,
 }
 
 /// The record's truth.

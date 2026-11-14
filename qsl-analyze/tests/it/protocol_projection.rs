@@ -13,7 +13,7 @@ use qsl_replay::protocol_analysis::{
     UnsupportedSlug, WalkDisagreement,
 };
 use qsl_replay::spine::replay_protocol_analysis;
-use qsl_replay::{DecidingElement, ObservationIdentity, ReplaySource};
+use qsl_replay::{DecidingElement, ModelCheckLimit, ObservationIdentity, ReplaySource};
 use quire_contract_model::{
     CheckedNodeId, CheckedPackageDispatchResult, CheckedPackageReadLimits, CheckedPackageV2,
 };
@@ -496,7 +496,7 @@ fn a_run_limit_fails_the_run_naming_the_limit() {
     };
     match project(&package, limited).unwrap().outcome {
         AnalysisOutcome::Failed(limit) => {
-            assert_eq!((limit.limit, limit.value), ("max_states", 3));
+            assert_eq!((limit.limit, limit.value), (ModelCheckLimit::MaxStates, 3));
         }
         other => panic!("expected a run-limit failure: {other:?}"),
     }
@@ -507,7 +507,7 @@ fn a_run_limit_fails_the_run_naming_the_limit() {
     };
     assert!(matches!(
         project(&package, limited).unwrap().outcome,
-        AnalysisOutcome::Failed(limit) if limit.limit == "max_transitions"
+        AnalysisOutcome::Failed(limit) if limit.limit == ModelCheckLimit::MaxTransitions
     ));
 }
 
@@ -994,7 +994,7 @@ fn comparing_nested_runs_is_charged_to_the_transition_limit() {
     };
     match project(&package, tight).unwrap().outcome {
         AnalysisOutcome::Failed(limit) => {
-            assert_eq!((limit.limit, limit.value), ("max_transitions", built));
+            assert_eq!((limit.limit, limit.value), (ModelCheckLimit::MaxTransitions, built));
         }
         other => panic!("expected a run-limit failure: {other:?}"),
     }

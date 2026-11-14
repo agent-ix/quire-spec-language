@@ -340,7 +340,7 @@ fn a_run_limit_is_carried_by_the_outcome_not_the_key() {
     let failed = |value| ProtocolAnalysisResult::<(), ()> {
         key: key.clone(),
         outcome: AnalysisOutcome::Failed(RunLimit {
-            limit: "max_states",
+            limit: crate::ModelCheckLimit::MaxStates,
             value,
         }),
     };

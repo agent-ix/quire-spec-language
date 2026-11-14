@@ -31,13 +31,18 @@ use qsl_eval::simulation::protocol::{
 use qsl_eval::simulation::ExpansionStop;
 use qsl_eval::simulation::TransitionSystem;
 use qsl_package::protocol_view::{protocol_view, ViewRefusal};
+use qsl_replay::protocol_analysis::arena::{
+    self, Arena, ArenaError, ArenaNames, FindingValue, RoleStep, Seen,
+};
 use qsl_replay::protocol_analysis::{
     AnalysisOutcome, AnalyzerIdentity, AssessedRoot, AssessedRootDraft, BoundsDraft, BranchDefeat,
     Closure, DeliveryPremise, InconclusiveCause, MissingMember, ObservationClass, Observed,
     PremiseRefusal, ProtocolAnalysisKey, ProtocolAnalysisResult, ProtocolPremises,
-    RealizabilityCounterexample, RealizabilityKeyDraft, RealizabilityWitness, RoleStrategy,
+    replay_realizability_counterexample, RealizabilityCounterexample, RealizabilityDisagreement,
+    RealizabilityKeyDraft, RealizabilityWitness, RoleStrategy,
     RunBudget, RunLimit, StrategyAction, UnsupportedCause, UnsupportedSlug,
 };
+use qsl_replay::ModelCheckLimit;
 use qsl_semantics::model::observation::AdmissionFailure;
 use quire_contract_model::{CheckedNodeId, CheckedPackageV2};
 
@@ -114,6 +119,16 @@ impl From<ExpansionStop> for RealizabilityRefusal {
     }
 }
 
+impl From<ArenaError> for RealizabilityRefusal {
+    fn from(error: ArenaError) -> Self {
+        match error {
+            ArenaError::View(refusal) => Self::View(refusal),
+            ArenaError::Stopped(stop) => Self::Stopped(stop),
+            ArenaError::UnnamedNode(path) => Self::UnnamedNode(path),
+        }
+    }
+}
+
 /// The settlement of one realizability analysis (PA-20).
 pub type RealizabilityOutcome =
     ProtocolAnalysisResult<RealizabilityWitness, RealizabilityCounterexample>;
@@ -170,14 +185,6 @@ fn every(values: impl IntoIterator<Item = Value>) -> Value {
     joined
 }
 
-/// A role's step: the role, its action and what it observes.
-#[derive(Clone, Debug)]
-struct RoleStep {
-    role: usize,
-    action: StrategyAction,
-    observed: Observed,
-}
-
 /// One explored move: its step, the role that takes it (none for an
 /// environment step) and the child node.
 struct Move {
@@ -197,134 +204,9 @@ struct Node {
     value: Value,
 }
 
-/// The names the arena's steps resolve to in the linked package.
-struct Names {
-    /// Each control by its declared name; `None` for a shared name.
-    controls: BTreeMap<String, Option<CheckedNodeId>>,
-    /// Each channel by its declared name; `None` for a shared name.
-    channels: BTreeMap<String, Option<CheckedNodeId>>,
-    /// Each channel's (sender, receiver) roles, by channel node.
-    ends: BTreeMap<CheckedNodeId, (usize, usize)>,
-    /// The roles, ascending.
-    roles: Vec<CheckedNodeId>,
-    /// The progress and terminal obligation: the `finish` member.
-    finish: CheckedNodeId,
-    /// The holder of the safety obligations: the clause.
-    clause: CheckedNodeId,
-}
-
-impl Names {
-    fn new(
-        package: &CheckedPackageV2,
-        protocol: &CheckedNodeId,
-        premises: &ProtocolPremises,
-    ) -> Result<Self, RealizabilityRefusal> {
-        let view = protocol_view(package, protocol)?;
-        let graph = package.resolved_graph();
-        // `qsl-eval` names a control by its path through the `run` tree with
-        // case labels (`Main/Decide/yes/Ship/PickIt`) and a channel by its
-        // qualified name (`Flow::Pick`); the package declares each under the
-        // clause by its own name. A name two nodes share resolves to neither.
-        let name_of = |id: &CheckedNodeId| {
-            graph
-                .nodes
-                .iter()
-                .find(|node| &node.node_id == id)
-                .and_then(|node| node.declaration.as_ref())
-                .and_then(|declaration| declaration.qualified_name.last())
-                .map(|segment| segment.to_string())
-        };
-        let mut controls = BTreeMap::new();
-        let mut channels = BTreeMap::new();
-        for (held, ids) in [
-            (&mut controls, view.controls()),
-            (&mut channels, view.channels()),
-        ] {
-            for id in ids {
-                if let Some(name) = name_of(id) {
-                    held.entry(name)
-                        .and_modify(|shared: &mut Option<CheckedNodeId>| *shared = None)
-                        .or_insert_with(|| Some((*id).clone()));
-                }
-            }
-        }
-        let mut roles: Vec<CheckedNodeId> = view.roles().iter().map(|id| (*id).clone()).collect();
-        roles.sort();
-        let index = |id: &CheckedNodeId| roles.binary_search(id).ok();
-        let mut ends = BTreeMap::new();
-        for channel in &premises.channels {
-            if let (Some(sender), Some(receiver)) =
-                (index(&channel.sender), index(&channel.receiver))
-            {
-                ends.insert(channel.channel.clone(), (sender, receiver));
-            }
-        }
-        Ok(Self {
-            controls,
-            channels,
-            ends,
-            finish: view.finish().clone(),
-            clause: view.clause().clone(),
-            roles,
-        })
-    }
-
-    /// The control `qsl-eval` names by the path `path`: `qsl-eval` exposes
-    /// a step's control only as this string.
-    #[ix_trace_rs::string_edge]
-    fn node(&self, path: &str) -> Result<&CheckedNodeId, RealizabilityRefusal> {
-        let name = path.rsplit('/').next().unwrap_or(path);
-        self.controls
-            .get(name)
-            .and_then(Option::as_ref)
-            .ok_or_else(|| RealizabilityRefusal::UnnamedNode(path.to_owned()))
-    }
-
-    /// The (sender, receiver) roles of the channel `qsl-eval` names
-    /// `qualified`: `qsl-eval` exposes a step's channel only as this string.
-    #[ix_trace_rs::string_edge]
-    fn channel(&self, qualified: &str) -> Result<(usize, usize), RealizabilityRefusal> {
-        let name = qualified.rsplit("::").next().unwrap_or(qualified);
-        self.channels
-            .get(name)
-            .and_then(Option::as_ref)
-            .and_then(|channel| self.ends.get(channel))
-            .copied()
-            .ok_or_else(|| RealizabilityRefusal::UnnamedNode(qualified.to_owned()))
-    }
-}
-
-/// What a play has shown its roles: each started instance's captures, as
-/// bound when the play first reached the instance live, by ordinal, and
-/// each role's own sends and receives with their records, in step order.
-#[derive(Clone)]
-struct Seen {
-    captures: BTreeMap<u64, Vec<u8>>,
-    steps: Vec<ObservationClass>,
-}
-
-impl Seen {
-    fn new(roles: usize) -> Self {
-        Self {
-            captures: BTreeMap::new(),
-            steps: vec![Vec::new(); roles],
-        }
-    }
-
-    /// This play extended by `step`, when a role takes it.
-    fn extended(&self, step: Option<&RoleStep>) -> Self {
-        let mut next = self.clone();
-        if let Some(step) = step {
-            next.steps[step.role].push(step.observed.clone());
-        }
-        next
-    }
-}
-
 /// The game: the arena's system, the names and the bounds.
 struct Game<'s, 'a> {
-    system: &'s ProtocolSystem<'a, Sc>,
-    names: Names,
+    arena: Arena<'s, 'a>,
     max_depth: u64,
     max_history: u64,
     budget: RunBudget,
@@ -334,7 +216,7 @@ fn exceeds(count: usize, bound: u64) -> bool {
     u64::try_from(count).unwrap_or(u64::MAX) > bound
 }
 
-fn charge(count: usize, limit: &'static str, value: u64) -> Result<(), RunLimit> {
+fn charge(count: usize, limit: ModelCheckLimit, value: u64) -> Result<(), RunLimit> {
     if exceeds(count, value) {
         Err(RunLimit { limit, value })
     } else {
@@ -342,120 +224,24 @@ fn charge(count: usize, limit: &'static str, value: u64) -> Result<(), RunLimit>
     }
 }
 
-/// The findings' value: a violated invariant loses the play; an undecided
-/// evaluation, or a weak-access shape (which `qsl-eval` reports with no
-/// successor, so the terminal class would otherwise blame `finish`), leaves
-/// it open; the FR-220 deferred and shared records classify accesses
-/// without violating an obligation.
+/// The value a state's findings give a play.
 fn finding_value(findings: &[ModelFinding]) -> Option<Value> {
-    let mut value = None;
-    for finding in findings {
-        match finding {
-            ModelFinding::InvariantViolated { .. } => return Some(Value::Lose),
-            ModelFinding::InvariantUndetermined { .. }
-            | ModelFinding::ProtocolExpressionUndetermined { .. }
-            | ModelFinding::ContractUndetermined { .. }
-            | ModelFinding::WeakAccessShape(_) => {
-                value.get_or_insert(Value::Cut(Open::Undecided));
-            }
-            ModelFinding::WeakAccessDeferred { .. } | ModelFinding::WeakAccessShared { .. } => {}
-        }
-    }
-    value
+    arena::finding_value(findings).map(|value| match value {
+        FindingValue::Lose => Value::Lose,
+        FindingValue::Undecided => Value::Cut(Open::Undecided),
+    })
 }
 
 impl Game<'_, '_> {
-    /// The role that takes `transition`, with its action and observation;
-    /// `None` for an environment step (PA-16).
-    fn classify(
-        &self,
-        transition: &ProtocolTransition,
-    ) -> Result<Option<RoleStep>, RealizabilityRefusal> {
-        let unnamed = |what: &str| RealizabilityRefusal::UnnamedNode(what.to_owned());
-        let path = transition.node().unwrap_or_default();
-        let (role, receive_from) = match transition.kind() {
-            StepKind::Send => {
-                let channel = transition
-                    .send_record()
-                    .map(|record| record.channel())
-                    .ok_or_else(|| unnamed(path))?;
-                (self.names.channel(channel)?.0, None)
-            }
-            StepKind::Receive => {
-                let (channel, _, _) = transition.received().ok_or_else(|| unnamed(path))?;
-                let (sender, receiver) = self.names.channel(channel)?;
-                (receiver, Some(sender))
-            }
-            _ => return Ok(None),
-        };
-        let node = self.names.node(path)?.clone();
-        let payload = self
-            .system
-            .binder_record_bytes(transition)?
-            .unwrap_or_default();
-        Ok(Some(match receive_from {
-            Some(sender) => RoleStep {
-                role,
-                action: StrategyAction::Receive {
-                    peer: self.names.roles[sender].clone(),
-                },
-                observed: Observed::Received { node, payload },
-            },
-            None => RoleStep {
-                role,
-                action: StrategyAction::Send { node: node.clone() },
-                observed: Observed::Sent { node, payload },
-            },
-        }))
-    }
-
-    /// `seen` with the captures of every instance live at `state` that it
-    /// has not bound yet. An instance's captures are bound once, when the
-    /// play first reaches it live, and never re-read: they are frozen while
-    /// it lives and gone once it finishes.
-    fn bind(
-        &self,
-        state: &ProtocolState<Sc>,
-        mut seen: Seen,
-    ) -> Result<Seen, RealizabilityRefusal> {
-        for (instance, payload) in self.system.capture_bytes(state)? {
-            seen.captures.entry(instance).or_insert(payload);
-        }
-        Ok(seen)
-    }
-
-    /// The observation of every role after the play that showed it `seen`:
-    /// the bound captures every role holds (FR-218), then the role's own
-    /// sends and receives in step order (PA-16). The one function both the
-    /// search and the replay walk compute classes with.
-    fn observations(seen: &Seen) -> Vec<ObservationClass> {
-        seen.steps
-            .iter()
-            .map(|own| {
-                seen.captures
-                    .iter()
-                    .map(|(instance, payload)| Observed::Captures {
-                        instance: *instance,
-                        payload: payload.clone(),
-                    })
-                    .chain(own.iter().cloned())
-                    .collect()
-            })
-            .collect()
-    }
-
-    /// Whether some role's own steps exceed `max_history`.
     fn too_long(&self, seen: &Seen) -> bool {
-        seen.steps
-            .iter()
-            .any(|own| exceeds(own.len(), self.max_history))
+        seen.exceeds(self.max_history)
     }
 
     /// Explore the arena to the bounds and evaluate every node (PA-17).
     fn explore(&self) -> Result<Result<Vec<Node>, RunLimit>, RealizabilityRefusal> {
         let mut nodes: Vec<Node> = Vec::new();
         let mut edges = 0usize;
-        let roles = self.names.roles.len();
+        let roles = self.arena.names.roles().len();
         // A pending node: its state, the parent move it hangs off, its
         // depth and what its play showed the roles.
         type Pending = (ProtocolState<Sc>, Option<(usize, usize)>, usize, Seen);
@@ -470,32 +256,32 @@ impl Game<'_, '_> {
         // a child's id is larger than its parent's.
         while let Some((state, parent, depth, seen)) = stack.pop() {
             let id = nodes.len();
-            if let Err(limit) = charge(id + 1, "max_states", self.budget.max_states) {
+            if let Err(limit) = charge(id + 1, ModelCheckLimit::MaxStates, self.budget.max_states) {
                 return Ok(Err(limit));
             }
             if let Some((from, at)) = parent {
                 nodes[from].moves[at].child = id;
             }
-            let seen = self.bind(&state, seen)?;
-            let (expansion, terminal) = self.system.successors_and_terminal(&state)?;
+            let seen = self.arena.bind(&state, seen)?;
+            let (expansion, terminal) = self.arena.system.successors_and_terminal(&state)?;
             let mut node = Node {
                 parent,
                 moves: Vec::new(),
                 lost: None,
                 leaf: true,
                 value: Value::Cut(Open::Horizon),
-                observations: Self::observations(&seen),
+                observations: seen.observations(),
             };
             if let Some(value) = finding_value(&expansion.findings) {
                 node.value = value;
                 if value == Value::Lose {
-                    node.lost = Some(self.names.clause.clone());
+                    node.lost = Some(self.arena.names.clause().clone());
                 }
             } else if expansion.successors.is_empty() {
                 node.value = match terminal {
                     TerminalClass::Intended => Value::Win,
                     TerminalClass::Deadlocked => {
-                        node.lost = Some(self.names.finish.clone());
+                        node.lost = Some(self.arena.names.finish().clone());
                         Value::Lose
                     }
                     TerminalClass::Undefined { .. } | TerminalClass::Undecided { .. } => {
@@ -510,11 +296,11 @@ impl Game<'_, '_> {
             } else {
                 node.leaf = false;
                 edges += expansion.successors.len();
-                if let Err(limit) = charge(edges, "max_transitions", self.budget.max_transitions) {
+                if let Err(limit) = charge(edges, ModelCheckLimit::MaxTransitions, self.budget.max_transitions) {
                     return Ok(Err(limit));
                 }
                 for (at, (transition, next)) in expansion.successors.into_iter().enumerate().rev() {
-                    let step = self.classify(&transition)?;
+                    let step = self.arena.classify(&transition)?;
                     stack.push((
                         next,
                         Some((id, at)),
@@ -639,7 +425,7 @@ type Settled = AnalysisOutcome<RealizabilityWitness, RealizabilityCounterexample
 struct Admitted<'a> {
     key: ProtocolAnalysisKey,
     root: AssessedRoot,
-    names: Names,
+    names: ArenaNames,
     system: Result<ProtocolSystem<'a, Sc>, Settled>,
     max_depth: u64,
     max_history: u64,
@@ -696,7 +482,7 @@ fn admit<'a>(
         }
     }
     let root = AssessedRoot::new(request.assessed_root)?;
-    let names = Names::new(package, &request.protocol, &premises)?;
+    let names = ArenaNames::new(package, &request.protocol, &premises)?;
     let not_stated = |member: &'static str, value: &Option<Option<BTreeSet<String>>>| {
         matches!(value, Some(None)).then_some(Settled::Inconclusive(
             InconclusiveCause::PremiseNotStated { member },
@@ -716,7 +502,7 @@ fn admit<'a>(
             Err(ProtocolRefusal::Unsupported(construct)) => {
                 Err(Settled::Unsupported(UnsupportedCause {
                     slug: UnsupportedSlug::EvaluatorUnsupported,
-                    node: names.clause.clone(),
+                    node: names.clause().clone(),
                     detail: Some(construct.construct().to_owned()),
                 }))
             }
@@ -751,8 +537,10 @@ pub fn realize(
         Err(outcome) => return Ok(result(key, outcome)),
     };
     let game = Game {
-        system: &system,
-        names: admitted.names,
+        arena: Arena {
+            system: &system,
+            names: admitted.names,
+        },
         max_depth: admitted.max_depth,
         max_history: admitted.max_history,
         budget,
@@ -767,11 +555,11 @@ pub fn realize(
     let root_value = every(roots.iter().map(|root| nodes[*root].value));
     if root_value == Value::Lose {
         let counterexample = environment_defeat(&nodes, &roots, &game, key, &admitted.root)?;
-        return Ok(result(key, Settled::Refuted(counterexample)));
+        return Ok(result(key, game.replayed(counterexample)?));
     }
     let mut strategies = Vec::new();
     let mut unforced = false;
-    for (role, classes) in decision_points(&nodes, game.names.roles.len())
+    for (role, classes) in decision_points(&nodes, game.arena.names.roles().len())
         .into_iter()
         .enumerate()
     {
@@ -789,13 +577,13 @@ pub fn realize(
             } else if let Some((a, b)) = forced_pair(&held) {
                 let counterexample =
                     indistinguishable(&nodes, &game, key, &admitted.root, role, a, b)?;
-                return Ok(result(key, Settled::Refuted(counterexample)));
+                return Ok(result(key, game.replayed(counterexample)?));
             } else {
                 unforced = true;
             }
         }
         strategies.push(RoleStrategy {
-            role: game.names.roles[role].clone(),
+            role: game.arena.names.roles()[role].clone(),
             table,
         });
     }
@@ -837,8 +625,10 @@ pub fn replay_strategy(
         Err(outcome) => return Ok(result(key, outcome)),
     };
     let game = Game {
-        system: &system,
-        names: admitted.names,
+        arena: Arena {
+            system: &system,
+            names: admitted.names,
+        },
         max_depth: admitted.max_depth,
         max_history: admitted.max_history,
         budget,
@@ -847,6 +637,33 @@ pub fn replay_strategy(
         key,
         game.gate(key, witness.strategies.clone(), admitted.open_range)?,
     ))
+}
+
+/// Replay `counterexample` over the request's arena by the arm [`realize`]
+/// settles its own refutations with (PA-20): `None` when the request reaches
+/// no arena (it settles before one, as [`realize`] settles it), else the
+/// walk's agreement or the disagreement it found.
+///
+/// # Errors
+///
+/// [`RealizabilityRefusal`] as [`realize`] refuses.
+pub fn replay_counterexample(
+    package: &CheckedPackageV2,
+    request: RealizabilityRequest<'_>,
+    counterexample: &RealizabilityCounterexample,
+) -> Result<Option<Result<(), RealizabilityDisagreement>>, RealizabilityRefusal> {
+    let admitted = admit(package, request)?;
+    let Ok(system) = admitted.system else {
+        return Ok(None);
+    };
+    let arena = Arena {
+        system: &system,
+        names: admitted.names,
+    };
+    Ok(Some(replay_realizability_counterexample(
+        &arena,
+        counterexample,
+    )?))
 }
 
 /// The first pair of points of one class whose winning sets are non-empty
@@ -876,11 +693,11 @@ fn indistinguishable(
     b: &Point,
 ) -> Result<RealizabilityCounterexample, RealizabilityRefusal> {
     let (history_a, history_b) = (history(nodes, a.node), history(nodes, b.node));
-    let obligation = game.names.finish.clone();
+    let obligation = game.arena.names.finish().clone();
     let position = history_a.len().max(history_b.len()).saturating_sub(1);
     Ok(RealizabilityCounterexample::IndistinguishableHistories {
         key: key.clone(),
-        role: game.names.roles[role].clone(),
+        role: game.arena.names.roles()[role].clone(),
         history_a,
         history_b,
         action_a: a.winning.first().cloned().unwrap_or(StrategyAction::End),
@@ -908,7 +725,7 @@ fn environment_defeat(
     let obligation = nodes[lost]
         .lost
         .clone()
-        .unwrap_or_else(|| game.names.finish.clone());
+        .unwrap_or_else(|| game.arena.names.finish().clone());
     let play = history(nodes, lost);
     let position = play.len().saturating_sub(1);
     Ok(RealizabilityCounterexample::EnvironmentDefeat {
@@ -927,12 +744,27 @@ impl Game<'_, '_> {
         role: usize,
         class: &ObservationClass,
     ) -> Option<StrategyAction> {
-        let role = &self.names.roles[role];
+        let role = &self.arena.names.roles()[role];
         strategies
             .iter()
             .find(|strategy| &strategy.role == role)
             .and_then(|strategy| strategy.table.get(class))
             .cloned()
+    }
+
+    /// A forced refutation settles `refuted` only after its counterexample
+    /// replays over the arena; a disagreeing replay is `inconclusive`
+    /// (PA-20, ADR-018 SM-7).
+    fn replayed(
+        &self,
+        counterexample: RealizabilityCounterexample,
+    ) -> Result<Settled, RealizabilityRefusal> {
+        Ok(
+            match replay_realizability_counterexample(&self.arena, &counterexample)? {
+                Ok(()) => Settled::Refuted(counterexample),
+                Err(_) => Settled::Inconclusive(InconclusiveCause::ReplayDisagreed),
+            },
+        )
     }
 
     /// PA-19's gate over the finished table `strategies`.
@@ -968,7 +800,7 @@ impl Game<'_, '_> {
         &self,
         strategies: &[RoleStrategy],
     ) -> Result<Result<Closure, WalkFailure>, RealizabilityRefusal> {
-        let roles = self.names.roles.len();
+        let roles = self.arena.names.roles().len();
         let mut plays = 0u64;
         let mut visited = 0usize;
         // A pending state: the state, its depth and what its play showed
@@ -982,23 +814,24 @@ impl Game<'_, '_> {
             .collect();
         while let Some((state, depth, seen)) = stack.pop() {
             visited += 1;
-            if let Err(limit) = charge(visited, "max_states", self.budget.max_states) {
+            if let Err(limit) = charge(visited, ModelCheckLimit::MaxStates, self.budget.max_states) {
                 return Ok(Err(WalkFailure::Limit(limit)));
             }
-            let seen = self.bind(&state, seen)?;
-            let (expansion, terminal) = self.system.successors_and_terminal(&state)?;
+            let seen = self.arena.bind(&state, seen)?;
+            let (expansion, terminal) = self.arena.system.successors_and_terminal(&state)?;
             if finding_value(&expansion.findings).is_some() || self.too_long(&seen) {
                 return Ok(Err(WalkFailure::NotShown));
             }
             // A class the table lacks matters only where the role acts.
-            let committed: Vec<Option<StrategyAction>> = Self::observations(&seen)
+            let committed: Vec<Option<StrategyAction>> = seen
+                .observations()
                 .iter()
                 .enumerate()
                 .map(|(role, class)| self.committed(strategies, role, class))
                 .collect();
             let mut allowed = Vec::new();
             for (transition, next) in expansion.successors {
-                let step = self.classify(&transition)?;
+                let step = self.arena.classify(&transition)?;
                 if let Some(step) = &step {
                     match &committed[step.role] {
                         Some(action) if *action == step.action => {}

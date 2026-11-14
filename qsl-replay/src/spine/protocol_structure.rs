@@ -28,7 +28,7 @@ pub enum StructureError {
     #[error("the package holds no node {0:?}")]
     UnknownNode(CheckedNodeId),
     /// A run limit stopped the build.
-    #[error("the structure build reached {} = {}", .0.limit, .0.value)]
+    #[error("the structure build reached {} = {}", .0.limit.as_str(), .0.value)]
     Limit(RunLimit),
 }
 

@@ -13,6 +13,7 @@ use qsl_replay::protocol_analysis::{
     ProtocolPremises, RunBudget, RunLimit,
 };
 use qsl_replay::spine::StructureError;
+use qsl_replay::ModelCheckLimit;
 use quire_contract_model::{CheckedNodeId, CheckedPackageV2};
 
 use super::profile::{unsupported_construct, Profile};
@@ -166,7 +167,7 @@ pub fn project(
                             return Ok(result(
                                 key,
                                 AnalysisOutcome::Failed(RunLimit {
-                                    limit: "max_transitions",
+                                    limit: ModelCheckLimit::MaxTransitions,
                                     value: request.budget.max_transitions,
                                 }),
                             ));
