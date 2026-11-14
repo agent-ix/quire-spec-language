@@ -48,9 +48,12 @@ pub enum RealizabilityDisagreement {
     /// An action is enabled at both ends, so the two ends need not require
     /// different actions.
     NotDisjoint,
-    /// A role step on a play was one of two or more actions its role could
-    /// take there, so a table could avoid the play.
+    /// At a state on a play some move is another step than the one taken,
+    /// so a role could delay the play's step or reorder around it.
     Avoidable,
+    /// Another role or the environment can move at a history's end, so the
+    /// role could wait there for an action the end does not enable yet.
+    NotSoleMover,
     /// A state a play passes through, or a history's end, carries a finding
     /// (a violated invariant or an undecided evaluation), which the engine
     /// never steps past or decides at.
@@ -67,18 +70,19 @@ type Walked = Result<(ProtocolState<Sc>, Seen), RealizabilityDisagreement>;
 /// Both forms: the key equals the request's `key`, the FR-351 record is the
 /// one `root` gives for the obligation and position, and every play walks
 /// from its initial state through the successors its steps name, within
-/// `max_depth`, through states with no finding, and with each role step its
-/// role's only enabled action there, so no table can avoid the play (the
-/// order in which threads step is the environment's, PA-16).
+/// `max_depth`, through states with no finding, at each of which every move
+/// is the step taken, so no role can delay it or reorder around it (a role
+/// waits until its committed action is enabled, QSpec FR-175).
 ///
 /// * Indistinguishable histories: neither end carries a finding; the role
 ///   observes the two ends equally, within `max_history` where it can still
 ///   step; the two actions differ and each is enabled at its own end; the
-///   obligation is `finish`; and no action is enabled at both ends
-///   (PA-18 (i)). The environment may let the role move at either end, and
-///   then it must take its one committed action, so the class needs two
-///   actions. At a forced pair no node is lost, so the not-lost sets are the
-///   enabled sets.
+///   obligation is `finish`; every move at either end is a step of the
+///   role; and no action is enabled at both ends (PA-18 (i)). Every profile
+///   either is stuck on a play or reaches both ends, where its one action
+///   for the class is not enabled at one of them and nothing else can move.
+///   At a forced pair no node is lost, so the not-lost sets are the enabled
+///   sets.
 /// * Environment defeat: every defeating play ends in a violation of the
 ///   obligation: a violated invariant of the clause, or a deadlock against
 ///   `finish`.
@@ -185,6 +189,9 @@ pub fn replay_realizability_counterexample(
             if !moves_a.enabled.contains(action_a) || !moves_b.enabled.contains(action_b) {
                 return Ok(Err(RealizabilityDisagreement::ActionNotEnabled));
             }
+            if !moves_a.sole || !moves_b.sole {
+                return Ok(Err(RealizabilityDisagreement::NotSoleMover));
+            }
             if !moves_a.enabled.is_disjoint(&moves_b.enabled) {
                 return Ok(Err(RealizabilityDisagreement::NotDisjoint));
             }
@@ -226,9 +233,9 @@ fn walk(arena: &Arena<'_, '_>, play: &Play) -> Result<Walked, ArenaError> {
 }
 
 /// The end state of `steps` from `state`, each step the successor at its
-/// index with an equal transition, taken from a state with no finding, and
-/// each role step its role's only enabled action there (PA-18: no table can
-/// avoid the play).
+/// index with an equal transition, taken from a state with no finding, at
+/// which every move is the same step as the one taken (PA-18: no role can
+/// delay it or reorder around it).
 fn walk_from(
     arena: &Arena<'_, '_>,
     mut state: ProtocolState<Sc>,
@@ -250,15 +257,12 @@ fn walk_from(
         if transition != step.transition {
             return Ok(Err(RealizabilityDisagreement::StepNotSuccessor { at }));
         }
-        let taken = classified.swap_remove(step.successor);
-        if let Some(taken) = &taken {
-            let other = classified
-                .iter()
-                .flatten()
-                .any(|held| held.role == taken.role && held.action != taken.action);
-            if other {
-                return Ok(Err(RealizabilityDisagreement::Avoidable));
-            }
+        let identity = |held: &Option<super::arena::RoleStep>| {
+            held.as_ref().map(|held| (held.role, held.action.clone()))
+        };
+        let taken = identity(&classified[step.successor]);
+        if classified.iter().any(|held| identity(held) != taken) {
+            return Ok(Err(RealizabilityDisagreement::Avoidable));
         }
         seen = arena.bind(&next, seen.extended(taken.as_ref()))?;
         state = next;
@@ -288,6 +292,8 @@ struct Moves {
     enabled: BTreeSet<StrategyAction>,
     /// The state carries a finding.
     finding: bool,
+    /// Every successor is a step of the role.
+    sole: bool,
     /// The state has a successor.
     open: bool,
 }
@@ -305,16 +311,19 @@ fn moves(
     {
         enabled.insert(StrategyAction::End);
     }
+    let mut sole = true;
     for (transition, _) in &expansion.successors {
-        if let Some(taken) = arena.classify(transition)? {
-            if taken.role == role {
+        match arena.classify(transition)? {
+            Some(taken) if taken.role == role => {
                 enabled.insert(taken.action);
             }
+            _ => sole = false,
         }
     }
     Ok(Moves {
         enabled,
         finding: finding_value(&expansion.findings).is_some(),
+        sole,
         open: !expansion.successors.is_empty(),
     })
 }

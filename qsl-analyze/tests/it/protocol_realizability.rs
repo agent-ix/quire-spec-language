@@ -708,15 +708,15 @@ fn the_realizability_replay_arm_reproduces_both_forms_and_refuses_edits() {
     assert_eq!(replay(&two, &found), Ok(()));
 }
 
-/// FR-571-AC-7 (PA-16): the order in which threads step is the
-/// environment's, so a role cannot wait for an action its state does not
-/// enable yet. In the `no` branch the environment may let the `Warehouse`
-/// move before the `Seller` sends `PickIt2`, when it can only send `Bk`; in
-/// the `yes` branch it must receive. Both states are in its empty class, so
-/// no table serves both, and the result is refuted; the replay arm agrees.
-#[trace("TC-1411", "FR-571-AC-7")]
+/// FR-571-AC-6 (QSpec FR-175): a role waits until its committed action is
+/// enabled. In the `no` branch the `Warehouse` can send `Bk` while its
+/// receive of `PickIt2` is not enabled yet, and the `Seller` can still send
+/// `PickIt2`; a table committing the receive in the empty class waits, then
+/// receives. So the class need not hold two actions, and the result is not
+/// `refuted`.
+#[trace("TC-1411", "FR-571-AC-6")]
 #[test]
-fn a_role_cannot_wait_for_an_action_not_yet_enabled() {
+fn a_role_that_can_wait_is_not_refuted() {
     let back = "channel Back from Warehouse to Seller carries Ack ordering unordered delivery \
                 exactly-once-premise capacity 4 overflow reject;\n";
     let fixture = Fixture::built(
@@ -745,14 +745,16 @@ fn a_role_cannot_wait_for_an_action_not_yet_enabled() {
          } }",
         &[0],
     );
-    let found = refuted(fixture.run());
-    assert_eq!(replay(&fixture, &found), Ok(()));
+    let outcome = fixture.run().outcome;
+    assert!(
+        !matches!(outcome, AnalysisOutcome::Refuted(_)),
+        "a role that can wait is not refuted: {outcome:?}"
+    );
 }
 
-/// FR-571-AC-7, PA-18: a play the engine never decides at, a state with an
-/// undecided evaluation, is no history end; a forged pair ending there is
-/// refused.
-#[trace("TC-1411", "FR-571-AC-7")]
+/// PA-20: a play the engine never decides at, a state with an undecided
+/// evaluation, is no history end; a forged pair ending there is refused.
+#[trace("TC-1413", "FR-573-AC-3")]
 #[test]
 fn a_history_ending_at_a_finding_is_refused() {
     let costly = Fixture::new(
@@ -858,6 +860,47 @@ fn indistinguishable_histories_without_disjoint_not_lost_sets_are_refused() {
     assert_eq!(
         replay(&fixture, &avoidable),
         Err(RealizabilityDisagreement::Avoidable)
+    );
+}
+
+/// PA-18 (i): at an end where another role can move, the role could wait
+/// there for an action the end does not enable yet, so a pair ending there
+/// is refused. Here the `Seller` may send while the `Buyer` holds two sends.
+#[trace("TC-1413", "FR-573-AC-3")]
+#[test]
+fn a_pair_ending_where_another_role_can_move_is_refused() {
+    let fixture = Fixture::new(
+        "exactly-once-premise",
+        "sequence Main { parallel Par {\n\
+           branch a sequence Ay { send Sa via Order as (sa: Ack) { true }; }\n\
+           branch b sequence Bee { send Sb via Order as (sb: Ack) { true }; }\n\
+           branch c sequence Cee { send St via Tell as (st: Ack) { true }; }\n\
+         } join all [a, b, c]; }",
+    );
+    let key = fixture.run().key;
+    let finish = fixture.named("Done");
+    let (at, _) = to_two_sends(&fixture);
+    let position = at.steps.len().saturating_sub(1);
+    let claim = RealizabilityCounterexample::IndistinguishableHistories {
+        key,
+        role: fixture.named("Buyer"),
+        history_a: at.clone(),
+        history_b: at,
+        action_a: StrategyAction::Send {
+            node: fixture.named("Sa"),
+        },
+        action_b: StrategyAction::Send {
+            node: fixture.named("Sb"),
+        },
+        separating_witness: AssessedRoot::new(Some(assessed_root()))
+            .unwrap()
+            .record(&finish, position)
+            .unwrap(),
+        obligation: finish,
+    };
+    assert_eq!(
+        replay(&fixture, &claim),
+        Err(RealizabilityDisagreement::NotSoleMover)
     );
 }
 
