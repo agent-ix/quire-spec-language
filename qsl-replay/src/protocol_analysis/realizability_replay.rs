@@ -266,7 +266,7 @@ fn walk_from(
         if taken.is_some() && classified.iter().any(|held| identity(held) != taken) {
             return Ok(Err(RealizabilityDisagreement::Avoidable));
         }
-        seen = arena.bind(&next, seen.extended(taken.as_ref()))?;
+        seen = arena.bind(&next, seen.extended(classified[step.successor].as_ref()))?;
         state = next;
     }
     Ok(Ok((state, seen)))
