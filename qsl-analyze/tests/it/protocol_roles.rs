@@ -39,13 +39,13 @@ use qsl_replay::{
 };
 use qsl_route::deadlock::{ItemObligation, ObligationKind};
 use qsl_route::model_request::ModelRequest;
-use qsl_semantics::check::FormulaNodeId;
+use qsl_semantics::check::{CheckCause, FormulaNodeId, ProtocolAnchorCause, SlotKind};
 use qsl_semantics::model::observation::DocumentRef;
 use quire_exact::{Cancel, Meter};
 use serde_json::Value as Json;
 
 use crate::fill::{
-    attempt, class_of, compiled, contracts, document, instance, json_of, model_subject,
+    attempt, check_refusals, class_of, contracts, document, instance, json_of, model_subject,
     package_with, reachable, sc_system, source_memory, universe, v, Documents, Reached, PACKAGE,
 };
 use crate::model_settle::{envelope_at, request};
@@ -2048,21 +2048,36 @@ fn a_retire_predicate_reads_a_named_population() {
         "j is a member of cells, so its negation never holds"
     );
 
-    let refusal = compiled(&unit_with(
+    let (text, refusals) = check_refusals(&unit_with(
         "present(lookup<M::Cell>(M::absent, j) absent empty)",
-    ))
-    .err()
-    .expect("M::absent names no population");
+    ));
+    let [refusal] = refusals.as_slice() else {
+        panic!("one refusal: {refusals:?}");
+    };
     assert_eq!(
-        (refusal.code(), refusal.cause()),
+        (refusal.cause.code(), refusal.cause.cause()),
         (Code::MissingDeclaration, Some("missing-name")),
-        "{refusal}"
+        "{refusal:?}"
     );
-    let message = refusal.to_string();
-    assert!(
-        message.contains("absent") && message.contains("`r`"),
-        "{message}"
-    );
+    let CheckCause::ProtocolAnchor(anchor) = &refusal.cause else {
+        panic!("a protocol refusal: {refusal:?}");
+    };
+    let ProtocolAnchorCause::SlotClause {
+        node,
+        slot: SlotKind::Lifetime,
+        cause,
+        span,
+    } = anchor.as_ref()
+    else {
+        panic!("the role's `until` refuses: {anchor:?}");
+    };
+    assert_eq!(node, "r", "the refusal retains the role");
+    let CheckCause::MissingSegment { name, offset, .. } = cause.as_ref() else {
+        panic!("a missing population segment: {cause:?}");
+    };
+    assert_eq!(name, "M::absent", "the refusal retains the name");
+    assert_eq!(&name[*offset..], "absent", "located at `absent`");
+    assert_eq!(&text[span.start..span.end], "M::absent");
 }
 
 /// The undecided initializer `6 mod (1 - 1)` relies on S3 accepting a divisor

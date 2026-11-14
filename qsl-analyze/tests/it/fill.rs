@@ -405,6 +405,30 @@ pub(crate) fn package_over(
     profiles: &str,
     body: &str,
 ) -> CheckedPackage {
+    let graph = declarations_over(document, package_name, profiles, body)
+        .check(CheckingLimits::default())
+        .unwrap_or_else(|refusals| panic!("{body}: the unit checks: {refusals:?}"));
+    CheckedPackage::link(graph)
+}
+
+/// The S3 refusals of the unit with `body`, and the unit's text, which
+/// their spans index.
+pub(crate) fn check_refusals(body: &str) -> (String, Vec<qsl_semantics::check::CheckRefusal>) {
+    let refusals = declarations_over(document(), "package", "", body)
+        .check(CheckingLimits::default())
+        .err()
+        .unwrap_or_else(|| panic!("{body}: the unit refuses"));
+    (unit_text_with("", body), refusals)
+}
+
+/// The assembled declarations of the unit with `body` over the model
+/// `document`, not yet checked.
+fn declarations_over(
+    document: Vec<u8>,
+    package_name: &str,
+    profiles: &str,
+    body: &str,
+) -> PackageDeclarations {
     let text = unit_text_with(profiles, body);
     let packages = package_input([document.as_slice()]).unwrap();
     let parsed = qsl_cst::parse(
@@ -430,18 +454,14 @@ pub(crate) fn package_over(
         qsl_forms::parse_clause_text(text, qsl_cst::Limits::default())
     })
     .expect("the operation clauses parse");
-    let declarations = PackageDeclarations::assemble(
+    PackageDeclarations::assemble(
         parsed.source().reference().clone(),
         package_name.to_owned(),
         built,
         models,
         Vec::new(),
     )
-    .expect("the unit assembles");
-    let graph = declarations
-        .check(CheckingLimits::default())
-        .unwrap_or_else(|refusals| panic!("{body}: the unit checks: {refusals:?}"));
-    CheckedPackage::link(graph)
+    .expect("the unit assembles")
 }
 
 /// A package that declares the protocol profile but does not select it.
