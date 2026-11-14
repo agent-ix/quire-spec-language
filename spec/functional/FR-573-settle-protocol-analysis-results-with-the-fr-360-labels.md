@@ -71,9 +71,11 @@ The settlement map is:
   the walk is determinate; a step whose transition differs from the one at
   its index disagrees. Both forms carry the request's key and the FR-574
   record the request's root gives, and every play stays within `max_depth`.
-  Every play passes only through states with no finding, at each of which
-  every move is the step taken, so no role can delay it or reorder around
-  it (FR-571: a role waits until its committed action is enabled). For indistinguishable histories the arm checks that
+  Every play passes only through states with no finding; each environment
+  step on it is forced, since no table filters it, and each role step is
+  taken where every move is that same step, so no role can delay it or
+  reorder around it (FR-571: a role waits until its committed action is
+  enabled). For indistinguishable histories the arm checks that
   neither end carries a finding; that the role observes the two ends
   equally, within `max_history` at an end the role can still step from;
   that the two actions differ and each is enabled at its own end (`End` at

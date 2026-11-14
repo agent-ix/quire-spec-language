@@ -48,8 +48,8 @@ pub enum RealizabilityDisagreement {
     /// An action is enabled at both ends, so the two ends need not require
     /// different actions.
     NotDisjoint,
-    /// At a state on a play some move is another step than the one taken,
-    /// so a role could delay the play's step or reorder around it.
+    /// At a state where a play takes a role step some move is another step,
+    /// so the role could delay it or another could reorder around it.
     Avoidable,
     /// Another role or the environment can move at a history's end, so the
     /// role could wait there for an action the end does not enable yet.
@@ -70,9 +70,10 @@ type Walked = Result<(ProtocolState<Sc>, Seen), RealizabilityDisagreement>;
 /// Both forms: the key equals the request's `key`, the FR-351 record is the
 /// one `root` gives for the obligation and position, and every play walks
 /// from its initial state through the successors its steps name, within
-/// `max_depth`, through states with no finding, at each of which every move
-/// is the step taken, so no role can delay it or reorder around it (a role
-/// waits until its committed action is enabled, QSpec FR-175).
+/// `max_depth`, through states with no finding, taking environment steps,
+/// which no table filters, or role steps where every move is that step, so
+/// no role can delay it or reorder around it (a role waits until its
+/// committed action is enabled, QSpec FR-175).
 ///
 /// * Indistinguishable histories: neither end carries a finding; the role
 ///   observes the two ends equally, within `max_history` where it can still
@@ -233,9 +234,10 @@ fn walk(arena: &Arena<'_, '_>, play: &Play) -> Result<Walked, ArenaError> {
 }
 
 /// The end state of `steps` from `state`, each step the successor at its
-/// index with an equal transition, taken from a state with no finding, at
-/// which every move is the same step as the one taken (PA-18: no role can
-/// delay it or reorder around it).
+/// index with an equal transition, taken from a state with no finding; an
+/// environment step is always forced (no table filters it), a role step only
+/// where every move is that same step (PA-18: no role can delay it or
+/// reorder around it).
 fn walk_from(
     arena: &Arena<'_, '_>,
     mut state: ProtocolState<Sc>,
@@ -261,7 +263,7 @@ fn walk_from(
             held.as_ref().map(|held| (held.role, held.action.clone()))
         };
         let taken = identity(&classified[step.successor]);
-        if classified.iter().any(|held| identity(held) != taken) {
+        if taken.is_some() && classified.iter().any(|held| identity(held) != taken) {
             return Ok(Err(RealizabilityDisagreement::Avoidable));
         }
         seen = arena.bind(&next, seen.extended(taken.as_ref()))?;

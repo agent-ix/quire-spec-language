@@ -122,11 +122,12 @@ plays explored, the horizon and whether exploration closed (PA-19).
   action is not enabled (QSpec FR-175: the environment chooses only
   admitted events, channel outcomes and thread order, and cannot make a
   role act). A table can so delay a step or reorder around it. The engine
-  shall refute only on forced plays: at every state on each history, or on
-  the defeating play, every move is the step taken (one role's one action,
-  its records and delivery the environment's, or the environment's steps
-  alone), and, for indistinguishable histories, every move at either end is
-  a step of the role. Any other refutation is non-conclusive
+  shall refute only on forced plays: on each history, or on the defeating
+  play, every environment step (a loss, a delivery or an admitted event)
+  is forced, since no table filters it, and every role step is taken at a
+  state where every move is that same step (one role's one action, its
+  records and delivery the environment's); and, for indistinguishable
+  histories, every move at either end is a step of the role. Any other refutation is non-conclusive
   (`unforced-refutation`). Every profile is then stuck on a forced play or
   follows it, and at the two ends its one action for the class is not
   enabled at one of them while nothing else can move.

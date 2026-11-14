@@ -431,15 +431,17 @@ fn step_of(held: &Move) -> Option<(usize, &StrategyAction)> {
     held.step.as_ref().map(|step| (step.role, &step.action))
 }
 
-/// Whether the play to `id` is forced: at every node on it, every move is
-/// the same step as the one taken (one role's one action, its records and
-/// delivery alternatives the environment's; or the environment's steps
-/// alone). No role can delay that step or reorder around it.
+/// Whether the play to `id` is forced: every environment step on it is
+/// (no table filters an environment step, so the environment can take it
+/// under every profile), and at every node where it takes a role step,
+/// every move is that same step (one role's one action, its records and
+/// delivery alternatives the environment's), so no role can delay it or
+/// reorder around it.
 fn forced_play(nodes: &[Node], mut id: usize) -> bool {
     while let Some((parent, at)) = nodes[id].parent {
         let moves = &nodes[parent].moves;
         let taken = step_of(&moves[at]);
-        if moves.iter().any(|held| step_of(held) != taken) {
+        if taken.is_some() && moves.iter().any(|held| step_of(held) != taken) {
             return false;
         }
         id = parent;
@@ -781,10 +783,12 @@ pub fn replay_counterexample(
 /// enabled; the environment picks records, delivery and thread order). Let
 /// a and b be two points of one class of role R with disjoint enabled sets,
 /// each reached by a forced play, with every move at a and b a step of R.
-/// Take any strategy profile. At each node of a forced play every move is
-/// one step: if its role's table commits that action, the environment can
-/// take the play's move; if not, the role waits and nothing else can move,
-/// so the play is stuck short of a terminal state and the profile loses.
+/// Take any strategy profile. At a node of a forced play where the play
+/// takes an environment step, no table filters it, so the environment can
+/// take it. Where it takes a role step every move is that step: if the
+/// role's table commits that action the environment can take the play's
+/// move; if not, the role waits and nothing else can move, so the play is
+/// stuck short of a terminal state and the profile loses.
 /// So every profile loses or reaches both a and b. There R's table commits
 /// one action c for the class; c is not enabled at a or not at b, and only
 /// R can move there, so the profile is stuck there and loses. No profile
