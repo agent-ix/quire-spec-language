@@ -13,7 +13,9 @@ relationships:
 ## Description
 
 Verify the settlement map of FR-573 for both kinds, including the replay
-arm and the certification.
+arm and the certification. Steps 1, 2, 4 and 6, and step 5's `max_states`
+stop, settle their items in one `analyze` run over the linked engines (FR-573 "Serving"); step 3 edits a
+counterexample of each kind and replays it through its arm.
 
 Scope: FR-573-AC-1 to FR-573-AC-7.
 

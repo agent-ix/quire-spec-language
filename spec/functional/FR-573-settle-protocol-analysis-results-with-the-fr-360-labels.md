@@ -59,10 +59,20 @@ The settlement map is:
 | A run limit stopped the analysis before it completed its method | `failed`, execution `resource-incomplete` | `unavailable` | No artifact; states the limit and the value used (PA-14). |
 | An engine failure | `failed`, execution `failed` | `unavailable` | |
 
-- The replay arm shall be `ReplaySource::ProtocolAnalysis`: it re-walks the counterexample's stated paths or moves against the checked
-  graph and the premises, checks each step is an admitted successor and that
-  the walk ends in the stated divergence or violation. An arm that
-  disagrees settles `inconclusive` (ADR-018 SM-7).
+- The replay arm re-walks the counterexample's stated paths or moves against
+  the checked graph and the premises, checks each step is an admitted
+  successor and that the walk ends in the stated divergence or violation. An
+  arm that disagrees settles `inconclusive` (ADR-018 SM-7). For a projection
+  it is `ReplaySource::ProtocolAnalysis` over the checked package. For a
+  realizability refutation it walks the `qsl-eval` arena of the request's
+  protocol subject, which a replay source carries no member for: each
+  history or defeating play from an initial state through admitted
+  successors; for indistinguishable histories, equal observations of the
+  role, two different actions, each enabled at its history's end (`End` at
+  an intended terminal state), and the `finish` obligation; for an
+  environment defeat, a play ending in a violated invariant of the clause or
+  a deadlock against `finish`, as the counterexample names. Each engine runs
+  its arm before it returns a refutation.
 - The replay arm re-walks the stated paths with the structure's successor
   relation and recomputes the actions' shapes, the role's basis at the choice
   and the diverging layer with the same structure functions the engine uses.
@@ -75,14 +85,37 @@ The settlement map is:
   names them; QSL shall add no label, axis member or `NegotiationCause`
   variant.
 
-### Open item
+### Serving
 
-QSpec FR-360's Scope does not list local-projection or realizability
-results. The Scope amendment is raised with QSpec as QSL-1898 and is **not
-assumed**: this requirement uses the FR-360 labels for the two kinds
-exactly as ADR-036 PA-20 states, and is to be re-read against FR-360 when
-QSL-1898 lands. No file of the QSpec repository is changed by this
-requirement.
+- One provider manifest, backend `protocol-analysis`, advertises
+  `local-projection` and `realizability`, each in the `unbounded` mode: a
+  `bounded-static` protocol is decided without a bound for any domain, and
+  `max_depth` is a key member whose cut settles `inconclusive`. It names no
+  `domains` and no evidence kind, which FR-290 assigns to
+  `probabilistic-satisfaction` alone. The linked engine set holds it.
+- An `analyze` item of either kind settles one FR-331 terminal record by
+  this map, and carries the result: its FR-572 key and the witness or the
+  counterexample with its FR-574 record. A refusal before analysis (an
+  absent key member or root, an unknown profile or role, a premise holding a
+  fact) is `declined` `invalid-input`; an evaluation-meter stop is `failed`,
+  `resource-incomplete`, naming the counter and its value; any other engine
+  failure is `failed`.
+- The FR-331 terminal value of each row: `proved` with basis `exhaustive`,
+  `uncertified`; `refuted`; `inconclusive` with cause `bound-reached` and
+  the `max_depth` for the horizon, and otherwise `premise-not-stated`,
+  `replay-disagreed`, `unforced-refutation`, `strategy-replay-failed`,
+  `cut-count` or `undecided-evaluation`; `unsupported` with the FR-575 slug
+  under `unsupported_projection`; `incomplete` `limit-reached` naming the
+  limit and its value.
+
+### FR-360 Scope
+
+QSpec FR-360's Scope lists neither local-projection nor realizability
+results. QSL applies the FR-360 labels to both kinds as this requirement
+states, and reads FR-360 as covering them once QSpec's Scope says: "It also
+covers local projection and realizability results (FR-174, FR-175)."
+QSL-1898 carries that QSpec change; no file of the QSpec repository is
+changed by this requirement.
 
 ## Acceptance Criteria
 

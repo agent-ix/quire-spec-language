@@ -37,7 +37,7 @@ pub const ADVERTISED: [(Option<&str>, Option<&str>); 2] = [
 /// # Errors
 ///
 /// Only if the registry's admission rules refuse this module's own data,
-/// which the tests of this module rule out.
+/// which the serving test of TC-155 rules out.
 pub fn descriptor(origin: ProviderOrigin) -> Result<BackendDescriptor, RegistrationRefusal> {
     descriptor_from_manifest(
         Candidate::new(qsl_foundation::BackendId::new(BACKEND_ID)),

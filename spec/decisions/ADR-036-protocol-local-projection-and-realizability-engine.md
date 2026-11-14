@@ -192,12 +192,15 @@ a message `Warehouse` took no part in does not inform it.
 
 ## Open items for the requirement slice
 
-1. FR-360 Scope must list local projection and realizability (QSpec change).
+1. FR-360 Scope must list local projection and realizability (QSpec change;
+   QSL FR-573 "FR-360 Scope" states the wording, QSL-1898 carries it).
 2. The V1 profile word and the unsupported-cause slugs are fixed by the QSL
    requirements, under the existing `unsupported_projection` code, with no new
    code family unless the QSpec catalog is amended.
 3. The `EvidenceKind` the manifest advertises is an existing variant; slice 5
-   chooses it from FR-290 and adds none.
+   chooses it from FR-290 and adds none. Settled by slice 5: FR-290 gives
+   evidence kinds to `probabilistic-satisfaction` alone, so the manifest
+   advertises none.
 4. The FR-207 `value_path` derivation for a protocol graph node (PA-24).
 
 ## Implementation slicing
@@ -217,6 +220,24 @@ unsupported negotiation result) until slice 5.
 Deferred, not required by FR-174 or FR-175: an independent witness checker in
 `qsl-replay` that would let `proved` become `Certified`, and any parallel
 analysis engine with a thread-count determinism gate.
+
+## Handoff to quire-protocol (TL-387)
+
+Slice 5 serves both kinds. What quire-protocol reads:
+
+- **Result envelope.** The `analyze` record (`qsl_analyze::analyze::AnalyzeRecord`)
+  of an item built by `projection_item` or `realizability_item` and run on
+  the linked engines (backend `protocol-analysis`): its FR-331 terminal
+  record, settled by the FR-573 map, and `protocol_analysis`, the
+  `ProtocolAnalysisArtifact` holding the result; `settlement()` gives the
+  FR-360 label with its execution, truth and basis.
+- **Carried key.** The result's `key`, a `ProtocolAnalysisKey` (FR-572),
+  stored as a structured value and read back with `from_json`, which
+  refuses an absent member `invalid_runtime_input`/`missing-member`.
+- **FR-351 record.** The `separating_witness` of a `refuted` result's
+  counterexample (FR-574), in the FR-352 record wire with a protocol
+  `deciding_element`, no `quantifier` and no `index`. Its carriage on
+  `native-run-result/2` is open (FR-574 Outputs).
 
 ## Alternatives Considered
 

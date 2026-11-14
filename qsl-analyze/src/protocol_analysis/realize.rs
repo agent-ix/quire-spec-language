@@ -19,7 +19,8 @@
 //! grouped by the one `observations` function (the captures, then the
 //! role's own sends and receives), every class commits to a common winning
 //! action, and the replay walk re-executes the table before `proved`
-//! (PA-19).
+//! (PA-19). A forced refutation settles `refuted` only after the
+//! counterexample replay arm re-walks it over the arena (PA-20).
 
 use std::collections::{BTreeMap, BTreeSet};
 
