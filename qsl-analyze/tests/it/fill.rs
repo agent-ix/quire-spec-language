@@ -411,14 +411,28 @@ pub(crate) fn package_over(
     CheckedPackage::link(graph)
 }
 
-/// The S3 refusals of the unit with `body`, and the unit's text, which
-/// their spans index.
-pub(crate) fn check_refusals(body: &str) -> (String, Vec<qsl_semantics::check::CheckRefusal>) {
-    let refusals = declarations_over(document(), "package", "", body)
+/// The S3 refusals of the unit with `body`, each with the source text it is
+/// located at, when it has a source region.
+pub(crate) fn check_refusals(
+    body: &str,
+) -> Vec<(qsl_semantics::check::CheckRefusal, Option<String>)> {
+    let declarations = declarations_over(document(), "package", "", body);
+    let regions = declarations.regions();
+    let text = unit_text_with("", body);
+    declarations
         .check(CheckingLimits::default())
         .err()
-        .unwrap_or_else(|| panic!("{body}: the unit refuses"));
-    (unit_text_with("", body), refusals)
+        .unwrap_or_else(|| panic!("{body}: the unit refuses"))
+        .into_iter()
+        .map(|refusal| {
+            let at = regions.refusal_region(&refusal).map(|region| {
+                let start = usize::try_from(region.start()).expect("a start");
+                let end = usize::try_from(region.end()).expect("an end");
+                text[start..end].to_owned()
+            });
+            (refusal, at)
+        })
+        .collect()
 }
 
 /// The assembled declarations of the unit with `body` over the model

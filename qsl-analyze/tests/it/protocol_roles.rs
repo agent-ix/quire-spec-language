@@ -39,9 +39,10 @@ use qsl_replay::{
 };
 use qsl_route::deadlock::{ItemObligation, ObligationKind};
 use qsl_route::model_request::ModelRequest;
-use qsl_semantics::check::{CheckCause, FormulaNodeId, ProtocolAnchorCause, SlotKind};
+use qsl_semantics::check::{CheckCause, FormulaNodeId};
 use qsl_semantics::model::observation::DocumentRef;
 use quire_exact::{Cancel, Meter};
+use quire_semantic_value::location::ExpressionOwner;
 use serde_json::Value as Json;
 
 use crate::fill::{
@@ -2048,10 +2049,10 @@ fn a_retire_predicate_reads_a_named_population() {
         "j is a member of cells, so its negation never holds"
     );
 
-    let (text, refusals) = check_refusals(&unit_with(
+    let refusals = check_refusals(&unit_with(
         "present(lookup<M::Cell>(M::absent, j) absent empty)",
     ));
-    let [refusal] = refusals.as_slice() else {
+    let [(refusal, at)] = refusals.as_slice() else {
         panic!("one refusal: {refusals:?}");
     };
     assert_eq!(
@@ -2059,25 +2060,18 @@ fn a_retire_predicate_reads_a_named_population() {
         (Code::MissingDeclaration, Some("missing-name")),
         "{refusal:?}"
     );
-    let CheckCause::ProtocolAnchor(anchor) = &refusal.cause else {
-        panic!("a protocol refusal: {refusal:?}");
-    };
-    let ProtocolAnchorCause::SlotClause {
-        node,
-        slot: SlotKind::Lifetime,
-        cause,
-        span,
-    } = anchor.as_ref()
-    else {
-        panic!("the role's `until` refuses: {anchor:?}");
-    };
-    assert_eq!(node, "r", "the refusal retains the role");
-    let CheckCause::MissingSegment { name, offset, .. } = cause.as_ref() else {
-        panic!("a missing population segment: {cause:?}");
+    assert_eq!(at.as_deref(), Some("absent"), "located at `absent`");
+    let CheckCause::MissingSegment { name, .. } = &refusal.cause else {
+        panic!("a missing population segment: {refusal:?}");
     };
     assert_eq!(name, "M::absent", "the refusal retains the name");
-    assert_eq!(&name[*offset..], "absent", "located at `absent`");
-    assert_eq!(&text[span.start..span.end], "M::absent");
+    let ExpressionOwner::TypeDeclaration { name: owner } = &refusal.location.origin else {
+        panic!("located in the role's `until`: {refusal:?}");
+    };
+    assert_eq!(
+        owner, "protocol R role r until",
+        "the refusal retains the role"
+    );
 }
 
 /// The undecided initializer `6 mod (1 - 1)` relies on S3 accepting a divisor
