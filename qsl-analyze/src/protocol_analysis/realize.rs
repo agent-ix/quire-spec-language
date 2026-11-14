@@ -36,12 +36,12 @@ use qsl_replay::protocol_analysis::arena::{
     self, Arena, ArenaError, ArenaNames, FindingValue, RoleStep, Seen,
 };
 use qsl_replay::protocol_analysis::{
-    AnalysisOutcome, AnalyzerIdentity, AssessedRoot, AssessedRootDraft, BoundsDraft, BranchDefeat,
-    Closure, DeliveryPremise, InconclusiveCause, MissingMember, ObservationClass,
-    PremiseRefusal, ProtocolAnalysisKey, ProtocolAnalysisResult, ProtocolPremises,
-    replay_realizability_counterexample, RealizabilityCounterexample, RealizabilityDisagreement,
-    RealizabilityKeyDraft, RealizabilityWitness, RoleStrategy,
-    RunBudget, RunLimit, StrategyAction, UnsupportedCause, UnsupportedSlug,
+    replay_realizability_counterexample, AnalysisOutcome, AnalyzerIdentity, AssessedRoot,
+    AssessedRootDraft, BoundsDraft, BranchDefeat, Closure, DeliveryPremise, InconclusiveCause,
+    MissingMember, ObservationClass, PremiseRefusal, ProtocolAnalysisKey, ProtocolAnalysisResult,
+    ProtocolPremises, RealizabilityCounterexample, RealizabilityDisagreement,
+    RealizabilityKeyDraft, RealizabilityWitness, RoleStrategy, RunBudget, RunLimit, StrategyAction,
+    UnsupportedCause, UnsupportedSlug,
 };
 use qsl_replay::ModelCheckLimit;
 use qsl_semantics::model::observation::AdmissionFailure;
@@ -298,7 +298,11 @@ impl Game<'_, '_> {
             } else {
                 node.leaf = false;
                 edges += expansion.successors.len();
-                if let Err(limit) = charge(edges, ModelCheckLimit::MaxTransitions, self.budget.max_transitions) {
+                if let Err(limit) = charge(
+                    edges,
+                    ModelCheckLimit::MaxTransitions,
+                    self.budget.max_transitions,
+                ) {
                     return Ok(Err(limit));
                 }
                 for (at, (transition, next)) in expansion.successors.into_iter().enumerate().rev() {
@@ -817,7 +821,8 @@ impl Game<'_, '_> {
             .collect();
         while let Some((state, depth, seen)) = stack.pop() {
             visited += 1;
-            if let Err(limit) = charge(visited, ModelCheckLimit::MaxStates, self.budget.max_states) {
+            if let Err(limit) = charge(visited, ModelCheckLimit::MaxStates, self.budget.max_states)
+            {
                 return Ok(Err(WalkFailure::Limit(limit)));
             }
             let seen = self.arena.bind(&state, seen)?;

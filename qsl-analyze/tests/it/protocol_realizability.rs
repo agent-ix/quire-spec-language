@@ -10,15 +10,9 @@ use qsl_analyze::protocol_analysis::{
     self, projection_item, realizability_item, realize, replay_counterexample, replay_strategy,
     ProjectionRequest, RealizabilityOutcome, RealizabilityRefusal, RealizabilityRequest,
 };
-use qsl_foundation::{BackendId, RequestIndex};
-use qsl_route::{
-    settle_candidates, Candidate, CandidateOutcome, NegotiationCause, NegotiationSettlement,
-    Registry,
-};
-use qsl_semantics::check::Capability;
-use quire_exact::Cancel;
 use qsl_eval::model_subject::{ProtocolSubject, RoleBinding};
 use qsl_eval::simulation::protocol::StepKind;
+use qsl_foundation::{BackendId, RequestIndex};
 use qsl_package::CheckedPackage;
 use qsl_replay::protocol_analysis::{
     node_text, AnalysisOutcome, BoundsDraft, InconclusiveCause, Observed, ProjectionBoundsDraft,
@@ -30,8 +24,14 @@ use qsl_replay::{
     ModelCheckLimit, ProofBasis, ResultLabel, SeparatingWitnessRecord, SettlementBasis,
     TerminalValue, Truth, UnavailabilityCause,
 };
+use qsl_route::{
+    settle_candidates, Candidate, CandidateOutcome, NegotiationCause, NegotiationSettlement,
+    Registry,
+};
+use qsl_semantics::check::Capability;
 use qsl_semantics::model::observation::DocumentRef;
 use quire_contract_model::{CheckedNodeId, CheckedPackageV2};
+use quire_exact::Cancel;
 
 use crate::fill::{instance, model_subject, package, source_memory, Documents, PACKAGE};
 use crate::protocol_projection::{admitted_source, clause, named, root as assessed_root};
@@ -568,37 +568,44 @@ fn the_realizability_replay_arm_reproduces_both_forms_and_refuses_edits() {
     // A first step that is not an admitted successor of an initial state.
     let longer_is_a = history_a.len() >= history_b.len();
     assert!(matches!(
-        edit(&|ce| if let RealizabilityCounterexample::IndistinguishableHistories {
-            history_a,
-            history_b,
-            ..
-        } = ce
-        {
-            let longer = if longer_is_a { history_a } else { history_b };
-            longer.remove(0);
-        }),
+        edit(
+            &|ce| if let RealizabilityCounterexample::IndistinguishableHistories {
+                history_a,
+                history_b,
+                ..
+            } = ce
+            {
+                let longer = if longer_is_a { history_a } else { history_b };
+                longer.remove(0);
+            }
+        ),
         Err(RealizabilityDisagreement::StepNotSuccessor { .. })
     ));
     // Two equal actions are no incompatible pair.
     let same = action_a.clone();
     assert_eq!(
-        edit(&|ce| if let RealizabilityCounterexample::IndistinguishableHistories {
-            action_b, ..
-        } = ce
-        {
-            *action_b = same.clone();
-        }),
+        edit(
+            &|ce| if let RealizabilityCounterexample::IndistinguishableHistories {
+                action_b, ..
+            } = ce
+            {
+                *action_b = same.clone();
+            }
+        ),
         Err(RealizabilityDisagreement::SameAction)
     );
     // The obligation is not the one a hidden choice violates.
     let other = hidden.named("Seller");
     assert_eq!(
-        edit(&|ce| if let RealizabilityCounterexample::IndistinguishableHistories {
-            obligation, ..
-        } = ce
-        {
-            *obligation = other.clone();
-        }),
+        edit(
+            &|ce| if let RealizabilityCounterexample::IndistinguishableHistories {
+                obligation,
+                ..
+            } = ce
+            {
+                *obligation = other.clone();
+            }
+        ),
         Err(RealizabilityDisagreement::NotTheStatedViolation)
     );
 
@@ -645,14 +652,29 @@ fn projection_request(fixture: &Fixture, max_depth: u64) -> ProjectionRequest {
 
 /// The FR-360 axes one served item settled with, read from its terminal
 /// record and its carried result.
-fn axes(record: &AnalyzeRecord) -> (TerminalValue, ResultLabel, SettlementBasis, Execution, Truth) {
+fn axes(
+    record: &AnalyzeRecord,
+) -> (
+    TerminalValue,
+    ResultLabel,
+    SettlementBasis,
+    Execution,
+    Truth,
+) {
     let settlement = record
         .protocol_analysis
         .as_ref()
         .expect("a served item carries its result")
         .settlement();
-    let value = record.terminal().expect("a terminal record").value().clone();
-    assert_eq!(value, settlement.value, "the record holds the settlement's value");
+    let value = record
+        .terminal()
+        .expect("a terminal record")
+        .value()
+        .clone();
+    assert_eq!(
+        value, settlement.value,
+        "the record holds the settlement's value"
+    );
     (
         value,
         settlement.label,
@@ -671,16 +693,26 @@ fn axes(record: &AnalyzeRecord) -> (TerminalValue, ResultLabel, SettlementBasis,
 fn the_protocol_kinds_are_served_by_the_linked_manifest() {
     let mut registry = Registry::new();
     for descriptor in Engines::qsl().expect("they register").registrations() {
-        registry.register(descriptor.clone()).expect("a unique backend");
+        registry
+            .register(descriptor.clone())
+            .expect("a unique backend");
     }
     let engine = BackendId::new(protocol_analysis::manifest::BACKEND_ID);
     for kind in [Capability::LocalProjection, Capability::Realizability] {
         let CandidateOutcome::Candidates(set) = registry.candidates(kind, None) else {
             panic!("{kind:?}: a candidate set");
         };
-        assert_eq!(set.candidates(), [Candidate::new(engine.clone())], "{kind:?}");
         assert_eq!(
-            settle_candidates(&registry.candidates(kind, Some(&engine)), kind, Some(&engine)),
+            set.candidates(),
+            [Candidate::new(engine.clone())],
+            "{kind:?}"
+        );
+        assert_eq!(
+            settle_candidates(
+                &registry.candidates(kind, Some(&engine)),
+                kind,
+                Some(&engine)
+            ),
             NegotiationSettlement::Single(engine.clone())
         );
         let other = BackendId::new("en-1");
@@ -751,9 +783,17 @@ fn a_driver_run_settles_each_kind_under_each_label() {
         (each, each.request(64)),
         (sound, stopped),
     ] {
-        items.push(realizability_item(at(items.len()), &fixture.admitted, request));
+        items.push(realizability_item(
+            at(items.len()),
+            &fixture.admitted,
+            request,
+        ));
     }
-    let records = analyze_items(&Engines::qsl().expect("they register"), items, &Cancel::new());
+    let records = analyze_items(
+        &Engines::qsl().expect("they register"),
+        items,
+        &Cancel::new(),
+    );
     assert_eq!(records.len(), 11);
 
     let proved = (
@@ -794,14 +834,14 @@ fn a_driver_run_settles_each_kind_under_each_label() {
         limit: ModelCheckLimit::MaxStates,
         value: 1,
     });
-    for (at, (value, label, basis, execution, truth)) in
-        records.iter().map(axes).enumerate()
-    {
+    for (at, (value, label, basis, execution, truth)) in records.iter().map(axes).enumerate() {
         let (want, axes) = match at {
             0 | 5 => (Some(uncertified.clone()), proved),
             1 | 6 | 7 => (Some(TerminalValue::Refuted), refuted_axes),
             2 => (
-                Some(TerminalValue::Inconclusive(Fr331Cause::BoundReached { depth: 1 })),
+                Some(TerminalValue::Inconclusive(Fr331Cause::BoundReached {
+                    depth: 1,
+                })),
                 pending,
             ),
             8 => (

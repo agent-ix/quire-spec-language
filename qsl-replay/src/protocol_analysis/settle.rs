@@ -65,10 +65,12 @@ impl ProtocolAnalysisSettlement {
                 truth: Truth::Pending,
             },
             AnalysisOutcome::Unsupported(cause) => Self::unsupported(cause.clone()),
-            AnalysisOutcome::Failed(limit) => Self::resource_incomplete(IncompleteCause::LimitReached {
-                limit: limit.limit,
-                value: limit.value,
-            }),
+            AnalysisOutcome::Failed(limit) => {
+                Self::resource_incomplete(IncompleteCause::LimitReached {
+                    limit: limit.limit,
+                    value: limit.value,
+                })
+            }
         }
     }
 

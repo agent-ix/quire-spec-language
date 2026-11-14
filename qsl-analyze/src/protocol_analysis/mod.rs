@@ -19,6 +19,6 @@ pub(crate) use item::{settle, ProtocolAnalysisReport};
 pub use profile::{unsupported_construct, Profile};
 pub use project::{project, ProjectionOutcome, ProjectionRefusal, ProjectionRequest};
 pub use realize::{
-    realize, replay_counterexample, replay_strategy, RealizabilityOutcome, RealizabilityRefusal, RealizabilityRequest,
-    ANALYZER,
+    realize, replay_counterexample, replay_strategy, RealizabilityOutcome, RealizabilityRefusal,
+    RealizabilityRequest, ANALYZER,
 };

@@ -149,7 +149,9 @@ fn walk(
         }
         return Ok(Ok((state, seen)));
     }
-    Ok(Err(RealizabilityDisagreement::StepNotSuccessor { at: furthest }))
+    Ok(Err(RealizabilityDisagreement::StepNotSuccessor {
+        at: furthest,
+    }))
 }
 
 /// Whether `action` is enabled for `role` at `state`: `End` at an intended

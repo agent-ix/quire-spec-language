@@ -127,12 +127,14 @@ pub fn realizability_item<'a>(
                     RealizabilityRefusal::InvalidProfile(_) | RealizabilityRefusal::PremiseFact(_),
                 ) => invalid("invalid-value"),
                 Err(RealizabilityRefusal::Stopped(stop)) => match stop.limit {
-                    Some(ExpansionLimit::EvaluationMeter(counter)) => EngineReport::ProtocolAnalysis(
-                        Box::new(ProtocolAnalysisReport::Stopped(IncompleteCause::LimitReached {
-                            limit: ModelCheckLimit::EvaluationMeter { counter },
-                            value: qsl_replay::meter_bound(&meter, counter),
-                        })),
-                    ),
+                    Some(ExpansionLimit::EvaluationMeter(counter)) => {
+                        EngineReport::ProtocolAnalysis(Box::new(ProtocolAnalysisReport::Stopped(
+                            IncompleteCause::LimitReached {
+                                limit: ModelCheckLimit::EvaluationMeter { counter },
+                                value: qsl_replay::meter_bound(&meter, counter),
+                            },
+                        )))
+                    }
                     Some(ExpansionLimit::MaxCandidates) | None => fault(),
                 },
                 Err(

@@ -9,7 +9,9 @@
 use std::collections::BTreeMap;
 
 use qsl_eval::simulation::model::ModelFinding;
-use qsl_eval::simulation::protocol::{ProtocolState, ProtocolSystem, ProtocolTransition, Sc, StepKind};
+use qsl_eval::simulation::protocol::{
+    ProtocolState, ProtocolSystem, ProtocolTransition, Sc, StepKind,
+};
 use qsl_eval::simulation::ExpansionStop;
 use qsl_package::protocol_view::{protocol_view, ViewRefusal};
 use quire_contract_model::{CheckedNodeId, CheckedPackageV2};
@@ -275,7 +277,10 @@ impl Arena<'_, '_> {
     ///
     /// [`ArenaError`] when the step names no node or its record does not
     /// encode.
-    pub fn classify(&self, transition: &ProtocolTransition) -> Result<Option<RoleStep>, ArenaError> {
+    pub fn classify(
+        &self,
+        transition: &ProtocolTransition,
+    ) -> Result<Option<RoleStep>, ArenaError> {
         let unnamed = |what: &str| ArenaError::UnnamedNode(what.to_owned());
         let path = transition.node().unwrap_or_default();
         let (role, receive_from) = match transition.kind() {

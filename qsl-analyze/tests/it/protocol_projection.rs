@@ -994,7 +994,10 @@ fn comparing_nested_runs_is_charged_to_the_transition_limit() {
     };
     match project(&package, tight).unwrap().outcome {
         AnalysisOutcome::Failed(limit) => {
-            assert_eq!((limit.limit, limit.value), (ModelCheckLimit::MaxTransitions, built));
+            assert_eq!(
+                (limit.limit, limit.value),
+                (ModelCheckLimit::MaxTransitions, built)
+            );
         }
         other => panic!("expected a run-limit failure: {other:?}"),
     }
