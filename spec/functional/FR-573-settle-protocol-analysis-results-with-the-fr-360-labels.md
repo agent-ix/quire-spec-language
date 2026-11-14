@@ -56,7 +56,7 @@ The settlement map is:
 | Projection counterexample, or either realizability refutation form | `refuted` | `decisive-counterexample` | Settles only after the counterexample replays (below); carries the FR-574 record. |
 | Search reached `max_depth` or `max_history` without a counterexample, absent role-knowledge or environment premise, a cut that decided the result, or an unforced refutation | `inconclusive` | `unsettled` | Never `proved`. |
 | A construct of FR-575 | `unsupported` | `unavailable` | Names the located cause. |
-| A run limit stopped the analysis before it completed its method | `failed`, execution `resource-incomplete` | `unavailable` | No artifact; states the limit and the value used (PA-14). |
+| A run limit stopped the analysis before it completed its method | `failed`, execution `resource-incomplete` | `unavailable` | No witness or counterexample; states the limit and the value used (PA-14). |
 | An engine failure | `failed`, execution `failed` | `unavailable` | |
 
 - The replay arm re-walks the counterexample's stated paths or moves against
@@ -72,13 +72,13 @@ The settlement map is:
   its index disagrees. Both forms carry the request's key and the FR-574
   record the request's root gives, and every play stays within `max_depth`.
   For indistinguishable histories the arm checks that the role observes the
-  two ends equally, within `max_history`; that the two actions differ and
-  each is enabled at its own end (`End` at an intended terminal state); that
-  the obligation is `finish`; and that the not-lost action sets of the two
-  ends are disjoint (PA-18 (i)): every action the role can take at both ends
-  has, in the counterexample, a continuation from one end whose first step
-  is the role taking that action and whose last state violates an
-  obligation. For an environment defeat it checks that the play ends in a
+  two ends equally, within `max_history` at an end the role can still step
+  from; that the two actions differ and each is enabled at its own end
+  (`End` at an intended terminal state); that the obligation is `finish`;
+  that every move at either end is a step of the role, so a strategy that
+  commits an action an end does not enable is stuck there; and that no
+  action is enabled at both ends (PA-18 (i)). At a forced pair no node is
+  lost, so the enabled sets are the not-lost sets. For an environment defeat it checks that the play ends in a
   violated invariant of the clause or a deadlock against `finish`, as the
   counterexample names. Each engine runs its arm before it returns a
   refutation.
@@ -135,7 +135,7 @@ changed by this requirement.
 | FR-573-AC-2 | A projection counterexample and each of the two realizability refutation forms settle `refuted`, `decisive-counterexample`, execution `completed`, truth `violated`, only after the counterexample replays through its arm: `ReplaySource::ProtocolAnalysis` for a projection, the arena walk for realizability. | Test (TC-1413) |
 | FR-573-AC-3 | A counterexample whose replay disagrees with the checked graph (a step that is not an admitted successor, or a walk that does not end in the stated divergence) settles `inconclusive`, never `refuted`. | Test (TC-1413) |
 | FR-573-AC-4 | A search that completes its method up to `max_depth` or `max_history` without a counterexample settles `inconclusive`, execution `completed`, truth `pending`, basis `unsettled`; the same holds for an absent realizability premise and for a result that depended on a cut. | Test (TC-1413) |
-| FR-573-AC-5 | A run stopped by `max_states`, `max_transitions` or the evaluation meter settles `failed`, execution `resource-incomplete`, truth `unavailable`, with no artifact and a record naming the limit and the value used. | Test (TC-1413) |
+| FR-573-AC-5 | A run stopped by `max_states`, `max_transitions` or the evaluation meter settles `failed`, execution `resource-incomplete`, truth `unavailable`, with no witness or counterexample and a record naming the limit and the value used. | Test (TC-1413) |
 | FR-573-AC-6 | A FR-575 construct settles `unsupported`, execution `unsupported`, truth `unavailable`, basis `unavailable`. | Test (TC-1413) |
 | FR-573-AC-7 | No `proved` result of either kind settles `Certified` or `Trusted`. | Test (TC-1413) |
 

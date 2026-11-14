@@ -33,3 +33,17 @@ Ticket: QSL-1897. Spec review of the spec hunks in the diff, covering consistenc
 ## Verdict
 
 Fix FND-001, together with the code change, and FND-002 before merge. FND-003 is a one-word clarification. The rest of the spec change is accurate, including the TL-387 handoff note, apart from the absent-artifact case raised in code-review FND-005.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | low | FR-573-AC-5 and TC-1413's step 5 expected result still say a stopped run settles "with no artifact". FR-573 Serving now makes the stop the result's own `failed` outcome, carried with its key on the `ProtocolAnalysisArtifact`, and the table row's "No artifact" means no witness or counterexample (PA-14). Reword both to "no witness or counterexample". The ADR-036 TL-387 handoff note should also say that `protocol_analysis` is absent for a refusal or an engine failure. | spec/functional/FR-573-settle-protocol-analysis-results-with-the-fr-360-labels.md:138; spec/test-cases/TC-1413-protocol-analysis-results-settle-with-fr-360-labels-and-uncertified.md:52-53; spec/decisions/ADR-036-protocol-local-projection-and-realizability-engine.md:224-240 |
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | 16c26295e: FR-573 Behavior now requires the not-lost sets to be disjoint (PA-18 (i)): every action the role can take at both ends needs a carried continuation from one end, starting with that action and ending in a violation. ADR-036 PA-20 says the same. The "enabled at its own end" premise is still open as code-review FND-007. |
+| FND-002 | fixed | FR-573-AC-2 now reads "through its arm: `ReplaySource::ProtocolAnalysis` for a projection, the arena walk for realizability". TC-1413 step 2 and ADR-036 PA-20 name both arms the same way, and PA-20 says the realizability arm has no replay source. |
+| FND-003 | fixed | The second bullet now begins "For a projection, the replay arm re-walks the stated paths with the structure's successor relation". |

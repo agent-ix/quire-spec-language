@@ -33,3 +33,9 @@ Bindings checked: `a_driver_run_settles_each_kind_under_each_label` covers FR-57
 ## Verdict
 
 Coverage is adequate for the brief, which does not ask for exhaustive tests. FND-001 is low, and adding a meter-stopped item would close it. The AC-3 gap is carried by code-review FND-003.
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | 16c26295e: the driver run adds a projection stopped by `max_transitions` (item 11) and a realizability result decided on `cut-count` (item 12), each asserted on its value and axes. The meter mapping is covered by the unit test `an_evaluation_meter_stop_fails_the_run_naming_the_counter` (tagged TC-1413, FR-573-AC-5), which calls `metered` directly. That test fails without the mapping. TC-1413 now says the meter stop is settled on the engine's own stop mapping. That is acceptable, because a `bounded-static` arena cannot reach the meter. |

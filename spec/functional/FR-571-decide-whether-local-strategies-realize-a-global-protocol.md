@@ -116,7 +116,11 @@ plays explored, the horizon and whether exploration closed (PA-19).
   non-empty sets, an avoidable history, or a defeat that depends on a cut
   choice shall be non-conclusive. In `bounded-static` neither the
   avoidable-history case nor the cut-choice case arises; a disjointness
-  that rests on a cut action is still non-conclusive.
+  that rests on a cut action is still non-conclusive, and so is a pair at
+  an end where another role or the environment can move: the role could
+  wait there until an action the end does not enable yet becomes enabled in
+  the same class, so the pair is forced only where the role is the sole
+  mover at both ends.
 - The engine shall return realizable only after the witness table passes the in-engine
   replay walk of PA-19 over every environment play of the premises,
   recomputing each class; a table that fails it, or whose exploration did not
