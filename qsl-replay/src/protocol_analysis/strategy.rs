@@ -153,6 +153,10 @@ pub struct BranchDefeat {
 
 /// A forced refutation (PA-18, PA-25).
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[allow(
+    clippy::large_enum_variant,
+    reason = "a result holds at most one counterexample; boxing a variant saves nothing"
+)]
 pub enum RealizabilityCounterexample {
     /// Two histories one role cannot tell apart that need disjoint actions.
     IndistinguishableHistories {
