@@ -42,10 +42,10 @@ not choose, derive or default it.
 
 ## Outputs
 
-One FR-351 record on the QSpec FR-352 `native-run-result/2` document. This
-slice builds the record and attaches it to the counterexample; the
-`native-run-result/2` carriage is part of serving the kinds. Remaining work:
-QSL-1897. A
+One FR-351 record, attached to the counterexample and carried on the
+`analyze` result of the item (FR-573 "Serving"). QSpec FR-352's
+`native-run-result/2` is a clause-run document with no protocol-analysis
+result form, so the record's carriage on it is open on QSL-1898. A
 `closed-scope` result carries no record (quire-protocol FR-302).
 
 ## Behavior

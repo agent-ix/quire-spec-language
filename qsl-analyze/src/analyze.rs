@@ -222,6 +222,17 @@ impl Engine {
         contract_check::manifest::descriptor(ProviderOrigin::Linked).map(Self::new)
     }
 
+    /// The protocol analysis engine: `local-projection` and
+    /// `realizability` (ADR-036 PA-4).
+    ///
+    /// # Errors
+    ///
+    /// Only if the registry's admission rules refuse the engine's own
+    /// manifest.
+    pub fn protocol_analysis() -> Result<Self, RegistrationRefusal> {
+        crate::protocol_analysis::manifest::descriptor(ProviderOrigin::Linked).map(Self::new)
+    }
+
     /// The value-validity arm publishing `max_cases` as its default case
     /// budget (QSpec FR-483 "Descriptor modes, domains and registration").
     ///
@@ -577,8 +588,9 @@ pub fn analyze_item(
 }
 
 impl Engines {
-    /// The layer-A engines `analyze` has an item adapter for: EN-1, EN-4, EN-5
-    /// and EN-6.
+    /// The layer-A engines `analyze` has an item adapter for: EN-1, EN-4,
+    /// EN-5, EN-6, the value-validity and operation-contract arms, and the
+    /// protocol analysis engine.
     ///
     /// # Errors
     ///
@@ -593,6 +605,7 @@ impl Engines {
                 Engine::zone_check()?,
                 Engine::value_check()?,
                 Engine::contract_check()?,
+                Engine::protocol_analysis()?,
             ],
         })
     }
@@ -797,6 +810,8 @@ pub(crate) enum EngineReport {
     Zone(Box<ZoneCheckRecord>, Option<ObjectReference>),
     /// EN-5's report, settled by FR-203 and the exact certificate check.
     Exact(Box<exact::ExactReport>),
+    /// The protocol analysis engine's report, settled by FR-573's map.
+    ProtocolAnalysis(Box<crate::protocol_analysis::ProtocolAnalysisArtifact>),
     /// The engine refused the item, and its settlement map gives the refusal
     /// no terminal record.
     Refused(Refusal),
@@ -1019,6 +1034,9 @@ pub struct AnalyzeRecord {
     /// The protocol subject an EN-1 protocol counterexample was found over
     /// (QSpec FR-433's `subject`).
     pub protocol_subject: Option<qsl_replay::ProtocolWire>,
+    /// The protocol analysis result: its key, and the witness or the
+    /// counterexample with its FR-351 record (ADR-036 PA-24, PA-25).
+    pub protocol_analysis: Option<Box<crate::protocol_analysis::ProtocolAnalysisArtifact>>,
 }
 
 /// How an item settled.
@@ -1046,6 +1064,7 @@ impl AnalyzeRecord {
             probabilistic_counterexample: None,
             over_reference: None,
             protocol_subject: None,
+            protocol_analysis: None,
         }
     }
 
@@ -1589,6 +1608,13 @@ fn settle(
         EngineReport::Statistical(statistical) => {
             record(terminal(statistical.into_terminal(index, backend)), None)
         }
+        EngineReport::ProtocolAnalysis(report) => {
+            let (settled_record, artifact) =
+                crate::protocol_analysis::settle(*report, index, backend);
+            let mut settled = record(terminal(settled_record), None);
+            settled.protocol_analysis = Some(Box::new(artifact));
+            settled
+        }
         EngineReport::Exact(exact) => {
             let (settled_record, evidence, counterexample) = exact.settle(index, backend);
             let mut settled = record(terminal(settled_record), None);
@@ -2124,7 +2150,8 @@ mod tests {
     }
 
     /// FR-489-AC-5: linked registrations are borrowed from the EN-1, EN-4, EN-5
-    /// and EN-6 engines and retain each engine's own identity and advertised kind.
+    /// and EN-6 engines, the two check arms and the protocol analysis engine,
+    /// and retain each engine's own identity and advertised kinds.
     #[trace("TC-1272", "FR-489-AC-5")]
     #[test]
     fn linked_engine_registrations_expose_the_owned_descriptors() {
@@ -2142,11 +2169,15 @@ mod tests {
                 "en-5",
                 "en-6",
                 "value-checker",
-                "contract-checker"
+                "contract-checker",
+                "protocol-analysis"
             ]
         );
-        let [en1, en4, en5, _en6, value, contract] = registrations.as_slice() else {
-            panic!("the linked engine set contains EN-1, EN-4, EN-5, EN-6 and the two check arms");
+        let [en1, en4, en5, _en6, value, contract, protocol] = registrations.as_slice() else {
+            panic!(
+                "the linked engine set contains EN-1, EN-4, EN-5, EN-6, the two check arms and \
+                 the protocol analysis engine"
+            );
         };
         assert!(registrations
             .iter()
@@ -2166,6 +2197,12 @@ mod tests {
         assert!(contract
             .advertises()
             .any(|(kind, _)| kind == Capability::OperationContract));
+        let mut kinds: Vec<_> = protocol.advertises().map(|(kind, _)| kind).collect();
+        kinds.sort_by_key(|kind| kind.to_wire());
+        assert_eq!(
+            kinds,
+            [Capability::LocalProjection, Capability::Realizability]
+        );
     }
 
     /// FR-281-AC-10: a second engine of one `BackendId` is refused as

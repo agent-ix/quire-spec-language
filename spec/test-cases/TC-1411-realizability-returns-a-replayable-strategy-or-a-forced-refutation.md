@@ -33,7 +33,9 @@ Scope: FR-571-AC-1 to FR-571-AC-6; QSpec FR-175-AC-1 to AC-5.
 5. Decide a protocol that every sampled run completes but one admitted
    outcome defeats; and one under an `at-least-once` channel.
 6. Decide the step 2 protocol that one admitted loss defeats and read
-   `defeats_per_branch`.
+   `defeats_per_branch`; and a protocol in which a role, in one branch,
+   can send while its receive is not yet enabled but another role's step
+   will enable it, and must receive in the other, both in one class.
 
 Tag the tests `#[trace("TC-1411", "FR-571-AC-n")]`.
 
@@ -49,4 +51,5 @@ Tag the tests `#[trace("TC-1411", "FR-571-AC-n")]`.
 - Step 5: not realizable; a result depending on a cut count is
   `inconclusive`.
 - Step 6: one entry; no owner choice exists to avoid a history or to be
-  cut, so FR-571-AC-6's cases do not arise.
+  cut, so FR-571-AC-6's cases do not arise; the protocol whose role can wait
+  is not refuted.

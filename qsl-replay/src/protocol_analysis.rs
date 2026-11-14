@@ -690,7 +690,7 @@ impl ProtocolAnalysisKey {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RunLimit {
     /// `max_states`, `max_transitions` or the evaluation meter.
-    pub limit: &'static str,
+    pub limit: crate::ModelCheckLimit,
     /// The value in force.
     pub value: u64,
 }
@@ -784,6 +784,22 @@ pub enum InconclusiveCause {
     Undecided,
 }
 
+impl InconclusiveCause {
+    /// The cause's FR-331 wire spelling (FR-573).
+    #[must_use]
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            Self::Horizon => "bound-reached",
+            Self::PremiseNotStated { .. } => "premise-not-stated",
+            Self::ReplayDisagreed => "replay-disagreed",
+            Self::Unforced => "unforced-refutation",
+            Self::StrategyReplayFailed => "strategy-replay-failed",
+            Self::CutCount => "cut-count",
+            Self::Undecided => "undecided-evaluation",
+        }
+    }
+}
+
 /// The settlement of one analysis, by the FR-360 labels (PA-20). `A` is the
 /// artifact of a `proved` result, `C` the counterexample of a `refuted` one.
 /// A run that a limit stopped is `Failed` and carries neither.
@@ -810,10 +826,15 @@ pub struct ProtocolAnalysisResult<A, C> {
     pub outcome: AnalysisOutcome<A, C>,
 }
 
+pub mod arena;
 mod artifact;
+mod realizability_replay;
+mod settle;
 mod strategy;
 mod structure;
 pub use artifact::*;
+pub use realizability_replay::*;
+pub use settle::*;
 pub use strategy::*;
 pub use structure::*;
 

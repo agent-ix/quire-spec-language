@@ -674,6 +674,9 @@ pub enum UnavailabilityCause {
         /// The reason.
         reason: crate::contract_check::ContractCheckUnsupported,
     },
+    /// ADR-036 PA-21 (QSL FR-575): a protocol analysis met a construct
+    /// outside the `bounded-static` profile, spelled by its slug.
+    ProtocolAnalysis(crate::protocol_analysis::UnsupportedCause),
 }
 
 /// One wire failure in FR-220's `WeakAccessShape.failures` list.
@@ -775,6 +778,7 @@ impl UnavailabilityCause {
                     .code()
                     .cause()
             }
+            Self::ProtocolAnalysis(cause) => cause.slug.as_str(),
         }
     }
 
@@ -806,7 +810,8 @@ impl UnavailabilityCause {
             | Self::StrongAbstractFairness
             | Self::StatisticalRequest(_)
             | Self::ValueCheck { .. }
-            | Self::ContractCheck { .. } => Some("unsupported_projection"),
+            | Self::ContractCheck { .. }
+            | Self::ProtocolAnalysis(_) => Some("unsupported_projection"),
         }
     }
 
@@ -1029,6 +1034,10 @@ pub enum InconclusiveCause {
         /// Which fact fails.
         reason: TransferReason,
     },
+    /// ADR-036 PA-20 (QSL FR-573): a protocol analysis that settled
+    /// `inconclusive` for a cause other than its horizon, which settles
+    /// `bound-reached`.
+    ProtocolAnalysis(crate::protocol_analysis::InconclusiveCause),
 }
 
 /// The `result` of a `premise-unproved` cause (QSpec FR-331): the premise's
@@ -1168,6 +1177,7 @@ impl InconclusiveCause {
             Self::InstanceBoundReached { .. } => "instance-bound-reached",
             Self::PremiseUnproved { .. } => PREMISE_UNPROVED_KIND,
             Self::TransferNotPreserving { .. } => TRANSFER_NOT_PRESERVING_KIND,
+            Self::ProtocolAnalysis(cause) => cause.as_str(),
         }
     }
 
@@ -1201,7 +1211,8 @@ impl InconclusiveCause {
             | Self::MemoryBoundReached { .. }
             | Self::InstanceBoundReached { .. }
             | Self::PremiseUnproved { .. }
-            | Self::TransferNotPreserving { .. } => 0,
+            | Self::TransferNotPreserving { .. }
+            | Self::ProtocolAnalysis(_) => 0,
             Self::SymmetryBroken { population, cause } => {
                 let SymmetryBrokenCause::InitialStatesNotClosed { generator, .. } = cause;
                 let moved: usize = generator
@@ -1679,6 +1690,18 @@ impl TerminalRecord {
         _reproduced: &crate::contract_check::ReproducedContractViolation,
     ) -> Self {
         Self::with_backend(request_index, backend, TerminalValue::Refuted)
+    }
+
+    /// ADR-036 PA-20 (QSL FR-573): the record of a settled protocol
+    /// analysis. A `refuted` settlement exists only for a counterexample
+    /// that replayed, which each protocol analysis engine checks before it
+    /// returns one.
+    pub fn of_protocol_analysis(
+        request_index: RequestIndex,
+        backend: BackendId,
+        settlement: &crate::protocol_analysis::ProtocolAnalysisSettlement,
+    ) -> Self {
+        Self::with_backend(request_index, backend, settlement.value.clone())
     }
 
     /// Build a tested record with the producing backend identity.

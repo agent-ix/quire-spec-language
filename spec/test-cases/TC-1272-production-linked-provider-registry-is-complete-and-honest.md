@@ -39,9 +39,10 @@ assertion verifies.
 ## Expected Results
 
 - The two snapshots are equal. The registration accessor yields exactly the
-  EN-1 and EN-6 `temporal-satisfaction` descriptors, the EN-4
-  `probabilistic-satisfaction` descriptor, the `value-checker` descriptor and
-  the `contract-checker` descriptor owned by `Engines::qsl()`. For each
+  EN-1 and EN-6 `temporal-satisfaction` descriptors, the EN-4 and EN-5
+  `probabilistic-satisfaction` descriptors, the `value-checker` descriptor,
+  the `contract-checker` descriptor and the `protocol-analysis` descriptor
+  owned by `Engines::qsl()`. For each
   descriptor, the snapshot retains its exact `BackendId`, origin and
   capability set. Candidate queries yield EN-1 and EN-6 only for
   `temporal-satisfaction` and EN-4 only for `probabilistic-satisfaction` when

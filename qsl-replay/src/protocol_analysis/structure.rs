@@ -16,6 +16,7 @@ use qsl_package::protocol_view::{Port, PortRef};
 use quire_contract_model::CheckedNodeId;
 
 use super::RunLimit;
+use crate::ModelCheckLimit;
 
 /// The most runs a case may split into over its nested choices.
 const MAX_VARIANTS: usize = 256;
@@ -217,7 +218,7 @@ impl GlobalStructure {
         events.sort_by(|left, right| left.at.cmp(&right.at));
         if events.len() as u64 > budget.max_states {
             return Err(RunLimit {
-                limit: "max_states",
+                limit: ModelCheckLimit::MaxStates,
                 value: budget.max_states,
             });
         }
@@ -327,7 +328,7 @@ impl GlobalStructure {
                     transitions += 1;
                     if transitions > budget.max_transitions {
                         return Err(RunLimit {
-                            limit: "max_transitions",
+                            limit: ModelCheckLimit::MaxTransitions,
                             value: budget.max_transitions,
                         });
                     }
@@ -910,7 +911,7 @@ impl GlobalStructure {
                 if !between.get(b) {
                     if edges.len() as u64 >= max_transitions {
                         return Err(RunLimit {
-                            limit: "max_transitions",
+                            limit: ModelCheckLimit::MaxTransitions,
                             value: max_transitions,
                         });
                     }

@@ -696,7 +696,8 @@ impl ItemCause {
                 | InconclusiveCause::SolverInconclusive { .. }
                 // Planner-only causes: the planner result writes their payload.
                 | InconclusiveCause::PremiseUnproved { .. }
-                | InconclusiveCause::TransferNotPreserving { .. },
+                | InconclusiveCause::TransferNotPreserving { .. }
+                | InconclusiveCause::ProtocolAnalysis(_),
             ) => {}
             ReportedInconclusiveCause::Cause(InconclusiveCause::ReductionNotPreserving {
                 reduction,
@@ -968,6 +969,7 @@ impl OutcomeItem {
                     UnavailabilityCause::ContractCheck { reason, .. } => {
                         item.refusal = Some(reason.as_str());
                     }
+                    UnavailabilityCause::ProtocolAnalysis(_) => {}
                     UnavailabilityCause::SolverAbsent
                     | UnavailabilityCause::HybridProviderAbsent
                     | UnavailabilityCause::BackendAbsent
