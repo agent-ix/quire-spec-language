@@ -97,14 +97,58 @@ pub struct RealizabilityWitness {
     pub closure: Closure,
 }
 
+/// One step of a play: the index of the successor taken, in the `qsl-eval`
+/// system's canonical successor order of the state before it, and that
+/// successor's transition. The index makes the walk determinate; the
+/// transition must equal the one at that index.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PlayStep {
+    /// The successor's index.
+    pub successor: usize,
+    /// The successor's transition.
+    pub transition: ProtocolTransition,
+}
+
+/// A play: the index of its initial state, in the system's canonical
+/// initial order, and its steps in order.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Play {
+    /// The initial state's index.
+    pub initial: usize,
+    /// The steps.
+    pub steps: Vec<PlayStep>,
+}
+
+/// Which history of an indistinguishable pair.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum HistoryEnd {
+    /// The end of `history_a`.
+    A,
+    /// The end of `history_b`.
+    B,
+}
+
+/// PA-18 (i) evidence that an action the role can take at both ends loses
+/// at one of them: a continuation from that end whose first step is the
+/// role taking the action and whose last state violates an obligation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LostAction {
+    /// The action.
+    pub action: StrategyAction,
+    /// The end it loses at.
+    pub at: HistoryEnd,
+    /// The steps from that end to the violation.
+    pub continuation: Vec<PlayStep>,
+}
+
 /// The defeating play of one owner branch of the first lost owner node
 /// (PA-18 (ii)). In the `bounded-static` profile a choice's branch is fixed
 /// by the environment's moves, so that node has one branch and the
 /// counterexample one entry.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BranchDefeat {
-    /// The defeating play from an initial state, in step order.
-    pub play: Vec<ProtocolTransition>,
+    /// The defeating play.
+    pub play: Play,
 }
 
 /// A forced refutation (PA-18, PA-25).
@@ -116,14 +160,18 @@ pub enum RealizabilityCounterexample {
         key: ProtocolAnalysisKey,
         /// The role.
         role: CheckedNodeId,
-        /// The first history, in step order from an initial state.
-        history_a: Vec<ProtocolTransition>,
+        /// The first history.
+        history_a: Play,
         /// The second history.
-        history_b: Vec<ProtocolTransition>,
+        history_b: Play,
         /// The action `history_a` needs.
         action_a: StrategyAction,
         /// The action `history_b` needs.
         action_b: StrategyAction,
+        /// For each action the role can take at both ends, the evidence
+        /// that it loses at one of them: the not-lost action sets of the two
+        /// ends are disjoint (PA-18 (i)).
+        lost: Vec<LostAction>,
         /// The violated obligation's node.
         obligation: CheckedNodeId,
         /// The FR-351 record (PA-24).

@@ -15,10 +15,12 @@ mod project;
 mod realize;
 
 pub use item::{projection_item, realizability_item, ProtocolAnalysisArtifact};
-pub(crate) use item::{settle, ProtocolAnalysisReport};
+pub(crate) use item::settle;
 pub use profile::{unsupported_construct, Profile};
 pub use project::{project, ProjectionOutcome, ProjectionRefusal, ProjectionRequest};
 pub use realize::{
     realize, replay_counterexample, replay_strategy, RealizabilityOutcome, RealizabilityRefusal,
     RealizabilityRequest, ANALYZER,
 };
+#[cfg(feature = "test-support")]
+pub use realize::realize_tampered;

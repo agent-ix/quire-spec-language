@@ -811,7 +811,7 @@ pub(crate) enum EngineReport {
     /// EN-5's report, settled by FR-203 and the exact certificate check.
     Exact(Box<exact::ExactReport>),
     /// The protocol analysis engine's report, settled by FR-573's map.
-    ProtocolAnalysis(Box<crate::protocol_analysis::ProtocolAnalysisReport>),
+    ProtocolAnalysis(Box<crate::protocol_analysis::ProtocolAnalysisArtifact>),
     /// The engine refused the item, and its settlement map gives the refusal
     /// no terminal record.
     Refused(Refusal),
@@ -1612,7 +1612,7 @@ fn settle(
             let (settled_record, artifact) =
                 crate::protocol_analysis::settle(*report, index, backend);
             let mut settled = record(terminal(settled_record), None);
-            settled.protocol_analysis = artifact.map(Box::new);
+            settled.protocol_analysis = Some(Box::new(artifact));
             settled
         }
         EngineReport::Exact(exact) => {

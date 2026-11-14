@@ -7,7 +7,8 @@ use std::collections::BTreeSet;
 use ix_trace_rs::trace;
 use qsl_analyze::analyze::{analyze_items, AnalyzeRecord, Engines};
 use qsl_analyze::protocol_analysis::{
-    self, projection_item, realizability_item, realize, replay_counterexample, replay_strategy,
+    self, projection_item, realizability_item, realize, realize_tampered, replay_counterexample,
+    replay_strategy,
     ProjectionRequest, RealizabilityOutcome, RealizabilityRefusal, RealizabilityRequest,
 };
 use qsl_eval::model_subject::{ProtocolSubject, RoleBinding};
@@ -15,7 +16,8 @@ use qsl_eval::simulation::protocol::StepKind;
 use qsl_foundation::{BackendId, RequestIndex};
 use qsl_package::CheckedPackage;
 use qsl_replay::protocol_analysis::{
-    node_text, AnalysisOutcome, BoundsDraft, InconclusiveCause, Observed, ProjectionBoundsDraft,
+    node_text, AnalysisOutcome, AssessedRoot, BoundsDraft, InconclusiveCause,
+    LostAction, Observed, Play, ProjectionBoundsDraft,
     RealizabilityCounterexample, RealizabilityDisagreement, RealizabilityWitness, RunBudget,
     RunLimit, StrategyAction, UnsupportedSlug,
 };
@@ -252,7 +254,7 @@ fn the_hidden_choice_refutes_by_indistinguishable_histories() {
         separating_witness.deciding_element,
         DecidingElement::Protocol(node_text(&obligation).expect("the node encodes"))
     );
-    let longer = history_a.len().max(history_b.len()) - 1;
+    let longer = history_a.steps.len().max(history_b.steps.len()) - 1;
     assert_eq!(position(&separating_witness), Some(longer.to_string()));
 }
 
@@ -459,7 +461,11 @@ fn an_admitted_loss_is_an_environment_defeat() {
     let [defeat] = &defeats_per_branch[..] else {
         panic!("one branch: the environment fixes the choice");
     };
-    assert!(defeat.play.iter().any(|step| step.kind() == StepKind::Lose));
+    assert!(defeat
+        .play
+        .steps
+        .iter()
+        .any(|step| step.transition.kind() == StepKind::Lose));
     assert_eq!(obligation, fixture.named("Done"));
     assert_eq!(
         separating_witness.deciding_element,
@@ -467,7 +473,7 @@ fn an_admitted_loss_is_an_environment_defeat() {
     );
     assert_eq!(
         position(&separating_witness),
-        Some((defeat.play.len() - 1).to_string())
+        Some((defeat.play.steps.len() - 1).to_string())
     );
 }
 
@@ -535,78 +541,99 @@ fn an_activation_on_each_is_unsupported() {
     }
 }
 
-/// PA-20 (ADR-018 SM-7): the realizability replay arm re-walks a stated
-/// counterexample over the arena. Both refutation forms the engine returns
-/// replay; an edited one disagrees, so the engine would settle it
-/// `inconclusive`, never `refuted`.
+fn replay(
+    fixture: &Fixture,
+    counterexample: &RealizabilityCounterexample,
+) -> Result<(), RealizabilityDisagreement> {
+    replay_counterexample(&fixture.admitted, fixture.request(64), counterexample)
+        .expect("admitted")
+        .expect("the request reaches an arena")
+}
+
+/// PA-20 (ADR-018 SM-7): both refutation forms the engine returns replay,
+/// including one found over two initial states; each edit of a play, the
+/// actions, the obligation, the key or the record disagrees.
 #[trace("TC-1413", "FR-573-AC-2", "FR-573-AC-3")]
 #[test]
 fn the_realizability_replay_arm_reproduces_both_forms_and_refuses_edits() {
-    let replay = |fixture: &Fixture, edited: &RealizabilityCounterexample| {
-        replay_counterexample(&fixture.admitted, fixture.request(64), edited)
-            .expect("admitted")
-            .expect("the request reaches an arena")
-    };
-
     let hidden = worked("exactly-once-premise", PICK, "");
     let found = refuted(hidden.run());
     assert_eq!(replay(&hidden, &found), Ok(()));
-    let RealizabilityCounterexample::IndistinguishableHistories {
-        history_a,
-        history_b,
-        action_a,
-        ..
-    } = &found
-    else {
-        panic!("expected indistinguishable histories");
-    };
     let edit = |change: &dyn Fn(&mut RealizabilityCounterexample)| {
         let mut edited = found.clone();
         change(&mut edited);
         replay(&hidden, &edited)
     };
-    // A first step that is not an admitted successor of an initial state.
-    let longer_is_a = history_a.len() >= history_b.len();
+    // A step whose successor index names another transition.
     assert!(matches!(
-        edit(
-            &|ce| if let RealizabilityCounterexample::IndistinguishableHistories {
-                history_a,
-                history_b,
-                ..
-            } = ce
-            {
-                let longer = if longer_is_a { history_a } else { history_b };
-                longer.remove(0);
-            }
-        ),
+        edit(&|ce| if let RealizabilityCounterexample::IndistinguishableHistories {
+            history_a,
+            history_b,
+            ..
+        } = ce
+        {
+            let longer = if history_a.steps.len() >= history_b.steps.len() {
+                history_a
+            } else {
+                history_b
+            };
+            longer.steps.remove(0);
+        }),
         Err(RealizabilityDisagreement::StepNotSuccessor { .. })
     ));
-    // Two equal actions are no incompatible pair.
-    let same = action_a.clone();
+    // An initial state the system does not have.
     assert_eq!(
-        edit(
-            &|ce| if let RealizabilityCounterexample::IndistinguishableHistories {
-                action_b, ..
-            } = ce
-            {
-                *action_b = same.clone();
-            }
-        ),
+        edit(&|ce| if let RealizabilityCounterexample::IndistinguishableHistories {
+            history_a, ..
+        } = ce
+        {
+            history_a.initial = 7;
+        }),
+        Err(RealizabilityDisagreement::StepNotSuccessor { at: 0 })
+    );
+    // Two equal actions are no incompatible pair.
+    assert_eq!(
+        edit(&|ce| if let RealizabilityCounterexample::IndistinguishableHistories {
+            action_a,
+            action_b,
+            ..
+        } = ce
+        {
+            *action_b = action_a.clone();
+        }),
         Err(RealizabilityDisagreement::SameAction)
     );
     // The obligation is not the one a hidden choice violates.
     let other = hidden.named("Seller");
     assert_eq!(
-        edit(
-            &|ce| if let RealizabilityCounterexample::IndistinguishableHistories {
-                obligation,
-                ..
-            } = ce
-            {
-                *obligation = other.clone();
-            }
-        ),
-        Err(RealizabilityDisagreement::NotTheStatedViolation)
+        edit(&|ce| if let RealizabilityCounterexample::IndistinguishableHistories {
+            obligation, ..
+        } = ce
+        {
+            *obligation = other.clone();
+        }),
+        Err(RealizabilityDisagreement::RecordMismatch)
+    );
+    // A counterexample of another key or with another record.
+    let foreign = hidden.decide(hidden.request(63)).key;
+    assert_eq!(
+        edit(&|ce| if let RealizabilityCounterexample::IndistinguishableHistories {
+            key, ..
+        } = ce
+        {
+            *key = foreign.clone();
+        }),
+        Err(RealizabilityDisagreement::KeyMismatch)
+    );
+    assert_eq!(
+        edit(&|ce| if let RealizabilityCounterexample::IndistinguishableHistories {
+            separating_witness,
+            ..
+        } = ce
+        {
+            separating_witness.trace_position = None;
+        }),
+        Err(RealizabilityDisagreement::RecordMismatch)
     );
 
     let lossy = worked("at-most-once", PICK, CANCELLED);
@@ -614,10 +641,18 @@ fn the_realizability_replay_arm_reproduces_both_forms_and_refuses_edits() {
     assert_eq!(replay(&lossy, &defeat), Ok(()));
     let mut short = defeat.clone();
     if let RealizabilityCounterexample::EnvironmentDefeat {
-        defeats_per_branch, ..
+        defeats_per_branch,
+        separating_witness,
+        obligation,
+        ..
     } = &mut short
     {
-        defeats_per_branch[0].play.pop();
+        defeats_per_branch[0].play.steps.pop();
+        let position = defeats_per_branch[0].play.steps.len() - 1;
+        *separating_witness = AssessedRoot::new(Some(assessed_root()))
+            .unwrap()
+            .record(obligation, position)
+            .unwrap();
     }
     assert_eq!(
         replay(&lossy, &short),
@@ -630,9 +665,108 @@ fn the_realizability_replay_arm_reproduces_both_forms_and_refuses_edits() {
     {
         defeats_per_branch.clear();
     }
+    assert!(replay(&lossy, &none).is_err());
+
+    // A true refutation over two initial states names its initial state,
+    // so the walk takes the right one.
+    let two = Fixture::over(
+        "exactly-once-premise",
+        "",
+        &format!(
+            "sequence Main {{\n\
+             send Placed via Order as (placed: Ack) {{ true }};\n\
+             receive Got via Order of Placed as (got: Ack) {{ true }};\n\
+             choice Decide by Seller visible (got.ok) {{\n\
+               case no when {{ not got.ok }} sequence Cancel {{ }}\n\
+               case yes when {{ got.ok }} sequence Ship {{ {PICK} }}\n\
+             }} }}"
+        ),
+        &[0, 1],
+    );
+    let found = refuted(two.run());
+    assert_eq!(replay(&two, &found), Ok(()));
+}
+
+/// PA-18 (i): a claimed pair of indistinguishable histories
+/// whose two actions are both enabled at both ends, with no evidence that
+/// either loses at one end, is refused. Here both histories are the empty
+/// play, where the `Buyer` may take either of two parallel sends.
+#[trace("TC-1413", "FR-573-AC-3")]
+#[test]
+fn indistinguishable_histories_without_disjoint_not_lost_sets_are_refused() {
+    let fixture = Fixture::new(
+        "exactly-once-premise",
+        "sequence Main { parallel Par {\n\
+           branch a sequence Ay { send Sa via Order as (sa: Ack) { true }; }\n\
+           branch b sequence Bee { send Sb via Order as (sb: Ack) { true }; }\n\
+         } join all [a, b];\n\
+         receive Ra via Order of Sa as (ra: Ack) { true };\n\
+         receive Rb via Order of Sb as (rb: Ack) { true }; }",
+    );
+    let key = fixture.run().key;
+    let finish = fixture.named("Done");
+    let empty = Play {
+        initial: 0,
+        steps: Vec::new(),
+    };
+    let claim = |lost: Vec<LostAction>| RealizabilityCounterexample::IndistinguishableHistories {
+        key: key.clone(),
+        role: fixture.named("Buyer"),
+        history_a: empty.clone(),
+        history_b: empty.clone(),
+        action_a: StrategyAction::Send {
+            node: fixture.named("Sa"),
+        },
+        action_b: StrategyAction::Send {
+            node: fixture.named("Sb"),
+        },
+        lost,
+        separating_witness: AssessedRoot::new(Some(assessed_root()))
+            .unwrap()
+            .record(&finish, 0)
+            .unwrap(),
+        obligation: finish.clone(),
+    };
     assert_eq!(
-        replay(&lossy, &none),
-        Err(RealizabilityDisagreement::NotTheStatedViolation)
+        replay(&fixture, &claim(Vec::new())),
+        Err(RealizabilityDisagreement::NotDisjoint)
+    );
+}
+
+/// PA-20: a forced refutation settles `refuted` only through the replay
+/// arm; an edited counterexample settles `inconclusive` `replay-disagreed`.
+#[trace("TC-1413", "FR-573-AC-3")]
+#[test]
+fn the_engine_settles_an_edited_refutation_inconclusive() {
+    let hidden = worked("exactly-once-premise", PICK, "");
+    let untouched = realize_tampered(&hidden.admitted, hidden.request(64), &|_| {}).unwrap();
+    assert!(matches!(untouched.outcome, AnalysisOutcome::Refuted(_)));
+    let edited = realize_tampered(&hidden.admitted, hidden.request(64), &|ce| {
+        if let RealizabilityCounterexample::IndistinguishableHistories {
+            action_a, action_b, ..
+        } = ce
+        {
+            *action_b = action_a.clone();
+        }
+    })
+    .unwrap();
+    assert_eq!(
+        inconclusive(edited),
+        InconclusiveCause::ReplayDisagreed
+    );
+    let lossy = worked("at-most-once", PICK, CANCELLED);
+    let edited = realize_tampered(&lossy.admitted, lossy.request(64), &|ce| {
+        if let RealizabilityCounterexample::EnvironmentDefeat {
+            defeats_per_branch, ..
+        } = ce
+        {
+            defeats_per_branch.clear();
+        }
+    })
+    .unwrap();
+    assert_eq!(
+        inconclusive(edited),
+        InconclusiveCause::ReplayDisagreed
     );
 }
 
@@ -740,9 +874,11 @@ fn the_protocol_kinds_are_served_by_the_linked_manifest() {
 )]
 #[test]
 fn a_driver_run_settles_each_kind_under_each_label() {
+    const METER_WORK_UNITS: u64 = 200;
     let sound = worked("exactly-once-premise", PICK, CANCELLED);
     let hidden = worked("exactly-once-premise", PICK, "");
     let lossy = worked("at-most-once", PICK, CANCELLED);
+    let open = worked("at-least-once", PICK, CANCELLED);
     let each = Fixture::activated(
         "on each (t: M::Cell)",
         "exactly-once-premise",
@@ -754,7 +890,7 @@ fn a_driver_run_settles_each_kind_under_each_label() {
         max_states: 1,
         ..RunBudget::default()
     };
-    let (sound, hidden, lossy, each) = (&sound, &hidden, &lossy, &each);
+    let (sound, hidden, lossy, open, each) = (&sound, &hidden, &lossy, &open, &each);
     let at = RequestIndex::new;
     let mut items = Vec::new();
     // Projection: proved, refuted, inconclusive (horizon), unsupported, failed.
@@ -789,12 +925,27 @@ fn a_driver_run_settles_each_kind_under_each_label() {
             request,
         ));
     }
+    // A projection stopped by `max_transitions`, a realizability result
+    // decided on a cut count, and one stopped by the evaluation meter.
+    let mut transitions = projection_request(sound, 64);
+    transitions.budget = RunBudget {
+        max_transitions: 1,
+        ..RunBudget::default()
+    };
+    items.push(projection_item(at(items.len()), &sound.admitted, transitions));
+    items.push(realizability_item(at(items.len()), &open.admitted, open.request(64)));
+    let mut metered = sound.request(64);
+    metered.subject.model.simulation.meter = quire_exact::ScalarLimits {
+        work_units: METER_WORK_UNITS,
+        ..crate::counter::UNLIMITED
+    };
+    items.push(realizability_item(at(items.len()), &sound.admitted, metered));
     let records = analyze_items(
         &Engines::qsl().expect("they register"),
         items,
         &Cancel::new(),
     );
-    assert_eq!(records.len(), 11);
+    assert_eq!(records.len(), 14);
 
     let proved = (
         ResultLabel::Proved,
@@ -853,7 +1004,33 @@ fn a_driver_run_settles_each_kind_under_each_label() {
                 pending,
             ),
             3 | 9 => (None, unsupported),
-            _ => (Some(limit.clone()), stopped),
+            4 | 10 => (Some(limit.clone()), stopped),
+            11 => (
+                Some(TerminalValue::Incomplete(IncompleteCause::LimitReached {
+                    limit: ModelCheckLimit::MaxTransitions,
+                    value: 1,
+                })),
+                stopped,
+            ),
+            12 => (
+                Some(TerminalValue::Inconclusive(Fr331Cause::ProtocolAnalysis(
+                    InconclusiveCause::CutCount,
+                ))),
+                pending,
+            ),
+            _ => {
+                assert!(
+                    matches!(
+                        &value,
+                        TerminalValue::Incomplete(IncompleteCause::LimitReached {
+                            limit: ModelCheckLimit::EvaluationMeter { .. },
+                            ..
+                        })
+                    ),
+                    "item {at}: {value:?}"
+                );
+                (Some(value.clone()), stopped)
+            }
         };
         assert_eq!((label, basis, execution, truth), axes, "item {at}");
         match want {

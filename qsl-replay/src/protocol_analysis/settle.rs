@@ -64,51 +64,27 @@ impl ProtocolAnalysisSettlement {
                 execution: Execution::Completed,
                 truth: Truth::Pending,
             },
-            AnalysisOutcome::Unsupported(cause) => Self::unsupported(cause.clone()),
-            AnalysisOutcome::Failed(limit) => {
-                Self::resource_incomplete(IncompleteCause::LimitReached {
+            AnalysisOutcome::Unsupported(cause) => Self {
+                value: TerminalValue::Unsupported(UnavailabilityCause::ProtocolAnalysis(
+                    cause.clone(),
+                )),
+                label: ResultLabel::Unsupported,
+                basis: SettlementBasis::Unavailable,
+                execution: Execution::Unsupported,
+                truth: Truth::Unavailable,
+            },
+            // A run limit or the evaluation meter stopped the analysis
+            // before its method completed: `resource-incomplete` (PA-14).
+            AnalysisOutcome::Failed(limit) => Self {
+                value: TerminalValue::Incomplete(IncompleteCause::LimitReached {
                     limit: limit.limit,
                     value: limit.value,
-                })
-            }
-        }
-    }
-
-    /// `unsupported`: a construct outside the `bounded-static` profile
-    /// (FR-575).
-    #[must_use]
-    pub fn unsupported(cause: super::UnsupportedCause) -> Self {
-        Self {
-            value: TerminalValue::Unsupported(UnavailabilityCause::ProtocolAnalysis(cause)),
-            label: ResultLabel::Unsupported,
-            basis: SettlementBasis::Unavailable,
-            execution: Execution::Unsupported,
-            truth: Truth::Unavailable,
-        }
-    }
-
-    /// `failed`, `resource-incomplete`: a run limit, the evaluation meter or
-    /// a cancellation stopped the analysis before its method completed.
-    #[must_use]
-    pub fn resource_incomplete(cause: IncompleteCause) -> Self {
-        Self {
-            value: TerminalValue::Incomplete(cause),
-            label: ResultLabel::Failed,
-            basis: SettlementBasis::Unavailable,
-            execution: Execution::ResourceIncomplete,
-            truth: Truth::Unavailable,
-        }
-    }
-
-    /// `failed`, execution `failed`: the engine itself failed.
-    #[must_use]
-    pub fn failed() -> Self {
-        Self {
-            value: TerminalValue::Failed,
-            label: ResultLabel::Failed,
-            basis: SettlementBasis::Unavailable,
-            execution: Execution::Failed,
-            truth: Truth::Unavailable,
+                }),
+                label: ResultLabel::Failed,
+                basis: SettlementBasis::Unavailable,
+                execution: Execution::ResourceIncomplete,
+                truth: Truth::Unavailable,
+            },
         }
     }
 }

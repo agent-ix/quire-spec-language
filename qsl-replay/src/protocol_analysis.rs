@@ -689,7 +689,7 @@ impl ProtocolAnalysisKey {
 /// limit and the value used (PA-14).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RunLimit {
-    /// `max_states` or `max_transitions`.
+    /// `max_states`, `max_transitions` or the evaluation meter.
     pub limit: crate::ModelCheckLimit,
     /// The value in force.
     pub value: u64,

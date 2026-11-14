@@ -5,12 +5,9 @@
 //! of the engine's work, so no caller can hand `analyze` a pre-built
 //! result.
 
-use qsl_eval::simulation::ExpansionLimit;
 use qsl_foundation::{BackendId, Code, RequestIndex};
 use qsl_replay::protocol_analysis::ProtocolAnalysisSettlement;
-use qsl_replay::{
-    DeclineCode, IncompleteCause, ModelCheckLimit, ProofRefusalCause, TerminalRecord,
-};
+use qsl_replay::{DeclineCode, ProofRefusalCause, TerminalRecord};
 use qsl_route::Mode;
 use qsl_semantics::check::{Capability, DeclarationFamily};
 use quire_contract_model::CheckedPackageV2;
@@ -45,14 +42,6 @@ impl ProtocolAnalysisArtifact {
     }
 }
 
-/// What the engine reports for one item, before settlement.
-pub(crate) enum ProtocolAnalysisReport {
-    /// A result.
-    Found(ProtocolAnalysisArtifact),
-    /// The evaluation meter stopped the realizability arena.
-    Stopped(IncompleteCause),
-}
-
 fn invalid(cause: &'static str) -> EngineReport {
     EngineReport::Refused(Refusal::Declined(
         ProofRefusalCause::InvalidInput,
@@ -69,7 +58,7 @@ fn fault() -> EngineReport {
 }
 
 fn found(artifact: ProtocolAnalysisArtifact) -> EngineReport {
-    EngineReport::ProtocolAnalysis(Box::new(ProtocolAnalysisReport::Found(artifact)))
+    EngineReport::ProtocolAnalysis(Box::new(artifact))
 }
 
 /// The `local-projection` item at `index` that projects `package`'s protocol
@@ -104,9 +93,9 @@ pub fn projection_item<'a>(
 }
 
 /// The `realizability` item at `index` that decides `package`'s protocol as
-/// `request` asks (FR-571). Refusals settle as for [`projection_item`]; an
-/// arena the evaluation meter stops is `failed` `resource-incomplete`,
-/// naming the counter and its value.
+/// `request` asks (FR-571). Refusals settle as for [`projection_item`]; a
+/// run limit or the evaluation meter that stops the arena is the result's
+/// own `failed` outcome, naming the limit and its value.
 pub fn realizability_item<'a>(
     index: RequestIndex,
     package: &'a CheckedPackageV2,
@@ -119,55 +108,34 @@ pub fn realizability_item<'a>(
         Mode::Unbounded,
         BACKEND_ID,
         move |_| {
-            let meter = request.subject.model.simulation.meter;
             match realize(package, request) {
                 Ok(result) => found(ProtocolAnalysisArtifact::Realizability(Box::new(result))),
                 Err(RealizabilityRefusal::Missing(_)) => invalid("missing-member"),
                 Err(
                     RealizabilityRefusal::InvalidProfile(_) | RealizabilityRefusal::PremiseFact(_),
                 ) => invalid("invalid-value"),
-                Err(RealizabilityRefusal::Stopped(stop)) => match stop.limit {
-                    Some(ExpansionLimit::EvaluationMeter(counter)) => {
-                        EngineReport::ProtocolAnalysis(Box::new(ProtocolAnalysisReport::Stopped(
-                            IncompleteCause::LimitReached {
-                                limit: ModelCheckLimit::EvaluationMeter { counter },
-                                value: qsl_replay::meter_bound(&meter, counter),
-                            },
-                        )))
-                    }
-                    Some(ExpansionLimit::MaxCandidates) | None => fault(),
-                },
                 Err(
                     RealizabilityRefusal::View(_)
                     | RealizabilityRefusal::Premises(_)
                     | RealizabilityRefusal::Admission(_)
                     | RealizabilityRefusal::Protocol(_)
-                    | RealizabilityRefusal::UnnamedNode(_),
+                    | RealizabilityRefusal::UnnamedNode(_)
+                    | RealizabilityRefusal::Stopped(_),
                 ) => fault(),
             }
         },
     )
 }
 
-/// Settle the engine's report as the item's FR-331 terminal record by the
-/// FR-573 map, with the result it carries.
+/// Settle the engine's result as the item's FR-331 terminal record by the
+/// FR-573 map; the record carries the result.
 pub(crate) fn settle(
-    report: ProtocolAnalysisReport,
+    artifact: ProtocolAnalysisArtifact,
     index: RequestIndex,
     backend: BackendId,
-) -> (TerminalRecord, Option<ProtocolAnalysisArtifact>) {
-    match report {
-        ProtocolAnalysisReport::Found(artifact) => (
-            TerminalRecord::of_protocol_analysis(index, backend, &artifact.settlement()),
-            Some(artifact),
-        ),
-        ProtocolAnalysisReport::Stopped(cause) => (
-            TerminalRecord::of_protocol_analysis(
-                index,
-                backend,
-                &ProtocolAnalysisSettlement::resource_incomplete(cause),
-            ),
-            None,
-        ),
-    }
+) -> (TerminalRecord, ProtocolAnalysisArtifact) {
+    (
+        TerminalRecord::of_protocol_analysis(index, backend, &artifact.settlement()),
+        artifact,
+    )
 }
