@@ -47,6 +47,13 @@ Fix FND-001, together with the code change, and FND-002 before merge. FND-003 is
 | --- | --- | --- | --- |
 | FND-005 | low | FR-571 Behavior, ADR-036 PA-18 and FR-573 now state the sole-mover rule: a pair at an end where another role or the environment can move is non-conclusive. No acceptance criterion states it, and TC-1411 has no step for it. So the engine test that backs it is tagged FR-571-AC-2 (gap-analysis FND-003). Add an FR-571 AC, for example "a pair at an end where another role or the environment can move settles `inconclusive` `unforced-refutation`, never `refuted`", and a TC-1411 step. | spec/functional/FR-571-decide-whether-local-strategies-realize-a-global-protocol.md:115-123; spec/test-cases/TC-1411 |
 
+## New findings (disposition pass 3)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-006 | high | FR-571 Behavior ("a role never waits while other roles move"), FR-571-AC-7 ("A role that could only wait for an action not yet enabled is refuted when another state of its class needs a different action"), ADR-036 PA-16 ("may be made to move at any state ... it never waits") and PA-19 extend QSpec FR-175's strategy game. FR-175's environment "chooses admitted external events and channel outcomes", and "each role chooses enabled local actions". Neither thread scheduling nor forcing a role to act is the environment's there. So AC-7 requires refuting protocols that FR-175 calls realizable, such as the AC-7 test's own fixture (see code-review FND-012). QSL cannot redefine the QSpec game in its own requirements. Restate the waiting semantics so that a role whose committed action is not enabled waits, and refute only where waiting cannot help. Otherwise, raise the extension with QSpec (owner decision). | spec/functional/FR-571-decide-whether-local-strategies-realize-a-global-protocol.md:120-128, 143; spec/decisions/ADR-036-protocol-local-projection-and-realizability-engine.md:144, 147 |
+| FND-007 | low | ADR-036 PA-18 and FR-571-AC-6 still say that in `bounded-static` "no history is avoidable" and "PA-18's two inconclusive cases do not arise in V1". Yet the same PA-18 sentence and FR-571 Behavior now make a history avoidable by a role's choice among its own enabled actions, and settle it `inconclusive`. Reword AC-6 and PA-18 to separate an owner's branch choice, which cannot arise, from a role's table choice among its own steps, which can and is `unforced`. | spec/functional/FR-571-decide-whether-local-strategies-realize-a-global-protocol.md:144; spec/decisions/ADR-036-protocol-local-projection-and-realizability-engine.md:146 |
+
 ## Dispositions
 
 | FND | Outcome | Reason |
@@ -55,3 +62,4 @@ Fix FND-001, together with the code change, and FND-002 before merge. FND-003 is
 | FND-002 | fixed | FR-573-AC-2 now reads "through its arm: `ReplaySource::ProtocolAnalysis` for a projection, the arena walk for realizability". TC-1413 step 2 and ADR-036 PA-20 name both arms the same way, and PA-20 says the realizability arm has no replay source. |
 | FND-003 | fixed | The second bullet now begins "For a projection, the replay arm re-walks the stated paths with the structure's successor relation". |
 | FND-004 | fixed | 255b10aa2: the FR-573 table row and FR-573-AC-5 read "no witness or counterexample", as does TC-1413's step 5 expected result. The ADR-036 handoff note adds that `protocol_analysis` is absent for a refusal before analysis or an engine failure, and that a run stopped by a limit or the meter carries its result and key. |
+| FND-005 | fixed | e6bdb2b33: FR-571-AC-7 and TC-1411 step 7 state the rule, and ADR-036 PA-16, PA-18, PA-19 and PA-20 and FR-573 match the code. What the rule says is disputed in FND-006. |
