@@ -708,16 +708,11 @@ fn indistinguishable_histories_without_disjoint_not_lost_sets_are_refused() {
         "sequence Main { parallel Par {\n\
            branch a sequence Ay { send Sa via Order as (sa: Ack) { true }; }\n\
            branch b sequence Bee { send Sb via Order as (sb: Ack) { true }; }\n\
-         } join all [a, b];\n\
-         receive Ra via Order of Sa as (ra: Ack) { true };\n\
-         receive Rb via Order of Sb as (rb: Ack) { true }; }",
+         } join all [a, b]; }",
     );
     let key = fixture.run().key;
     let finish = fixture.named("Done");
-    let empty = Play {
-        initial: 0,
-        steps: Vec::new(),
-    };
+    let empty = to_two_sends(&fixture);
     let claim = |lost: Vec<LostAction>| RealizabilityCounterexample::IndistinguishableHistories {
         key: key.clone(),
         role: fixture.named("Buyer"),
@@ -740,6 +735,35 @@ fn indistinguishable_histories_without_disjoint_not_lost_sets_are_refused() {
         replay(&fixture, &claim(Vec::new())),
         Err(RealizabilityDisagreement::NotDisjoint)
     );
+}
+
+/// The play from the first initial state, by first successors, to the
+/// first state where two `send` steps are enabled.
+fn to_two_sends(fixture: &Fixture) -> Play {
+    use qsl_eval::simulation::protocol::{ProtocolSystem, Sc};
+    use qsl_eval::simulation::TransitionSystem;
+    let subject = fixture.subject();
+    let model = qsl_eval::simulation::model::ModelSystem::new(subject.model.simulation.clone())
+        .expect("the model admits");
+    let system = ProtocolSystem::new(model, &subject, Sc).expect("the protocol admits");
+    let mut state = system.initial().remove(0);
+    let mut steps = Vec::new();
+    loop {
+        let successors = system.successors(&state).expect("expands").successors;
+        let sends = successors
+            .iter()
+            .filter(|(transition, _)| transition.kind() == StepKind::Send)
+            .count();
+        if sends >= 2 {
+            return Play { initial: 0, steps };
+        }
+        let (transition, next) = successors.into_iter().next().expect("a successor");
+        steps.push(qsl_replay::protocol_analysis::PlayStep {
+            successor: 0,
+            transition,
+        });
+        state = next;
+    }
 }
 
 /// PA-20: a forced refutation settles `refuted` only through the replay
@@ -877,7 +901,6 @@ fn the_protocol_kinds_are_served_by_the_linked_manifest() {
 )]
 #[test]
 fn a_driver_run_settles_each_kind_under_each_label() {
-    const METER_WORK_UNITS: u64 = 200;
     let sound = worked("exactly-once-premise", PICK, CANCELLED);
     let hidden = worked("exactly-once-premise", PICK, "");
     let lossy = worked("at-most-once", PICK, CANCELLED);
@@ -928,8 +951,8 @@ fn a_driver_run_settles_each_kind_under_each_label() {
             request,
         ));
     }
-    // A projection stopped by `max_transitions`, a realizability result
-    // decided on a cut count, and one stopped by the evaluation meter.
+    // A projection stopped by `max_transitions` and a realizability result
+    // decided on a cut count.
     let mut transitions = projection_request(sound, 64);
     transitions.budget = RunBudget {
         max_transitions: 1,
@@ -945,22 +968,12 @@ fn a_driver_run_settles_each_kind_under_each_label() {
         &open.admitted,
         open.request(64),
     ));
-    let mut metered = sound.request(64);
-    metered.subject.model.simulation.meter = quire_exact::ScalarLimits {
-        work_units: METER_WORK_UNITS,
-        ..crate::counter::UNLIMITED
-    };
-    items.push(realizability_item(
-        at(items.len()),
-        &sound.admitted,
-        metered,
-    ));
     let records = analyze_items(
         &Engines::qsl().expect("they register"),
         items,
         &Cancel::new(),
     );
-    assert_eq!(records.len(), 14);
+    assert_eq!(records.len(), 13);
 
     let proved = (
         ResultLabel::Proved,
@@ -1027,25 +1040,12 @@ fn a_driver_run_settles_each_kind_under_each_label() {
                 })),
                 stopped,
             ),
-            12 => (
+            _ => (
                 Some(TerminalValue::Inconclusive(Fr331Cause::ProtocolAnalysis(
                     InconclusiveCause::CutCount,
                 ))),
                 pending,
             ),
-            _ => {
-                assert!(
-                    matches!(
-                        &value,
-                        TerminalValue::Incomplete(IncompleteCause::LimitReached {
-                            limit: ModelCheckLimit::EvaluationMeter { .. },
-                            ..
-                        })
-                    ),
-                    "item {at}: {value:?}"
-                );
-                (Some(value.clone()), stopped)
-            }
         };
         assert_eq!((label, basis, execution, truth), axes, "item {at}");
         match want {

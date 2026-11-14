@@ -1025,6 +1025,47 @@ mod tests {
         }
     }
 
+    /// PA-14: an evaluation-meter stop of the arena is the result's own
+    /// `failed` outcome, naming the counter and the value in force; any
+    /// other stop stays a refusal.
+    #[ix_trace_rs::trace("TC-1413", "FR-573-AC-5")]
+    #[test]
+    fn an_evaluation_meter_stop_fails_the_run_naming_the_counter() {
+        let meter = ScalarLimits {
+            integer_bits: 1,
+            decimal_digits: 1,
+            scale_expansion: 1,
+            text_input_bytes: 1,
+            text_scalars: 1,
+            normalized_scalars: 1,
+            unit_edges: 1,
+            value_occurrences: 1,
+            work_units: 7,
+            result_units: 1,
+        };
+        let stop = |limit| {
+            Err(RealizabilityRefusal::Stopped(ExpansionStop {
+                cause: quire_semantic_value::catalog::CatalogCode::new(
+                    "resource_exhausted",
+                    "insufficient-next-charge",
+                ),
+                limit,
+            }))
+        };
+        let counter = quire_exact::LimitKind::WorkUnits;
+        assert_eq!(
+            metered(&meter, stop(Some(ExpansionLimit::EvaluationMeter(counter)))).ok(),
+            Some(Settled::Failed(RunLimit {
+                limit: ModelCheckLimit::EvaluationMeter { counter },
+                value: 7,
+            }))
+        );
+        assert!(matches!(
+            metered(&meter, stop(Some(ExpansionLimit::MaxCandidates))),
+            Err(RealizabilityRefusal::Stopped(_))
+        ));
+    }
+
     /// PA-18 (i): disjoint winning sets force a refutation only when the
     /// disjointness rests on no action a cut left open. Two `parallel`
     /// sends of one role, one of them cut at the horizon at the first
