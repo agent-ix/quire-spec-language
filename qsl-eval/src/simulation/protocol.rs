@@ -1295,6 +1295,47 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
         Ok(binders)
     }
 
+    /// The protocol captures of each instance live at `state` (ADR-027
+    /// ST-13), ascending by ordinal: the instance's ordinal and the RFC 8785
+    /// bytes of each capture's name and FR-181 typed value, the values every
+    /// role of the instance holds (FR-218). A capture is evaluated once when
+    /// its instance starts and is gone once the instance finishes, so a
+    /// reader binds each instance's bytes when it first sees the instance.
+    /// Empty when the protocol declares no capture.
+    ///
+    /// # Errors
+    ///
+    /// An [`ExpansionStop`] when an instance holds a different number of
+    /// captures than the protocol declares, or a capture value has no typed
+    /// canonical representation.
+    pub fn capture_bytes(
+        &self,
+        state: &ProtocolState<M>,
+    ) -> Result<Vec<(u64, Vec<u8>)>, ExpansionStop> {
+        if self.program.captures.is_empty() {
+            return Ok(Vec::new());
+        }
+        state
+            .instances
+            .iter()
+            .map(|(ordinal, instance)| {
+                if instance.captures.len() != self.program.captures.len() {
+                    return Err(broken());
+                }
+                let captures = self
+                    .program
+                    .captures
+                    .iter()
+                    .zip(&instance.captures)
+                    .map(|(capture, bound)| (Enc::text(capture.name.clone()), bound.enc.clone()))
+                    .collect();
+                quire_canonical::to_vec(&map_enc(captures), quire_canonical::Limits::new(u64::MAX))
+                    .map(|bytes| (*ordinal, bytes))
+                    .map_err(|_| broken())
+            })
+            .collect()
+    }
+
     /// QSpec FR-425's `<rest>` of `rest`.
     fn rest_point(&self, rest: Rest) -> Result<RestPoint, ProtocolRefusal> {
         let named = |kind, node| -> Result<RestPoint, ProtocolRefusal> {

@@ -15,10 +15,7 @@ use qsl_replay::protocol_analysis::{
 use qsl_replay::spine::StructureError;
 use quire_contract_model::{CheckedNodeId, CheckedPackageV2};
 
-use super::profile::unsupported_construct;
-
-/// The one profile V1 decides (FR-575).
-pub const PROFILE: &str = "bounded-static";
+use super::profile::{unsupported_construct, Profile};
 
 /// A projection request (PA-5). Key members are optional so that the key
 /// builder names the first absent one (PA-13); premises (a) and (b) are
@@ -102,7 +99,12 @@ pub fn project(
         unreachable!("the projection builder returns a projection key");
     };
     let max_depth = held.bounds.max_depth;
-    if request.profile.as_deref() != Some(PROFILE) {
+    if request
+        .profile
+        .as_deref()
+        .and_then(Profile::from_wire)
+        .is_none()
+    {
         return Err(ProjectionRefusal::InvalidProfile(
             request.profile.unwrap_or_default(),
         ));

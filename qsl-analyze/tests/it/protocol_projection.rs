@@ -41,7 +41,7 @@ fn source(members: &str, run: &str) -> String {
     )
 }
 
-fn admitted_source(text: &str) -> Box<CheckedPackageV2> {
+pub(crate) fn admitted_source(text: &str) -> Box<CheckedPackageV2> {
     let checked = package(text);
     let emission = qsl_package::emit_checked(&checked, qsl_package::EmitLimits::fixture())
         .expect("the protocol package emits");
@@ -63,7 +63,7 @@ fn flow(run: &str) -> Box<CheckedPackageV2> {
     admitted_source(&source(MEMBERS, run))
 }
 
-fn clause(package: &CheckedPackageV2) -> CheckedNodeId {
+pub(crate) fn clause(package: &CheckedPackageV2) -> CheckedNodeId {
     package
         .resolved_graph()
         .nodes
@@ -74,7 +74,7 @@ fn clause(package: &CheckedPackageV2) -> CheckedNodeId {
         .clone()
 }
 
-fn named(package: &CheckedPackageV2, last: &str) -> CheckedNodeId {
+pub(crate) fn named(package: &CheckedPackageV2, last: &str) -> CheckedNodeId {
     package
         .resolved_graph()
         .nodes
@@ -89,7 +89,7 @@ fn named(package: &CheckedPackageV2, last: &str) -> CheckedNodeId {
         .clone()
 }
 
-fn root() -> AssessedRootDraft {
+pub(crate) fn root() -> AssessedRootDraft {
     AssessedRootDraft {
         observation: Some(ObservationIdentity {
             authority: "test".to_owned(),
@@ -516,7 +516,14 @@ fn a_run_limit_fails_the_run_naming_the_limit() {
 #[trace("TC-1415", "FR-575-AC-1", "FR-575-AC-3", "FR-174-AC-3")]
 #[test]
 fn constructs_outside_the_profile_answer_unsupported_with_no_graph() {
-    let cases: [(&str, &str, &str, UnsupportedSlug, &str); 7] = [
+    let cases: [(&str, &str, &str, UnsupportedSlug, &str); 8] = [
+        (
+            MEMBERS,
+            "sequence Main { }",
+            "Flow",
+            UnsupportedSlug::ActivationOnEach,
+            "",
+        ),
         (
             MEMBERS,
             "sequence Main { parallel Par { branch a sequence Ay { } branch b sequence Bee { } } \
@@ -575,6 +582,9 @@ fn constructs_outside_the_profile_answer_unsupported_with_no_graph() {
     ];
     for (members, run_text, node, slug, detail) in cases {
         let mut text = source(members, run_text);
+        if slug == UnsupportedSlug::ActivationOnEach {
+            text = text.replace("on origin", "on each (t: M::Cell)");
+        }
         if detail == "predicate" {
             text = format!(
                 "function both using v(a: Boolean, b: Boolean): Boolean pure {{ a and b }}\n{text}"
@@ -586,7 +596,9 @@ fn constructs_outside_the_profile_answer_unsupported_with_no_graph() {
             .unwrap_or_else(|| panic!("{node}: a construct outside the profile"));
         assert_eq!(cause.slug, slug, "{node}");
         assert_eq!(cause.slug.code(), "unsupported_projection");
-        if slug != UnsupportedSlug::SymbolicQueueCapacity {
+        if slug == UnsupportedSlug::ActivationOnEach {
+            assert_eq!(cause.node, clause(&package));
+        } else if slug != UnsupportedSlug::SymbolicQueueCapacity {
             assert_eq!(cause.node, named(&package, node));
         }
         if !detail.is_empty() {

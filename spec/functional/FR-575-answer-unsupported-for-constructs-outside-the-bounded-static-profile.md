@@ -44,13 +44,15 @@ other than `bounded-static`, a refusal.
 
 ## Behavior
 
-The profile is `bounded-static`: static roles, literal queue capacities,
-sequence, send, receive, `choice`, and `parallel` with `join all`. The
+The profile is `bounded-static`: activation `on origin`, static roles,
+literal queue capacities, sequence, send, receive, `choice`, and `parallel`
+with `join all`. The
 causes, each a slug of `unsupported_projection` in the style of
 `unsupported-requested-capability` and `unbounded-extent` (FR-057), are:
 
 | Slug | Construct |
 | --- | --- |
+| `activation-on-each` | A protocol activated `on each` trigger: an instance per trigger, whose roles' steps would share one observation. |
 | `dynamic-role-population` | A role with a dynamic population. |
 | `symbolic-queue-capacity` | A queue with a symbolic capacity. |
 | `unsupported-join` | A `join` with policy `any`, `quorum` or `predicate`, or an `outstanding` policy with no rule; the policy is named. |
@@ -61,7 +63,7 @@ causes, each a slug of `unsupported_projection` in the style of
 | `evaluator-unsupported` | Realizability only: a construct `qsl-eval` refuses to step; the `qsl-eval` cause is carried. |
 
 When a protocol holds several such constructs the engine reports the first in
-the order roles, queues, compensations, then the other constructs in layout
+the order activation, roles, queues, compensations, then the other constructs in layout
 order; `unsupported-control` is reported only when no other construct is found.
 QSpec FR-466 lets a `protocol` node own a choice, but the QSL checker refuses
 such a choice (`NodeRole`) before any analysis, so the profile states no cause
@@ -90,7 +92,7 @@ remedy is the same (a `join all`) and the named policy distinguishes them.
 | ID | Criteria | Verification |
 | --- | --- | --- |
 | FR-575-AC-1 | For each construct row other than `evaluator-unsupported`, a protocol using it yields `unsupported`, `unsupported_projection` with exactly that slug and the construct's checked node id, for projection and for realizability, and returns no local graph, strategy or counterexample (implements FR-174-AC-3). | Test (TC-1415) |
-| FR-575-AC-2 | A construct `qsl-eval` refuses (a protocol capture, `activation on each` with compensation, an unordered channel with a head or tail loss selector, an unenumerable step binder) yields `evaluator-unsupported` for realizability carrying the `qsl-eval` cause, except that a refused construct that has a row above (a symbolic capacity) reports that row's slug. | Test (TC-1415) |
+| FR-575-AC-2 | A construct `qsl-eval` refuses (a protocol capture or guard undecided at an initial state, an unordered channel with a head or tail loss selector, an unenumerable step binder) yields `evaluator-unsupported` for realizability carrying the `qsl-eval` cause, except that a refused construct that has a row above (a symbolic capacity, `activation on each`, compensation) reports that row's slug. | Test (TC-1415) |
 | FR-575-AC-3 | A request with profile `bounded-static` over a protocol using only the profile's constructs is decided, and a request with any other profile word is refused `invalid_runtime_input`/`invalid-value` naming `profile` before any analysis. | Test (TC-1415) |
 | FR-575-AC-4 | A `NegotiationCause` has exactly its three existing variants and a kind with no candidate still negotiates `unsupported_projection`/`unsupported-requested-capability`; the slugs above arise only from an engine result and add no code family. | Test (TC-1415) |
 

@@ -2,11 +2,32 @@
 //! FR-575: the first construct outside the `bounded-static` profile.
 
 use qsl_package::protocol_view::{
-    control_body, control_operation, protocol_view, queue_capacity, role_is_replicated,
-    ControlBody, ControlOperation, ParallelJoinPolicy, QueueCapacity, ViewRefusal,
+    clause_activation, control_body, control_operation, protocol_view, queue_capacity,
+    role_is_replicated, ClauseActivation, ControlBody, ControlOperation, ParallelJoinPolicy,
+    QueueCapacity, ViewRefusal,
 };
 use qsl_replay::protocol_analysis::{UnsupportedCause, UnsupportedSlug};
 use quire_contract_model::{CheckedNodeId, CheckedPackageV2, CheckedSemanticNodeV2};
+
+/// A strategy or projection profile V1 decides (FR-575).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Profile {
+    /// `bounded-static`: static roles, literal capacities, sequence, send,
+    /// receive, choice and `parallel` with `join all` (PA-21).
+    BoundedStatic,
+}
+
+impl Profile {
+    /// The profile a request word names, `None` for any other word.
+    #[ix_trace_rs::string_edge]
+    #[must_use]
+    pub fn from_wire(word: &str) -> Option<Self> {
+        match word {
+            "bounded-static" => Some(Self::BoundedStatic),
+            _ => None,
+        }
+    }
+}
 
 fn node<'p>(
     package: &'p CheckedPackageV2,
@@ -29,8 +50,8 @@ fn cause(slug: UnsupportedSlug, node: &CheckedNodeId, detail: Option<&str>) -> U
 }
 
 /// The first construct of the clause `protocol` outside the profile, in the
-/// order roles, queues, compensations, then the controls in layout order
-/// (FR-575). `None` for a clause that stays inside it.
+/// order activation, roles, queues, compensations, then the controls in
+/// layout order (FR-575). `None` for a clause that stays inside it.
 ///
 /// # Errors
 ///
@@ -40,6 +61,15 @@ pub fn unsupported_construct(
     protocol: &CheckedNodeId,
 ) -> Result<Option<UnsupportedCause>, ViewRefusal> {
     let view = protocol_view(package, protocol)?;
+    // `on each` starts an instance per trigger, and a role's steps in two
+    // instances would share one observation.
+    if clause_activation(node(package, view.clause())?)? == ClauseActivation::Each {
+        return Ok(Some(cause(
+            UnsupportedSlug::ActivationOnEach,
+            view.clause(),
+            None,
+        )));
+    }
     for role in view.roles() {
         if role_is_replicated(node(package, role)?)? {
             return Ok(Some(cause(

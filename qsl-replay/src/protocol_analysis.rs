@@ -699,6 +699,8 @@ pub struct RunLimit {
 /// (FR-575), under the `unsupported_projection` code.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum UnsupportedSlug {
+    /// A protocol activated `on each` trigger rather than `on origin`.
+    ActivationOnEach,
     /// A role with a dynamic population.
     DynamicRolePopulation,
     /// A queue with a symbolic capacity.
@@ -723,6 +725,7 @@ impl UnsupportedSlug {
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
+            Self::ActivationOnEach => "activation-on-each",
             Self::DynamicRolePopulation => "dynamic-role-population",
             Self::SymbolicQueueCapacity => "symbolic-queue-capacity",
             Self::UnsupportedJoin => "unsupported-join",
@@ -766,6 +769,19 @@ pub enum InconclusiveCause {
     /// The counterexample's replay disagreed with the checked graph
     /// (ADR-018 SM-7).
     ReplayDisagreed,
+    /// Realizability: a role's observation class has no common winning
+    /// action and no refutation is forced (PA-18).
+    Unforced,
+    /// Realizability: the strategy table failed the in-engine replay walk
+    /// (PA-19).
+    StrategyReplayFailed,
+    /// Realizability: a channel's open delivery range was cut at its
+    /// capacity and the horizon, and the result depended on it (PA-7).
+    CutCount,
+    /// Realizability: the result depended on an evaluation `qsl-eval` left
+    /// undecided: an undetermined clause or protocol expression, or a
+    /// terminal predicate undefined or refused at a terminal state.
+    Undecided,
 }
 
 /// The settlement of one analysis, by the FR-360 labels (PA-20). `A` is the
@@ -795,8 +811,10 @@ pub struct ProtocolAnalysisResult<A, C> {
 }
 
 mod artifact;
+mod strategy;
 mod structure;
 pub use artifact::*;
+pub use strategy::*;
 pub use structure::*;
 
 #[cfg(test)]
