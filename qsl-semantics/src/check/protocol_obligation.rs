@@ -37,7 +37,7 @@ use quire_exact::{IllTypedCause, ValueType};
 use quire_semantic_value::declaration::CompositeShape;
 use quire_semantic_value::location::{ExpressionLocation as Location, ExpressionOwner as Origin};
 
-use super::check::{bind_parameters, Scope, StateContext, Typer};
+use super::check::{bind_parameters, NamedScope, Scope, StateContext, Typer};
 use super::facts::Definedness;
 use super::ir::CheckedBody;
 use super::lowering::{protocol_location, ProtocolSite};
@@ -1212,7 +1212,7 @@ impl Checker<'_, '_> {
             location: site.location.as_ref().unwrap_or(self.input.location),
             ..*self.input
         };
-        let typed = type_named_body(form, &site.bound, goal, &declarations, &mut nodes, cx);
+        let typed = type_named_body(form, &site.bound, goal, &declarations, None, &mut nodes, cx);
         self.nodes = nodes;
         let (body, slot_names, formed_units) = match typed {
             Ok(named) => named,
@@ -1340,17 +1340,20 @@ pub(super) fn type_body(
     nodes: &mut u64,
     cx: &mut CheckContext<'_, Scope>,
 ) -> Result<CheckedBody, CheckRefusal> {
-    type_named_body(form, bound, goal, input, nodes, cx).map(|(body, _, _)| body)
+    type_named_body(form, bound, goal, input, None, nodes, cx).map(|(body, _, _)| body)
 }
 
 /// [`type_body`], with the name each slot of the body is bound under,
 /// indexed by slot: `bound`'s names, then the binders the body introduces.
 /// Lowering keys each binder's parameter node by its name (FR-093).
+/// `named`, when some, makes the body's population positions name the
+/// domain-package populations it holds (FR-391), as a state clause's do.
 pub(super) fn type_named_body(
     form: &ExpressionForm,
     bound: &[(String, ValueType)],
     goal: Goal<'_>,
     input: &ClauseDeclarations<'_>,
+    named: Option<NamedScope>,
     nodes: &mut u64,
     cx: &mut CheckContext<'_, Scope>,
 ) -> Result<
@@ -1370,6 +1373,9 @@ pub(super) fn type_named_body(
     )
     .with_cancel(input.cancel)
     .with_context(cx.reborrow(input.scope));
+    if let Some(named) = named {
+        typer = typer.with_named_populations(named);
+    }
     bind_parameters(&mut typer, bound, input.location)?;
     typer.enter_state_clause(StateContext {
         parent_projections: BTreeMap::new(),

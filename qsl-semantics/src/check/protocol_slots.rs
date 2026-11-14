@@ -42,7 +42,7 @@ use qsl_foundation::{diagnostic::Locus, Span};
 use quire_exact::{IllTypedCause, ValueType};
 use quire_semantic_value::location::{ExpressionLocation as Location, ExpressionOwner as Origin};
 
-use super::check::Scope;
+use super::check::{NamedScope, Scope};
 use super::ir::CheckedBody;
 use super::lowering::{protocol_location, ProtocolSite};
 use super::protocol_clause::{record_binder, written_owner, CheckedProtocol, ProtocolNodeId};
@@ -502,11 +502,21 @@ impl Checker<'_, '_> {
             location: site_location.as_ref().unwrap_or(self.declarations.location),
             ..*self.declarations
         };
+        // A role's `until` reads model state as a state clause does, so its
+        // population positions name the unit's populations (FR-208, FR-391).
+        let named = role_bound.is_some().then(|| {
+            NamedScope::of(
+                self.declarations.models,
+                self.declarations.scope,
+                self.declarations.unit,
+            )
+        });
         let typed = type_named_body(
             slot.form,
             role_bound.as_deref().unwrap_or(&self.bound),
             slot.goal,
             &declarations,
+            named,
             &mut nodes,
             cx,
         );

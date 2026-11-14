@@ -27,6 +27,7 @@ use qsl_eval::simulation::protocol::{
 };
 use qsl_eval::simulation::{Location, SubjectSystem, TransitionSystem};
 use qsl_eval::temporal::AtomReading;
+use qsl_foundation::diagnostic::Code;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_package::CheckedPackage;
 use qsl_replay::{
@@ -44,7 +45,7 @@ use quire_exact::{Cancel, Meter};
 use serde_json::Value as Json;
 
 use crate::fill::{
-    attempt, class_of, contracts, document, instance, json_of, model_subject, package_with,
+    attempt, class_of, compiled, contracts, document, instance, json_of, model_subject, package_with,
     reachable, sc_system, source_memory, universe, v, Documents, Reached, PACKAGE,
 };
 use crate::model_settle::{envelope_at, request};
@@ -1991,6 +1992,78 @@ fn a_retire_predicate_reads_a_protocol_capture() {
         gated[1].1,
         BTreeSet::from(["c".to_owned()]),
         "retires once r.v reaches 2"
+    );
+}
+
+/// FR-208-AC-6 (TC-653 step 6) over the `test/fill` fixture, `Cell` and
+/// `cells` in place of `Job` and `jobs`, and `r.v >= 2` in place of
+/// `w.done`: the role predicate `r.v >= 2 and present(lookup<M::Cell>(M::cells,
+/// j) absent empty)`, with `j` the protocol capture `k` of type
+/// `Reference<M::Cell>`, checks, and `retire(r, c)` is enabled exactly where
+/// `c.v >= 2` holds and `j` is a member of `cells`; with the membership
+/// negated nothing ever retires; with `M::absent` in place of `M::cells` the
+/// unit refuses `missing_declaration`/`missing-name` at `absent`, naming the
+/// role `r`.
+#[trace("TC-653", "FR-208-AC-6")]
+#[test]
+fn a_retire_predicate_reads_a_named_population() {
+    let capture = "capture j: Reference<M::Cell> = k;";
+    let work = "sequence Main { attempt Bump by w on M::Cell::inc contracts [IncPre, IncPost] \
+                as (b: Boolean) { true }; }";
+    let unit_with = |membership: &str| {
+        let until = format!("until(r.v >= 2 and {membership})");
+        with_captures(&unit(ORIGIN, &role(2, &until), "", work), capture)
+    };
+    let member = "present(lookup<M::Cell>(M::cells, j) absent empty)";
+    // The retiring objects at the state where both instances are live, and
+    // after the attempt that raises `c` to 2.
+    let retire_at = |membership: &str| -> (BTreeSet<String>, BTreeSet<String>) {
+        let world = World::new(&unit_with(membership), &["c", "d"], &[1]);
+        let subject = world.subject();
+        let system = sc_system(&subject);
+        let reached = reachable(&system);
+        let both = {
+            let c = after(&system, &reached, 0, StepKind::Spawn, "c");
+            after(&system, &reached, c, StepKind::Spawn, "d")
+        };
+        let bumped = reached[both]
+            .steps
+            .iter()
+            .find(|(step, _)| step.kind() == StepKind::Attempt)
+            .map(|(_, next)| *next)
+            .expect("the attempt is enabled");
+        (
+            objects(&system, &reached, both, StepKind::Retire),
+            objects(&system, &reached, bumped, StepKind::Retire),
+        )
+    };
+    let (before, raised) = retire_at(member);
+    assert!(before.is_empty(), "c.v is 1 before the attempt");
+    assert_eq!(
+        raised,
+        BTreeSet::from(["c".to_owned()]),
+        "c retires once c.v is 2 and j is a member of cells"
+    );
+    let (before, raised) = retire_at(&format!("not {member}"));
+    assert!(
+        before.is_empty() && raised.is_empty(),
+        "j is a member of cells, so its negation never holds"
+    );
+
+    let refusal = compiled(&unit_with(
+        "present(lookup<M::Cell>(M::absent, j) absent empty)",
+    ))
+    .err()
+    .expect("M::absent names no population");
+    assert_eq!(
+        (refusal.code(), refusal.cause()),
+        (Code::MissingDeclaration, Some("missing-name")),
+        "{refusal}"
+    );
+    let message = refusal.to_string();
+    assert!(
+        message.contains("absent") && message.contains("`r`"),
+        "{message}"
     );
 }
 
