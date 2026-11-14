@@ -88,8 +88,20 @@ impl Fixture {
         run: &str,
         values: &[i64],
     ) -> Self {
+        Self::built(activation, delivery, captures, "", run, values)
+    }
+
+    /// [`Self::activated`] with `channels` declared after the members.
+    fn built(
+        activation: &str,
+        delivery: &str,
+        captures: &str,
+        channels: &str,
+        run: &str,
+        values: &[i64],
+    ) -> Self {
         let text = format!(
-            "{RECORDS}protocol Flow using pp over (k: M::Cell) {activation} {{\n{captures}{}\nrun {run}\n\
+            "{RECORDS}protocol Flow using pp over (k: M::Cell) {activation} {{\n{captures}{}{channels}\nrun {run}\n\
              finish Done as (zz: Boolean) {{ true }};\n}}\n",
             members(delivery)
         );
@@ -707,8 +719,10 @@ fn the_realizability_replay_arm_reproduces_both_forms_and_refuses_edits() {
 fn a_role_cannot_wait_for_an_action_not_yet_enabled() {
     let back = "channel Back from Warehouse to Seller carries Ack ordering unordered delivery \
                 exactly-once-premise capacity 4 overflow reject;\n";
-    let fixture = Fixture::over(
+    let fixture = Fixture::built(
+        "on origin",
         "exactly-once-premise",
+        "",
         back,
         "sequence Main {\n\
          send Placed via Order as (placed: Ack) { true };\n\
