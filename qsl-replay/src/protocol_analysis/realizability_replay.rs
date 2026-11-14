@@ -48,9 +48,13 @@ pub enum RealizabilityDisagreement {
     /// An action is enabled at both ends, so the two ends need not require
     /// different actions.
     NotDisjoint,
-    /// Another role or the environment can move at an end, so the role
-    /// could wait there for an action the end does not enable yet.
-    NotSoleMover,
+    /// A role step on a play was one of two or more actions its role could
+    /// take there, so a table could avoid the play.
+    Avoidable,
+    /// A state a play passes through, or a history's end, carries a finding
+    /// (a violated invariant or an undecided evaluation), which the engine
+    /// never steps past or decides at.
+    FindingOnPlay,
     /// A defeating play does not end in a violation of the stated
     /// obligation, or no play is stated.
     NotTheStatedViolation,
@@ -61,17 +65,20 @@ type Walked = Result<(ProtocolState<Sc>, Seen), RealizabilityDisagreement>;
 /// The replay walk of a realizability counterexample (PA-20).
 ///
 /// Both forms: the key equals the request's `key`, the FR-351 record is the
-/// one `root` gives for the obligation and position, every play walks from
-/// its initial state through the successors its steps name, and stays within
-/// `max_depth`.
+/// one `root` gives for the obligation and position, and every play walks
+/// from its initial state through the successors its steps name, within
+/// `max_depth`, through states with no finding, and with each role step its
+/// role's only enabled action there, so no table can avoid the play (the
+/// order in which threads step is the environment's, PA-16).
 ///
-/// * Indistinguishable histories: the role observes the two ends equally,
-///   within `max_history` where it can still step; the two actions differ
-///   and each is enabled at its own end; the obligation is `finish`; every
-///   move at either end is a step of the role, so a strategy that commits an
-///   action an end does not enable is stuck there; and no action is enabled
-///   at both ends (PA-18 (i)). At a forced pair no node is lost, so the
-///   not-lost sets are the enabled sets.
+/// * Indistinguishable histories: neither end carries a finding; the role
+///   observes the two ends equally, within `max_history` where it can still
+///   step; the two actions differ and each is enabled at its own end; the
+///   obligation is `finish`; and no action is enabled at both ends
+///   (PA-18 (i)). The environment may let the role move at either end, and
+///   then it must take its one committed action, so the class needs two
+///   actions. At a forced pair no node is lost, so the not-lost sets are the
+///   enabled sets.
 /// * Environment defeat: every defeating play ends in a violation of the
 ///   obligation: a violated invariant of the clause, or a deadlock against
 ///   `finish`.
@@ -175,8 +182,8 @@ pub fn replay_realizability_counterexample(
             if !moves_a.enabled.contains(action_a) || !moves_b.enabled.contains(action_b) {
                 return Ok(Err(RealizabilityDisagreement::ActionNotEnabled));
             }
-            if !moves_a.sole || !moves_b.sole {
-                return Ok(Err(RealizabilityDisagreement::NotSoleMover));
+            if moves_a.finding || moves_b.finding {
+                return Ok(Err(RealizabilityDisagreement::FindingOnPlay));
             }
             if !moves_a.enabled.is_disjoint(&moves_b.enabled) {
                 return Ok(Err(RealizabilityDisagreement::NotDisjoint));
@@ -219,7 +226,9 @@ fn walk(arena: &Arena<'_, '_>, play: &Play) -> Result<Walked, ArenaError> {
 }
 
 /// The end state of `steps` from `state`, each step the successor at its
-/// index with an equal transition.
+/// index with an equal transition, taken from a state with no finding, and
+/// each role step its role's only enabled action there (PA-18: no table can
+/// avoid the play).
 fn walk_from(
     arena: &Arena<'_, '_>,
     mut state: ProtocolState<Sc>,
@@ -228,13 +237,29 @@ fn walk_from(
 ) -> Result<Walked, ArenaError> {
     for (at, step) in steps.iter().enumerate() {
         let (expansion, _) = arena.system.successors_and_terminal(&state)?;
+        if finding_value(&expansion.findings).is_some() {
+            return Ok(Err(RealizabilityDisagreement::FindingOnPlay));
+        }
+        let mut classified = Vec::with_capacity(expansion.successors.len());
+        for (transition, _) in &expansion.successors {
+            classified.push(arena.classify(transition)?);
+        }
         let Some((transition, next)) = expansion.successors.into_iter().nth(step.successor) else {
             return Ok(Err(RealizabilityDisagreement::StepNotSuccessor { at }));
         };
         if transition != step.transition {
             return Ok(Err(RealizabilityDisagreement::StepNotSuccessor { at }));
         }
-        let taken = arena.classify(&transition)?;
+        let taken = classified.swap_remove(step.successor);
+        if let Some(taken) = &taken {
+            let other = classified
+                .iter()
+                .flatten()
+                .any(|held| held.role == taken.role && held.action != taken.action);
+            if other {
+                return Ok(Err(RealizabilityDisagreement::Avoidable));
+            }
+        }
         seen = arena.bind(&next, seen.extended(taken.as_ref()))?;
         state = next;
     }
@@ -261,8 +286,8 @@ struct Moves {
     /// Its sends and receives among the successors, and `End` at an
     /// intended terminal state with no violated invariant.
     enabled: BTreeSet<StrategyAction>,
-    /// Every successor is a step of the role.
-    sole: bool,
+    /// The state carries a finding.
+    finding: bool,
     /// The state has a successor.
     open: bool,
 }
@@ -280,18 +305,16 @@ fn moves(
     {
         enabled.insert(StrategyAction::End);
     }
-    let mut sole = true;
     for (transition, _) in &expansion.successors {
-        match arena.classify(transition)? {
-            Some(taken) if taken.role == role => {
+        if let Some(taken) = arena.classify(transition)? {
+            if taken.role == role {
                 enabled.insert(taken.action);
             }
-            _ => sole = false,
         }
     }
     Ok(Moves {
         enabled,
-        sole,
+        finding: finding_value(&expansion.findings).is_some(),
         open: !expansion.successors.is_empty(),
     })
 }

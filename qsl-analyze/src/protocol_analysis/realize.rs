@@ -351,9 +351,9 @@ struct Point {
     node: usize,
     winning: BTreeSet<StrategyAction>,
     not_lost: BTreeSet<StrategyAction>,
-    /// Every move at the node is a step of the role: no other role and no
-    /// environment step can move while the role waits.
-    sole: bool,
+    /// No table can steer play away from the node: every role step on the
+    /// way to it was its role's only enabled action (`unavoidable`).
+    fixed: bool,
 }
 
 /// Every decision point of every role at the nodes not lost, by role then
@@ -399,10 +399,7 @@ fn decision_points(nodes: &[Node], roles: usize) -> Vec<BTreeMap<ObservationClas
                         node: id,
                         winning: with(|value| value == Value::Win),
                         not_lost: with(|value| value != Value::Lose),
-                        sole: node
-                            .moves
-                            .iter()
-                            .all(|held| held.step.as_ref().is_some_and(|step| step.role == role)),
+                        fixed: unavoidable(nodes, id),
                     });
             }
         }
@@ -423,6 +420,28 @@ fn history(nodes: &[Node], mut id: usize) -> Play {
     }
     steps.reverse();
     Play { initial, steps }
+}
+
+/// Whether every role step on the play to `id` was its role's only enabled
+/// action at the node it was taken from, so no table can avoid the play
+/// (PA-18): environment steps, records, delivery and thread order are the
+/// environment's, and a role's only enabled action is the one its table
+/// must commit when the environment lets it move.
+fn unavoidable(nodes: &[Node], mut id: usize) -> bool {
+    while let Some((parent, at)) = nodes[id].parent {
+        let moves = &nodes[parent].moves;
+        if let Some(step) = &moves[at].step {
+            let other = moves
+                .iter()
+                .filter_map(|held| held.step.as_ref())
+                .any(|held| held.role == step.role && held.action != step.action);
+            if other {
+                return false;
+            }
+        }
+        id = parent;
+    }
+    true
 }
 
 /// The first lost leaf below the lost node `id`, by the first losing move.
@@ -639,7 +658,10 @@ fn search(
         .collect();
     let root_value = every(roots.iter().map(|root| nodes[*root].value));
     if root_value == Value::Lose {
-        let mut counterexample = environment_defeat(&nodes, &roots, &game, key, root)?;
+        // A defeat a table could steer around is not forced.
+        let Some(mut counterexample) = environment_defeat(&nodes, &roots, &game, key, root)? else {
+            return Ok(Settled::Inconclusive(InconclusiveCause::Unforced));
+        };
         edit(&mut counterexample);
         return game.replayed(key, root, counterexample);
     }
@@ -752,18 +774,18 @@ pub fn replay_counterexample(
 /// and disjoint, with a disjointness that rests on no cut action: no action
 /// is left unlost at both (PA-18 (i)). No owner move exists in the profile
 /// (see the module), so no earlier owner choice can avoid either history.
-/// A role whose committed action is not enabled waits while others move, so
-/// an action disabled at one end might be enabled after another step in the
-/// same class; the pair is forced only where the role is the sole mover at
-/// both ends, so a strategy that commits an action the end does not enable
-/// is stuck there. Otherwise the class is unforced.
+/// A role's table chooses among its own enabled actions, so a history on
+/// which some role took one of two enabled actions could be avoided by a
+/// table that takes the other; such a pair is unforced. The order in which
+/// threads step is the environment's (PA-16), so no role can wait to steer
+/// play away from either end.
 fn forced_pair(points: &[Point]) -> Option<(&Point, &Point)> {
     points.iter().enumerate().find_map(|(at, a)| {
         points[at + 1..]
             .iter()
             .find(|b| {
-                a.sole
-                    && b.sole
+                a.fixed
+                    && b.fixed
                     && !a.winning.is_empty()
                     && !b.winning.is_empty()
                     && a.not_lost.is_disjoint(&b.not_lost)
@@ -802,31 +824,34 @@ fn indistinguishable(
 
 /// PA-18 (ii). No owner move exists in the profile, so the first lost
 /// owner node has one branch: the defeating play from the first lost
-/// initial state.
+/// initial state, or `None` when a table could avoid that play.
 fn environment_defeat(
     nodes: &[Node],
     roots: &[usize],
     game: &Game<'_, '_>,
     key: &ProtocolAnalysisKey,
     root: &AssessedRoot,
-) -> Result<RealizabilityCounterexample, RealizabilityRefusal> {
+) -> Result<Option<RealizabilityCounterexample>, RealizabilityRefusal> {
     let lost = roots
         .iter()
         .copied()
         .find(|root| nodes[*root].value == Value::Lose)
         .map_or(0, |root| defeat(nodes, root));
+    if !unavoidable(nodes, lost) {
+        return Ok(None);
+    }
     let obligation = nodes[lost]
         .lost
         .clone()
         .unwrap_or_else(|| game.arena.names.finish().clone());
     let play = history(nodes, lost);
     let position = play.steps.len().saturating_sub(1);
-    Ok(RealizabilityCounterexample::EnvironmentDefeat {
+    Ok(Some(RealizabilityCounterexample::EnvironmentDefeat {
         key: key.clone(),
         defeats_per_branch: vec![BranchDefeat { play }],
         separating_witness: root.record(&obligation, position)?,
         obligation,
-    })
+    }))
 }
 
 impl Game<'_, '_> {
@@ -926,18 +951,35 @@ impl Game<'_, '_> {
                 .enumerate()
                 .map(|(role, class)| self.committed(strategies, role, class))
                 .collect();
-            let mut allowed = Vec::new();
+            // The order in which threads step is the environment's (PA-16):
+            // a role with an enabled step may be the one to move, and then
+            // takes its committed action, which must be enabled. A role never
+            // waits while others move; it chooses only among its own steps.
+            let mut steps = Vec::new();
+            let mut enabled: Vec<BTreeSet<StrategyAction>> = vec![BTreeSet::new(); roles];
             for (transition, next) in expansion.successors {
                 let step = self.arena.classify(&transition)?;
                 if let Some(step) = &step {
-                    match &committed[step.role] {
-                        Some(action) if *action == step.action => {}
-                        Some(_) => continue,
-                        None => return Ok(Err(WalkFailure::NotShown)),
-                    }
+                    enabled[step.role].insert(step.action.clone());
                 }
-                allowed.push((next, step));
+                steps.push((next, step));
             }
+            for (role, actions) in enabled.iter().enumerate() {
+                if !actions.is_empty()
+                    && !committed[role]
+                        .as_ref()
+                        .is_some_and(|action| actions.contains(action))
+                {
+                    return Ok(Err(WalkFailure::NotShown));
+                }
+            }
+            let allowed: Vec<_> = steps
+                .into_iter()
+                .filter(|(_, step)| {
+                    step.as_ref()
+                        .is_none_or(|step| committed[step.role].as_ref() == Some(&step.action))
+                })
+                .collect();
             if allowed.is_empty() {
                 let ended = committed
                     .iter()
@@ -987,7 +1029,7 @@ mod tests {
             node: 0,
             winning: winning.into(),
             not_lost: not_lost.into(),
-            sole: true,
+            fixed: true,
         }
     }
 
