@@ -34,6 +34,14 @@ Bindings checked: `a_driver_run_settles_each_kind_under_each_label` covers FR-57
 
 Coverage is adequate for the brief, which does not ask for exhaustive tests. FND-001 is low, and adding a meter-stopped item would close it. The AC-3 gap is carried by code-review FND-003.
 
+
+## New findings (disposition pass 2)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-002 | low | Nothing tests the arm's own `NotSoleMover` check. Removing it leaves every test green, because the engine's `forced_pair` already filters non-sole pairs and only forged input reaches the arm's check. TC-1413 step 3 now lists "a pair at an end where another role can still move" as a replay edit. Add one replay of the waiting fixture's pair, expecting `NotSoleMover`. | qsl-replay/src/protocol_analysis/realizability_replay.rs:178-180; spec/test-cases/TC-1413-protocol-analysis-results-settle-with-fr-360-labels-and-uncertified.md:30-34 |
+| FND-003 | low | `an_action_only_not_yet_enabled_at_the_other_end_does_not_refute` is tagged FR-571-AC-2, which requires the hidden-choice protocol to refute with `IndistinguishableHistories`. The test shows a different protocol does not refute under FR-571 Behavior's new waiting rule, a rule with no acceptance criterion (spec-review FND-005). This is the wrong binding: tag it to the new AC once it exists. | qsl-analyze/tests/it/protocol_realizability.rs:699-740 |
+
 ## Dispositions
 
 | FND | Outcome | Reason |

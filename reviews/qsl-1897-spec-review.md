@@ -40,6 +40,13 @@ Fix FND-001, together with the code change, and FND-002 before merge. FND-003 is
 | --- | --- | --- | --- |
 | FND-004 | low | FR-573-AC-5 and TC-1413's step 5 expected result still say a stopped run settles "with no artifact". FR-573 Serving now makes the stop the result's own `failed` outcome, carried with its key on the `ProtocolAnalysisArtifact`, and the table row's "No artifact" means no witness or counterexample (PA-14). Reword both to "no witness or counterexample". The ADR-036 TL-387 handoff note should also say that `protocol_analysis` is absent for a refusal or an engine failure. | spec/functional/FR-573-settle-protocol-analysis-results-with-the-fr-360-labels.md:138; spec/test-cases/TC-1413-protocol-analysis-results-settle-with-fr-360-labels-and-uncertified.md:52-53; spec/decisions/ADR-036-protocol-local-projection-and-realizability-engine.md:224-240 |
 
+
+## New findings (disposition pass 2)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | low | FR-571 Behavior, ADR-036 PA-18 and FR-573 now state the sole-mover rule: a pair at an end where another role or the environment can move is non-conclusive. No acceptance criterion states it, and TC-1411 has no step for it. So the engine test that backs it is tagged FR-571-AC-2 (gap-analysis FND-003). Add an FR-571 AC, for example "a pair at an end where another role or the environment can move settles `inconclusive` `unforced-refutation`, never `refuted`", and a TC-1411 step. | spec/functional/FR-571-decide-whether-local-strategies-realize-a-global-protocol.md:115-123; spec/test-cases/TC-1411 |
+
 ## Dispositions
 
 | FND | Outcome | Reason |
@@ -47,3 +54,4 @@ Fix FND-001, together with the code change, and FND-002 before merge. FND-003 is
 | FND-001 | fixed | 16c26295e: FR-573 Behavior now requires the not-lost sets to be disjoint (PA-18 (i)): every action the role can take at both ends needs a carried continuation from one end, starting with that action and ending in a violation. ADR-036 PA-20 says the same. The "enabled at its own end" premise is still open as code-review FND-007. |
 | FND-002 | fixed | FR-573-AC-2 now reads "through its arm: `ReplaySource::ProtocolAnalysis` for a projection, the arena walk for realizability". TC-1413 step 2 and ADR-036 PA-20 name both arms the same way, and PA-20 says the realizability arm has no replay source. |
 | FND-003 | fixed | The second bullet now begins "For a projection, the replay arm re-walks the stated paths with the structure's successor relation". |
+| FND-004 | fixed | 255b10aa2: the FR-573 table row and FR-573-AC-5 read "no witness or counterexample", as does TC-1413's step 5 expected result. The ADR-036 handoff note adds that `protocol_analysis` is absent for a refusal before analysis or an engine failure, and that a run stopped by a limit or the meter carries its result and key. |

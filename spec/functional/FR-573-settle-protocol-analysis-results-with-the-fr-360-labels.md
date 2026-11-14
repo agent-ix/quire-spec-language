@@ -71,14 +71,18 @@ The settlement map is:
   the walk is determinate; a step whose transition differs from the one at
   its index disagrees. Both forms carry the request's key and the FR-574
   record the request's root gives, and every play stays within `max_depth`.
-  For indistinguishable histories the arm checks that the role observes the
-  two ends equally, within `max_history` at an end the role can still step
-  from; that the two actions differ and each is enabled at its own end
-  (`End` at an intended terminal state); that the obligation is `finish`;
-  that every move at either end is a step of the role, so a strategy that
-  commits an action an end does not enable is stuck there; and that no
-  action is enabled at both ends (PA-18 (i)). At a forced pair no node is
-  lost, so the enabled sets are the not-lost sets. For an environment defeat it checks that the play ends in a
+  Every play passes only through states with no finding, and each role
+  step on it is its role's only enabled action there, so no table can
+  avoid it (FR-571: thread order is the environment's, a role chooses only
+  among its own steps). For indistinguishable histories the arm checks that
+  neither end carries a finding; that the role observes the two ends
+  equally, within `max_history` at an end the role can still step from;
+  that the two actions differ and each is enabled at its own end (`End` at
+  an intended terminal state); that the obligation is `finish`; and that no
+  action is enabled at both ends (PA-18 (i)): the environment may let the
+  role move at either end, and it must then take its one committed action.
+  At a forced pair no node is lost, so the enabled sets are the not-lost
+  sets. For an environment defeat it checks that the play ends in a
   violated invariant of the clause or a deadlock against `finish`, as the
   counterexample names. Each engine runs its arm before it returns a
   refutation.

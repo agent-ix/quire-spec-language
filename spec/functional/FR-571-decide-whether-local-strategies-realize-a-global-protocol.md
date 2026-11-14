@@ -116,11 +116,16 @@ plays explored, the horizon and whether exploration closed (PA-19).
   non-empty sets, an avoidable history, or a defeat that depends on a cut
   choice shall be non-conclusive. In `bounded-static` neither the
   avoidable-history case nor the cut-choice case arises; a disjointness
-  that rests on a cut action is still non-conclusive, and so is a pair at
-  an end where another role or the environment can move: the role could
-  wait there until an action the end does not enable yet becomes enabled in
-  the same class, so the pair is forced only where the role is the sole
-  mover at both ends.
+  that rests on a cut action is still non-conclusive.
+- The order in which threads step is the environment's (PA-16): at a state
+  where a role has an enabled step the environment may let it move, and it
+  then takes the action its table commits for its class, which must be
+  enabled there; a role never waits while other roles move, and its table
+  chooses only among its own enabled steps. A role's choice among two or
+  more of its own enabled actions is its table's, so a history or a
+  defeating play on which some role took one of two or more enabled
+  actions could be avoided by a table, and the engine shall not refute on
+  it: such a pair or defeat is non-conclusive (`unforced-refutation`).
 - The engine shall return realizable only after the witness table passes the in-engine
   replay walk of PA-19 over every environment play of the premises,
   recomputing each class; a table that fails it, or whose exploration did not
@@ -135,6 +140,7 @@ plays explored, the horizon and whether exploration closed (PA-19).
 | FR-571-AC-3 | An absent (`None`) role-knowledge or environment premise returns an `inconclusive` result, while the same premise declared empty (`Some` of an empty set) is decided under; a search that completes its method up to `max_depth` or `max_history`, or an exploration that did not close, returns `inconclusive`, never realizable. A run stopped by a run limit (`max_states`, `max_transitions`, the meter) is not this case and settles `failed` (FR-573-AC-5) (implements FR-175-AC-3). | Test (TC-1411) |
 | FR-571-AC-4 | Recomputing `observation(role, history)` for every explored history, equal observation sequences get equal committed actions in the witness, and a protocol whose class has no common winning action returns refuted or `inconclusive`, never a witness (implements FR-175-AC-4). | Test (TC-1411) |
 | FR-571-AC-5 | The result quantifies over every admitted environment event and channel outcome: a protocol that is realizable on every sampled run but defeated by one admitted loss or event outcome is not realizable, and an outcome not admitted by the premises never appears in a play; under an open delivery range a result that depended on a cut count is `inconclusive` (implements FR-175-AC-5). | Test (TC-1411) |
+| FR-571-AC-7 | The replay walk lets the environment choose which role steps: at a reached state where a role has an enabled step, a table whose committed action for the role's class is not enabled there fails the walk. A role that could only wait for an action not yet enabled is refuted when another state of its class needs a different action; a pair or a defeating play on which a role took one of two or more of its enabled actions is not refuted; and the replay arm refuses a play that passes through or ends at a state with a finding, or on which a role took one of two or more enabled actions (PA-16, PA-18, PA-19). | Test (TC-1411) |
 | FR-571-AC-6 | In the `bounded-static` profile no arena step is an owner's branch selection: a `choice` decision reads only its owner's received records, protocol captures and constants (FR-218), and `qsl-eval` enters the one case whose guard holds. So no history is avoidable by an earlier owner choice and no owner choice is cut, PA-18's two `inconclusive` cases do not arise in V1, and an `EnvironmentDefeat` has exactly one entry in `defeats_per_branch` (PA-16, PA-18). | Test (TC-1411) |
 
 ## Dependencies

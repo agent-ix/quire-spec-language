@@ -34,6 +34,11 @@ Scope: FR-571-AC-1 to FR-571-AC-6; QSpec FR-175-AC-1 to AC-5.
    outcome defeats; and one under an `at-least-once` channel.
 6. Decide the step 2 protocol that one admitted loss defeats and read
    `defeats_per_branch`.
+7. Decide a protocol in which a role, in one branch, can only send while
+   its receive is not yet enabled and, in the other, must receive, both in
+   one observation class. Replay a pair whose histories have a role take
+   one of two enabled sends, and a pair ending at a state with an undecided
+   evaluation.
 
 Tag the tests `#[trace("TC-1411", "FR-571-AC-n")]`.
 
@@ -50,3 +55,5 @@ Tag the tests `#[trace("TC-1411", "FR-571-AC-n")]`.
   `inconclusive`.
 - Step 6: one entry; no owner choice exists to avoid a history or to be
   cut, so FR-571-AC-6's cases do not arise.
+- Step 7: refuted, and the arm agrees (the role cannot wait); the arm
+  refuses the avoidable pair and the pair at a finding.
