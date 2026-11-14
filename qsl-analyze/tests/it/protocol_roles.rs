@@ -1774,7 +1774,7 @@ fn activations(system: &System<'_>, reached: &[Reached]) -> BTreeMap<String, usi
 
 /// `body` with the protocol `captures` written ahead of its roles, where the
 /// grammar puts them.
-fn with_captures(body: &str, captures: &str) -> String {
+pub(crate) fn with_captures(body: &str, captures: &str) -> String {
     body.replacen(
         "role w on M::Cell;",
         &format!("{captures}\nrole w on M::Cell;"),
@@ -1944,12 +1944,10 @@ fn a_template_reads_the_protocol_captures_and_the_activation_binder() {
     }
 }
 
-/// Not a test of FR-208-AC-6, so it cites no criterion: a role whose `until`
-/// predicate reads the protocol capture `j` of type `Reference<M::Cell>`
-/// checks, and `retire(r, o)` is enabled exactly where the predicate holds.
-/// FR-208-AC-6 itself needs `lookup` over a named population in a role
-/// predicate, which the protocol slot checker does not yet resolve (QSL-968). With
-/// `j = k` (the cell `c`) and the cells `{c, d}` both at `v = 1`, only `c` retires; with the further clause `r.v >= 2`
+/// A role whose `until` predicate reads the protocol capture `j` of type
+/// `Reference<M::Cell>` checks, and `retire(r, o)` is enabled exactly where
+/// the predicate holds. With `j = k` (the cell `c`) and the cells `{c, d}`
+/// both at `v = 1`, only `c` retires; with the further clause `r.v >= 2`
 /// nothing retires until the protocol's `inc` raises `c` to 2.
 #[test]
 fn a_retire_predicate_reads_a_protocol_capture() {

@@ -1049,16 +1049,16 @@ fn role_step(
 /// FR-216-AC-6 (TC-661): a `retire` predicate `r.v >= 0` over the replicated
 /// role `r` of `Cell`, which declares `v`, with universe `{c, d}`, has a
 /// read footprint holding (`c`, `v`), (`d`, `v`) and `role(r)`; a writer of
-/// (`d`, `v`) is dependent with `retire(r, c)`; a `send` from a replicated
-/// role reads `role(r)` and is dependent with a `spawn` of that role; an
-/// `activate` under the guard `x > 0` over a `Level` binder `x` has an
-/// enabling footprint holding no model location.
+/// (`d`, `v`) is dependent with `retire(r, c)`; a predicate that also reads
+/// `lookup<M::Cell>(M::cells, j)`, with `j` a protocol capture of type
+/// `Reference<M::Cell>`, holds the membership of `cells`; a `send` from a
+/// replicated role reads `role(r)` and is dependent with a `spawn` of that
+/// role; an `activate` under the guard `x > 0` over a `Level` binder `x` has
+/// an enabling footprint holding no model location.
 ///
-/// Partial: Remaining work: QSL-968. Two clauses of FR-216-AC-6 are not
-/// tested because they cannot run yet: a record-binder guard (record
-/// triggers refuse `UnenumerableRecord`, so the binder here is the `Int`
-/// range `Level`) and the population-membership read of a `lookup` in a role
-/// predicate (S3 has no named population in a role predicate's scope). The
+/// Partial: Remaining work: QSL-968. One clause of FR-216-AC-6 is not tested
+/// because it cannot run yet: a record-binder guard (record triggers refuse
+/// `UnenumerableRecord`, so the binder here is the `Int` range `Level`). The
 /// criterion id is therefore not cited; only the test case is.
 #[trace("TC-661")]
 #[test]
@@ -1089,6 +1089,38 @@ fn predicate_reads_are_the_fields_of_the_universe_and_a_role_read_orders_spawns(
         enabling: BTreeSet::new(),
     };
     assert!(!independent(&retire, &writer));
+
+    // The predicate's `lookup` over the named population `M::cells` reads
+    // the membership of `cells`.
+    let body = roles::with_captures(
+        &roles::unit(
+            roles::ORIGIN,
+            &roles::role(
+                2,
+                "until(r.v >= 0 and present(lookup<M::Cell>(M::cells, j) absent empty))",
+            ),
+            "",
+            "sequence Main { event E by r as (e: Boolean) { true }; }",
+        ),
+        "capture j: Reference<M::Cell> = k;",
+    );
+    let unit = Cells::new(&body, &["c", "d"]);
+    let subject = unit.subject("R");
+    let system = sc_system(&subject);
+    let reached = reachable(&system);
+    let c = cell(&system, "c");
+    let (_, spawned) = role_step(&system, &reached, 0, StepKind::Spawn, &c);
+    let (looked_up, _) = role_step(&system, &reached, spawned, StepKind::Retire, &c);
+    let cells = key("cells");
+    assert!(
+        looked_up.reads.iter().any(|location| matches!(
+            location,
+            Location::Membership { population, .. } | Location::AnyMembership { population }
+                if *population == cells
+        )),
+        "{:?}",
+        looked_up.reads
+    );
 
     // A `send` by an instance of `r` reads `role(r)`; a `spawn` of the other
     // cell writes it.
