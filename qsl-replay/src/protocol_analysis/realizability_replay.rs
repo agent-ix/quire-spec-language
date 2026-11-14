@@ -8,6 +8,7 @@
 
 use qsl_eval::simulation::model::TerminalClass;
 use qsl_eval::simulation::protocol::{ProtocolState, ProtocolTransition, Sc};
+use qsl_eval::simulation::TransitionSystem;
 
 use super::arena::{finding_value, Arena, ArenaError, FindingValue, Seen};
 use super::{RealizabilityCounterexample, StrategyAction};

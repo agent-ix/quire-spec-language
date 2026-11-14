@@ -26,17 +26,17 @@ use std::collections::{BTreeMap, BTreeSet};
 use qsl_eval::model_subject::ProtocolSubject;
 use qsl_eval::simulation::model::{ModelFinding, ModelSystem, TerminalClass};
 use qsl_eval::simulation::protocol::{
-    ProtocolRefusal, ProtocolState, ProtocolSystem, ProtocolTransition, Sc, StepKind,
+    ProtocolRefusal, ProtocolState, ProtocolSystem, ProtocolTransition, Sc,
 };
 use qsl_eval::simulation::ExpansionStop;
 use qsl_eval::simulation::TransitionSystem;
-use qsl_package::protocol_view::{protocol_view, ViewRefusal};
+use qsl_package::protocol_view::ViewRefusal;
 use qsl_replay::protocol_analysis::arena::{
     self, Arena, ArenaError, ArenaNames, FindingValue, RoleStep, Seen,
 };
 use qsl_replay::protocol_analysis::{
     AnalysisOutcome, AnalyzerIdentity, AssessedRoot, AssessedRootDraft, BoundsDraft, BranchDefeat,
-    Closure, DeliveryPremise, InconclusiveCause, MissingMember, ObservationClass, Observed,
+    Closure, DeliveryPremise, InconclusiveCause, MissingMember, ObservationClass,
     PremiseRefusal, ProtocolAnalysisKey, ProtocolAnalysisResult, ProtocolPremises,
     replay_realizability_counterexample, RealizabilityCounterexample, RealizabilityDisagreement,
     RealizabilityKeyDraft, RealizabilityWitness, RoleStrategy,
@@ -246,6 +246,7 @@ impl Game<'_, '_> {
         // depth and what its play showed the roles.
         type Pending = (ProtocolState<Sc>, Option<(usize, usize)>, usize, Seen);
         let mut stack: Vec<Pending> = self
+            .arena
             .system
             .initial()
             .into_iter()
@@ -806,6 +807,7 @@ impl Game<'_, '_> {
         // A pending state: the state, its depth and what its play showed
         // the roles.
         let mut stack: Vec<(ProtocolState<Sc>, usize, Seen)> = self
+            .arena
             .system
             .initial()
             .into_iter()
