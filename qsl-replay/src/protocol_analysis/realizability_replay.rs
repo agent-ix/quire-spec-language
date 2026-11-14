@@ -166,6 +166,9 @@ pub fn replay_realizability_counterexample(
             };
             let moves_a = moves(arena, &end_a, role)?;
             let moves_b = moves(arena, &end_b, role)?;
+            if moves_a.finding || moves_b.finding {
+                return Ok(Err(RealizabilityDisagreement::FindingOnPlay));
+            }
             // The engine decides an end's findings and terminal class before
             // it cuts at `max_history`, so a won leaf may lie past it.
             if (moves_a.open && seen_a.exceeds(max_history))
@@ -181,9 +184,6 @@ pub fn replay_realizability_counterexample(
             }
             if !moves_a.enabled.contains(action_a) || !moves_b.enabled.contains(action_b) {
                 return Ok(Err(RealizabilityDisagreement::ActionNotEnabled));
-            }
-            if moves_a.finding || moves_b.finding {
-                return Ok(Err(RealizabilityDisagreement::FindingOnPlay));
             }
             if !moves_a.enabled.is_disjoint(&moves_b.enabled) {
                 return Ok(Err(RealizabilityDisagreement::NotDisjoint));

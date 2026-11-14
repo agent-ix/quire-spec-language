@@ -696,15 +696,15 @@ fn the_realizability_replay_arm_reproduces_both_forms_and_refuses_edits() {
     assert_eq!(replay(&two, &found), Ok(()));
 }
 
-/// FR-571, PA-18 (i): a role that may wait is not forced. In the `no`
-/// branch the `Warehouse` may send `Bk` while its receive of `PickIt2` is
-/// not enabled yet; the `Seller` can still send `PickIt2`, after which the
-/// receive is enabled in the same observation class. So the empty class
-/// does not need disjoint actions at its two ends, and the result is not
-/// `refuted`.
-#[trace("TC-1411", "FR-571-AC-2")]
+/// FR-571-AC-7 (PA-16): the order in which threads step is the
+/// environment's, so a role cannot wait for an action its state does not
+/// enable yet. In the `no` branch the environment may let the `Warehouse`
+/// move before the `Seller` sends `PickIt2`, when it can only send `Bk`; in
+/// the `yes` branch it must receive. Both states are in its empty class, so
+/// no table serves both, and the result is refuted; the replay arm agrees.
+#[trace("TC-1411", "FR-571-AC-7")]
 #[test]
-fn an_action_only_not_yet_enabled_at_the_other_end_does_not_refute() {
+fn a_role_cannot_wait_for_an_action_not_yet_enabled() {
     let back = "channel Back from Warehouse to Seller carries Ack ordering unordered delivery \
                 exactly-once-premise capacity 4 overflow reject;\n";
     let fixture = Fixture::over(
@@ -731,10 +731,58 @@ fn an_action_only_not_yet_enabled_at_the_other_end_does_not_refute() {
          } }",
         &[0],
     );
-    let outcome = fixture.run().outcome;
-    assert!(
-        !matches!(outcome, AnalysisOutcome::Refuted(_)),
-        "a role that may wait is not refuted: {outcome:?}"
+    let found = refuted(fixture.run());
+    assert_eq!(replay(&fixture, &found), Ok(()));
+}
+
+/// FR-571-AC-7, PA-18: a play the engine never decides at, a state with an
+/// undecided evaluation, is no history end; a forged pair ending there is
+/// refused.
+#[trace("TC-1411", "FR-571-AC-7")]
+#[test]
+fn a_history_ending_at_a_finding_is_refused() {
+    let costly = Fixture::new(
+        "exactly-once-premise",
+        &format!(
+            "sequence Main {{ send Placed via Order as (placed: Ack) {{ {} > 0 }};\n\
+             receive Got via Order of Placed as (got: Ack) {{ true }}; }}",
+            vec!["1"; 200].join(" + ")
+        ),
+    );
+    let tight = || {
+        let mut request = costly.request(64);
+        request.subject.model.simulation.meter = quire_exact::ScalarLimits {
+            work_units: 100,
+            ..crate::counter::UNLIMITED
+        };
+        request
+    };
+    let key = costly.decide(tight()).key;
+    let finish = costly.named("Done");
+    let at_finding = Play {
+        initial: 0,
+        steps: Vec::new(),
+    };
+    let claim = RealizabilityCounterexample::IndistinguishableHistories {
+        key,
+        role: costly.named("Buyer"),
+        history_a: at_finding.clone(),
+        history_b: at_finding,
+        action_a: StrategyAction::Send {
+            node: costly.named("Placed"),
+        },
+        action_b: StrategyAction::End,
+        separating_witness: AssessedRoot::new(Some(assessed_root()))
+            .unwrap()
+            .record(&finish, 0)
+            .unwrap(),
+        obligation: finish,
+    };
+    assert_eq!(
+        replay_counterexample(&costly.admitted, tight(), &claim)
+            .expect("admitted")
+            .expect("an arena"),
+        Err(RealizabilityDisagreement::FindingOnPlay)
     );
 }
 
@@ -754,7 +802,7 @@ fn indistinguishable_histories_without_disjoint_not_lost_sets_are_refused() {
     );
     let key = fixture.run().key;
     let finish = fixture.named("Done");
-    let empty = to_two_sends(&fixture);
+    let (empty, send) = to_two_sends(&fixture);
     let claim = RealizabilityCounterexample::IndistinguishableHistories {
         key: key.clone(),
         role: fixture.named("Buyer"),
@@ -776,11 +824,33 @@ fn indistinguishable_histories_without_disjoint_not_lost_sets_are_refused() {
         replay(&fixture, &claim),
         Err(RealizabilityDisagreement::NotDisjoint)
     );
+    // A history on which the `Buyer` took one of its two enabled sends: a
+    // table that takes the other avoids it, so it is no forced history.
+    let mut avoidable = claim.clone();
+    if let RealizabilityCounterexample::IndistinguishableHistories {
+        history_a,
+        history_b,
+        separating_witness,
+        ..
+    } = &mut avoidable
+    {
+        history_a.steps.push(send.clone());
+        history_b.steps.push(send);
+        *separating_witness = AssessedRoot::new(Some(assessed_root()))
+            .unwrap()
+            .record(&finish, history_a.steps.len() - 1)
+            .unwrap();
+    }
+    assert_eq!(
+        replay(&fixture, &avoidable),
+        Err(RealizabilityDisagreement::Avoidable)
+    );
 }
 
 /// The play from the first initial state, by first successors, to the
-/// first state where two `send` steps are enabled.
-fn to_two_sends(fixture: &Fixture) -> Play {
+/// first state where two `send` steps are enabled, and the first of those
+/// two steps.
+fn to_two_sends(fixture: &Fixture) -> (Play, qsl_replay::protocol_analysis::PlayStep) {
     use qsl_eval::simulation::protocol::{ProtocolSystem, Sc};
     use qsl_eval::simulation::TransitionSystem;
     let subject = fixture.subject();
@@ -796,7 +866,16 @@ fn to_two_sends(fixture: &Fixture) -> Play {
             .filter(|(transition, _)| transition.kind() == StepKind::Send)
             .count();
         if sends >= 2 {
-            return Play { initial: 0, steps };
+            let (successor, (transition, _)) = successors
+                .into_iter()
+                .enumerate()
+                .find(|(_, (transition, _))| transition.kind() == StepKind::Send)
+                .expect("a send");
+            let send = qsl_replay::protocol_analysis::PlayStep {
+                successor,
+                transition,
+            };
+            return (Play { initial: 0, steps }, send);
         }
         let (transition, next) = successors.into_iter().next().expect("a successor");
         steps.push(qsl_replay::protocol_analysis::PlayStep {
