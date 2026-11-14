@@ -66,6 +66,7 @@ Not mergeable as is. FND-001 and FND-002 can return `refuted` where PA-18 requir
 | FND-009 | fixed | 12603ca42: `Seen` carries the captures, `Game::bind` inserts each instance's bytes with `or_insert` when the play first reaches it live and never re-reads them, and both `explore` and `walk` bind before classifying. The terminal state after `Finish` keeps the bound item, so classes no longer reveal termination. `a_capture_the_guard_does_not_read_leaves_the_hidden_choice_refuted` would fail under the regression. |
 | FND-010 | fixed | `WeakAccessShape` now gives `Value::Cut(Open::Undecided)`; deferred and shared records give nothing. |
 | FND-011 | fixed | New `ProtocolSystem::binder_record_bytes` returns the FR-181 canonical bytes directly; `classify` uses it, `binder_record_json` is derived from it, and there is no serde_json round trip. |
+| FND-012 | fixed | 5e0c1e10f: `unsupported_construct` first reads the clause's `activation` member through the new typed `qsl_package::protocol_view::clause_activation` (`ClauseActivation::from_wire`, `#[string_edge]`) and answers `activation-on-each` at the clause for `Each`. Reading the member directly is right: FR-383 always emits `activation` (`kind` origin or each), while `view.activation()` returns relation rows only for requirements. The check is shared, so projection refuses `on each` too, as FR-575-AC-1 requires for both kinds. `an_activation_on_each_is_unsupported` tests the realizability case. |
 
 ## New findings (disposition pass 2)
 

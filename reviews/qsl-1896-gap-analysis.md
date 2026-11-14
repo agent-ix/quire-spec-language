@@ -54,3 +54,9 @@ FR-571-AC-1 to AC-5, FR-572-AC-5, FR-574-AC-3/4 (realizability halves) and FR-57
 | FND-003 | fixed | `an_unstated_premise_or_the_horizon_is_inconclusive` adds a `max_states: 1` run that settles `Failed(RunLimit { limit: "max_states", value: 1 })`. `replay_strategy` now returns the gate's outcome, and the edited table settles `Inconclusive(StrategyReplayFailed)`. |
 | FND-004 | fixed | A two-initial-state capture fixture and a `forced_pair` unit test for the cut case are added. The capture test is defective (FND-005). |
 | FND-005 | fixed | The capture test now requires two single-item classes `[Captures{instance: 0, ..}]` with different payloads, mapped to End and Receive, and that every class starts with the bound captures. Under FND-009 the terminal class would carry no Captures item, the End entry would be missing and the match would panic. Under FND-001 (no captures) the result is refuted and `witness` panics. The new `a_capture_the_guard_does_not_read_leaves_the_hidden_choice_refuted` must stay `IndistinguishableHistories` for Warehouse, and fails under FND-009's false `proved`. |
+
+## New findings (disposition pass 3)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-006 | low | FR-575-AC-1 requires each construct row to yield its slug "for projection and for realizability". The new `activation-on-each` row is tested only through `realize` (`an_activation_on_each_is_unsupported`). The shared `unsupported_construct` makes projection hold, but no test pins it. Add an `on each` case to projection's profile-construct table test. | qsl-analyze/tests/it/protocol_realizability.rs:504-523; qsl-analyze/tests/it/protocol_projection.rs:514-520 |
