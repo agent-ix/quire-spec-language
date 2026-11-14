@@ -532,6 +532,21 @@ impl Checker<'_, '_> {
                         cause: Box::new(cause),
                         span,
                     });
+                } else if let CheckCause::MissingSegment {
+                    name,
+                    offset,
+                    span: None,
+                } = cause
+                {
+                    // A population name that names nothing keeps its own
+                    // cause, located at its second segment through the
+                    // name's span in the slot (FR-391 "Resolution").
+                    let cause = CheckCause::MissingSegment {
+                        name,
+                        offset,
+                        span: Some(span),
+                    };
+                    self.refusals.push((span, CheckRefusal { location, cause }));
                 } else {
                     // A reached limit, a cancellation or a fault keeps its
                     // own cause.
