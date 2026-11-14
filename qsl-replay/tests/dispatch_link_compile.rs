@@ -1726,3 +1726,74 @@ fn a_member_without_own_precondition_clauses_is_unconditionally_admitted() {
         "B without own clauses ignores a false PA: {outcome:?}"
     );
 }
+
+/// FR-576-AC-2, FR-302-AC-8 (TC-1011): an operation body no dispatched call
+/// reaches is checked all the same. The uncalled well-formed body compiles;
+/// an uncalled body of the wrong type and one with the wrong parameter count
+/// each refuse `ill_typed`/`type-mismatch` located at the body.
+#[trace("FR-576-AC-2", "TC-1011", "FR-302-AC-8")]
+#[test]
+fn an_uncalled_body_is_checked_for_its_type_and_arity() {
+    let document = add_package();
+    compiled(
+        &document,
+        "body ok using v on Config::ConfigVersion::add(amount) { amount }\n",
+        SpineLimits::default(),
+    );
+    for body in [
+        "body tooMany using v on Config::ConfigVersion::add(amount, extra) { amount }",
+        "body wrongType using v on Config::ConfigVersion::add(amount) { true }",
+    ] {
+        let refusal = compile(&document, body, SpineLimits::default())
+            .expect_err("the uncalled body does not match its operation");
+        assert_eq!(refusal.code(), Code::IllTyped, "{body}");
+        let CompileRefusal::Check { refusals, region } = refusal.as_ref() else {
+            panic!("an S3 refusal for {body}, got {refusal:?}");
+        };
+        let [refusal] = refusals.as_slice() else {
+            panic!("one refusal for {body}, got {refusals:?}");
+        };
+        assert_eq!(refusal.cause.cause(), Some("type-mismatch"), "{body}");
+        assert!(region.is_some(), "{body}: located at the body");
+        assert!(
+            matches!(
+                &refusal.location.origin,
+                Origin::Body { function, .. } if function == &operation_name("ConfigVersion", "add")
+            ),
+            "{body}: {:?}",
+            refusal.location
+        );
+    }
+}
+
+/// FR-576-AC-8: an uncalled body that contains a dispatched call refuses
+/// `ill_typed`/`operator-ineligible` at the body; without the call it
+/// compiles.
+#[trace("FR-576-AC-8", "TC-1011")]
+#[test]
+fn an_uncalled_body_with_a_dispatched_call_refuses_operator_ineligible() {
+    let document = add_package();
+    let refusal = compile(
+        &document,
+        "body bad using v on Config::ConfigVersion::add(amount) { self.probe() }\n",
+        SpineLimits::default(),
+    )
+    .expect_err("a dispatched call in a body refuses");
+    assert_eq!(refusal.code(), Code::IllTyped);
+    let CompileRefusal::Check { refusals, .. } = refusal.as_ref() else {
+        panic!("an S3 refusal, got {refusal:?}");
+    };
+    let [refusal] = refusals.as_slice() else {
+        panic!("one refusal, got {refusals:?}");
+    };
+    assert_eq!(refusal.cause.cause(), Some("operator-ineligible"));
+    assert!(matches!(
+        &refusal.location.origin,
+        Origin::Body { function, .. } if function == &operation_name("ConfigVersion", "add")
+    ));
+    compiled(
+        &document,
+        "body fine using v on Config::ConfigVersion::add(amount) { amount }\n",
+        SpineLimits::default(),
+    );
+}

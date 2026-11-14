@@ -854,6 +854,10 @@ pub struct CheckedGraph {
     /// operation. `None` means there are no rows or the producer could not
     /// form a complete carrier; empty effects remain rows when an operation exists.
     operation_effects: Option<Vec<quire_contract_model::CheckedOperationEffectRow>>,
+    /// FR-576: the body of each operation FR-496 keys, on the same key.
+    /// `None` when there are no rows or a complete projection could not be
+    /// formed.
+    operation_bodies: Option<Vec<CheckedOperationBody>>,
     /// FR-390: each checked population's exact declaration and effective
     /// member types, indexed by its canonical checked node.
     protocol_population_types: BTreeMap<
@@ -1067,6 +1071,7 @@ impl DebugWith for CheckedGraph {
             selected_exact_identity_rows,
             selected_tuple_declaration_rows,
             operation_effects,
+            operation_bodies,
             protocol_population_types,
             model_roots,
             header_layers,
@@ -1183,6 +1188,7 @@ impl DebugWith for CheckedGraph {
                 &selected_tuple_declaration_rows,
             )
             .field("operation_effects", &operation_effects)
+            .field("operation_bodies", &operation_bodies)
             .field(
                 "protocol_population_types",
                 &NodeMap(protocol_population_types.iter(), table),
@@ -2843,6 +2849,7 @@ impl PackageDeclarations {
             )]);
         }
         let model_clauses = self.model_clauses;
+        let operation_bodies = checked_model_operation_bodies(&models, &model_clauses);
         // FR-094: the object type `T` of each `Population<T>[N]` parameter,
         // from its resolved type form (the checked type carries only `N`).
         let mut population_targets: Vec<Vec<Option<quire_exact::EffectiveId>>> =
@@ -7376,6 +7383,7 @@ impl PackageDeclarations {
             selected_exact_identity_rows: self.selected_exact_identity_rows,
             selected_tuple_declaration_rows: self.selected_tuple_declaration_rows,
             operation_effects,
+            operation_bodies,
             protocol_population_types,
             model_roots,
             header_layers,
@@ -7970,6 +7978,70 @@ fn checked_model_operation_effects(
     (!rows.is_empty()).then_some(rows)
 }
 
+/// One FR-576 `operation_bodies` row before its node is emitted: the
+/// FR-496 key of an operation member and its body.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedOperationBody {
+    /// The selected document, as in FR-496.
+    pub document: String,
+    /// The structural id of the declaring node, as in FR-496.
+    pub declaring: quire_contract_model::CheckedNodeId,
+    /// The original member name, as in FR-496.
+    pub operation: String,
+    /// The index of the operation's body clause function, or `None` for an
+    /// operation without an authored body.
+    pub body: Option<usize>,
+}
+
+/// FR-576: the body of every operation FR-496 emits a row for, on the same
+/// key and in the same order. A body is the function `check` built for the
+/// operation's `DeclarationKey`; an operation with `has_body` and no such
+/// function (a body that could not be checked against a declared result)
+/// makes the whole member unavailable, never a partial one.
+fn checked_model_operation_bodies(
+    models: &[AdmittedModel],
+    model_clauses: &BTreeMap<usize, ModelClause>,
+) -> Option<Vec<CheckedOperationBody>> {
+    if models.is_empty() {
+        return None;
+    }
+    let mut body_of: BTreeMap<&quire_checked::key::DeclarationKey, usize> = BTreeMap::new();
+    for (&index, clause) in model_clauses {
+        if clause.kind == qsl_forms::DeclaredClauseKind::Body {
+            body_of.entry(&clause.declaration).or_insert(index);
+        }
+    }
+    let ids = crate::check::wire_id::StructuralIds::default();
+    let mut rows = Vec::new();
+    let mut seen_documents = BTreeSet::new();
+    for model in models {
+        if !seen_documents.insert(model.selected_document()) {
+            continue;
+        }
+        for (_owner, operation) in model.operation_effect_inputs() {
+            let declaring = ids.id(&model.model_node_key(&operation.owner)?);
+            let body = body_of.get(&operation.key).copied();
+            if body.is_none() && operation.has_body {
+                return None;
+            }
+            rows.push(CheckedOperationBody {
+                document: model.selected_document().into(),
+                declaring,
+                operation: model.original_member_name(&operation.key)?.to_owned(),
+                body,
+            });
+        }
+    }
+    rows.sort_by(|left, right| {
+        left.document
+            .as_bytes()
+            .cmp(right.document.as_bytes())
+            .then_with(|| left.declaring.cmp(&right.declaring))
+            .then_with(|| left.operation.as_bytes().cmp(right.operation.as_bytes()))
+    });
+    (!rows.is_empty()).then_some(rows)
+}
+
 fn effect_modification_key(
     entry: &quire_contract_model::CheckedFrameModification,
 ) -> (&quire_contract_model::CheckedNodeId, &str, u8) {
@@ -8238,6 +8310,13 @@ impl CheckedGraph {
     /// absent when no rows exist or a complete projection could not be formed.
     pub fn operation_effects(&self) -> Option<&[quire_contract_model::CheckedOperationEffectRow]> {
         self.operation_effects.as_deref()
+    }
+
+    /// FR-576: one row per operation FR-496 keys, on the same key, naming the
+    /// function index of the operation's body clause function or its explicit
+    /// absence. Absent when there are no rows or a body could not be formed.
+    pub fn operation_bodies(&self) -> Option<&[CheckedOperationBody]> {
+        self.operation_bodies.as_deref()
     }
 
     /// Source-owned units whose declaration owner and Exact identity were
