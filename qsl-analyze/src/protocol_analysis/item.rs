@@ -29,9 +29,9 @@ use crate::analyze::{AnalyzeItem, EngineReport, Refusal};
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ProtocolAnalysisArtifact {
     /// A projection's result.
-    Projection(ProjectionOutcome),
+    Projection(Box<ProjectionOutcome>),
     /// A realizability result.
-    Realizability(RealizabilityOutcome),
+    Realizability(Box<RealizabilityOutcome>),
 }
 
 impl ProtocolAnalysisArtifact {
@@ -88,7 +88,7 @@ pub fn projection_item<'a>(
         Mode::Unbounded,
         BACKEND_ID,
         move |_| match project(package, request) {
-            Ok(result) => found(ProtocolAnalysisArtifact::Projection(result)),
+            Ok(result) => found(ProtocolAnalysisArtifact::Projection(Box::new(result))),
             Err(ProjectionRefusal::Missing(_)) => invalid("missing-member"),
             Err(ProjectionRefusal::InvalidProfile(_) | ProjectionRefusal::UnknownRole(_)) => {
                 invalid("invalid-value")
@@ -121,7 +121,7 @@ pub fn realizability_item<'a>(
         move |_| {
             let meter = request.subject.model.simulation.meter;
             match realize(package, request) {
-                Ok(result) => found(ProtocolAnalysisArtifact::Realizability(result)),
+                Ok(result) => found(ProtocolAnalysisArtifact::Realizability(Box::new(result))),
                 Err(RealizabilityRefusal::Missing(_)) => invalid("missing-member"),
                 Err(
                     RealizabilityRefusal::InvalidProfile(_) | RealizabilityRefusal::PremiseFact(_),
