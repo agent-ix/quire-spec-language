@@ -63,7 +63,9 @@ pub(crate) use lifecycle::{
     check_for_continuation, check_units_with_options, parse_for_continuation, ContinuationInputs,
     UnitCheckOptions,
 };
-pub use protocol_structure::{replay_protocol_analysis, ProtocolReplayRefusal, StructureError};
+pub use protocol_structure::{
+    arena_names, replay_protocol_analysis, ProtocolReplayRefusal, StructureError,
+};
 pub use subject::{
     BuildProvenance, ComponentKind, DeclarationProfileComponent, DependencyComponent,
     DependencyReferenceComponent, ModelComponent, ProfileComponent, RoleComponent, RoleKind,

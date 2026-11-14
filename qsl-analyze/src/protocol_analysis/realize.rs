@@ -488,7 +488,7 @@ fn admit<'a>(
         }
     }
     let root = AssessedRoot::new(request.assessed_root)?;
-    let names = ArenaNames::new(package, &request.protocol, &premises)?;
+    let names = qsl_replay::spine::arena_names(package, &request.protocol, &premises)?;
     let not_stated = |member: &'static str, value: &Option<Option<BTreeSet<String>>>| {
         matches!(value, Some(None)).then_some(Settled::Inconclusive(
             InconclusiveCause::PremiseNotStated { member },

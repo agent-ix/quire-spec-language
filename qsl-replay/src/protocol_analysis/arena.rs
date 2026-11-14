@@ -13,8 +13,8 @@ use qsl_eval::simulation::protocol::{
     ProtocolState, ProtocolSystem, ProtocolTransition, Sc, StepKind,
 };
 use qsl_eval::simulation::ExpansionStop;
-use qsl_package::protocol_view::{protocol_view, ViewRefusal};
-use quire_contract_model::{CheckedNodeId, CheckedPackageV2};
+use qsl_package::protocol_view::ViewRefusal;
+use quire_contract_model::CheckedNodeId;
 
 use super::{ObservationClass, Observed, ProtocolPremises, StrategyAction};
 
@@ -55,46 +55,27 @@ pub struct ArenaNames {
 }
 
 impl ArenaNames {
-    /// The names of the protocol clause `protocol` of `package`.
-    ///
-    /// # Errors
-    ///
-    /// [`ArenaError::View`] when a protocol read refuses.
-    pub fn new(
-        package: &CheckedPackageV2,
-        protocol: &CheckedNodeId,
+    /// The names of one protocol clause, from its controls and channels
+    /// by declared name, its roles, `finish` member and clause node, and
+    /// the premises that give each channel its ends.
+    pub(crate) fn from_parts(
+        named_controls: Vec<(String, CheckedNodeId)>,
+        named_channels: Vec<(String, CheckedNodeId)>,
+        mut roles: Vec<CheckedNodeId>,
+        finish: CheckedNodeId,
+        clause: CheckedNodeId,
         premises: &ProtocolPremises,
-    ) -> Result<Self, ArenaError> {
-        let view = protocol_view(package, protocol)?;
-        let graph = package.resolved_graph();
-        // `qsl-eval` names a control by its path through the `run` tree with
-        // case labels (`Main/Decide/yes/Ship/PickIt`) and a channel by its
-        // qualified name (`Flow::Pick`); the package declares each under the
-        // clause by its own name. A name two nodes share resolves to neither.
-        let name_of = |id: &CheckedNodeId| {
-            graph
-                .nodes
-                .iter()
-                .find(|node| &node.node_id == id)
-                .and_then(|node| node.declaration.as_ref())
-                .and_then(|declaration| declaration.qualified_name.last())
-                .map(|segment| segment.to_string())
-        };
-        let mut controls = BTreeMap::new();
-        let mut channels = BTreeMap::new();
-        for (held, ids) in [
-            (&mut controls, view.controls()),
-            (&mut channels, view.channels()),
-        ] {
-            for id in ids {
-                if let Some(name) = name_of(id) {
-                    held.entry(name)
-                        .and_modify(|shared: &mut Option<CheckedNodeId>| *shared = None)
-                        .or_insert_with(|| Some((*id).clone()));
-                }
+    ) -> Self {
+        // A name two nodes share resolves to neither.
+        let by_name = |named: Vec<(String, CheckedNodeId)>| {
+            let mut held: BTreeMap<String, Option<CheckedNodeId>> = BTreeMap::new();
+            for (name, id) in named {
+                held.entry(name)
+                    .and_modify(|shared| *shared = None)
+                    .or_insert_with(|| Some(id));
             }
-        }
-        let mut roles: Vec<CheckedNodeId> = view.roles().iter().map(|id| (*id).clone()).collect();
+            held
+        };
         roles.sort();
         let index = |id: &CheckedNodeId| roles.binary_search(id).ok();
         let mut ends = BTreeMap::new();
@@ -105,14 +86,14 @@ impl ArenaNames {
                 ends.insert(channel.channel.clone(), (sender, receiver));
             }
         }
-        Ok(Self {
-            controls,
-            channels,
+        Self {
+            controls: by_name(named_controls),
+            channels: by_name(named_channels),
             ends,
-            finish: view.finish().clone(),
-            clause: view.clause().clone(),
             roles,
-        })
+            finish,
+            clause,
+        }
     }
 
     /// The roles, ascending by node.

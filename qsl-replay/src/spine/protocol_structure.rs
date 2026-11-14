@@ -255,3 +255,44 @@ pub fn replay_protocol_analysis(
         ProtocolReplayResult { settlement },
     ))
 }
+
+/// The names a realizability arena's steps resolve to in the protocol clause
+/// `protocol` of `package` (ADR-036 PA-16): each control and channel by its
+/// declared name, the roles, the `finish` member and the clause.
+/// `qsl-eval` names a control by its path through the `run` tree with case
+/// labels (`Main/Decide/yes/Ship/PickIt`) and a channel by its qualified name
+/// (`Flow::Pick`); the package declares each under the clause by its own
+/// name.
+///
+/// # Errors
+///
+/// [`ViewRefusal`] when a protocol read refuses.
+pub fn arena_names(
+    package: &CheckedPackageV2,
+    protocol: &CheckedNodeId,
+    premises: &crate::protocol_analysis::ProtocolPremises,
+) -> Result<crate::protocol_analysis::arena::ArenaNames, ViewRefusal> {
+    let view = protocol_view(package, protocol)?;
+    let graph = package.resolved_graph();
+    let named = |ids: &[&CheckedNodeId]| {
+        ids.iter()
+            .filter_map(|id| {
+                graph
+                    .nodes
+                    .iter()
+                    .find(|node| &node.node_id == *id)
+                    .and_then(|node| node.declaration.as_ref())
+                    .and_then(|declaration| declaration.qualified_name.last())
+                    .map(|segment| (segment.to_string(), (*id).clone()))
+            })
+            .collect()
+    };
+    Ok(crate::protocol_analysis::arena::ArenaNames::from_parts(
+        named(view.controls()),
+        named(view.channels()),
+        view.roles().iter().map(|id| (*id).clone()).collect(),
+        view.finish().clone(),
+        view.clause().clone(),
+        premises,
+    ))
+}
