@@ -29,19 +29,19 @@ use qsl_eval::simulation::model::{ModelFinding, ModelSystem, TerminalClass};
 use qsl_eval::simulation::protocol::{
     ProtocolRefusal, ProtocolState, ProtocolSystem, ProtocolTransition, Sc,
 };
-use qsl_eval::simulation::{ExpansionLimit, ExpansionStop};
 use qsl_eval::simulation::TransitionSystem;
+use qsl_eval::simulation::{ExpansionLimit, ExpansionStop};
 use qsl_package::protocol_view::ViewRefusal;
 use qsl_replay::protocol_analysis::arena::{
     self, Arena, ArenaError, ArenaNames, FindingValue, RoleStep, Seen,
 };
 use qsl_replay::protocol_analysis::{
     replay_realizability_counterexample, AnalysisOutcome, AnalyzerIdentity, AssessedRoot,
-    AssessedRootDraft, BoundsDraft, BranchDefeat, Closure, DeliveryPremise, HistoryEnd, InconclusiveCause, LostAction, Play, PlayStep,
-    MissingMember, ObservationClass, PremiseRefusal, ProtocolAnalysisKey, ProtocolAnalysisResult,
-    ProtocolPremises, RealizabilityCounterexample, RealizabilityDisagreement,
-    RealizabilityKeyDraft, RealizabilityWitness, RoleStrategy, RunBudget, RunLimit, StrategyAction,
-    UnsupportedCause, UnsupportedSlug,
+    AssessedRootDraft, BoundsDraft, BranchDefeat, Closure, DeliveryPremise, HistoryEnd,
+    InconclusiveCause, LostAction, MissingMember, ObservationClass, Play, PlayStep, PremiseRefusal,
+    ProtocolAnalysisKey, ProtocolAnalysisResult, ProtocolPremises, RealizabilityCounterexample,
+    RealizabilityDisagreement, RealizabilityKeyDraft, RealizabilityWitness, RoleStrategy,
+    RunBudget, RunLimit, StrategyAction, UnsupportedCause, UnsupportedSlug,
 };
 use qsl_replay::ModelCheckLimit;
 use qsl_semantics::model::observation::AdmissionFailure;
@@ -248,7 +248,13 @@ impl Game<'_, '_> {
         let roles = self.arena.names.roles().len();
         // A pending node: its state, the parent move it hangs off, its
         // play's initial state, its depth and what its play showed the roles.
-        type Pending = (ProtocolState<Sc>, Option<(usize, usize)>, usize, usize, Seen);
+        type Pending = (
+            ProtocolState<Sc>,
+            Option<(usize, usize)>,
+            usize,
+            usize,
+            Seen,
+        );
         let mut stack: Vec<Pending> = self
             .arena
             .system
@@ -591,7 +597,10 @@ fn decide(
     let meter = request.subject.model.simulation.meter;
     let admitted = admit(package, request)?;
     let key = admitted.key.clone();
-    Ok(result(&key, metered(&meter, search(admitted, budget, edit))?))
+    Ok(result(
+        &key,
+        metered(&meter, search(admitted, budget, edit))?,
+    ))
 }
 
 fn search(
@@ -773,22 +782,26 @@ fn indistinguishable(
         let found = [(HistoryEnd::A, a.node), (HistoryEnd::B, b.node)]
             .into_iter()
             .find_map(|(at, node)| {
-                nodes[node].moves.iter().enumerate().find_map(|(index, held)| {
-                    let taken = held
-                        .step
-                        .as_ref()
-                        .is_some_and(|step| step.role == role && &step.action == action);
-                    (taken && nodes[held.child].value == Value::Lose).then(|| {
-                        let leaf = history(nodes, defeat(nodes, held.child));
-                        let from = history(nodes, node).steps.len();
-                        debug_assert_eq!(leaf.steps[from].successor, index);
-                        LostAction {
-                            action: action.clone(),
-                            at,
-                            continuation: leaf.steps[from..].to_vec(),
-                        }
+                nodes[node]
+                    .moves
+                    .iter()
+                    .enumerate()
+                    .find_map(|(index, held)| {
+                        let taken = held
+                            .step
+                            .as_ref()
+                            .is_some_and(|step| step.role == role && &step.action == action);
+                        (taken && nodes[held.child].value == Value::Lose).then(|| {
+                            let leaf = history(nodes, defeat(nodes, held.child));
+                            let from = history(nodes, node).steps.len();
+                            debug_assert_eq!(leaf.steps[from].successor, index);
+                            LostAction {
+                                action: action.clone(),
+                                at,
+                                continuation: leaf.steps[from..].to_vec(),
+                            }
+                        })
                     })
-                })
             });
         lost.extend(found);
     }

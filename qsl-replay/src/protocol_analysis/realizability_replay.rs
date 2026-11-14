@@ -185,10 +185,11 @@ pub fn replay_realizability_counterexample(
                 if !starts || !within(prefix + entry.continuation.len()) {
                     return Ok(Err(RealizabilityDisagreement::NotDisjoint));
                 }
-                let reached = match walk_from(arena, end.clone(), seen.clone(), &entry.continuation)? {
-                    Ok((reached, _)) => reached,
-                    Err(_) => return Ok(Err(RealizabilityDisagreement::NotDisjoint)),
-                };
+                let reached =
+                    match walk_from(arena, end.clone(), seen.clone(), &entry.continuation)? {
+                        Ok((reached, _)) => reached,
+                        Err(_) => return Ok(Err(RealizabilityDisagreement::NotDisjoint)),
+                    };
                 if violation(arena, &reached)?.is_none() {
                     return Ok(Err(RealizabilityDisagreement::NotDisjoint));
                 }

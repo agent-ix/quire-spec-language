@@ -107,22 +107,20 @@ pub fn realizability_item<'a>(
         Some(DeclarationFamily::Protocol),
         Mode::Unbounded,
         BACKEND_ID,
-        move |_| {
-            match realize(package, request) {
-                Ok(result) => found(ProtocolAnalysisArtifact::Realizability(Box::new(result))),
-                Err(RealizabilityRefusal::Missing(_)) => invalid("missing-member"),
-                Err(
-                    RealizabilityRefusal::InvalidProfile(_) | RealizabilityRefusal::PremiseFact(_),
-                ) => invalid("invalid-value"),
-                Err(
-                    RealizabilityRefusal::View(_)
-                    | RealizabilityRefusal::Premises(_)
-                    | RealizabilityRefusal::Admission(_)
-                    | RealizabilityRefusal::Protocol(_)
-                    | RealizabilityRefusal::UnnamedNode(_)
-                    | RealizabilityRefusal::Stopped(_),
-                ) => fault(),
+        move |_| match realize(package, request) {
+            Ok(result) => found(ProtocolAnalysisArtifact::Realizability(Box::new(result))),
+            Err(RealizabilityRefusal::Missing(_)) => invalid("missing-member"),
+            Err(RealizabilityRefusal::InvalidProfile(_) | RealizabilityRefusal::PremiseFact(_)) => {
+                invalid("invalid-value")
             }
+            Err(
+                RealizabilityRefusal::View(_)
+                | RealizabilityRefusal::Premises(_)
+                | RealizabilityRefusal::Admission(_)
+                | RealizabilityRefusal::Protocol(_)
+                | RealizabilityRefusal::UnnamedNode(_)
+                | RealizabilityRefusal::Stopped(_),
+            ) => fault(),
         },
     )
 }

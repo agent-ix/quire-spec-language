@@ -64,16 +64,25 @@ The settlement map is:
   successor and that the walk ends in the stated divergence or violation. An
   arm that disagrees settles `inconclusive` (ADR-018 SM-7). For a projection
   it is `ReplaySource::ProtocolAnalysis` over the checked package. For a
-  realizability refutation it walks the `qsl-eval` arena of the request's
-  protocol subject, which a replay source carries no member for: each
-  history or defeating play from an initial state through admitted
-  successors; for indistinguishable histories, equal observations of the
-  role, two different actions, each enabled at its history's end (`End` at
-  an intended terminal state), and the `finish` obligation; for an
-  environment defeat, a play ending in a violated invariant of the clause or
-  a deadlock against `finish`, as the counterexample names. Each engine runs
-  its arm before it returns a refutation.
-- The replay arm re-walks the stated paths with the structure's successor
+  realizability refutation the arm has no replay source, because a replay
+  source carries no protocol subject: it walks the `qsl-eval` arena of the
+  request's protocol subject. Every play names the index of its initial
+  state and of each step's successor in the system's canonical orders, so
+  the walk is determinate; a step whose transition differs from the one at
+  its index disagrees. Both forms carry the request's key and the FR-574
+  record the request's root gives, and every play stays within `max_depth`.
+  For indistinguishable histories the arm checks that the role observes the
+  two ends equally, within `max_history`; that the two actions differ and
+  each is enabled at its own end (`End` at an intended terminal state); that
+  the obligation is `finish`; and that the not-lost action sets of the two
+  ends are disjoint (PA-18 (i)): every action the role can take at both ends
+  has, in the counterexample, a continuation from one end whose first step
+  is the role taking that action and whose last state violates an
+  obligation. For an environment defeat it checks that the play ends in a
+  violated invariant of the clause or a deadlock against `finish`, as the
+  counterexample names. Each engine runs its arm before it returns a
+  refutation.
+- For a projection, the replay arm re-walks the stated paths with the structure's successor
   relation and recomputes the actions' shapes, the role's basis at the choice
   and the diverging layer with the same structure functions the engine uses.
   It is independent of the engine's search, so it catches a counterexample
@@ -97,9 +106,10 @@ The settlement map is:
   this map, and carries the result: its FR-572 key and the witness or the
   counterexample with its FR-574 record. A refusal before analysis (an
   absent key member or root, an unknown profile or role, a premise holding a
-  fact) is `declined` `invalid-input`; an evaluation-meter stop is `failed`,
-  `resource-incomplete`, naming the counter and its value; any other engine
-  failure is `failed`.
+  fact) is `declined` `invalid-input` and carries no result; a run limit or
+  the evaluation meter that stops the analysis is the result's own `failed`
+  outcome, `resource-incomplete`, naming the limit or counter and its value;
+  any other engine failure is `failed` and carries no result.
 - The FR-331 terminal value of each row: `proved` with basis `exhaustive`,
   `uncertified`; `refuted`; `inconclusive` with cause `bound-reached` and
   the `max_depth` for the horizon, and otherwise `premise-not-stated`,
@@ -122,7 +132,7 @@ changed by this requirement.
 | ID | Criteria | Verification |
 | --- | --- | --- |
 | FR-573-AC-1 | A sound projection and a realizable protocol each settle `proved`, `closed-scope`, execution `completed`, truth `satisfied`, certification `Uncertified`, and the settlement carries the same certification when read back. | Test (TC-1413) |
-| FR-573-AC-2 | A projection counterexample and each of the two realizability refutation forms settle `refuted`, `decisive-counterexample`, execution `completed`, truth `violated`, only after the counterexample replays through `ReplaySource::ProtocolAnalysis`. | Test (TC-1413) |
+| FR-573-AC-2 | A projection counterexample and each of the two realizability refutation forms settle `refuted`, `decisive-counterexample`, execution `completed`, truth `violated`, only after the counterexample replays through its arm: `ReplaySource::ProtocolAnalysis` for a projection, the arena walk for realizability. | Test (TC-1413) |
 | FR-573-AC-3 | A counterexample whose replay disagrees with the checked graph (a step that is not an admitted successor, or a walk that does not end in the stated divergence) settles `inconclusive`, never `refuted`. | Test (TC-1413) |
 | FR-573-AC-4 | A search that completes its method up to `max_depth` or `max_history` without a counterexample settles `inconclusive`, execution `completed`, truth `pending`, basis `unsettled`; the same holds for an absent realizability premise and for a result that depended on a cut. | Test (TC-1413) |
 | FR-573-AC-5 | A run stopped by `max_states`, `max_transitions` or the evaluation meter settles `failed`, execution `resource-incomplete`, truth `unavailable`, with no artifact and a record naming the limit and the value used. | Test (TC-1413) |

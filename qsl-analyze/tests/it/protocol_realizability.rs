@@ -8,18 +8,17 @@ use ix_trace_rs::trace;
 use qsl_analyze::analyze::{analyze_items, AnalyzeRecord, Engines};
 use qsl_analyze::protocol_analysis::{
     self, projection_item, realizability_item, realize, realize_tampered, replay_counterexample,
-    replay_strategy,
-    ProjectionRequest, RealizabilityOutcome, RealizabilityRefusal, RealizabilityRequest,
+    replay_strategy, ProjectionRequest, RealizabilityOutcome, RealizabilityRefusal,
+    RealizabilityRequest,
 };
 use qsl_eval::model_subject::{ProtocolSubject, RoleBinding};
 use qsl_eval::simulation::protocol::StepKind;
 use qsl_foundation::{BackendId, RequestIndex};
 use qsl_package::CheckedPackage;
 use qsl_replay::protocol_analysis::{
-    node_text, AnalysisOutcome, AssessedRoot, BoundsDraft, InconclusiveCause,
-    LostAction, Observed, Play, ProjectionBoundsDraft,
-    RealizabilityCounterexample, RealizabilityDisagreement, RealizabilityWitness, RunBudget,
-    RunLimit, StrategyAction, UnsupportedSlug,
+    node_text, AnalysisOutcome, AssessedRoot, BoundsDraft, InconclusiveCause, LostAction, Observed,
+    Play, ProjectionBoundsDraft, RealizabilityCounterexample, RealizabilityDisagreement,
+    RealizabilityWitness, RunBudget, RunLimit, StrategyAction, UnsupportedSlug,
 };
 use qsl_replay::{
     Certification, DecidingElement, Execution, IncompleteCause, InconclusiveCause as Fr331Cause,
@@ -566,73 +565,83 @@ fn the_realizability_replay_arm_reproduces_both_forms_and_refuses_edits() {
     };
     // A step whose successor index names another transition.
     assert!(matches!(
-        edit(&|ce| if let RealizabilityCounterexample::IndistinguishableHistories {
-            history_a,
-            history_b,
-            ..
-        } = ce
-        {
-            let longer = if history_a.steps.len() >= history_b.steps.len() {
-                history_a
-            } else {
-                history_b
-            };
-            longer.steps.remove(0);
-        }),
+        edit(
+            &|ce| if let RealizabilityCounterexample::IndistinguishableHistories {
+                history_a,
+                history_b,
+                ..
+            } = ce
+            {
+                let longer = if history_a.steps.len() >= history_b.steps.len() {
+                    history_a
+                } else {
+                    history_b
+                };
+                longer.steps.remove(0);
+            }
+        ),
         Err(RealizabilityDisagreement::StepNotSuccessor { .. })
     ));
     // An initial state the system does not have.
     assert_eq!(
-        edit(&|ce| if let RealizabilityCounterexample::IndistinguishableHistories {
-            history_a, ..
-        } = ce
-        {
-            history_a.initial = 7;
-        }),
+        edit(
+            &|ce| if let RealizabilityCounterexample::IndistinguishableHistories {
+                history_a, ..
+            } = ce
+            {
+                history_a.initial = 7;
+            }
+        ),
         Err(RealizabilityDisagreement::StepNotSuccessor { at: 0 })
     );
     // Two equal actions are no incompatible pair.
     assert_eq!(
-        edit(&|ce| if let RealizabilityCounterexample::IndistinguishableHistories {
-            action_a,
-            action_b,
-            ..
-        } = ce
-        {
-            *action_b = action_a.clone();
-        }),
+        edit(
+            &|ce| if let RealizabilityCounterexample::IndistinguishableHistories {
+                action_a,
+                action_b,
+                ..
+            } = ce
+            {
+                *action_b = action_a.clone();
+            }
+        ),
         Err(RealizabilityDisagreement::SameAction)
     );
     // The obligation is not the one a hidden choice violates.
     let other = hidden.named("Seller");
     assert_eq!(
-        edit(&|ce| if let RealizabilityCounterexample::IndistinguishableHistories {
-            obligation, ..
-        } = ce
-        {
-            *obligation = other.clone();
-        }),
+        edit(
+            &|ce| if let RealizabilityCounterexample::IndistinguishableHistories {
+                obligation,
+                ..
+            } = ce
+            {
+                *obligation = other.clone();
+            }
+        ),
         Err(RealizabilityDisagreement::RecordMismatch)
     );
     // A counterexample of another key or with another record.
     let foreign = hidden.decide(hidden.request(63)).key;
     assert_eq!(
-        edit(&|ce| if let RealizabilityCounterexample::IndistinguishableHistories {
-            key, ..
-        } = ce
-        {
-            *key = foreign.clone();
-        }),
+        edit(
+            &|ce| if let RealizabilityCounterexample::IndistinguishableHistories { key, .. } = ce {
+                *key = foreign.clone();
+            }
+        ),
         Err(RealizabilityDisagreement::KeyMismatch)
     );
     assert_eq!(
-        edit(&|ce| if let RealizabilityCounterexample::IndistinguishableHistories {
-            separating_witness,
-            ..
-        } = ce
-        {
-            separating_witness.trace_position = None;
-        }),
+        edit(
+            &|ce| if let RealizabilityCounterexample::IndistinguishableHistories {
+                separating_witness,
+                ..
+            } = ce
+            {
+                separating_witness.trace_position = None;
+            }
+        ),
         Err(RealizabilityDisagreement::RecordMismatch)
     );
 
@@ -750,10 +759,7 @@ fn the_engine_settles_an_edited_refutation_inconclusive() {
         }
     })
     .unwrap();
-    assert_eq!(
-        inconclusive(edited),
-        InconclusiveCause::ReplayDisagreed
-    );
+    assert_eq!(inconclusive(edited), InconclusiveCause::ReplayDisagreed);
     let lossy = worked("at-most-once", PICK, CANCELLED);
     let edited = realize_tampered(&lossy.admitted, lossy.request(64), &|ce| {
         if let RealizabilityCounterexample::EnvironmentDefeat {
@@ -764,10 +770,7 @@ fn the_engine_settles_an_edited_refutation_inconclusive() {
         }
     })
     .unwrap();
-    assert_eq!(
-        inconclusive(edited),
-        InconclusiveCause::ReplayDisagreed
-    );
+    assert_eq!(inconclusive(edited), InconclusiveCause::ReplayDisagreed);
 }
 
 fn projection_request(fixture: &Fixture, max_depth: u64) -> ProjectionRequest {
@@ -932,14 +935,26 @@ fn a_driver_run_settles_each_kind_under_each_label() {
         max_transitions: 1,
         ..RunBudget::default()
     };
-    items.push(projection_item(at(items.len()), &sound.admitted, transitions));
-    items.push(realizability_item(at(items.len()), &open.admitted, open.request(64)));
+    items.push(projection_item(
+        at(items.len()),
+        &sound.admitted,
+        transitions,
+    ));
+    items.push(realizability_item(
+        at(items.len()),
+        &open.admitted,
+        open.request(64),
+    ));
     let mut metered = sound.request(64);
     metered.subject.model.simulation.meter = quire_exact::ScalarLimits {
         work_units: METER_WORK_UNITS,
         ..crate::counter::UNLIMITED
     };
-    items.push(realizability_item(at(items.len()), &sound.admitted, metered));
+    items.push(realizability_item(
+        at(items.len()),
+        &sound.admitted,
+        metered,
+    ));
     let records = analyze_items(
         &Engines::qsl().expect("they register"),
         items,

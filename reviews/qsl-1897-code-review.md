@@ -1,0 +1,46 @@
+---
+id: SR-2026111405325201
+title: "code review of PR2702 serving local-projection and realizability"
+type: SpecReview
+analysis: code-review
+scope: "agent-ix/quire-spec-language; qsl-analyze/src/analyze.rs, qsl-analyze/src/protocol_analysis/{item,manifest,mod,project,realize}.rs, qsl-replay/src/protocol_analysis.rs, qsl-replay/src/protocol_analysis/{arena,realizability_replay,settle,structure,tests}.rs, qsl-replay/src/{outcome,proof_result,spine}.rs, qsl-replay/src/spine/protocol_structure.rs, qsl-replay/src/model_check/settle.rs, qsl-analyze/tests/it/{protocol_projection,protocol_realizability}.rs; PR2702 5d32b7e0f4cc3d33ce7d17af10881b37d8a62c14"
+review_set: subset
+---
+
+## Summary
+
+Ticket: QSL-1897 (ADR-036 slice 5). Code review with the rust-review lane folded in, scoped to `git diff origin/main...HEAD`. The reviewer read the code only and ran no cargo build or test, as the brief asks. The lead's decisions are not findings: PA-24 carriage deferred to QSL-1898, the manifest advertising `unbounded` only, the new inconclusive cause words minted in FR-573, and the ItemForm carrier deferred.
+
+Sound parts. The settlement map (`settle.rs`) matches the FR-573 table and QSpec FR-241/242/243/360: `proved`/`closed-scope`/`completed`/`satisfied`/`Uncertified`; `refuted`/`decisive-counterexample`/`completed`/`violated`; `inconclusive`/`unsettled`/`completed`/`pending`; `unsupported`/`unavailable`/execution `unsupported` (a real FR-241 member, and FR-360-AC-4 requires it); `failed`/`unavailable` with `resource-incomplete` or `failed`. `RunLimit.limit` is now the typed `ModelCheckLimit`, so no string gates a branch. The only string reads are the moved `ArenaNames::node`/`channel` edges, which keep `#[ix_trace_rs::string_edge]`. The arena readers moved to `qsl-replay` with their behaviour unchanged. The search, the strategy walk and the new replay arm all compute observation classes with one `Seen::observations`. The item adapters map every refusal variant without a catch-all. The manifest follows the FR-288 pattern of the other engines. Nothing new is quadratic. `arena_names` still searches `graph.nodes` once per id, but that code moved here unchanged. `walk` costs O(initial states × steps × branching), bounded by the stated play. No `/// Trace:` lines. The TL-387 handoff note matches the code: `AnalyzeRecord.protocol_analysis`, `ProtocolAnalysisArtifact::settlement()`, `ProtocolAnalysisKey::from_json` refusing `MissingMember` (`invalid_runtime_input`/`missing-member`), and the `separating_witness` on each counterexample form. It omits only the case covered by FND-005.
+
+The environment-defeat arm is sound for this profile, because every node is an environment node (realize.rs module docs), so any reachable violation decides the result. The indistinguishable-histories arm is not sound: it never checks that the two actions are actually needed (FND-001).
+
+## Findings
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-001 | high | The indistinguishable-histories replay can accept a false `refuted`. It checks that both histories walk, that the role observes them equally, that the two actions differ and that each action is enabled at its own end. It never checks the divergence PA-18 (i) refutes on: that the not-lost action sets at the two ends are disjoint. Example: set `history_b = history_a`, and name as `action_a` and `action_b` two actions the role has enabled at that one end (two `parallel` threads, or a send alongside a receive). Every check passes, yet a table that picks either action wins. So the arm cannot catch a stale or wrong engine refutation, which is SM-7's whole purpose. Fix: from each end, prove that every action enabled for the role and not lost at one end is disabled or loses at the other end. Do this by a search bounded by `max_depth`, or have the counterexample carry one defeating continuation per cross action and walk it. Add a test where the edit above is refused. | qsl-replay/src/protocol_analysis/realizability_replay.rs:57-91, 160-181 |
+| FND-002 | medium | `walk` resolves the stated steps without backtracking. It takes the first initial state that admits every step, and at each step the first successor equal to the stated transition. A `ProtocolTransition` does not include its source state, and the counterexample does not record which initial state it started from. If an earlier initial state, or another successor with an equal transition, also admits the sequence, the arm checks the observation, the enabledness or the violation at the wrong end state. A true refutation then settles `inconclusive` `replay-disagreed`. Fix: search every admitting path (initial states and equal successors) and accept if any one of them agrees, or carry the initial state's identity on the counterexample. | qsl-replay/src/protocol_analysis/realizability_replay.rs:127-158 |
+| FND-003 | medium | No test covers the new `refuted only after replay` gate in `realize`. Deleting `Game::replayed`, or mapping its `Err` to `Refuted`, leaves every test green. `the_realizability_replay_arm_reproduces_both_forms_and_refuses_edits` calls `replay_counterexample` directly and checks only the arm's verdict. It never checks the `inconclusive` `replay-disagreed` settlement it tags FR-573-AC-3 for. Add a crate-internal test that passes an edited counterexample through `Game::replayed` and expects `Settled::Inconclusive(InconclusiveCause::ReplayDisagreed)`. | qsl-analyze/src/protocol_analysis/realize.rs:761-774; qsl-analyze/tests/it/protocol_realizability.rs:542-544 |
+| FND-004 | low | The arm does not check the counterexample's own claims against the request. It never compares `key` with the request's key, never holds the play lengths to `max_depth`/`max_history`, and never checks that `separating_witness.deciding_element` names the obligation or that `trace_position` matches the stated play. Through the public `replay_counterexample`, a stored counterexample from another key or bound replays `Ok`. | qsl-replay/src/protocol_analysis/realizability_replay.rs:52-122; qsl-analyze/src/protocol_analysis/realize.rs:656-673 |
+| FND-005 | low | The two resource-incomplete paths carry different things. A `max_states` or `max_transitions` stop settles through `Found` and carries the artifact, with its key and `Failed` outcome. An evaluation-meter stop settles through `Stopped` and carries `protocol_analysis: None`. FR-573 Serving says every item carries its FR-572 key. The TL-387 handoff note does not say when `protocol_analysis` is absent (meter stop, refusal). Carry the key on a meter stop too, or state the absence in FR-573 and the handoff note. | qsl-analyze/src/protocol_analysis/item.rs:49-54, 129-137, 164-172; spec/decisions/ADR-036-protocol-local-projection-and-realizability-engine.md:224-240 |
+| FND-006 | low | `ProtocolAnalysisSettlement::failed()` has no caller. An engine failure settles through `Refusal::Failed` in `item.rs`. Remove the dead public constructor, or route `fault()` through it. | qsl-replay/src/protocol_analysis/settle.rs:103-111 |
+
+## Scope and evidence
+
+Read in full: the whole diff, `realizability_replay.rs`, `arena.rs`, `settle.rs`, `item.rs`, `manifest.rs`, the touched parts of `realize.rs` (admit, explore, decision_points, forced_pair, indistinguishable, environment_defeat, replayed, replay_counterexample), `strategy.rs` (counterexample types), `ProtocolTransition`'s fields in `qsl-eval/src/simulation/protocol/identity.rs`, `ProtocolAnalysisKey::from_json`, `MissingMember`, and QSpec FR-241 and FR-360.
+
+- qsl-replay/src/protocol_analysis/realizability_replay.rs (qsl-replay/src/protocol_analysis/realizability_replay.rs): PA-20 realizability counterexample replay arm. (examined)
+- qsl-replay/src/protocol_analysis/settle.rs (qsl-replay/src/protocol_analysis/settle.rs): FR-573 settlement map. (examined)
+- qsl-replay/src/protocol_analysis/arena.rs (qsl-replay/src/protocol_analysis/arena.rs): arena readers moved from realize.rs. (examined)
+- qsl-analyze/src/protocol_analysis/item.rs (qsl-analyze/src/protocol_analysis/item.rs): projection_item, realizability_item, settle. (examined)
+- qsl-analyze/src/protocol_analysis/manifest.rs (qsl-analyze/src/protocol_analysis/manifest.rs): provider manifest. (examined)
+- qsl-analyze/src/protocol_analysis/realize.rs (qsl-analyze/src/protocol_analysis/realize.rs): replayed, replay_counterexample, arena refactor. (examined)
+- qsl-replay/src/proof_result.rs (qsl-replay/src/proof_result.rs): FR-331 ProtocolAnalysis cause variants, of_protocol_analysis. (examined)
+- qsl-replay/src/model_check/settle.rs (qsl-replay/src/model_check/settle.rs): Execution::Unsupported. (examined)
+- qsl-analyze/src/analyze.rs (qsl-analyze/src/analyze.rs): engine registration and settle arm. (examined)
+- qsl-analyze/tests/it/protocol_realizability.rs (qsl-analyze/tests/it/protocol_realizability.rs): three new tests. (examined)
+
+## Verdict
+
+Not mergeable as is. FND-001 is a soundness defect in the realizability replay arm: it can accept a refutation in which neither action is needed. FND-002 and FND-003 should be fixed in the same round. FND-004 to FND-006 are small. Once those are fixed, the PR is mergeable. The settlement map, the manifest, the item adapters and the typed limits are correct.
