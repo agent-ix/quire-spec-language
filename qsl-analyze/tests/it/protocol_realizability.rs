@@ -5,18 +5,31 @@
 use std::collections::BTreeSet;
 
 use ix_trace_rs::trace;
+use qsl_analyze::analyze::{analyze_items, AnalyzeRecord, Engines};
 use qsl_analyze::protocol_analysis::{
-    realize, replay_strategy, RealizabilityOutcome, RealizabilityRefusal, RealizabilityRequest,
+    self, projection_item, realizability_item, realize, replay_counterexample, replay_strategy,
+    ProjectionRequest, RealizabilityOutcome, RealizabilityRefusal, RealizabilityRequest,
 };
+use qsl_foundation::{BackendId, RequestIndex};
+use qsl_route::{
+    settle_candidates, Candidate, CandidateOutcome, NegotiationCause, NegotiationSettlement,
+    Registry,
+};
+use qsl_semantics::check::Capability;
+use quire_exact::Cancel;
 use qsl_eval::model_subject::{ProtocolSubject, RoleBinding};
 use qsl_eval::simulation::protocol::StepKind;
 use qsl_package::CheckedPackage;
 use qsl_replay::protocol_analysis::{
-    node_text, AnalysisOutcome, BoundsDraft, InconclusiveCause, Observed,
-    RealizabilityCounterexample, RealizabilityWitness, RunBudget, RunLimit, StrategyAction,
-    UnsupportedSlug,
+    node_text, AnalysisOutcome, BoundsDraft, InconclusiveCause, Observed, ProjectionBoundsDraft,
+    RealizabilityCounterexample, RealizabilityDisagreement, RealizabilityWitness, RunBudget,
+    RunLimit, StrategyAction, UnsupportedSlug,
 };
-use qsl_replay::{DecidingElement, ModelCheckLimit, SeparatingWitnessRecord};
+use qsl_replay::{
+    Certification, DecidingElement, Execution, IncompleteCause, InconclusiveCause as Fr331Cause,
+    ModelCheckLimit, ProofBasis, ResultLabel, SeparatingWitnessRecord, SettlementBasis,
+    TerminalValue, Truth, UnavailabilityCause,
+};
 use qsl_semantics::model::observation::DocumentRef;
 use quire_contract_model::{CheckedNodeId, CheckedPackageV2};
 
@@ -519,5 +532,307 @@ fn an_activation_on_each_is_unsupported() {
             assert_eq!(cause.node, clause(&fixture.admitted));
         }
         other => panic!("expected unsupported: {other:?}"),
+    }
+}
+
+/// PA-20 (ADR-018 SM-7): the realizability replay arm re-walks a stated
+/// counterexample over the arena. Both refutation forms the engine returns
+/// replay; an edited one disagrees, so the engine would settle it
+/// `inconclusive`, never `refuted`.
+#[trace("TC-1413", "FR-573-AC-2", "FR-573-AC-3")]
+#[test]
+fn the_realizability_replay_arm_reproduces_both_forms_and_refuses_edits() {
+    let replay = |fixture: &Fixture, edited: &RealizabilityCounterexample| {
+        replay_counterexample(&fixture.admitted, fixture.request(64), edited)
+            .expect("admitted")
+            .expect("the request reaches an arena")
+    };
+
+    let hidden = worked("exactly-once-premise", PICK, "");
+    let found = refuted(hidden.run());
+    assert_eq!(replay(&hidden, &found), Ok(()));
+    let RealizabilityCounterexample::IndistinguishableHistories {
+        history_a,
+        history_b,
+        action_a,
+        ..
+    } = &found
+    else {
+        panic!("expected indistinguishable histories");
+    };
+    let edit = |change: &dyn Fn(&mut RealizabilityCounterexample)| {
+        let mut edited = found.clone();
+        change(&mut edited);
+        replay(&hidden, &edited)
+    };
+    // A first step that is not an admitted successor of an initial state.
+    let longer_is_a = history_a.len() >= history_b.len();
+    assert!(matches!(
+        edit(&|ce| if let RealizabilityCounterexample::IndistinguishableHistories {
+            history_a,
+            history_b,
+            ..
+        } = ce
+        {
+            let longer = if longer_is_a { history_a } else { history_b };
+            longer.remove(0);
+        }),
+        Err(RealizabilityDisagreement::StepNotSuccessor { .. })
+    ));
+    // Two equal actions are no incompatible pair.
+    let same = action_a.clone();
+    assert_eq!(
+        edit(&|ce| if let RealizabilityCounterexample::IndistinguishableHistories {
+            action_b, ..
+        } = ce
+        {
+            *action_b = same.clone();
+        }),
+        Err(RealizabilityDisagreement::SameAction)
+    );
+    // The obligation is not the one a hidden choice violates.
+    let other = hidden.named("Seller");
+    assert_eq!(
+        edit(&|ce| if let RealizabilityCounterexample::IndistinguishableHistories {
+            obligation, ..
+        } = ce
+        {
+            *obligation = other.clone();
+        }),
+        Err(RealizabilityDisagreement::NotTheStatedViolation)
+    );
+
+    let lossy = worked("at-most-once", PICK, CANCELLED);
+    let defeat = refuted(lossy.run());
+    assert_eq!(replay(&lossy, &defeat), Ok(()));
+    let mut short = defeat.clone();
+    if let RealizabilityCounterexample::EnvironmentDefeat {
+        defeats_per_branch, ..
+    } = &mut short
+    {
+        defeats_per_branch[0].play.pop();
+    }
+    assert_eq!(
+        replay(&lossy, &short),
+        Err(RealizabilityDisagreement::NotTheStatedViolation)
+    );
+    let mut none = defeat;
+    if let RealizabilityCounterexample::EnvironmentDefeat {
+        defeats_per_branch, ..
+    } = &mut none
+    {
+        defeats_per_branch.clear();
+    }
+    assert_eq!(
+        replay(&lossy, &none),
+        Err(RealizabilityDisagreement::NotTheStatedViolation)
+    );
+}
+
+fn projection_request(fixture: &Fixture, max_depth: u64) -> ProjectionRequest {
+    ProjectionRequest {
+        protocol: clause(&fixture.admitted),
+        definition_key: Some("ix://test/Flow".to_owned()),
+        role: fixture.named("Warehouse"),
+        profile: Some("bounded-static".to_owned()),
+        bounds: Some(ProjectionBoundsDraft {
+            max_depth: Some(max_depth),
+        }),
+        assessed_root: Some(assessed_root()),
+        budget: RunBudget::default(),
+    }
+}
+
+/// The FR-360 axes one served item settled with, read from its terminal
+/// record and its carried result.
+fn axes(record: &AnalyzeRecord) -> (TerminalValue, ResultLabel, SettlementBasis, Execution, Truth) {
+    let settlement = record
+        .protocol_analysis
+        .as_ref()
+        .expect("a served item carries its result")
+        .settlement();
+    let value = record.terminal().expect("a terminal record").value().clone();
+    assert_eq!(value, settlement.value, "the record holds the settlement's value");
+    (
+        value,
+        settlement.label,
+        settlement.basis,
+        settlement.execution,
+        settlement.truth,
+    )
+}
+
+/// TC-155, ADR-036 PA-4: the linked engines advertise `local-projection`
+/// and `realizability` through one manifest, so each kind has one
+/// candidate, and naming it settles a single backend; a backend that lacks
+/// the kind still settles the unchanged `UnsupportedRequestedCapability`.
+#[trace("TC-155", "FR-057-AC-15")]
+#[test]
+fn the_protocol_kinds_are_served_by_the_linked_manifest() {
+    let mut registry = Registry::new();
+    for descriptor in Engines::qsl().expect("they register").registrations() {
+        registry.register(descriptor.clone()).expect("a unique backend");
+    }
+    let engine = BackendId::new(protocol_analysis::manifest::BACKEND_ID);
+    for kind in [Capability::LocalProjection, Capability::Realizability] {
+        let CandidateOutcome::Candidates(set) = registry.candidates(kind, None) else {
+            panic!("{kind:?}: a candidate set");
+        };
+        assert_eq!(set.candidates(), [Candidate::new(engine.clone())], "{kind:?}");
+        assert_eq!(
+            settle_candidates(&registry.candidates(kind, Some(&engine)), kind, Some(&engine)),
+            NegotiationSettlement::Single(engine.clone())
+        );
+        let other = BackendId::new("en-1");
+        assert_eq!(
+            settle_candidates(&registry.candidates(kind, Some(&other)), kind, Some(&other)),
+            NegotiationSettlement::Cause(NegotiationCause::UnsupportedRequestedCapability(
+                kind,
+                Some(other)
+            ))
+        );
+    }
+}
+
+/// TC-1413: one `analyze` run over the linked engines settles an item of
+/// each kind under every FR-360 label that can arise for it, by the FR-573
+/// map; every `proved` is `Uncertified`.
+#[trace(
+    "TC-1413",
+    "FR-573-AC-1",
+    "FR-573-AC-2",
+    "FR-573-AC-4",
+    "FR-573-AC-5",
+    "FR-573-AC-6",
+    "FR-573-AC-7"
+)]
+#[test]
+fn a_driver_run_settles_each_kind_under_each_label() {
+    let sound = worked("exactly-once-premise", PICK, CANCELLED);
+    let hidden = worked("exactly-once-premise", PICK, "");
+    let lossy = worked("at-most-once", PICK, CANCELLED);
+    let each = Fixture::activated(
+        "on each (t: M::Cell)",
+        "exactly-once-premise",
+        "",
+        &format!("sequence Main {{ {PICK} }}"),
+        &[0],
+    );
+    let limited = RunBudget {
+        max_states: 1,
+        ..RunBudget::default()
+    };
+    let (sound, hidden, lossy, each) = (&sound, &hidden, &lossy, &each);
+    let at = RequestIndex::new;
+    let mut items = Vec::new();
+    // Projection: proved, refuted, inconclusive (horizon), unsupported, failed.
+    let short = projection_request(sound, 1);
+    let mut stopped = projection_request(sound, 64);
+    stopped.budget = limited;
+    for (fixture, request) in [
+        (sound, projection_request(sound, 64)),
+        (hidden, projection_request(hidden, 64)),
+        (sound, short),
+        (each, projection_request(each, 64)),
+        (sound, stopped),
+    ] {
+        items.push(projection_item(at(items.len()), &fixture.admitted, request));
+    }
+    // Realizability: proved, both refutations, inconclusive, unsupported, failed.
+    let mut unstated = sound.request(64);
+    unstated.role_knowledge = Some(None);
+    let mut stopped = sound.request(64);
+    stopped.budget = limited;
+    for (fixture, request) in [
+        (sound, sound.request(64)),
+        (hidden, hidden.request(64)),
+        (lossy, lossy.request(64)),
+        (sound, unstated),
+        (each, each.request(64)),
+        (sound, stopped),
+    ] {
+        items.push(realizability_item(at(items.len()), &fixture.admitted, request));
+    }
+    let records = analyze_items(&Engines::qsl().expect("they register"), items, &Cancel::new());
+    assert_eq!(records.len(), 11);
+
+    let proved = (
+        ResultLabel::Proved,
+        SettlementBasis::ClosedScope,
+        Execution::Completed,
+        Truth::Satisfied,
+    );
+    let refuted_axes = (
+        ResultLabel::Refuted,
+        SettlementBasis::DecisiveCounterexample,
+        Execution::Completed,
+        Truth::Violated,
+    );
+    let pending = (
+        ResultLabel::Inconclusive,
+        SettlementBasis::Unsettled,
+        Execution::Completed,
+        Truth::Pending,
+    );
+    let unsupported = (
+        ResultLabel::Unsupported,
+        SettlementBasis::Unavailable,
+        Execution::Unsupported,
+        Truth::Unavailable,
+    );
+    let stopped = (
+        ResultLabel::Failed,
+        SettlementBasis::Unavailable,
+        Execution::ResourceIncomplete,
+        Truth::Unavailable,
+    );
+    let uncertified = TerminalValue::Proved {
+        basis: ProofBasis::Exhaustive,
+        certification: Certification::Uncertified,
+    };
+    let limit = TerminalValue::Incomplete(IncompleteCause::LimitReached {
+        limit: ModelCheckLimit::MaxStates,
+        value: 1,
+    });
+    for (at, (value, label, basis, execution, truth)) in
+        records.iter().map(axes).enumerate()
+    {
+        let (want, axes) = match at {
+            0 | 5 => (Some(uncertified.clone()), proved),
+            1 | 6 | 7 => (Some(TerminalValue::Refuted), refuted_axes),
+            2 => (
+                Some(TerminalValue::Inconclusive(Fr331Cause::BoundReached { depth: 1 })),
+                pending,
+            ),
+            8 => (
+                Some(TerminalValue::Inconclusive(Fr331Cause::ProtocolAnalysis(
+                    InconclusiveCause::PremiseNotStated {
+                        member: "role_knowledge",
+                    },
+                ))),
+                pending,
+            ),
+            3 | 9 => (None, unsupported),
+            _ => (Some(limit.clone()), stopped),
+        };
+        assert_eq!((label, basis, execution, truth), axes, "item {at}");
+        match want {
+            Some(want) => assert_eq!(value, want, "item {at}"),
+            None => assert!(
+                matches!(
+                    &value,
+                    TerminalValue::Unsupported(UnavailabilityCause::ProtocolAnalysis(cause))
+                        if cause.slug == UnsupportedSlug::ActivationOnEach
+                ),
+                "item {at}: {value:?}"
+            ),
+        }
+        assert!(!matches!(
+            value,
+            TerminalValue::Proved {
+                certification: Certification::Certified | Certification::Trusted,
+                ..
+            }
+        ));
     }
 }
