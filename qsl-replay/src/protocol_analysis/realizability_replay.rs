@@ -16,8 +16,7 @@ use quire_contract_model::CheckedNodeId;
 
 use super::arena::{finding_value, Arena, ArenaError, FindingValue, Seen};
 use super::{
-    AssessedRoot, HistoryEnd, Play, PlayStep, ProtocolAnalysisKey, RealizabilityCounterexample,
-    StrategyAction,
+    AssessedRoot, Play, PlayStep, ProtocolAnalysisKey, RealizabilityCounterexample, StrategyAction,
 };
 
 /// Why a realizability counterexample's replay disagrees with the arena or
@@ -35,8 +34,8 @@ pub enum RealizabilityDisagreement {
         /// The step's index.
         at: usize,
     },
-    /// A play exceeds `max_depth`, or a history's end exceeds
-    /// `max_history`.
+    /// A play exceeds `max_depth`, or a history's end that the role could
+    /// still step from exceeds `max_history`.
     BeyondBounds,
     /// The stated role is no role of the protocol.
     UnknownRole,
@@ -46,10 +45,13 @@ pub enum RealizabilityDisagreement {
     SameAction,
     /// A stated action is not enabled for the role at its history's end.
     ActionNotEnabled,
-    /// An action enabled at both ends has no valid evidence that it loses
-    /// at one of them, so the not-lost sets need not be disjoint.
+    /// An action is enabled at both ends, so the two ends need not require
+    /// different actions.
     NotDisjoint,
-    /// A play or a continuation does not end in a violation of the stated
+    /// Another role or the environment can move at an end, so the role
+    /// could wait there for an action the end does not enable yet.
+    NotSoleMover,
+    /// A defeating play does not end in a violation of the stated
     /// obligation, or no play is stated.
     NotTheStatedViolation,
 }
@@ -64,11 +66,12 @@ type Walked = Result<(ProtocolState<Sc>, Seen), RealizabilityDisagreement>;
 /// `max_depth`.
 ///
 /// * Indistinguishable histories: the role observes the two ends equally,
-///   within `max_history`; the two actions differ and each is enabled at its
-///   own end; the obligation is `finish`; and every action the role can take
-///   at both ends has a continuation from one end, starting with the role
-///   taking it, that ends in a violation: the not-lost sets are disjoint
-///   (PA-18 (i)).
+///   within `max_history` where it can still step; the two actions differ
+///   and each is enabled at its own end; the obligation is `finish`; every
+///   move at either end is a step of the role, so a strategy that commits an
+///   action an end does not enable is stuck there; and no action is enabled
+///   at both ends (PA-18 (i)). At a forced pair no node is lost, so the
+///   not-lost sets are the enabled sets.
 /// * Environment defeat: every defeating play ends in a violation of the
 ///   obligation: a violated invariant of the clause, or a deadlock against
 ///   `finish`.
@@ -134,7 +137,6 @@ pub fn replay_realizability_counterexample(
             history_b,
             action_a,
             action_b,
-            lost,
             obligation,
             ..
         } => {
@@ -155,7 +157,13 @@ pub fn replay_realizability_counterexample(
                 Ok(end) => end,
                 Err(disagreement) => return Ok(Err(disagreement)),
             };
-            if seen_a.exceeds(max_history) || seen_b.exceeds(max_history) {
+            let moves_a = moves(arena, &end_a, role)?;
+            let moves_b = moves(arena, &end_b, role)?;
+            // The engine decides an end's findings and terminal class before
+            // it cuts at `max_history`, so a won leaf may lie past it.
+            if (moves_a.open && seen_a.exceeds(max_history))
+                || (moves_b.open && seen_b.exceeds(max_history))
+            {
                 return Ok(Err(RealizabilityDisagreement::BeyondBounds));
             }
             if seen_a.observations()[role] != seen_b.observations()[role] {
@@ -164,41 +172,13 @@ pub fn replay_realizability_counterexample(
             if action_a == action_b {
                 return Ok(Err(RealizabilityDisagreement::SameAction));
             }
-            let enabled_a = enabled(arena, &end_a, role)?;
-            let enabled_b = enabled(arena, &end_b, role)?;
-            if !enabled_a.contains(action_a) || !enabled_b.contains(action_b) {
+            if !moves_a.enabled.contains(action_a) || !moves_b.enabled.contains(action_b) {
                 return Ok(Err(RealizabilityDisagreement::ActionNotEnabled));
             }
-            let mut shown = BTreeSet::new();
-            for entry in lost {
-                let (end, seen, prefix) = match entry.at {
-                    HistoryEnd::A => (&end_a, &seen_a, history_a.steps.len()),
-                    HistoryEnd::B => (&end_b, &seen_b, history_b.steps.len()),
-                };
-                let first = entry.continuation.first();
-                let starts = match first {
-                    Some(step) => arena
-                        .classify(&step.transition)?
-                        .is_some_and(|taken| taken.role == role && taken.action == entry.action),
-                    None => false,
-                };
-                if !starts || !within(prefix + entry.continuation.len()) {
-                    return Ok(Err(RealizabilityDisagreement::NotDisjoint));
-                }
-                let reached =
-                    match walk_from(arena, end.clone(), seen.clone(), &entry.continuation)? {
-                        Ok((reached, _)) => reached,
-                        Err(_) => return Ok(Err(RealizabilityDisagreement::NotDisjoint)),
-                    };
-                if violation(arena, &reached)?.is_none() {
-                    return Ok(Err(RealizabilityDisagreement::NotDisjoint));
-                }
-                shown.insert(entry.action.clone());
+            if !moves_a.sole || !moves_b.sole {
+                return Ok(Err(RealizabilityDisagreement::NotSoleMover));
             }
-            if enabled_a
-                .intersection(&enabled_b)
-                .any(|action| !shown.contains(action))
-            {
+            if !moves_a.enabled.is_disjoint(&moves_b.enabled) {
                 return Ok(Err(RealizabilityDisagreement::NotDisjoint));
             }
             Ok(Ok(()))
@@ -276,28 +256,42 @@ fn violation<'n>(
     })
 }
 
-/// The actions enabled for `role` at `state`: its sends and receives among
-/// the successors, and `End` at an intended terminal state with no
-/// violated invariant.
-fn enabled(
+/// What `role` can do at a state.
+struct Moves {
+    /// Its sends and receives among the successors, and `End` at an
+    /// intended terminal state with no violated invariant.
+    enabled: BTreeSet<StrategyAction>,
+    /// Every successor is a step of the role.
+    sole: bool,
+    /// The state has a successor.
+    open: bool,
+}
+
+fn moves(
     arena: &Arena<'_, '_>,
     state: &ProtocolState<Sc>,
     role: usize,
-) -> Result<BTreeSet<StrategyAction>, ArenaError> {
+) -> Result<Moves, ArenaError> {
     let (expansion, terminal) = arena.system.successors_and_terminal(state)?;
-    let mut actions = BTreeSet::new();
+    let mut enabled = BTreeSet::new();
     if expansion.successors.is_empty()
         && terminal == TerminalClass::Intended
         && finding_value(&expansion.findings).is_none()
     {
-        actions.insert(StrategyAction::End);
+        enabled.insert(StrategyAction::End);
     }
+    let mut sole = true;
     for (transition, _) in &expansion.successors {
-        if let Some(taken) = arena.classify(transition)? {
-            if taken.role == role {
-                actions.insert(taken.action);
+        match arena.classify(transition)? {
+            Some(taken) if taken.role == role => {
+                enabled.insert(taken.action);
             }
+            _ => sole = false,
         }
     }
-    Ok(actions)
+    Ok(Moves {
+        enabled,
+        sole,
+        open: !expansion.successors.is_empty(),
+    })
 }

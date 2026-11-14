@@ -37,9 +37,9 @@ use qsl_replay::protocol_analysis::arena::{
 };
 use qsl_replay::protocol_analysis::{
     replay_realizability_counterexample, AnalysisOutcome, AnalyzerIdentity, AssessedRoot,
-    AssessedRootDraft, BoundsDraft, BranchDefeat, Closure, DeliveryPremise, HistoryEnd,
-    InconclusiveCause, LostAction, MissingMember, ObservationClass, Play, PlayStep, PremiseRefusal,
-    ProtocolAnalysisKey, ProtocolAnalysisResult, ProtocolPremises, RealizabilityCounterexample,
+    AssessedRootDraft, BoundsDraft, BranchDefeat, Closure, DeliveryPremise, InconclusiveCause,
+    MissingMember, ObservationClass, Play, PlayStep, PremiseRefusal, ProtocolAnalysisKey,
+    ProtocolAnalysisResult, ProtocolPremises, RealizabilityCounterexample,
     RealizabilityDisagreement, RealizabilityKeyDraft, RealizabilityWitness, RoleStrategy,
     RunBudget, RunLimit, StrategyAction, UnsupportedCause, UnsupportedSlug,
 };
@@ -351,6 +351,9 @@ struct Point {
     node: usize,
     winning: BTreeSet<StrategyAction>,
     not_lost: BTreeSet<StrategyAction>,
+    /// Every move at the node is a step of the role: no other role and no
+    /// environment step can move while the role waits.
+    sole: bool,
 }
 
 /// Every decision point of every role at the nodes not lost, by role then
@@ -396,6 +399,10 @@ fn decision_points(nodes: &[Node], roles: usize) -> Vec<BTreeMap<ObservationClas
                         node: id,
                         winning: with(|value| value == Value::Win),
                         not_lost: with(|value| value != Value::Lose),
+                        sole: node
+                            .moves
+                            .iter()
+                            .all(|held| held.step.as_ref().is_some_and(|step| step.role == role)),
                     });
             }
         }
@@ -745,12 +752,19 @@ pub fn replay_counterexample(
 /// and disjoint, with a disjointness that rests on no cut action: no action
 /// is left unlost at both (PA-18 (i)). No owner move exists in the profile
 /// (see the module), so no earlier owner choice can avoid either history.
+/// A role whose committed action is not enabled waits while others move, so
+/// an action disabled at one end might be enabled after another step in the
+/// same class; the pair is forced only where the role is the sole mover at
+/// both ends, so a strategy that commits an action the end does not enable
+/// is stuck there. Otherwise the class is unforced.
 fn forced_pair(points: &[Point]) -> Option<(&Point, &Point)> {
     points.iter().enumerate().find_map(|(at, a)| {
         points[at + 1..]
             .iter()
             .find(|b| {
-                !a.winning.is_empty()
+                a.sole
+                    && b.sole
+                    && !a.winning.is_empty()
                     && !b.winning.is_empty()
                     && a.not_lost.is_disjoint(&b.not_lost)
             })
@@ -774,37 +788,6 @@ fn indistinguishable(
         .len()
         .max(history_b.steps.len())
         .saturating_sub(1);
-    // Every action the role can take at both ends is lost at one of them
-    // (the not-lost sets are disjoint): its evidence is the first move of
-    // the action whose child is lost, then the first losing path below it.
-    let mut lost = Vec::new();
-    for action in actions(nodes, a.node, role).intersection(&actions(nodes, b.node, role)) {
-        let found = [(HistoryEnd::A, a.node), (HistoryEnd::B, b.node)]
-            .into_iter()
-            .find_map(|(at, node)| {
-                nodes[node]
-                    .moves
-                    .iter()
-                    .enumerate()
-                    .find_map(|(index, held)| {
-                        let taken = held
-                            .step
-                            .as_ref()
-                            .is_some_and(|step| step.role == role && &step.action == action);
-                        (taken && nodes[held.child].value == Value::Lose).then(|| {
-                            let leaf = history(nodes, defeat(nodes, held.child));
-                            let from = history(nodes, node).steps.len();
-                            debug_assert_eq!(leaf.steps[from].successor, index);
-                            LostAction {
-                                action: action.clone(),
-                                at,
-                                continuation: leaf.steps[from..].to_vec(),
-                            }
-                        })
-                    })
-            });
-        lost.extend(found);
-    }
     Ok(RealizabilityCounterexample::IndistinguishableHistories {
         key: key.clone(),
         role: game.arena.names.roles()[role].clone(),
@@ -812,27 +795,9 @@ fn indistinguishable(
         history_b,
         action_a: a.winning.first().cloned().unwrap_or(StrategyAction::End),
         action_b: b.winning.first().cloned().unwrap_or(StrategyAction::End),
-        lost,
         separating_witness: root.record(&obligation, position)?,
         obligation,
     })
-}
-
-/// The actions `role` can take at `node`: its steps among the node's moves,
-/// and `End` at a won leaf.
-fn actions(nodes: &[Node], node: usize, role: usize) -> BTreeSet<StrategyAction> {
-    let held = &nodes[node];
-    let mut found: BTreeSet<StrategyAction> = held
-        .moves
-        .iter()
-        .filter_map(|held| held.step.as_ref())
-        .filter(|step| step.role == role)
-        .map(|step| step.action.clone())
-        .collect();
-    if held.leaf && held.value == Value::Win {
-        found.insert(StrategyAction::End);
-    }
-    found
 }
 
 /// PA-18 (ii). No owner move exists in the profile, so the first lost
@@ -1022,6 +987,7 @@ mod tests {
             node: 0,
             winning: winning.into(),
             not_lost: not_lost.into(),
+            sole: true,
         }
     }
 

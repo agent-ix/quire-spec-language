@@ -119,28 +119,6 @@ pub struct Play {
     pub steps: Vec<PlayStep>,
 }
 
-/// Which history of an indistinguishable pair.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum HistoryEnd {
-    /// The end of `history_a`.
-    A,
-    /// The end of `history_b`.
-    B,
-}
-
-/// PA-18 (i) evidence that an action the role can take at both ends loses
-/// at one of them: a continuation from that end whose first step is the
-/// role taking the action and whose last state violates an obligation.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct LostAction {
-    /// The action.
-    pub action: StrategyAction,
-    /// The end it loses at.
-    pub at: HistoryEnd,
-    /// The steps from that end to the violation.
-    pub continuation: Vec<PlayStep>,
-}
-
 /// The defeating play of one owner branch of the first lost owner node
 /// (PA-18 (ii)). In the `bounded-static` profile a choice's branch is fixed
 /// by the environment's moves, so that node has one branch and the
@@ -172,10 +150,6 @@ pub enum RealizabilityCounterexample {
         action_a: StrategyAction,
         /// The action `history_b` needs.
         action_b: StrategyAction,
-        /// For each action the role can take at both ends, the evidence
-        /// that it loses at one of them: the not-lost action sets of the two
-        /// ends are disjoint (PA-18 (i)).
-        lost: Vec<LostAction>,
         /// The violated obligation's node.
         obligation: CheckedNodeId,
         /// The FR-351 record (PA-24).

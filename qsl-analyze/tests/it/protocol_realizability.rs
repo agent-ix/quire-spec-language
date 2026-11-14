@@ -16,8 +16,8 @@ use qsl_eval::simulation::protocol::StepKind;
 use qsl_foundation::{BackendId, RequestIndex};
 use qsl_package::CheckedPackage;
 use qsl_replay::protocol_analysis::{
-    node_text, AnalysisOutcome, AssessedRoot, BoundsDraft, InconclusiveCause, LostAction, Observed,
-    Play, ProjectionBoundsDraft, RealizabilityCounterexample, RealizabilityDisagreement,
+    node_text, AnalysisOutcome, AssessedRoot, BoundsDraft, InconclusiveCause, Observed, Play,
+    ProjectionBoundsDraft, RealizabilityCounterexample, RealizabilityDisagreement,
     RealizabilityWitness, RunBudget, RunLimit, StrategyAction, UnsupportedSlug,
 };
 use qsl_replay::{
@@ -696,10 +696,52 @@ fn the_realizability_replay_arm_reproduces_both_forms_and_refuses_edits() {
     assert_eq!(replay(&two, &found), Ok(()));
 }
 
-/// PA-18 (i): a claimed pair of indistinguishable histories
-/// whose two actions are both enabled at both ends, with no evidence that
-/// either loses at one end, is refused. Here both histories are the empty
-/// play, where the `Buyer` may take either of two parallel sends.
+/// FR-571, PA-18 (i): a role that may wait is not forced. In the `no`
+/// branch the `Warehouse` may send `Bk` while its receive of `PickIt2` is
+/// not enabled yet; the `Seller` can still send `PickIt2`, after which the
+/// receive is enabled in the same observation class. So the empty class
+/// does not need disjoint actions at its two ends, and the result is not
+/// `refuted`.
+#[trace("TC-1411", "FR-571-AC-2")]
+#[test]
+fn an_action_only_not_yet_enabled_at_the_other_end_does_not_refute() {
+    let back = "channel Back from Warehouse to Seller carries Ack ordering unordered delivery \
+                exactly-once-premise capacity 4 overflow reject;\n";
+    let fixture = Fixture::over(
+        "exactly-once-premise",
+        back,
+        "sequence Main {\n\
+         send Placed via Order as (placed: Ack) { true };\n\
+         receive Got via Order of Placed as (got: Ack) { true };\n\
+         choice Decide by Seller visible (got.ok) {\n\
+           case yes when { got.ok } sequence Ship {\n\
+             send PickIt via Pick as (p: PickMsg) { true };\n\
+             receive PickedUp via Pick of Main::Decide::yes::Ship::PickIt as (q: PickMsg) { true };\n\
+           }\n\
+           case no when { not got.ok } sequence Hold {\n\
+             parallel Par {\n\
+               branch s send PickIt2 via Pick as (p2: PickMsg) { true };\n\
+               branch w parallel Ware {\n\
+                 branch w1 send Bk via Back as (b: Ack) { true };\n\
+                 branch w2 receive PickedUp2 via Pick of Main::Decide::no::Hold::Par::s::PickIt2 \
+                   as (q2: PickMsg) { true };\n\
+               } join all [w1, w2];\n\
+             } join all [s, w];\n\
+           }\n\
+         } }",
+        &[0],
+    );
+    let outcome = fixture.run().outcome;
+    assert!(
+        !matches!(outcome, AnalysisOutcome::Refuted(_)),
+        "a role that may wait is not refuted: {outcome:?}"
+    );
+}
+
+/// PA-18 (i): a claimed pair of indistinguishable histories whose two
+/// actions are both enabled at both ends is refused. Here both histories
+/// are the play to the state where the `Buyer` may take either of two
+/// parallel sends.
 #[trace("TC-1413", "FR-573-AC-3")]
 #[test]
 fn indistinguishable_histories_without_disjoint_not_lost_sets_are_refused() {
@@ -713,7 +755,7 @@ fn indistinguishable_histories_without_disjoint_not_lost_sets_are_refused() {
     let key = fixture.run().key;
     let finish = fixture.named("Done");
     let empty = to_two_sends(&fixture);
-    let claim = |lost: Vec<LostAction>| RealizabilityCounterexample::IndistinguishableHistories {
+    let claim = RealizabilityCounterexample::IndistinguishableHistories {
         key: key.clone(),
         role: fixture.named("Buyer"),
         history_a: empty.clone(),
@@ -724,7 +766,6 @@ fn indistinguishable_histories_without_disjoint_not_lost_sets_are_refused() {
         action_b: StrategyAction::Send {
             node: fixture.named("Sb"),
         },
-        lost,
         separating_witness: AssessedRoot::new(Some(assessed_root()))
             .unwrap()
             .record(&finish, 0)
@@ -732,7 +773,7 @@ fn indistinguishable_histories_without_disjoint_not_lost_sets_are_refused() {
         obligation: finish.clone(),
     };
     assert_eq!(
-        replay(&fixture, &claim(Vec::new())),
+        replay(&fixture, &claim),
         Err(RealizabilityDisagreement::NotDisjoint)
     );
 }
