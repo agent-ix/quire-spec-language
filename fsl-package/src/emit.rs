@@ -2158,16 +2158,24 @@ fn checked_term(ids: &StructuralIds, term: &BodyTerm) -> Result<CheckedTerm, Emi
                 .map(|value| member_term(ids, value))
                 .collect::<Result<_, _>>()?,
         }),
-        BodyTerm::Application(application) => Ok(CheckedTerm::Application {
-            operator: application_operator(application.operator),
-            operation: operation_term(ids, &application.operation)?,
-            result_type: admitted_id(ids, &application.result_type)?,
-            arguments: application
+        BodyTerm::Application(application) => {
+            let mut arguments = application
                 .arguments
                 .iter()
                 .map(|value| member_term(ids, value))
-                .collect::<Result<_, _>>()?,
-        }),
+                .collect::<Result<Vec<_>, _>>()?;
+            if application.operator == Operator::ProtocolControl {
+                if let Some(Member::ProfileOperator { operator }) = application.operation.member() {
+                    reference_sets::order_protocol_sets(operator.as_str(), &mut arguments)?;
+                }
+            }
+            Ok(CheckedTerm::Application {
+                operator: application_operator(application.operator),
+                operation: operation_term(ids, &application.operation)?,
+                result_type: admitted_id(ids, &application.result_type)?,
+                arguments,
+            })
+        }
         BodyTerm::Frame(frame) => frame_term(ids, frame),
         BodyTerm::Abstraction(abstraction) => abstraction_term(ids, abstraction),
         BodyTerm::Extension(extension) => extension_term(ids, extension),
@@ -9991,6 +9999,7 @@ mod identity_rows;
 mod monitor_plan;
 pub(crate) mod protocol_locations;
 pub use monitor_plan::{declaration_less_function_id, emit_monitor_plan_over, MonitorPlanWire};
+mod reference_sets;
 mod timed_order;
 pub use timed_order::OrderFault as TimedOrderFault;
 
