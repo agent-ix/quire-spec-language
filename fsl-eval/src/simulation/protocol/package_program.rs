@@ -53,14 +53,16 @@ pub struct PackageControl {
     pub role: Option<fsl_package::CheckedNodeId>,
     /// The FR-531 identity of the attempt's role node.
     pub role_key: Option<NodeKey>,
-    /// The attempt result binder node identity.
+    /// The step's result or message-payload binder node identity.
     pub binder: Option<fsl_package::CheckedNodeId>,
-    /// The FR-531 identity of the attempt result binder.
+    /// The FR-531 identity of the result or payload binder.
     pub binder_key: Option<NodeKey>,
-    /// The admitted value type of the attempt result binder.
+    /// The admitted value type of the result or payload binder.
     pub binder_type: Option<filament_exact::ValueType>,
-    /// The admitted channel selected by a send.
+    /// The admitted channel selected by a send or receive.
     pub(super) channel: Option<fsl_package::CheckedNodeId>,
+    /// The admitted send selected by a receive's `of` member.
+    pub(super) from: Option<ProtocolNodeId>,
     /// The attempt's explicit memory ordering.
     pub ordering: Option<fsl_forms::AccessOrdering>,
     /// The state clauses selected by an attempt's `contracts` member.
@@ -76,13 +78,20 @@ pub(super) struct PackageJoin {
     pub(super) outstanding: Option<fsl_semantics::check::CheckedOutstanding>,
 }
 
-/// An admitted unordered channel and its literal queue premises.
+/// An admitted channel and its literal queue premises.
 pub(super) struct PackageChannel {
     pub(super) node: fsl_package::CheckedNodeId,
     pub(super) name: String,
     pub(super) capacity: u64,
     pub(super) overflow: ChannelOverflow,
     pub(super) delivery: ChannelDelivery,
+    pub(super) key: Option<PackageChannelKey>,
+}
+
+/// A FIFO key and its separate, level-zero payload binder.
+pub(super) struct PackageChannelKey {
+    pub(super) binder: fsl_package::CheckedNodeId,
+    pub(super) slot: ProtocolSlot,
 }
 
 /// One static role binding from the admitted package.
@@ -123,7 +132,7 @@ pub struct PackageProtocolProgram<'a> {
     pub(super) terminal: PackageTerminal,
     /// Origin captures in authored initialization order.
     pub(super) captures: Vec<PackageCapture>,
-    /// Unordered channels and their admitted queue premises.
+    /// Channels and their admitted queue premises.
     pub(super) channels: Vec<PackageChannel>,
     /// The admitted protocol name.
     pub name: String,
@@ -191,6 +200,7 @@ fn member<'t>(
 }
 
 fn channels(
+    input: &ModelCheckInput<'_>,
     form: &ProtocolExecutionView<'_>,
 ) -> Result<Vec<PackageChannel>, PackageProgramRefusal> {
     for queue in &form.queues {
@@ -205,13 +215,28 @@ fn channels(
     let mut channels = Vec::with_capacity(form.channels.len());
     for channel in &form.channels {
         let absent = || PackageProgramRefusal::MissingIdentity(channel.node_id.clone());
-        if protocol_view::channel_ordering(channel).map_err(|_| absent())?
-            != ChannelOrdering::Unordered
-        {
-            return Err(PackageProgramRefusal::Unsupported(
-                ControlOperation::Channel,
-            ));
-        }
+        let key = match protocol_view::channel_ordering(channel).map_err(|_| absent())? {
+            ChannelOrdering::Unordered => None,
+            ChannelOrdering::Fifo => {
+                // The key slot may be a literal, whereas `fifo_key` exposes
+                // expression-node keys. The binder is admitted independently
+                // of that term's shape in the ordering group.
+                let binder = member(&channel.body, "ordering")
+                    .and_then(|ordering| member(ordering, "binder"))
+                    .and_then(|term| match term {
+                        fsl_package::CheckedTerm::Reference { target } => Some(target),
+                        _ => None,
+                    })
+                    .ok_or_else(absent)?;
+                Some(PackageChannelKey {
+                    binder: binder.clone(),
+                    slot: input
+                        .evaluator
+                        .package_protocol_slot(&channel.node_id, "ordering.key", None)
+                        .ok_or_else(absent)?,
+                })
+            }
+        };
         let queue = form
             .queues
             .iter()
@@ -254,6 +279,7 @@ fn channels(
             capacity,
             overflow,
             delivery,
+            key,
         });
     }
     Ok(channels)
@@ -345,7 +371,7 @@ impl<'a> PackageProtocolProgram<'a> {
                 .ok_or_else(|| PackageProgramRefusal::UnknownProtocol {
                     name: form.name.clone(),
                 })?;
-        let channels = channels(&form)?;
+        let channels = channels(input, &form)?;
         // A branch's source-local numeric node indices are not admitted
         // package identities. Message keys and weak send footprints need a
         // shared representation before mixed parallel/send programs execute.
@@ -485,7 +511,7 @@ impl<'a> PackageProtocolProgram<'a> {
         for control in &form.controls {
             let name = control.path.last().cloned().unwrap_or_default();
             let channel = match &control.body {
-                ControlBody::Send { channel, .. } => {
+                ControlBody::Send { channel, .. } | ControlBody::Receive { channel, .. } => {
                     let Some(fsl_package::CheckedTerm::Aggregate { members }) =
                         member(&control.node.body, "related")
                     else {
@@ -500,6 +526,15 @@ impl<'a> PackageProtocolProgram<'a> {
                     }
                     Some((*channel).clone())
                 }
+                _ => None,
+            };
+            let from = match &control.body {
+                ControlBody::Receive { of, .. } => Some(
+                    id_by_node
+                        .get(*of)
+                        .copied()
+                        .ok_or(PackageProgramRefusal::UnknownControl)?,
+                ),
                 _ => None,
             };
             let join = match &control.body {
@@ -623,7 +658,7 @@ impl<'a> PackageProtocolProgram<'a> {
                             .collect(),
                     )
                 }
-                ControlBody::Send { binder, .. } => (
+                ControlBody::Send { binder, .. } | ControlBody::Receive { binder, .. } => (
                     Vec::new(),
                     Vec::new(),
                     None,
@@ -639,7 +674,9 @@ impl<'a> PackageProtocolProgram<'a> {
             };
             let constraint = if matches!(
                 &control.body,
-                ControlBody::Attempt { .. } | ControlBody::Send { .. }
+                ControlBody::Attempt { .. }
+                    | ControlBody::Send { .. }
+                    | ControlBody::Receive { .. }
             ) {
                 Some(
                     input
@@ -711,6 +748,7 @@ impl<'a> PackageProtocolProgram<'a> {
                     binder_key,
                     binder_type,
                     channel,
+                    from,
                     ordering,
                     contracts,
                     contract_keys,

@@ -56,25 +56,283 @@ fn package_run(ws: &Workspace, request_path: &std::path::Path) -> Run {
     analyze(&package_request(ws, request_path).0)
 }
 
-fn channel_send_request(
+fn receive_fifo_request(
     ws: &Workspace,
+    key: &str,
     capacity: u64,
     overflow: &str,
     delivery: &str,
-    sends: &str,
+    controls: &str,
     finish: &str,
 ) -> std::path::PathBuf {
-    let body = format!(
-        "protocol Flow using pp over (k: M::Cell) on origin {{
-            role Planning on M::Cell;
-            role Machining on M::Cell;
-            channel Release from Planning to Machining carries M::Attempt
-                ordering unordered delivery {delivery} capacity {capacity} overflow {overflow};
-            run sequence Main {{ {sends} }}
-            finish Over as (closing: Boolean) {{ {finish} }};
-        }}"
+    let mut model = finite_channel_model();
+    let payload = model["types"]
+        .as_array_mut()
+        .expect("model types")
+        .iter_mut()
+        .find(|node| node["identity"] == "ix://test/fill/Attempt")
+        .expect("the finite payload record");
+    let field = payload["fields"][0].clone();
+    for (name, value_type) in [
+        ("ok", "ix://filament/native/Boolean"),
+        ("target", "ix://test/fill/Cell"),
+    ] {
+        let mut member = field.clone();
+        let identity = format!("ix://test/fill/Attempt/{name}");
+        member["identity"] = json!(identity);
+        member["name"] = json!(name);
+        member["typeRef"] = json!(value_type);
+        member["origin"] = json!({"generated": {
+            "generatorIdentity": identity, "generatorVersion": "1.0.0",
+            "inputIdentities": [identity]
+        }});
+        payload["fields"]
+            .as_array_mut()
+            .expect("payload fields")
+            .push(member);
+    }
+    let ordering = format!(
+        "ordering fifo by (m: M::Attempt) {{ {key} }}
+                delivery {delivery} capacity {capacity} overflow {overflow}"
     );
-    let unit = crate::fill::unit_text_with(crate::fill::PROTOCOL_PROFILE, &body);
+    channel_request(ws, model, &ordering, controls, finish)
+}
+
+fn receive_fifo_send(name: &str, binder: &str, n: u64) -> String {
+    let body =
+        format!("\n            {binder}.n = {n} and {binder}.ok and {binder}.target = k\n        ");
+    channel_send_body(name, binder, &body)
+}
+
+fn receive_fifo_receive(name: &str, send: &str, binder: &str, constraint: &str) -> String {
+    format!("receive {name} via Release of {send} as ({binder}: M::Attempt) {{ {constraint} }};")
+}
+
+/// The FIFO example's receive evaluates both scalar and reference-valued keys.
+#[trace("TC-2958", "FR-940-AC-6", "FR-383-AC-4", "FR-383-AC-7", "FR-390")]
+#[test]
+fn package_receive_fifo_runs_the_complete_example_body() {
+    for (name, key, delivery, finish, expected) in [
+        (
+            "reference",
+            "m.target",
+            "at-least-once",
+            "closing",
+            "proved",
+        ),
+        ("scalar", "m.n", "exactly-once-premise", "false", "refuted"),
+    ] {
+        let ws = Workspace::new(&format!("package-receive-fifo-complete-{name}"));
+        let controls = receive_fifo_send("Released", "order", 0)
+            + &receive_fifo_receive("Received", "Released", "got", "got.ok");
+        let path = receive_fifo_request(&ws, key, 4, "block", delivery, &controls, finish);
+        let item = channel_send_parity(&ws, &path, expected);
+        if expected == "refuted" {
+            let prefix = item["counterexample"]["prefix"]
+                .as_array()
+                .expect("a deadlock prefix");
+            let received = prefix
+                .iter()
+                .find(|step| step["transition"]["step"] == "receive")
+                .expect("the payload was received before the false finish");
+            assert_eq!(received["transition"]["node"], "Main/Received", "{item}");
+            let sent = prefix
+                .iter()
+                .find(|step| step["transition"]["step"] == "send")
+                .expect("the payload's send");
+            assert_eq!(
+                received["transition"]["delivery"]["message"], sent["transition"]["message"],
+                "{item}"
+            );
+            let fields = sent["send_record"]["payload"]["fields"]
+                .as_array()
+                .expect("payload fields");
+            let ok = fields
+                .iter()
+                .find(|field| field["name"] == "ok")
+                .expect("the ok field");
+            assert_eq!(ok["value"]["value"], true, "{item}");
+        } else {
+            let states = item["exploration"]["states"]
+                .as_str()
+                .expect("state count")
+                .parse::<u64>()
+                .expect("a natural count");
+            assert!(states > 3, "send, receive and finish were explored: {item}");
+        }
+    }
+}
+
+/// A receive of the second send waits only behind another send with the same key.
+#[trace("TC-2958", "FR-940-AC-6", "FR-206-AC-4", "FR-211-AC-5")]
+#[test]
+fn package_receive_fifo_preserves_key_partition_and_head_blocking() {
+    for (name, second_key, expected) in [("same", 0, "refuted"), ("different", 1, "proved")] {
+        let ws = Workspace::new(&format!("package-receive-fifo-head-{name}"));
+        let controls = receive_fifo_send("First", "sentOne", 0)
+            + &receive_fifo_send("Second", "sentTwo", second_key)
+            + &receive_fifo_receive("Received", "Second", "got", "got.ok");
+        let path = receive_fifo_request(
+            &ws,
+            "m.n",
+            2,
+            "block",
+            "exactly-once-premise",
+            &controls,
+            "closing",
+        );
+        let item = channel_send_parity(&ws, &path, expected);
+        if expected == "refuted" {
+            let blocked = item["counterexample"]["blocked"]
+                .as_array()
+                .expect("blocked receive");
+            assert_eq!(blocked.len(), 1, "{item}");
+            assert_eq!(blocked[0]["rest"]["node"], "Main/Received", "{item}");
+            assert_eq!(blocked[0]["cause"]["type"], "head-blocked", "{item}");
+            assert_eq!(blocked[0]["cause"]["channel"], "Flow::Release", "{item}");
+        }
+    }
+}
+
+/// Constraint, empty-queue and displaced evidence retain their own wait causes.
+#[trace("TC-2958", "FR-940-AC-6", "FR-206-AC-7", "FR-211-AC-5")]
+#[test]
+fn package_receive_fifo_preserves_receive_wait_causes() {
+    for cause in ["constraint", "empty-queue", "displaced"] {
+        let ws = Workspace::new(&format!("package-receive-fifo-cause-{cause}"));
+        let mut controls = receive_fifo_send("Released", "order", 0);
+        let (capacity, overflow) = match cause {
+            "constraint" => {
+                controls += &receive_fifo_receive("Received", "Released", "got", "not got.ok");
+                (2, "block")
+            }
+            "empty-queue" => {
+                controls += &receive_fifo_receive("Received", "Released", "got", "got.ok");
+                controls += &receive_fifo_receive("Again", "Released", "again", "again.ok");
+                (2, "block")
+            }
+            "displaced" => {
+                controls += &receive_fifo_send("Other", "other", 1);
+                controls += &receive_fifo_receive("Received", "Released", "got", "got.ok");
+                (1, "loss head")
+            }
+            _ => unreachable!("the listed wait causes"),
+        };
+        let path = receive_fifo_request(
+            &ws,
+            "true",
+            capacity,
+            overflow,
+            "exactly-once-premise",
+            &controls,
+            "closing",
+        );
+        let item = channel_send_parity(&ws, &path, "refuted");
+        let blocked = item["counterexample"]["blocked"]
+            .as_array()
+            .expect("blocked receive");
+        assert_eq!(blocked.len(), 1, "{item}");
+        assert_eq!(blocked[0]["cause"]["type"], cause, "{item}");
+        let rest = if cause == "empty-queue" {
+            "Main/Again"
+        } else {
+            "Main/Received"
+        };
+        assert_eq!(blocked[0]["rest"]["node"], rest, "{item}");
+    }
+}
+
+/// Refused replay of a blocked FIFO receive retains the typed limit code and cause.
+#[trace("TC-2958", "FR-940-AC-22", "FR-206-AC-4")]
+#[test]
+fn package_receive_fifo_preserves_replay_refusal_code_and_cause() {
+    let ws = Workspace::new("package-receive-fifo-replay-bound");
+    let controls = receive_fifo_send("First", "sentOne", 0)
+        + &receive_fifo_send("Second", "sentTwo", 0)
+        + &receive_fifo_receive("Received", "Second", "got", "got.ok");
+    let path = receive_fifo_request(
+        &ws,
+        "m.n",
+        2,
+        "block",
+        "exactly-once-premise",
+        &controls,
+        "closing",
+    );
+    let (package_path, bytes) = package_request(&ws, &path);
+    let below = u64::try_from(bytes.len() / 2).expect("the package length");
+    let source = crate::analyze_cli_support::analyze_under_replay_bytes(&path, below);
+    assert!(
+        source.item(0).get("record").is_some(),
+        "{}",
+        source.document()
+    );
+    assert_eq!(
+        label(&source.item(0)),
+        "inconclusive",
+        "{}",
+        source.document()
+    );
+    let cause = &source.item(0)["record"]["cause"];
+    assert_eq!(cause["kind"], "replay-refused", "{}", source.document());
+    assert_eq!(cause["code"], "stage_limit_exceeded");
+    assert_eq!(cause["cause"], "input-bytes-exceeded");
+    std::fs::remove_file(ws.path("program.fsl")).expect("remove source before package replay");
+    let package = crate::analyze_cli_support::analyze_under_replay_bytes(&package_path, below);
+    assert_eq!(package.item(0), source.item(0), "{}", package.document());
+    assert_eq!(package.exit, source.exit);
+}
+
+/// Correlated receives retain a named refusal until package correlations execute.
+#[trace("TC-2958", "FR-940", "FR-731-AC-1")]
+#[test]
+fn package_receive_fifo_related_premises_refuse_before_execution() {
+    for (related, expected) in [(false, "refuted"), (true, "proved")] {
+        let ws = Workspace::new(&format!("package-receive-fifo-related-{related}"));
+        let controls = receive_fifo_send("Released", "order", 0)
+            + "receive Correlated via Release of Released as (got: M::Attempt) related by Owns (k, got.target) { got.ok };";
+        let path = receive_fifo_request(
+            &ws,
+            "m.target",
+            1,
+            "block",
+            "exactly-once-premise",
+            &controls,
+            "closing",
+        );
+        channel_related_premise(&ws, related);
+        let source = analyze(&path);
+        assert!(
+            source.item(0).get("record").is_some(),
+            "{}",
+            source.document()
+        );
+        assert_eq!(label(&source.item(0)), expected, "{}", source.document());
+        let (package_path, _) = package_request(&ws, &path);
+        std::fs::remove_file(ws.path("program.fsl"))
+            .expect("remove source before package correlation refusal");
+        let package = analyze(&package_path);
+        let item = package.item(0);
+        assert_eq!(package.exit, 21, "{}", package.document());
+        assert_eq!(item["category"], "unsupported", "{}", package.document());
+        let diagnostic = &item["record"]["diagnostic"];
+        assert_eq!(diagnostic["code"], "unsupported_construct", "{item}");
+        assert_eq!(diagnostic["cause"], "not-yet-implemented", "{item}");
+        assert_eq!(diagnostic["detail"]["fact"], "correlation", "{item}");
+        assert_eq!(
+            diagnostic["detail"]["node"]["path"]
+                .as_array()
+                .expect("the refused admitted node's path")
+                .last(),
+            Some(&json!("Correlated")),
+            "{item}"
+        );
+        assert!(item.get("exploration").is_none(), "{item}");
+        assert!(item.get("counterexample").is_none(), "{item}");
+    }
+}
+
+fn finite_channel_model() -> Value {
     let mut model: Value =
         serde_json::from_slice(&crate::fill::document()).expect("the Fill model is JSON");
     // The record's field ranges over Level so the three sent payloads can
@@ -109,6 +367,27 @@ fn channel_send_request(
                 Some("value_type" | "object_type" | "population" | "record_value_type")
             )
         });
+    model
+}
+
+fn channel_request(
+    ws: &Workspace,
+    model: Value,
+    ordering: &str,
+    controls: &str,
+    finish: &str,
+) -> std::path::PathBuf {
+    let body = format!(
+        "protocol Flow using pp over (k: M::Cell) on origin {{
+            role Planning on M::Cell;
+            role Machining on M::Cell;
+            channel Release from Planning to Machining carries M::Attempt
+                {ordering};
+            run sequence Main {{ {controls} }}
+            finish Over as (closing: Boolean) {{ {finish} }};
+        }}"
+    );
+    let unit = crate::fill::unit_text_with(crate::fill::PROTOCOL_PROFILE, &body);
     let model = serde_json::to_vec(&model).expect("the channel model serializes");
     let mut documents = crate::fill::Documents::new();
     documents.start("s0", &[("c", 0)]);
@@ -130,8 +409,25 @@ fn channel_send_request(
     )
 }
 
+fn channel_send_request(
+    ws: &Workspace,
+    capacity: u64,
+    overflow: &str,
+    delivery: &str,
+    sends: &str,
+    finish: &str,
+) -> std::path::PathBuf {
+    let ordering =
+        format!("ordering unordered delivery {delivery} capacity {capacity} overflow {overflow}");
+    channel_request(ws, finite_channel_model(), &ordering, sends, finish)
+}
+
+fn channel_send_body(name: &str, binder: &str, body: &str) -> String {
+    format!("send {name} via Release as ({binder}: M::Attempt) {{{body}}};")
+}
+
 fn channel_send(name: &str, binder: &str, constraint: &str) -> String {
-    format!("send {name} via Release as ({binder}: M::Attempt) {{ {constraint} }};")
+    channel_send_body(name, binder, &format!(" {constraint} "))
 }
 
 fn channel_send_parity(ws: &Workspace, path: &std::path::Path, expected: &str) -> Value {
@@ -384,6 +680,39 @@ fn package_channel_send_parallel_combinations_refuse_before_execution() {
     }
 }
 
+fn channel_related_premise(ws: &Workspace, related: bool) {
+    let unit = std::fs::read_to_string(ws.path("program.fsl")).expect("the source unit");
+    std::fs::write(
+        ws.path("program.fsl"),
+        unit.replace(
+            "channel Release",
+            "relationship Owns = M::owns; channel Release",
+        ),
+    )
+    .expect("select the relationship premise");
+    let mut model: Value =
+        serde_json::from_slice(&std::fs::read(ws.path("model.json")).expect("model document"))
+            .expect("model JSON");
+    crate::related_by::add_owns_relationship(&mut model);
+    std::fs::write(ws.path("model.json"), model.to_string()).expect("write the related model");
+    let mut snapshot: Value = serde_json::from_slice(
+        &std::fs::read(ws.path("snapshot-0.json")).expect("the initial snapshot"),
+    )
+    .expect("snapshot JSON");
+    let object = json!({"population": "ix://test/fill/cells", "key": "c"});
+    let instances = if related {
+        vec![json!({"source": object, "target": object})]
+    } else {
+        Vec::new()
+    };
+    snapshot["relationships"] = json!([{
+        "relationship": "ix://test/fill/relationship/owns", "complete": true,
+        "instances": instances
+    }]);
+    std::fs::write(ws.path("snapshot-0.json"), snapshot.to_string())
+        .expect("write the relationship instances");
+}
+
 /// A nonempty admitted correlation group is named and refused before package execution.
 #[trace("TC-2958", "FR-940", "FR-731-AC-1")]
 #[test]
@@ -398,36 +727,7 @@ fn package_channel_send_related_premises_refuse_before_execution() {
             "send Correlated via Release as (sent: M::Attempt) related by Owns (k, k) { sent.n = 0 };",
             "closing",
         );
-        let unit = std::fs::read_to_string(ws.path("program.fsl")).expect("the source unit");
-        std::fs::write(
-            ws.path("program.fsl"),
-            unit.replace(
-                "channel Release",
-                "relationship Owns = M::owns; channel Release",
-            ),
-        )
-        .expect("select the relationship premise");
-        let mut model: Value =
-            serde_json::from_slice(&std::fs::read(ws.path("model.json")).expect("model document"))
-                .expect("model JSON");
-        crate::related_by::add_owns_relationship(&mut model);
-        std::fs::write(ws.path("model.json"), model.to_string()).expect("write the related model");
-        let mut snapshot: Value = serde_json::from_slice(
-            &std::fs::read(ws.path("snapshot-0.json")).expect("the initial snapshot"),
-        )
-        .expect("snapshot JSON");
-        let object = json!({"population": "ix://test/fill/cells", "key": "c"});
-        let instances = if related {
-            vec![json!({"source": object, "target": object})]
-        } else {
-            Vec::new()
-        };
-        snapshot["relationships"] = json!([{
-            "relationship": "ix://test/fill/relationship/owns", "complete": true,
-            "instances": instances
-        }]);
-        std::fs::write(ws.path("snapshot-0.json"), snapshot.to_string())
-            .expect("write the relationship instances");
+        channel_related_premise(&ws, related);
         let source = analyze(&path);
         assert!(
             source.item(0).get("record").is_some(),

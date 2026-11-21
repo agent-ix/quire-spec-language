@@ -130,7 +130,16 @@ pub(super) struct Channel<'a> {
     /// still takes any entry (ST-4).
     pub(super) send_ordered: bool,
     /// The `fifo` key over the message binder; `None` for `unordered`.
-    pub(super) key: Option<&'a CheckedBody>,
+    pub(super) key: Option<ChannelKey<'a>>,
+}
+
+/// A source body or admitted package slot for the channel's FIFO key.
+pub(super) enum ChannelKey<'a> {
+    Source(&'a CheckedBody),
+    Package {
+        binder: fsl_package::CheckedNodeId,
+        slot: crate::value::ProtocolSlot,
+    },
 }
 
 impl Channel<'_> {
@@ -827,7 +836,7 @@ impl<'a> Program<'a> {
                     ),
                 key: match &channel.ordering {
                     CheckedOrdering::Unordered => None,
-                    CheckedOrdering::Fifo { key, .. } => Some(&**key),
+                    CheckedOrdering::Fifo { key, .. } => Some(ChannelKey::Source(key)),
                 },
             });
         }
@@ -989,7 +998,7 @@ impl<'a> Program<'a> {
         Ok(program)
     }
 
-    /// Build the sequence/parallel/attempt/send program directly from the admitted
+    /// Build the sequence/parallel/attempt/send/receive program from the admitted
     /// package form. Package execution keeps expression slots out of the
     /// source `CheckedBody` fields; callers evaluate them through the package
     /// evaluator.
@@ -1026,6 +1035,7 @@ impl<'a> Program<'a> {
                 fsl_package::protocol_view::ControlOperation::Parallel => ControlStep::Parallel,
                 fsl_package::protocol_view::ControlOperation::Attempt => ControlStep::Attempt,
                 fsl_package::protocol_view::ControlOperation::Send => ControlStep::Send,
+                fsl_package::protocol_view::ControlOperation::Receive => ControlStep::Receive,
                 operation => {
                     return Err(ProtocolRefusal::Unsupported(
                         super::Unsupported::PackageControl(operation),
@@ -1108,6 +1118,7 @@ impl<'a> Program<'a> {
                 control.operation,
                 fsl_package::protocol_view::ControlOperation::Attempt
                     | fsl_package::protocol_view::ControlOperation::Send
+                    | fsl_package::protocol_view::ControlOperation::Receive
             )
         }) {
             let binds = if let (Some(binder), Some(binder_type)) =
@@ -1150,16 +1161,24 @@ impl<'a> Program<'a> {
                 capacity: usize::try_from(channel.capacity).unwrap_or(usize::MAX),
                 overflow: channel.overflow,
                 delivery: channel.delivery,
-                send_ordered: matches!(
-                    channel.overflow,
-                    ChannelOverflow::Loss(LossSelector::Head | LossSelector::Tail)
-                ),
-                key: None,
+                send_ordered: channel.key.is_none()
+                    && matches!(
+                        channel.overflow,
+                        ChannelOverflow::Loss(LossSelector::Head | LossSelector::Tail)
+                    ),
+                key: channel.key.as_ref().map(|key| ChannelKey::Package {
+                    binder: key.binder.clone(),
+                    slot: key.slot.clone(),
+                }),
             })
             .collect();
         let mut messages = BTreeMap::new();
         for control in package.controls.values().filter(|control| {
-            control.operation == fsl_package::protocol_view::ControlOperation::Send
+            matches!(
+                control.operation,
+                fsl_package::protocol_view::ControlOperation::Send
+                    | fsl_package::protocol_view::ControlOperation::Receive
+            )
         }) {
             let channel = package
                 .channels
@@ -1188,7 +1207,7 @@ impl<'a> Program<'a> {
                         record_type,
                     },
                     channel,
-                    from: None,
+                    from: control.from,
                 },
             );
         }
