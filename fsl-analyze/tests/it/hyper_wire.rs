@@ -246,27 +246,43 @@ fn analyze_hyper_outside_the_admitted_forms_is_a_typed_refusal() {
     assert!(run.item(0)["counterexample"].is_null(), "{}", run.document());
 }
 
-/// FR-179: a step relation over reachable transitions has routing and an SMT
-/// encoding but no explicit-state engine yet, so `fsl analyze` cannot return
-/// holds or refuted for it.
+/// FR-179 through `native-analyze/1`: a step relation over reachable
+/// transitions is checked by enumerating the tuples of its executions. Over
+/// the vault's `reset`, `h` is unchanged, so two resets from equal `h` agree
+/// on it and the relation settles `proved`; the two resets need not agree on
+/// `l`, so that relation settles `refuted` with a replayed step-tuple
+/// counterexample.
 #[trace("TC-1591", "FR-179")]
 #[test]
-#[ignore = "blocked on QSL-2238: the explicit-state step-relation engine does not exist; this ticket does not build it"]
 fn hyper_step_relation_through_analyze() {
-    let relation = "relation Det using v over (x: V::Vault::step, y: V::Vault::step) \
-        { x.i = y.i and pre(x.self.h) = pre(y.self.h) implies x.self.l = y.self.l }";
-    let (unit, model, snapshots) =
-        request_files_over_starts(Vault::Secure, false, &STARTS, relation);
-    let ws = Workspace::new("hyper-wire-step-relation");
-    let run = analyze(&request_over(
-        &ws,
-        &unit,
-        &model,
-        &snapshots,
-        json!({"items": [{"claim": "Det"}]}),
-    ));
-    assert_eq!(label(&run.item(0)), "proved", "{}", run.document());
-    assert_eq!(run.exit, 0, "{}", run.document());
+    for (body, expected, exit) in [
+        (
+            "pre(x.self.h) = pre(y.self.h) implies x.self.h = y.self.h",
+            "proved",
+            0,
+        ),
+        ("x.self.l = y.self.l", "refuted", 10),
+    ] {
+        let relation = format!(
+            "relation Det using v over (x: V::Vault::reset, y: V::Vault::reset) {{ {body} }}"
+        );
+        let (unit, model, snapshots) =
+            request_files_over_starts(Vault::Custom(""), true, &STARTS, &relation);
+        let ws = Workspace::new(&format!("hyper-wire-step-relation-{expected}"));
+        let run = analyze(&request_over(
+            &ws,
+            &unit,
+            &model,
+            &snapshots,
+            json!({"items": [{"claim": "Det"}]}),
+        ));
+        assert_eq!(label(&run.item(0)), expected, "{}", run.document());
+        assert_eq!(run.exit, exit, "{}", run.document());
+        if exit == 10 {
+            assert_eq!(run.item(0)["counterexample"]["kind"], "step-tuple");
+            assert_eq!(run.item(0)["replay"]["reproduced"], true);
+        }
+    }
 }
 
 /// FR-163 over two models: an infinite-trace HP-2 clause whose traces range

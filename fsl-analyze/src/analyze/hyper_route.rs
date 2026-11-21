@@ -11,14 +11,18 @@ use fsl_eval::simulation::model::{
 };
 use fsl_foundation::source::provenance::OccurrenceKey;
 use fsl_foundation::RequestIndex;
-use fsl_replay::{replay_hyper_trace_tuple, settle_hyper_check, HyperReplay};
+use fsl_replay::{
+    replay_hyper_trace_tuple, replay_model_relation_tuple, settle_hyper_check, BoundCovers,
+    HyperOutcome, HyperReplay, IncompleteCause, ModelRelationReplay, RunStats,
+};
 use fsl_route::Mode;
 use fsl_semantics::check::{Capability, DeclarationFamily};
 
 use super::items::{admission, model_refusal, BROKEN};
 use super::{AnalyzeItem, AnalyzeLimits, EngineReport, Refusal, SubjectBinding, TemporalItem};
 use crate::model_check::{
-    alias_provisions, alias_system, check_hyper, manifest, HyperCheckRequest,
+    alias_provisions, alias_system, check_hyper, check_model_relation, manifest, HyperCheckRequest,
+    ModelRelationCheckRequest, ModelRelationOutcome, ModelRelationRefusal, ModelRelationStats,
 };
 
 /// The item that runs the checked hyper clause `key` names, or none when the
@@ -331,4 +335,154 @@ fn single(
         Some(report) => EngineReport::StateGraph(Box::new(report)),
         None => EngineReport::Refused(Refusal::Failed(BROKEN)),
     }
+}
+
+/// The item that runs the checked step relation `key` names (FR-179): the
+/// reachable transition tuples of its executions enumerated explicitly and
+/// settled through the replay gate, or none when the occurrence names no step
+/// relation.
+pub(super) fn relation_item<'a>(
+    analysis: &super::RunInput<'a>,
+    binding: &SubjectBinding<'a>,
+    limits: AnalyzeLimits,
+    key: &OccurrenceKey,
+    index: RequestIndex,
+    form: &TemporalItem,
+) -> Option<AnalyzeItem<'a>> {
+    let relation = analysis
+        .package
+        .graph()
+        .step_relations()
+        .iter()
+        .find(|relation| relation.occurrence() == Some(key))?;
+    let package = analysis.package;
+    let input = analysis.model.clone();
+    let binding = binding.clone();
+    let form = form.clone();
+    Some(
+        AnalyzeItem::new(
+            index,
+            Capability::TemporalSatisfaction,
+            Some(DeclarationFamily::RelationClaim),
+            Mode::Bounded,
+            manifest::BACKEND_ID,
+            move |cancel: &Cancel| {
+                let simulation = ModelSimulationRequest {
+                    input: input.clone(),
+                    packages: binding.packages,
+                    normalization: limits.normalization,
+                    snapshots: binding.snapshots,
+                    initial: binding.initial.clone(),
+                    universes: binding.universes.clone(),
+                    observation: limits.observation,
+                    expansion: ExpansionLimits {
+                        max_candidates: form.max_candidates,
+                    },
+                    meter: limits.accounting,
+                    emit: limits.emit,
+                };
+                let mut distinct: Vec<&String> = Vec::new();
+                for alias in relation.execution_aliases() {
+                    if !distinct.contains(&alias) {
+                        distinct.push(alias);
+                    }
+                }
+                let subjects = distinct
+                    .iter()
+                    .map(|_| ModelSubject {
+                        simulation: simulation.clone(),
+                        proof_bounds: form.proof_bounds.clone(),
+                    })
+                    .collect();
+                let outcome = match check_model_relation(
+                    ModelRelationCheckRequest {
+                        relation,
+                        package,
+                        subjects,
+                        limits: form.limits,
+                        max_depth: form.max_depth,
+                        meter: limits.accounting,
+                    },
+                    cancel,
+                ) {
+                    Ok(outcome) => outcome,
+                    Err(ModelRelationRefusal::Model(refusal)) => {
+                        return EngineReport::Refused(model_refusal(&refusal));
+                    }
+                    Err(_) => return EngineReport::Refused(Refusal::Failed(BROKEN)),
+                };
+                let counts = |stats: ModelRelationStats| RunStats {
+                    product_states: stats.states,
+                    product_edges: stats.transitions,
+                    ..RunStats::default()
+                };
+                let outcome = match outcome {
+                    ModelRelationOutcome::Holds { stats } => HyperOutcome::HoldsClosed {
+                        stats: counts(stats),
+                    },
+                    ModelRelationOutcome::Refuted {
+                        counterexample,
+                        stats,
+                    } => HyperOutcome::Violated {
+                        counterexample,
+                        stats: counts(stats),
+                    },
+                    ModelRelationOutcome::BoundReached { depth, stats } => {
+                        HyperOutcome::BoundReached {
+                            depth,
+                            covers: BoundCovers::JointSteps,
+                            stats: counts(stats),
+                        }
+                    }
+                    ModelRelationOutcome::Stopped {
+                        limit,
+                        count,
+                        stats,
+                    } => HyperOutcome::Stopped {
+                        cause: match cancel.cause() {
+                            Some(source) if limit.is_none() => IncompleteCause::Cancelled { source },
+                            _ => IncompleteCause::ResourceExhausted,
+                        },
+                        limit,
+                        count,
+                        stats: counts(stats),
+                    },
+                    ModelRelationOutcome::Undecided { .. } => {
+                        return EngineReport::Refused(Refusal::Failed(BROKEN));
+                    }
+                };
+                let mut systems = Vec::with_capacity(relation.executions().len());
+                for _ in relation.executions() {
+                    match ModelSystem::new(simulation.clone()) {
+                        Ok(system) => systems.push(system),
+                        Err(failure) => return EngineReport::Refused(admission(&failure)),
+                    }
+                }
+                let settled = settle_hyper_check(
+                    &outcome,
+                    &form.limits,
+                    &form.requested_limits,
+                    None,
+                    cancel,
+                    |payload| {
+                        replay_model_relation_tuple(
+                            &ModelRelationReplay {
+                                relation,
+                                package,
+                                systems: systems.iter().collect(),
+                                meter: limits.accounting,
+                                cancel,
+                            },
+                            payload,
+                        )
+                    },
+                );
+                match settled {
+                    Ok(record) => EngineReport::Hyper(Box::new(record)),
+                    Err(_) => EngineReport::Refused(Refusal::Failed(BROKEN)),
+                }
+            },
+        )
+        .claimed(key.clone()),
+    )
 }
