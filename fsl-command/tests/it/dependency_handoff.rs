@@ -535,9 +535,10 @@ fn closure_cycles_keep_the_first_recorded_back_edge_and_manifest_order_is_canoni
     assert_eq!(result["cause"], "invalid-value", "{result}");
     std::fs::write(&manifest_file, original).unwrap();
     let package = handoff.join("dependencies/0/checked-package.json");
-    let mut value: Value = serde_json::from_slice(&std::fs::read(&package).unwrap()).unwrap();
+    let package_bytes = std::fs::read(&package).unwrap();
+    let mut value: Value = serde_json::from_slice(&package_bytes).unwrap();
     value["lock"]["dependency_selections"] = json!([{"identity": "test/z"}]);
-    std::fs::write(package, serde_json::to_vec(&value).unwrap()).unwrap();
+    std::fs::write(&package, serde_json::to_vec(&value).unwrap()).unwrap();
     let (exit, result) = run(directory.path(), json!({"directory": "handoff"}));
     assert_eq!(exit, 20, "{result}");
     assert_eq!(result["code"], "invalid_package", "{result}");
@@ -554,6 +555,22 @@ fn closure_cycles_keep_the_first_recorded_back_edge_and_manifest_order_is_canoni
     );
     assert!(
         result.to_string().contains("test/a") && result.to_string().contains("test/z"),
+        "{result}"
+    );
+    std::fs::write(&package, package_bytes).unwrap();
+    let root = handoff.join("checked-package.json");
+    let mut value: Value = serde_json::from_slice(&std::fs::read(&root).unwrap()).unwrap();
+    value["lock"]["dependency_selections"] = json!([{"identity": value["name"]}]);
+    std::fs::write(root, serde_json::to_vec(&value).unwrap()).unwrap();
+    let (exit, result) = run(directory.path(), json!({"directory": "handoff"}));
+    assert_eq!(exit, 20, "{result}");
+    assert_eq!(result["cause"], "definition-cycle", "{result}");
+    assert_eq!(
+        result["details"]["path"], "/lock/dependency_selections/0",
+        "{result}"
+    );
+    assert!(
+        result.to_string().contains("checked-package.json"),
         "{result}"
     );
 }

@@ -181,22 +181,26 @@ struct Pending {
 
 // Lock inspection schedules strict admission only. No graph or semantic value
 // is derived here; every package is subsequently validated by the IR reader.
-fn edges(bytes: &[u8]) -> Vec<String> {
+fn header(bytes: &[u8]) -> (Option<String>, Vec<String>) {
     use quire_canonical::Node;
     let Ok(document) = quire_canonical::read(bytes, u64::try_from(bytes.len()).unwrap_or(u64::MAX))
     else {
-        return Vec::new();
+        return (None, Vec::new());
     };
+    let name = member(document.root(), "name").and_then(|name| match name.node() {
+        Node::String(name) => Some(name.to_owned()),
+        _ => None,
+    });
     let Some(lock) = member(document.root(), "lock") else {
-        return Vec::new();
+        return (name, Vec::new());
     };
     let Some(selections) = member(lock, "dependency_selections") else {
-        return Vec::new();
+        return (name, Vec::new());
     };
     let Node::Array(selections) = selections.node() else {
-        return Vec::new();
+        return (name, Vec::new());
     };
-    selections
+    let edges = selections
         .into_iter()
         .filter_map(|row| {
             let identity = member(row, "identity")?;
@@ -205,7 +209,8 @@ fn edges(bytes: &[u8]) -> Vec<String> {
             };
             Some(identity.to_owned())
         })
-        .collect()
+        .collect();
+    (name, edges)
 }
 
 fn member<'document>(
@@ -246,23 +251,38 @@ pub(super) fn admit(
             Pending {
                 identity: row.identity,
                 directory: row.directory,
-                edges: edges(&bytes),
+                edges: header(&bytes).1,
                 bytes,
             },
         );
     }
-    let root_edges = edges(&bytes);
-    // Detect cycles in recorded edge order before topological admission.
+    let (root_name, root_edges) = header(&bytes);
+    // Detect the first back-edge in recorded order, including an edge back
+    // to the selected root, before the ready queue performs admission.
     let mut active = BTreeSet::new();
+    let mut path = Vec::new();
+    if let Some(name) = root_name {
+        active.insert(name.clone());
+        path.push(name);
+    }
     let mut visited = BTreeSet::new();
     let mut stack: Vec<_> = root_edges
         .iter()
+        .enumerate()
         .rev()
-        .map(|identity| (identity.clone(), false))
+        .map(|(index, identity)| {
+            (
+                identity.clone(),
+                false,
+                "checked-package.json".to_owned(),
+                index,
+            )
+        })
         .collect();
-    while let Some((identity, expanded)) = stack.pop() {
+    while let Some((identity, expanded, file, edge)) = stack.pop() {
         if expanded {
             active.remove(&identity);
+            path.pop();
             visited.insert(identity);
             continue;
         }
@@ -270,25 +290,29 @@ pub(super) fn admit(
             continue;
         }
         if !active.insert(identity.clone()) {
+            let cycle: Vec<_> = path
+                .iter()
+                .skip_while(|name| *name != &identity)
+                .cloned()
+                .chain(std::iter::once(identity.clone()))
+                .collect();
             return Err(refusal(
-                "dependencies.json",
+                &file,
                 "definition-cycle",
-                None,
-                format!("cycle through {identity}: {active:?}"),
+                Some(format!("/lock/dependency_selections/{edge}")),
+                format!("{cycle:?}"),
             ));
         }
-        stack.push((identity.clone(), true));
+        path.push(identity.clone());
+        stack.push((identity.clone(), true, file, edge));
         if let Some(package) = pending.get(&identity) {
             for (index, child) in package.edges.iter().enumerate().rev() {
-                if active.contains(child) {
-                    return Err(refusal(
-                        &format!("{}/checked-package.json", package.directory),
-                        "definition-cycle",
-                        Some(format!("/lock/dependency_selections/{index}")),
-                        format!("{active:?} -> {child}"),
-                    ));
-                }
-                stack.push((child.clone(), false));
+                stack.push((
+                    child.clone(),
+                    false,
+                    format!("{}/checked-package.json", package.directory),
+                    index,
+                ));
             }
         }
     }
