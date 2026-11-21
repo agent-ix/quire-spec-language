@@ -65,3 +65,26 @@ The defects are completeness defects on the multi-model and event-position HP-5 
   - This matches main before the PR, and #3231 declared the HP-5 analyze route unbuilt. It is acceptable for v1 only if it is tracked: the code comment should say it refuses, and a ticket should own the route.
   - Fix: route event-position HP-5 through `check_single_existential` (which already decides by `decide_closed`), then settle `ClosedWitnessed` and the closed `Trapped` as `HoldsClosed` and the closed replay do.
 - **FND-003.** Run `cargo fmt` with the repo's own edition, or revert the hunks that only reorder.
+
+## New findings (disposition pass 1)
+
+Checked at b11222a44b. The rebased base b845664df0 has the same per-file PR content as dc59305f00. All focused filters run on that head: 198 passed, 7 failed, 4 ignored; the 7 failures are the same Nonzero baseline. The fsl-replay filters (product, existential, hyper_settle, scc) and fsl-eval filters (copy_swap, closed) all pass.
+
+The new tests fail on the old code. In a throwaway worktree, b845664df0 was run with the head's test files:
+- `analyze_hyper_two_model_infinite_trace_proof_is_checked` fails with `inconclusive`;
+- `analyze_event_position_single_existential_is_proved_or_trapped` fails with `not-yet-implemented`;
+- `hyper_step_relation_through_analyze` fails with `unsupported`.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | high | A step-relation proof is labelled `certified` though no certificate was checked. The new `relation_item` maps `ModelRelationOutcome::Holds` to `HyperOutcome::HoldsClosed`, and `settle_hyper_check` settles that as `Row::proved`, whose label is `Certified`. No FR-163 certificate exists or is checked. FR-182 says an EN-1 `proved` settles only after the FR-163 checker accepts its certificate, and that a proof whose method has no checker is labelled `Uncertified`. FR-163-AC-1/AC-6 name the `Det` certificate | fsl-analyze/src/analyze/hyper_route.rs:420-423; fsl-replay/src/model_check/hyper_settle.rs:261-263 |
+| FND-005 | medium | `relation_item` turns `ModelRelationOutcome::Undecided` (an undetermined body evaluation, or a stopped execution graph) into `Refusal::Failed(BROKEN)`. FR-182 V-6/V-7 settle these as `inconclusive` or `incomplete`, not `failed` | fsl-analyze/src/analyze/hyper_route.rs:450-452 |
+| FND-006 | low | The event-position HP-5 settlement loses some causes. `settle_closed` settles a stopped closed search as `incomplete` `ResourceExhausted` without its reached limit (`stopped_run(.., None)`; probe at `max_states` 1: cause `limit-reached` with no limit named). Any outcome other than `ClosedWitnessed`/`Trapped`, such as `NoInitialState`, becomes `Err(Input("HP-5-closed-outcome"))` and then `failed`, not `inconclusive` `NoInitialState` | fsl-replay/src/model_check/existential_settle.rs:278; fsl-replay/src/model_check/existential_settle.rs:361 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | `alias_systems` (product.rs:173-186) rebuilds every alias through `ModelSystem::for_alias`, and both `complete_scope` and `check` use it. `hyper_route` hands the checker per-alias subjects with that alias's snapshot provision. `check_single_existential` and `settle_existential` use `for_alias` on the first alias. The new `analyze_hyper_two_model_infinite_trace_proof_is_checked` settles `proved`/`certified`, and it fails on b845664df0 with `inconclusive`, so it can fail |
+| FND-002 | fixed | The gate is gone: every HP-5 clause goes to `single()`, and event-position clauses settle through `settle_closed`, which reruns `closed_executions` and `judge_closed_tuple` and checks each witness path step by step. Both FR-173-AC-6 bodies pass through analyze (`proved` with a 2-step closed witness; `refuted` with a trap), and the test fails on the old code with `not-yet-implemented`. The `Input("HP-5-closed-witness")` arm is now unreachable: event-position returns to `settle_closed` before the match, and only `decide_closed` (event-position only) produces `ClosedWitnessed`. Loose ends are recorded as FND-006 |
+| FND-003 | fixed | The reorder and reflow churn is reverted. `cargo fmt --check` gives 569 hunks against origin/main 23e65543a3's 559. The difference is about 11 hunks in the PR's own new lines (hyper_route.rs, existential_settle.rs, hyper_wire.rs, hyper_world.rs and others) plus one hunk analyze.rs no longer has. No hunk only reorders untouched code |

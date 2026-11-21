@@ -56,7 +56,12 @@ pub fn settle_existential(
         ),
         _ => return Err(ProductClosureRefusal::Input("HP-5-instance")),
     };
-    if request.clause.profile() == fsl_semantics::check::TemporalProfile::EventPositionFalseExtension {
+    if request.clause.profile() == fsl_semantics::check::TemporalProfile::EventPositionFalseExtension
+        && matches!(
+            instance.outcome,
+            ExistentialOutcome::ClosedWitnessed { .. } | ExistentialOutcome::Trapped { .. }
+        )
+    {
         return settle_closed(request, &system, over, instance, method, cancel);
     }
     let mut evidence = None;
@@ -275,7 +280,22 @@ fn settle_closed(
         cancel,
     ) {
         Err(ClosedStop::Encoding(_)) => Row::failed(),
-        Err(_) => Row::stopped_run(IncompleteCause::ResourceExhausted, None),
+        // A state that cannot be expanded leaves the successor relation unknown.
+        Err(ClosedStop::Expansion(_)) => Row::inconclusive(InconclusiveCause::UndecidedSuccessor),
+        Err(ClosedStop::Executions { limit }) => Row::stopped_run(
+            IncompleteCause::ResourceExhausted,
+            Some(super::limits::ReachedLimit {
+                limit: super::limits::ModelCheckLimit::MaxStates,
+                value: u64::try_from(limit).unwrap_or(u64::MAX),
+            }),
+        ),
+        Err(ClosedStop::Cancelled) => Row::stopped_run(
+            match cancel.cause() {
+                Some(source) => IncompleteCause::Cancelled { source },
+                None => IncompleteCause::ResourceExhausted,
+            },
+            None,
+        ),
         Ok(executions) => {
             let inputs = ClosedInputs {
                 clause,
@@ -358,6 +378,7 @@ fn settle_closed(
                         Err(()) => Row::stopped_run(IncompleteCause::ResourceExhausted, None),
                     }
                 }
+                // `settle_existential` diverts only the two closed outcomes here.
                 _ => return Err(ProductClosureRefusal::Input("HP-5-closed-outcome")),
             }
         }

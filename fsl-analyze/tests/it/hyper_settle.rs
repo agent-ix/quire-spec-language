@@ -857,3 +857,50 @@ fn an_empty_universe_settles_no_instance_and_a_missing_one_requires_a_bound() {
         Err(ModelCheckRefusal::RequiresBound(_))
     ));
 }
+
+/// FR-182: a step-relation proof has no FR-163 `Det` certificate behind it, so
+/// it settles `proved` but never `certified`.
+#[trace("TC-607", "FR-182")]
+#[test]
+fn a_step_relation_proof_is_never_certified_without_a_checked_certificate() {
+    let outcome = HyperOutcome::HoldsUnchecked {
+        stats: RunStats::default(),
+    };
+    let record = settle_hyper_check(
+        &outcome,
+        &ModelCheckLimits::default(),
+        &[],
+        None,
+        &Cancel::new(),
+        |_| panic!("a holds outcome replays nothing"),
+    )
+    .expect("an unchecked holding outcome settles");
+    assert_eq!(
+        record.value,
+        TerminalValue::Proved {
+            basis: fsl_replay::ProofBasis::Exhaustive,
+            certification: fsl_replay::Certification::Uncertified,
+        }
+    );
+    assert!(record.certificates.is_empty());
+}
+
+/// FR-182: an undecided relation run settles inconclusive, never `failed`.
+#[trace("TC-607", "FR-182")]
+#[test]
+fn an_undecided_relation_run_settles_inconclusive_not_failed() {
+    let outcome = HyperOutcome::Undecided {
+        cause: UndecidedCause::UndecidedSuccessor,
+        stats: RunStats::default(),
+    };
+    let record = settle_hyper_check(
+        &outcome,
+        &ModelCheckLimits::default(),
+        &[],
+        None,
+        &Cancel::new(),
+        |_| panic!("an undecided outcome replays nothing"),
+    )
+    .expect("an undecided outcome settles");
+    assert_eq!(record.label, ResultLabel::Inconclusive);
+}

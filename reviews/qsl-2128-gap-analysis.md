@@ -54,3 +54,19 @@ Squash check: all 13 test files have the same content as the pre-rebase head f16
 - **FND-001.** Either implement the FR-940 package hyper form in this PR, as ruled, or drop the FR-940/TC-2958 tag and the forbidden assertion and file a ticket for the remaining work. A test should not certify an outcome that FR-940-AC-18 forbids.
 - **FND-002.** Either wire FR-179 through analyze now that QSL-2238 has landed, or re-point the ignore at a real open ticket and say what is still missing.
 - **FND-003.** Add one analyze request over an explicit finite trace set (QSL-2239's form) asserting the typed unsupported code and cause, or record the trace-set half as deferred to QSL-2239.
+
+## New findings (disposition pass 1)
+
+Checked at b11222a44b; see the code-review SR for the test runs.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | low | The new `analyze_hyper_over_an_explicit_finite_trace_set_is_a_typed_unsupported_result` is tagged `FR-631-AC-6`, but FR-631 defines only AC-1 to AC-4. The tag points at a criterion that does not exist. The test also pins S3's `unsupported_construct`/`expression-form` compile refusal, which FR-898 (QSL-2239) says S3 SHALL NOT give, so it must flip when QSL-2239 lands | fsl-analyze/tests/it/hyper_wire.rs:367-371 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | deferred | The coordinator takes the FR-940 package-form `Equal` settlement to architecture, and no ticket exists yet. The forbidden pin is gone: the tag and the `not-yet-implemented`/`items []` assertions are removed, and the test is renamed `a_package_hyper_item_does_not_fall_back_to_source`. It still asserts `exit != 0` and no `proved` item, which is the opposite of FR-940-AC-18's outcome. So it is a no-source-fallback guard that must be rewritten when AC-18 is implemented. Remaining work: FR-940-AC-18 on the package route |
+| FND-002 | fixed | `hyper_step_relation_through_analyze` is no longer ignored. It routes through the new `hyper_route::relation_item` and has a `proved` case (reset preserves `h`) and a `refuted` case (a step-tuple counterexample that replays). It passes at the head and fails on b845664df0 with `unsupported`. The coder reports that a relation over `V::Vault::step` with a bounded-domain parameter, FR-179-AC-1's own `Det`, fails admission with `invalid_package`/`malformed-declaration`. I did not reproduce that. AC-5 names no particular relation, so it is met; the parameter case is an emission defect outside this ticket and needs its own ticket. See code-review FND-004/FND-005 for the settlement defects this route introduced |
+| FND-003 | fixed | `analyze_hyper_over_an_explicit_finite_trace_set_is_a_typed_unsupported_result` sends a finite-trace-set clause through analyze and asserts the typed `unsupported_construct`/`expression-form` at S3, exit non-zero. Probe: exit 21, `last_stage` `S3`, the locus on the clause, `items` `[]`; a syntax error gives `invalid_syntax` and an undeclared name `missing_declaration`, so the test is not vacuous. As a refusal test it also passes on the old code, as expected. Tag problem recorded as FND-004 |

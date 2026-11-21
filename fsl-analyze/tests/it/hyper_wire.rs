@@ -278,6 +278,16 @@ fn hyper_step_relation_through_analyze() {
         ));
         assert_eq!(label(&run.item(0)), expected, "{}", run.document());
         assert_eq!(run.exit, exit, "{}", run.document());
+        // No FR-163 `Det` certificate stands behind a relation proof, so it
+        // is never labelled `certified` (FR-182).
+        if exit == 0 {
+            assert_eq!(
+                run.item(0)["record"]["certification"],
+                "uncertified",
+                "{}",
+                run.document()
+            );
+        }
         if exit == 10 {
             assert_eq!(run.item(0)["counterexample"]["kind"], "step-tuple");
             assert_eq!(run.item(0)["replay"]["reproduced"], true);
@@ -364,9 +374,10 @@ fn analyze_event_position_single_existential_is_proved_or_trapped() {
     }
 }
 
-/// FR-631-AC-6: a hyperproperty over an explicit finite trace set returns the
-/// typed unsupported result, never a verdict.
-#[trace("TC-1591", "FR-631-AC-6")]
+/// A hyperproperty over an explicit finite trace set returns the typed
+/// unsupported result, never a verdict. This pins today's S3 refusal
+/// (FR-898, `HyperCause::FiniteDomain`); QSL-2239 / FR-898 will flip it when
+/// finite-trace-domain clauses are served, and this test then changes with it.
 #[test]
 fn analyze_hyper_over_an_explicit_finite_trace_set_is_a_typed_unsupported_result() {
     let declaration = "hyper Secret using inf over traces in V::Execution bounded 2 \
@@ -391,4 +402,25 @@ fn analyze_hyper_over_an_explicit_finite_trace_set_is_a_typed_unsupported_result
         document["diagnostics"][0]["cause"], "expression-form",
         "{document}"
     );
+}
+
+/// FR-182: an event-position HP-5 run stopped by its state limit settles
+/// incomplete and names the limit it reached.
+#[trace("TC-2243", "FR-173-AC-6")]
+#[test]
+fn a_stopped_event_position_search_names_the_limit_it_reached() {
+    let clause = "hyper Possible using ep over behaviours (v: V::Vault) \
+        exists trace b of V { eventually [0, 2] holds(v.l @ b = 1) }";
+    let (unit, model, snapshots) =
+        request_files_over_starts(Vault::Secure, false, &[(1, 0)], clause);
+    let ws = Workspace::new("hyper-wire-event-position-limit");
+    let run = analyze(&request_over(
+        &ws,
+        &unit,
+        &model,
+        &snapshots,
+        json!({"items": [{"claim": "Possible", "temporal": {"witness_samples": 0, "limits": {"max_states": 1}}}]}),
+    ));
+    let item = run.item(0);
+    assert_eq!(item["record"]["limit_reached"]["limit"], "max_states", "{item}");
 }

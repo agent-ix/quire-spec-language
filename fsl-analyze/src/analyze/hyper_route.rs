@@ -13,7 +13,7 @@ use fsl_foundation::source::provenance::OccurrenceKey;
 use fsl_foundation::RequestIndex;
 use fsl_replay::{
     replay_hyper_trace_tuple, replay_model_relation_tuple, settle_hyper_check, BoundCovers,
-    HyperOutcome, HyperReplay, IncompleteCause, ModelRelationReplay, RunStats,
+    HyperOutcome, HyperReplay, IncompleteCause, ModelRelationReplay, RunStats, UndecidedCause,
 };
 use fsl_route::Mode;
 use fsl_semantics::check::{Capability, DeclarationFamily};
@@ -417,7 +417,7 @@ pub(super) fn relation_item<'a>(
                     ..RunStats::default()
                 };
                 let outcome = match outcome {
-                    ModelRelationOutcome::Holds { stats } => HyperOutcome::HoldsClosed {
+                    ModelRelationOutcome::Holds { stats } => HyperOutcome::HoldsUnchecked {
                         stats: counts(stats),
                     },
                     ModelRelationOutcome::Refuted {
@@ -447,9 +447,10 @@ pub(super) fn relation_item<'a>(
                         count,
                         stats: counts(stats),
                     },
-                    ModelRelationOutcome::Undecided { .. } => {
-                        return EngineReport::Refused(Refusal::Failed(BROKEN));
-                    }
+                    ModelRelationOutcome::Undecided { stats } => HyperOutcome::Undecided {
+                        cause: UndecidedCause::UndecidedSuccessor,
+                        stats: counts(stats),
+                    },
                 };
                 let mut systems = Vec::with_capacity(relation.executions().len());
                 for _ in relation.executions() {

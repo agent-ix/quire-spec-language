@@ -102,6 +102,14 @@ pub enum HyperOutcome {
         /// The run's counts.
         stats: RunStats,
     },
+    /// A step relation (FR-179) held on every tuple of the reachable transitions
+    /// the run read. The tuple enumeration is exhaustive, but no FR-163 `Det`
+    /// certificate stands behind it and no core checker accepts one, so FR-182
+    /// settles it `proved` without the core check (never `certified`).
+    HoldsUnchecked {
+        /// The run's counts.
+        stats: RunStats,
+    },
     /// The request's reductions settled the item (V-6, V-8).
     Reduction {
         /// Why.
@@ -155,6 +163,7 @@ impl HyperOutcome {
         match self {
             Self::Holds { stats, .. }
             | Self::HoldsClosed { stats, .. }
+            | Self::HoldsUnchecked { stats, .. }
             | Self::HoldsReduced { stats, .. }
             | Self::Reduction { stats, .. }
             | Self::Violated { stats, .. }
