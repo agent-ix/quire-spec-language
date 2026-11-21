@@ -219,8 +219,8 @@ fn transitive_library_claim_analysis_and_replay_equal_source_after_source_deleti
     std::fs::remove_dir_all(directory.join("handoff")).unwrap();
     let unit = format!("{HEADER}\
         profile paths = \"filament.temporal.infinite-trace/v1\";\n\
-        model M = \"test/counter\";\n\
         import \"test/z\" as z;\n\
+        model M = \"test/counter\";\n\
         pre Space using v on M::Counter::inc {{ self.value < 3 }}\n\
         post Inc using v on M::Counter::inc {{ self.value - pre(self.value) = 1 }}\n\
         temporal Bounded using paths over (c: M::Counter) clock \"model-steps\" on origin {{ always holds(c.value <= 3) }}\n\
