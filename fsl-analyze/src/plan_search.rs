@@ -327,6 +327,48 @@ pub trait PlanRules {
         index: usize,
     ) -> Result<Option<Rational>, RuleStop>;
 
+    /// Add a step cost to its prefix total under the objective's numeric
+    /// semantics and meter. `plan` includes the new step. An authored
+    /// domain violation returns `None`; a resource denial returns a stop.
+    fn accumulate_step_cost(
+        &mut self,
+        _plan: &PlanView<'_>,
+        total: &Rational,
+        cost: &Rational,
+    ) -> Result<Option<Rational>, RuleStop> {
+        self.add_objective_values(total, cost)
+    }
+
+    /// Add exact objective projections while constructing or checking a
+    /// certificate. Evaluating implementations charge their numeric meter.
+    fn add_objective_values(
+        &mut self,
+        left: &Rational,
+        right: &Rational,
+    ) -> Result<Option<Rational>, RuleStop> {
+        Ok(Some(left.add(right)))
+    }
+
+    /// The constant offset of a per-step objective, evaluated independently
+    /// of its steps. It is added once, including for an empty plan.
+    fn objective_offset(&mut self, _plan: &PlanView<'_>) -> Result<Option<Rational>, RuleStop> {
+        Ok(Some(zero()))
+    }
+
+    /// Complete a per-step objective from its accumulated costs and its
+    /// constant offset. Implementations with typed arithmetic apply that
+    /// arithmetic and its meter here, preserving authored domain failures.
+    fn step_sum_objective(
+        &mut self,
+        plan: &PlanView<'_>,
+        total: &Rational,
+    ) -> Result<Option<Rational>, RuleStop> {
+        match self.objective_offset(plan)? {
+            Some(offset) => self.add_objective_values(total, &offset),
+            None => Ok(None),
+        }
+    }
+
     /// The objective value of a completed `plan`, for an
     /// [`ObjectiveKind::General`] objective; `None` when it is undefined.
     ///
@@ -931,7 +973,19 @@ impl<R: PlanRules> Search<'_, '_, R> {
                 }
                 ObjectiveKind::General => zero(),
             };
-            let accumulated = self.nodes[parent].accumulated.add(&cost);
+            let accumulated = if self.kind == ObjectiveKind::StepSum {
+                let (states, steps) = self.prefix_with(parent, &step, &state);
+                let view = PlanView { states: &states, steps: &steps };
+                let Some(total) = self.rules.accumulate_step_cost(
+                    &view, &self.nodes[parent].accumulated, &cost,
+                )? else {
+                    self.explored.undefined_objectives += 1;
+                    continue;
+                };
+                total
+            } else {
+                zero()
+            };
             let key = NodeKey {
                 state: self.state_key(&state)?,
                 monitors: monitors.clone(),
@@ -950,13 +1004,14 @@ impl<R: PlanRules> Search<'_, '_, R> {
                     // Cost dominance: the strictly better prefix becomes the
                     // representative. The goal depends on the node alone, so
                     // only a goal node's per-step sum value changes.
+                    let was_goal = self.nodes[existing].goal.is_some();
                     let node = &mut self.nodes[existing];
-                    if node.goal.is_some() {
-                        node.goal = Some(accumulated.clone());
-                    }
                     node.accumulated = accumulated;
                     node.parent = Some((parent, step));
                     node.prefix = prefix;
+                    if was_goal {
+                        self.evaluate_goal_value(existing)?;
+                    }
                 }
                 continue;
             }
@@ -1046,7 +1101,13 @@ impl<R: PlanRules> Search<'_, '_, R> {
 
     fn evaluate_goal_value(&mut self, index: usize) -> Result<(), Stop> {
         let value = match self.kind {
-            ObjectiveKind::StepSum => Some(self.nodes[index].accumulated.clone()),
+            ObjectiveKind::StepSum => {
+                let (states, steps) = self.prefix_of(index);
+                self.rules.step_sum_objective(
+                    &PlanView { states: &states, steps: &steps },
+                    &self.nodes[index].accumulated,
+                )?
+            }
             ObjectiveKind::General => {
                 let (states, steps) = self.prefix_of(index);
                 self.rules.objective(&PlanView {
@@ -1156,7 +1217,7 @@ impl<R: PlanRules> Search<'_, '_, R> {
         } else {
             CertificateKind::Closure
         };
-        let mut written = match certificate::write(&self, kind) {
+        let mut written = match certificate::write(&mut self, kind) {
             Ok(written) => written,
             Err(limit) => return self.stopped(limit),
         };

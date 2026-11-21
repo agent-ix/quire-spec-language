@@ -241,6 +241,7 @@ fn a_step_sum_outside_the_objective_root_is_refused_at_s1() {
         "synthesis Reach using p grammar M::G domain M::D minimize Reach.steps.min(s => 1) satisfies { true };",
         "synthesis Reach using p grammar M::G domain M::D minimize 1 + Reach.steps.sum(s => 1) satisfies { true };",
         "synthesis Reach using p grammar M::G domain M::D satisfies { Reach.steps.sum(s => 1) > 0 };",
+        "synthesis Reach using p grammar M::G domain M::D minimize Reach.steps.sum(s => 1) + Reach.length * 2 satisfies { true };",
     ] {
         let refusal = synthesis_form(declaration).expect_err(declaration);
         assert!(refusal.starts_with("S1:"), "{declaration}: {refusal}");

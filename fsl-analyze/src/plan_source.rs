@@ -13,7 +13,7 @@
 
 use std::collections::BTreeMap;
 
-use filament_checked::node::{NodeKind, Visit};
+use filament_checked::node::{Arithmetic, NodeKind, Visit};
 use filament_exact::{
     CollectionKind, CollectionType, EnumMember, FieldValue, Integer, Meter, Outcome, Rational,
     ScalarLimits, Value, ValueType, from_admitted, from_admitted_slots,
@@ -24,7 +24,7 @@ use fsl_eval::simulation::model::{ClauseReading, read_clause};
 use fsl_eval::simulation::model::{ModelSimState, ModelSystem};
 use fsl_package::CheckedPackage;
 use fsl_semantics::check::{
-    CheckedBody, CheckedPlan, CheckedSynthesis, PlanOperation, TemporalClauseNode,
+    CheckedBody, CheckedNode, CheckedPlan, CheckedSynthesis, PlanOperation, TemporalClauseNode,
 };
 use fsl_semantics::model::state::StateObject;
 
@@ -386,10 +386,14 @@ impl<'a> SourcePlan<'a> {
     }
 
     fn evaluate(&mut self, body: &CheckedBody, plan: Value) -> Result<Evaluated, RuleStop> {
-        let evaluation = fsl_eval::value::evaluate_plan_body(
+        self.evaluate_node(body.root(), plan)
+    }
+
+    fn evaluate_node(&mut self, node: CheckedNode<'_>, plan: Value) -> Result<Evaluated, RuleStop> {
+        let evaluation = fsl_eval::value::evaluate_plan_node(
             self.package,
             self.plan.scope(),
-            body,
+            node,
             vec![Some(plan)],
             &mut self.meter,
         );
@@ -523,7 +527,10 @@ fn reads_field(body: &CheckedBody, record: &filament_exact::NodeKey, field: &str
 /// Whether `body` is a sum over the plan's steps whose term reads only the
 /// step it is evaluated for (FSpec FR-802 "Classification").
 fn is_step_sum(body: &CheckedBody, plan: &filament_exact::NodeKey) -> bool {
-    let root = body.root();
+    let root = step_sum_node(body.root());
+    if !matches!(root.value_type(), ValueType::Integer | ValueType::Int(_) | ValueType::Rational(_) | ValueType::Decimal(_)) {
+        return false;
+    }
     if matches!(
         root.kind(),
         NodeKind::Field { field, .. } if field.name() == "length" && &field.declaration() == plan
@@ -560,6 +567,22 @@ fn is_step_sum(body: &CheckedBody, plan: &filament_exact::NodeKey) -> bool {
         pending.extend(node.children());
     }
     true
+}
+
+/// Split only the admitted root sum plus constant form. The grammar has
+/// already restricted the right operand to an exact numeric constant.
+fn step_sum_node(root: CheckedNode<'_>) -> CheckedNode<'_> {
+    let left = match root.kind() {
+        NodeKind::Arithmetic(Arithmetic::Add, left, _)
+        | NodeKind::Rational { operator: filament_exact::ArithmeticOperator::Add, left, .. }
+        | NodeKind::Decimal { operator: filament_exact::ArithmeticOperator::Add, left, .. } => root.at(*left),
+        _ => return root,
+    };
+    if matches!(left.kind(), NodeKind::Query { visit: Visit::Sum, .. }) {
+        left
+    } else {
+        root
+    }
 }
 
 impl PlanRules for SourcePlan<'_> {
@@ -672,10 +695,77 @@ impl PlanRules for SourcePlan<'_> {
         let Some(value) = self.plan_value(&one, index) else {
             return Ok(None);
         };
-        Ok(match self.evaluate(body, value)? {
+        Ok(match self.evaluate_node(step_sum_node(body.root()), value)? {
             Evaluated::Value(value) => Self::exact(&value),
             Evaluated::Undefined => None,
         })
+    }
+
+    fn accumulate_step_cost(
+        &mut self,
+        plan: &PlanView<'_>,
+        _total: &Rational,
+        _cost: &Rational,
+    ) -> Result<Option<Rational>, RuleStop> {
+        let Some(body) = self.synthesis.objective() else {
+            return self.objective(plan);
+        };
+        let Some(value) = self.plan_value(plan, 0) else {
+            return Ok(None);
+        };
+        // Reuse the evaluator's ordered, typed sum rather than adding the
+        // Rational projection outside its decimal domain or meter.
+        Ok(match self.evaluate_node(step_sum_node(body.root()), value)? {
+            Evaluated::Value(value) => Self::exact(&value),
+            Evaluated::Undefined => None,
+        })
+    }
+
+    fn add_objective_values(
+        &mut self,
+        left: &Rational,
+        right: &Rational,
+    ) -> Result<Option<Rational>, RuleStop> {
+        match filament_exact::evaluate_rational_arithmetic(
+            filament_exact::RationalArithmetic::Add(left, right), None, &mut self.meter,
+        ) {
+            Outcome::Completed(value) => Ok(Some(value)),
+            Outcome::Incomplete(incomplete) => Err(RuleStop::Accounting {
+                counter: incomplete.limit_kind.as_str(), value: incomplete.limit,
+            }),
+            Outcome::Undefined(_) | Outcome::Refused(_) => Ok(None),
+        }
+    }
+
+    fn objective_offset(&mut self, plan: &PlanView<'_>) -> Result<Option<Rational>, RuleStop> {
+        let Some(body) = self.synthesis.objective() else {
+            return Ok(Some(Rational::from_integer(Integer::zero())));
+        };
+        let root = body.root();
+        if step_sum_node(root).id() == root.id() {
+            return Ok(Some(Rational::from_integer(Integer::zero())));
+        }
+        let right = match root.kind() {
+            NodeKind::Arithmetic(Arithmetic::Add, _, right)
+            | NodeKind::Rational { operator: filament_exact::ArithmeticOperator::Add, right, .. }
+            | NodeKind::Decimal { operator: filament_exact::ArithmeticOperator::Add, right, .. } => *right,
+            _ => return Ok(None),
+        };
+        let Some(value) = self.plan_value(plan, 0) else {
+            return Ok(None);
+        };
+        Ok(match self.evaluate_node(root.at(right), value)? {
+            Evaluated::Value(value) => Self::exact(&value),
+            Evaluated::Undefined => None,
+        })
+    }
+
+    fn step_sum_objective(
+        &mut self,
+        plan: &PlanView<'_>,
+        _total: &Rational,
+    ) -> Result<Option<Rational>, RuleStop> {
+        self.objective(plan)
     }
 
     fn objective(&mut self, plan: &PlanView<'_>) -> Result<Option<Rational>, RuleStop> {

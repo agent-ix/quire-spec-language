@@ -1396,7 +1396,8 @@ impl<'c> Mapping<'c> {
             Production::Postfix | Production::ScrutineePostfix | Production::HyperPostfix => {
                 self.postfix(task, &items)
             }
-            Production::Primary | Production::ScrutineePrimary | Production::HyperPrimary => {
+            Production::Primary | Production::ScrutineePrimary | Production::HyperPrimary
+            | Production::ExactValue => {
                 self.primary(task, &items)
             }
             Production::IndexedRead => self.indexed_read(task, &items),
@@ -1504,7 +1505,6 @@ impl<'c> Mapping<'c> {
             | Production::Fraction
             | Production::Weighting
             | Production::Horizon
-            | Production::ExactValue
             | Production::QuantityLiteral
             | Production::StateGraphClaim
             | Production::StateGraphBody
@@ -1647,18 +1647,17 @@ impl<'c> Mapping<'c> {
             return Err(unexpected(node));
         };
         let plus = tokens.iter().find(|token| token.spelling() == b"+");
-        let (term, constant) = match nodes_of(items, Production::Expression).as_slice() {
-            [term] => (*term, None),
-            [term, constant] => (*term, Some(*constant)),
+        let term = match nodes_of(items, Production::Expression).as_slice() {
+            [term] => *term,
             _ => return Err(unexpected(node)),
         };
+        let constant = nodes_of(items, Production::ExactValue).first().copied();
         let production = node.production();
         let start = node.span().start;
         let mut parent = task.parent;
-        if let (Some(constant), Some(plus)) = (constant, plus) {
+        if let (Some(_), Some(plus)) = (constant, plus) {
             let total = self.node(Shape::Binary(BinaryOperator::Add), production, node.span(), parent);
             self.arena[total].operator_span = Some(plus.span());
-            self.queue(total, vec![constant]);
             parent = Some(total);
         }
         let sum_span = Span {
@@ -1687,6 +1686,14 @@ impl<'c> Mapping<'c> {
             Some(source),
         );
         self.queue(sum, vec![term]);
+        if let (Some(constant), Some(total), Some(_)) = (constant, parent, plus) {
+            let constant_parent = if let Some(minus) = tokens.iter().find(|token| token.spelling() == b"-") {
+                self.node(Shape::Negate, production, Span { start: minus.span().start, end: constant.span().end }, Some(total))
+            } else {
+                total
+            };
+            self.queue(constant_parent, vec![constant]);
+        }
         Ok(())
     }
 

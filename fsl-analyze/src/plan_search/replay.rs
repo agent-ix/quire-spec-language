@@ -212,9 +212,19 @@ fn objective_value<R: PlanRules>(
                 let cost = rules
                     .step_cost(&view, index)
                     .map_err(PlanSearchError::RuleStopped)?;
-                sum = sum.zip(cost).map(|(sum, cost)| sum.add(&cost));
+                sum = match (sum, cost) {
+                    (Some(total), Some(cost)) => rules
+                        .accumulate_step_cost(&view, &total, &cost)
+                        .map_err(PlanSearchError::RuleStopped)?,
+                    _ => None,
+                };
             }
-            sum
+            match sum {
+                Some(total) => rules
+                    .step_sum_objective(&plan.view(), &total)
+                    .map_err(PlanSearchError::RuleStopped)?,
+                None => None,
+            }
         }
     };
     value.ok_or(undefined)

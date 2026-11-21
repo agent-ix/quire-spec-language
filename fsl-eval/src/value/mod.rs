@@ -91,7 +91,7 @@ pub use expression::{
     admit_arguments, call_checked_package_with_session_limits, evaluate_activation_guard,
     evaluate_activation_guard_at_absent_key,
     evaluate_capture, evaluate_closed_with_frame, evaluate_history_update, evaluate_join_predicate,
-    evaluate_operation_contract, evaluate_plan_body, evaluate_protocol_slot, evaluate_refinement_row, evaluate_reward,
+    evaluate_operation_contract, evaluate_plan_body, evaluate_plan_node, evaluate_protocol_slot, evaluate_refinement_row, evaluate_reward,
     evaluate_state_predicate, evaluate_state_predicate_at_absent_key,
     evaluate_state_predicate_with, evaluate_terminal_predicate, input_refusal_code, refusal_record,
     supplied_stop_cause, supplied_stop_code, undefined_contract_code,

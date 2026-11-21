@@ -64,7 +64,8 @@ fn step_sum_objective_reads_only_at_the_objective_root() {
         "minimize Reach.steps.sum(s => 2)",
         "minimize Reach.steps.sum(s => if s.operation = M::Op::charge then 0.10 else 0.05)",
         "maximize Reach.steps.sum(s => s.after.cost) + 3",
-        "minimize Reach.steps.sum(s => 1) + Reach.length * 2",
+        "minimize Reach.steps.sum(s => 1) + -2",
+        "minimize Reach.steps.sum(s => 1) + rational(1,3)",
     ] {
         accepts(
             &format!("synthesis Reach using p grammar M::G domain M::D {objective} satisfies {{ true }};"),
@@ -106,6 +107,14 @@ fn step_sum_objective_reads_only_at_the_objective_root() {
         (
             "synthesis Reach using p grammar M::G domain M::D minimize Reach.steps.sum(s => 1, 2) satisfies { true };",
             ",",
+        ),
+        (
+            "synthesis Reach using p grammar M::G domain M::D minimize Reach.steps.sum(s => 1) + Reach.length * 2 satisfies { true };",
+            "Reach",
+        ),
+        (
+            "synthesis Reach using p grammar M::G domain M::D minimize Reach.steps.sum(s => 1) + 2 * 3 satisfies { true };",
+            "*",
         ),
     ] {
         let text = format!("{PREFIX}{bad}");

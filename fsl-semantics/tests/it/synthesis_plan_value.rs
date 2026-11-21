@@ -27,6 +27,10 @@ population orders: Order;
 /// Checks a unit declaring `Lengths` as `lengths` and one plan synthesis with
 /// `objective` and `goal`; the checked plan synthesis, or the refusals.
 fn check(lengths: &str, objective: &str, goal: &str) -> Result<CheckedSynthesis, String> {
+    check_with_types(lengths, objective, goal, "")
+}
+
+fn check_with_types(lengths: &str, objective: &str, goal: &str, types: &str) -> Result<CheckedSynthesis, String> {
     let model = fsl_cst::diagnostic::read_source(
         fsl_foundation::SourceIdentity::new("agent-ix", "test:shop-model"),
         "shop.fsl",
@@ -41,6 +45,7 @@ fn check(lengths: &str, objective: &str, goal: &str) -> Result<CheckedSynthesis,
          profile v = \"filament.temporal.infinite-trace/v1\";\n\
          model M = \"example/shop\";\n\
          type Lengths = {lengths};\n\
+         {types}\n\
          synthesis Reach using v grammar M::Order domain Lengths {objective} \
          satisfies {{ {goal} }};\n"
     );
@@ -151,14 +156,39 @@ fn a_step_sum_types_its_binder_as_the_step_record() {
 
 #[trace("FSpec-FR-802-AC-1", "FSpec-TC-1952")]
 #[test]
-fn a_decimal_step_sum_totals_at_the_scale_of_its_terms() {
-    let checked = check("Int[0, 3]", "minimize Reach.steps.sum(s => 0.10)", "Reach.length >= 1")
-        .expect("a decimal literal term types as a decimal");
-    let objective = checked.objective().expect("the objective is checked");
-    let ValueType::Decimal(total) = objective.root().value_type() else {
-        panic!("the total is a decimal: {:?}", objective.root().value_type());
-    };
-    assert_eq!((total.min_scale(), total.max_scale()), (2, 2));
+fn a_decimal_step_sum_retains_its_complete_declared_summand_type() {
+    for term in [
+        "let cost: Cost = if s.index < 2 then 0.10 else 0.05 in cost",
+        "convert<Cost>(0.10)",
+        "convert<Cost>(0.10) + 0.05",
+    ] {
+        let checked = check_with_types(
+            "Int[0, 3]", &format!("minimize Reach.steps.sum(s => {term})"),
+            "Reach.length >= 1", "type Cost = Decimal[0,10000;2,2;exact];",
+        ).expect("an FR-140 typed context supplies the complete decimal type");
+        let objective = checked.objective().expect("the objective is checked");
+        let ValueType::Decimal(total) = objective.root().value_type() else {
+            panic!("the total is a decimal: {:?}", objective.root().value_type());
+        };
+        assert_eq!(total.lower().to_string(), "0");
+        assert_eq!(total.upper().to_string(), "10000");
+        assert_eq!((total.min_scale(), total.max_scale()), (2, 2));
+        assert_eq!(total.rounding(), filament_exact::RoundingMode::Exact);
+    }
+}
+
+#[trace("FSpec-FR-802-AC-8")]
+#[test]
+fn a_decimal_step_sum_without_a_typed_context_refuses_ambiguity() {
+    for term in [
+        "if s.index < 2 then 0.10 else 0.05",
+        "if s.index < 2 then decimal(10,2) else decimal(5,2)",
+        "let cost = 0.10 in cost",
+    ] {
+        let refusals = check("Int[0, 3]", &format!("minimize Reach.steps.sum(s => {term})"), "true")
+            .expect_err("the objective and decimal spelling cannot supply a type");
+        assert!(refusals.contains("AmbiguousLiteral"), "{term}: {refusals}");
+    }
 }
 
 #[trace("FSpec-FR-802-AC-1", "FSpec-FR-194-AC-9", "FSpec-TC-1952")]

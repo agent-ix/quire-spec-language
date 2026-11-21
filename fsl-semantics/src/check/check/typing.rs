@@ -719,47 +719,16 @@ fn summand_of_family(total: &ValueType, summand: &ValueType) -> bool {
     }
 }
 
-/// Decimal digits of the coefficient bound of a step sum's total. A sum of
-/// any number of steps stays a member of its type; the evaluation meter's
-/// `decimal_digits` counter, not the type, bounds how large a total grows.
-const STEP_SUM_TOTAL_DIGITS: u64 = 4096;
-
 /// The type of the total of a plan objective's `Reach.steps.sum(s => e)`,
-/// given the summand's type: integers total as `Integer`; a rational total
-/// widens the numerator and denominator ranges, a decimal total the
-/// coefficient range at the summand's scales; a quantity totals in its unit
-/// and any other numeric family as itself. `None` for a summand that is not numeric.
+/// given the complete summand type. Integer ranges total as `Integer`;
+/// decimal and rational domains remain the domains the summand declares.
+/// Resource limits belong to the evaluation meter, never invented domains.
 fn step_sum_total(summand: &ValueType) -> Option<ValueType> {
-    let wide = || {
-        let bound = Integer::power_of_ten(STEP_SUM_TOTAL_DIGITS);
-        IntegerInterval::new(bound.neg(), bound)
-    };
     match summand {
         ValueType::Integer | ValueType::Int(_) => Some(ValueType::Integer),
-        ValueType::Rational(_) => {
-            let denominator = IntegerInterval::new(
-                Integer::one(),
-                Integer::power_of_ten(STEP_SUM_TOTAL_DIGITS),
-            )
-            .ok()?;
-            RationalDomain::new(wide().ok()?, denominator)
-                .ok()
-                .map(ValueType::Rational)
-        }
-        ValueType::Decimal(domain) => {
-            let wide = wide().ok()?;
-            DecimalType::new(
-                wide.lower().clone(),
-                wide.upper().clone(),
-                u64::from(domain.min_scale()),
-                u64::from(domain.max_scale()),
-                domain.rounding(),
-            )
-            .ok()
-            .map(ValueType::Decimal)
-        }
         ValueType::BoundedQuantity(bounded) => Some(ValueType::Quantity(bounded.unit().clone())),
-        ValueType::Float(_) | ValueType::Quantity(_) | ValueType::CarriedQuantity(_) => {
+        ValueType::Rational(_) | ValueType::Decimal(_) | ValueType::Float(_)
+        | ValueType::Quantity(_) | ValueType::CarriedQuantity(_) => {
             Some(summand.clone())
         }
         _ => None,
@@ -4268,14 +4237,7 @@ impl<'a> Typer<'a> {
                     Tally::Count => {
                         Goal::Expect(frame.body, Expected::Checked(boolean()), body_location)
                     }
-                    Tally::Sum => {
-                        let hint = if frame.type_argument.is_none() {
-                            self.step_term_hint(frame.body).map(Cow::Owned)
-                        } else {
-                            None
-                        };
-                        Goal::Infer(frame.body, hint, body_location)
-                    }
+                    Tally::Sum => Goal::Infer(frame.body, None, body_location),
                 };
                 frame.source = Some((typed, slot));
                 frames.push(Frame::Tally(frame));
@@ -4328,48 +4290,6 @@ impl<'a> Typer<'a> {
                 ))
             }
         }
-    }
-
-    /// The expected type that lets the decimal literals of a step sum's
-    /// summand type themselves: every one of them, at the finest scale any
-    /// of them is written in, is a member. `None` when the summand writes no
-    /// decimal literal.
-    fn step_term_hint(&self, summand: ExprRef<'_>) -> Option<ValueType> {
-        let limit = self.scope.decimal_literal_limits.scale;
-        let mut literals = Vec::new();
-        let mut pending = vec![summand];
-        while let Some(expression) = pending.pop() {
-            if let ExprNode::DecimalValue {
-                coefficient, scale, ..
-            } = expression.node()
-            {
-                if u64::from(*scale) <= limit {
-                    literals.push((coefficient, *scale));
-                }
-            }
-            pending.extend(expression.children());
-        }
-        let scale = literals.iter().map(|(_, scale)| *scale).max()?;
-        let mut lower = Integer::zero();
-        let mut upper = Integer::zero();
-        for (coefficient, written) in literals {
-            let aligned = coefficient.mul(&Integer::power_of_ten(u64::from(scale - written)));
-            if aligned < lower {
-                lower = aligned.clone();
-            }
-            if aligned > upper {
-                upper = aligned;
-            }
-        }
-        let domain = DecimalType::new(
-            lower,
-            upper,
-            u64::from(scale),
-            u64::from(scale),
-            RoundingMode::Exact,
-        )
-        .ok()?;
-        Some(ValueType::Decimal(domain))
     }
 
     /// The population a refinement row names `name`, when this pass reads
