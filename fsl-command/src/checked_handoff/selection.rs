@@ -578,7 +578,7 @@ impl Selection {
                 identity,
             });
         }
-        let libraries = compiled
+        let mut libraries: Vec<_> = compiled
             .libraries
             .iter()
             .map(|library| LibraryRow {
@@ -586,6 +586,7 @@ impl Selection {
                 file: format!("sources/{}", library.source.identity),
             })
             .collect();
+        libraries.sort_by(|left, right| left.identity.cmp(&right.identity));
         Ok(Self {
             format: text(SELECTION_FORMAT),
             package: PackageRows {

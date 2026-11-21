@@ -447,3 +447,113 @@ fn foreign_artifacts_and_dependency_witnesses_and_unsafe_files_are_refused() {
         assert_eq!(result["cause"], "invalid-value", "{result}");
     }
 }
+
+fn tree(directory: &Path) -> std::collections::BTreeMap<std::path::PathBuf, Vec<u8>> {
+    let mut files = std::collections::BTreeMap::new();
+    let mut pending = vec![directory.to_path_buf()];
+    while let Some(path) = pending.pop() {
+        for entry in std::fs::read_dir(path).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                pending.push(path);
+            } else {
+                files.insert(
+                    path.strip_prefix(directory).unwrap().to_path_buf(),
+                    std::fs::read(path).unwrap(),
+                );
+            }
+        }
+    }
+    files
+}
+
+#[test]
+#[trace("FR-517-AC-27", "FR-517-AC-28", "TC-1312")]
+fn dependency_handoff_is_deterministic_under_provision_order_and_refuses_conflicts_atomically() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut request = prepare(directory.path(), false);
+    let original = tree(&directory.path().join("handoff"));
+    request["libraries"].as_array_mut().unwrap().reverse();
+    request["handoff"]["directory"] = json!("reordered");
+    let path = directory.path().join("compile.json");
+    std::fs::write(
+        &path,
+        serde_json::to_vec(&json!({"format": "native-compile/1", "request": request})).unwrap(),
+    )
+    .unwrap();
+    fsl_command::command::compile(&path).expect("reordered library provision remains valid");
+    assert_eq!(tree(&directory.path().join("reordered")), original);
+    request["libraries"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"identity": "test/a", "source": source("z.native")}));
+    request["handoff"]["directory"] = json!("conflicting");
+    std::fs::write(
+        &path,
+        serde_json::to_vec(&json!({"format": "native-compile/1", "request": request})).unwrap(),
+    )
+    .unwrap();
+    assert!(
+        fsl_command::command::compile(&path).is_err(),
+        "conflicting provisions cannot choose the first artifact"
+    );
+    assert!(
+        !directory.path().join("conflicting").exists(),
+        "a refused write leaves no partial directory"
+    );
+    std::fs::write(
+        directory.path().join("unit.native"),
+        format!("{HEADER}function answer using v(): Integer pure {{ 42 }}\n"),
+    )
+    .unwrap();
+    request["libraries"] = json!([]);
+    request["handoff"]["directory"] = json!("empty");
+    std::fs::write(
+        &path,
+        serde_json::to_vec(&json!({"format": "native-compile/1", "request": request})).unwrap(),
+    )
+    .unwrap();
+    fsl_command::command::compile(&path)
+        .expect("import-free handoff writes an explicit empty closure");
+    assert_eq!(std::fs::read(directory.path().join("empty/dependencies.json")).unwrap(), b"{\n  \"format\": \"filament.checked-handoff.dependencies/1\",\n  \"dependencies\": []\n}\n");
+    assert!(!directory.path().join("empty/dependencies").exists());
+}
+
+#[test]
+#[trace("FR-850-AC-13", "TC-2410")]
+fn closure_cycles_keep_the_first_recorded_back_edge_and_manifest_order_is_canonical() {
+    let directory = tempfile::tempdir().unwrap();
+    prepare(directory.path(), false);
+    let handoff = directory.path().join("handoff");
+    let manifest_file = handoff.join("dependencies.json");
+    let original = std::fs::read(&manifest_file).unwrap();
+    let mut manifest: Value = serde_json::from_slice(&original).unwrap();
+    manifest["dependencies"].as_array_mut().unwrap().reverse();
+    std::fs::write(&manifest_file, serde_json::to_vec(&manifest).unwrap()).unwrap();
+    let (exit, result) = run(directory.path(), json!({"directory": "handoff"}));
+    assert_eq!(exit, 20, "{result}");
+    assert_eq!(result["cause"], "invalid-value", "{result}");
+    std::fs::write(&manifest_file, original).unwrap();
+    let package = handoff.join("dependencies/0/checked-package.json");
+    let mut value: Value = serde_json::from_slice(&std::fs::read(&package).unwrap()).unwrap();
+    value["lock"]["dependency_selections"] = json!([{"identity": "test/z"}]);
+    std::fs::write(package, serde_json::to_vec(&value).unwrap()).unwrap();
+    let (exit, result) = run(directory.path(), json!({"directory": "handoff"}));
+    assert_eq!(exit, 20, "{result}");
+    assert_eq!(result["code"], "invalid_package", "{result}");
+    assert_eq!(result["cause"], "definition-cycle", "{result}");
+    assert_eq!(
+        result["details"]["path"], "/lock/dependency_selections/0",
+        "{result}"
+    );
+    assert!(
+        result
+            .to_string()
+            .contains("dependencies/0/checked-package.json"),
+        "{result}"
+    );
+    assert!(
+        result.to_string().contains("test/a") && result.to_string().contains("test/z"),
+        "{result}"
+    );
+}
