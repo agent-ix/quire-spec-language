@@ -23,7 +23,8 @@ pub struct PackageAdmissionRefusal {
     pub limit: Option<fsl_foundation::diagnostic::LimitExceeded>,
     /// The catalogued code: `missing_import` where no document is supplied
     /// under a selected domain package identity, `resource_exhausted` where
-    /// a read ceiling was reached, `invalid_package` for every other refusal.
+    /// a read ceiling was reached, `stage_limit_exceeded` for a shared-budget
+    /// denial, and `invalid_package` for every other refusal.
     pub code: Code,
     /// The reader's typed cause tag, such as `missing-selection`.
     pub cause: Option<String>,
@@ -61,7 +62,7 @@ pub fn admit_checked_package_with_dependencies(
     dependencies: &BTreeMap<String, Arc<CheckedPackageV2>>,
     limits: V2ReadLimits,
 ) -> Result<CheckedPackageV2, PackageAdmissionRefusal> {
-    let evidence = package_evidence(documents, dependencies)?;
+    let evidence = checked_package_evidence(documents, dependencies)?;
     match read_checked_package(bytes, limits.for_ir(), &evidence) {
         CheckedPackageDispatchResult::AdmittedV2(package) => Ok(*package),
         CheckedPackageDispatchResult::Refused(refusal) => {
@@ -95,8 +96,23 @@ pub fn admit_checked_package_with_budget(
     limits: V2ReadLimits,
     budget: &mut filament_contract_model::NativeJoinBudget,
 ) -> Result<CheckedPackageV2, PackageAdmissionRefusal> {
+    let evidence = checked_package_evidence(documents, dependencies)?;
+    admit_checked_package_with_evidence(bytes, &evidence, limits, budget)
+}
+
+/// Read against invocation-owned evidence without copying domain documents or
+/// dependency graphs at each package boundary. The strict reader retains only
+/// the dependencies its lock selects.
+///
+/// # Errors
+/// Preserves strict-reader refusals and cumulative typed budget denials.
+pub fn admit_checked_package_with_evidence(
+    bytes: &[u8],
+    evidence: &CheckedPackageEvidence,
+    limits: V2ReadLimits,
+    budget: &mut filament_contract_model::NativeJoinBudget,
+) -> Result<CheckedPackageV2, PackageAdmissionRefusal> {
     use filament_contract_model::CheckedPackageBudgetedDispatchResult as Read;
-    let evidence = package_evidence(documents, dependencies)?;
     let denial = |limit, actual, pointer| PackageAdmissionRefusal {
         limit: Some(fsl_foundation::diagnostic::LimitExceeded::new(
             fsl_foundation::Setting::I2WorkUnits,
@@ -111,7 +127,7 @@ pub fn admit_checked_package_with_budget(
     match filament_contract_model::read_checked_package_with_budget(
         bytes,
         limits.for_ir(),
-        &evidence,
+        evidence,
         budget,
     ) {
         Read::AdmittedV2(package) => Ok(*package),
@@ -143,7 +159,13 @@ pub fn admit_checked_package_with_budget(
     }
 }
 
-fn package_evidence(
+/// Own the invocation's domain documents once and supply authenticated library
+/// values by shared ownership. Additional admitted libraries can be inserted
+/// through IR's existing evidence API before subsequent reads.
+///
+/// # Errors
+/// Refuses conflicting documents or library identities through IR's insertion API.
+pub fn checked_package_evidence(
     documents: &BTreeMap<String, Vec<u8>>,
     dependencies: &BTreeMap<String, Arc<CheckedPackageV2>>,
 ) -> Result<CheckedPackageEvidence, PackageAdmissionRefusal> {

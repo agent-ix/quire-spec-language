@@ -277,7 +277,8 @@ pub(super) fn admit(
             }
         }
     }
-    let mut admitted = BTreeMap::new();
+    let mut evidence = fsl_package::checked_package_evidence(supplied, &BTreeMap::new())
+        .map_err(|error| package_failure("models", error))?;
     let mut dependencies = Vec::new();
     let mut remaining = BTreeMap::new();
     let mut importers: BTreeMap<String, Vec<String>> = BTreeMap::new();
@@ -314,20 +315,10 @@ pub(super) fn admit(
         let Some(package) = pending.remove(&identity) else {
             continue;
         };
-        let own = package
-            .edges
-            .iter()
-            .filter_map(|identity| {
-                admitted
-                    .get(identity)
-                    .map(|package| (identity.clone(), Arc::clone(package)))
-            })
-            .collect();
         let file = format!("{}/checked-package.json", package.directory);
-        let read = fsl_package::admit_checked_package_with_budget(
+        let read = fsl_package::admit_checked_package_with_evidence(
             &package.bytes,
-            supplied,
-            &own,
+            &evidence,
             limits,
             &mut budget,
         )
@@ -348,7 +339,16 @@ pub(super) fn admit(
         let equality = fsl_package::ReadEqualityRows::read(&equality_bytes, &read)
             .map_err(|error| refusal(&equality_file, "refused-file", None, error))?;
         let read = Arc::new(read);
-        admitted.insert(identity.clone(), Arc::clone(&read));
+        evidence
+            .insert_dependency_package(identity.as_str(), Arc::clone(&read))
+            .map_err(|error| {
+                refusal(
+                    &file,
+                    "conflicting-definition",
+                    None,
+                    format!("{identity}: {error:?}"),
+                )
+            })?;
         for importer in importers.get(&identity).into_iter().flatten() {
             if let Some(count) = remaining.get_mut(importer) {
                 *count -= 1;
@@ -367,16 +367,8 @@ pub(super) fn admit(
             equality,
         });
     }
-    let own = root_edges
-        .iter()
-        .filter_map(|identity| {
-            admitted
-                .get(identity)
-                .map(|package| (identity.clone(), Arc::clone(package)))
-        })
-        .collect();
     let package =
-        fsl_package::admit_checked_package_with_budget(&bytes, supplied, &own, limits, &mut budget)
+        fsl_package::admit_checked_package_with_evidence(&bytes, &evidence, limits, &mut budget)
             .map_err(|error| package_failure("checked-package.json", error))?;
     for dependency in &dependencies {
         if !visited.contains(&dependency.identity) {
