@@ -857,6 +857,12 @@ pub fn replay_model_trace_from_package(
         request.accounting_limits(),
         replay_limits,
     )?;
+    request.check_external_package_bytes(
+        supply
+            .dependencies
+            .iter()
+            .map(|artifact| artifact.bytes.len()),
+    )?;
     let packages =
         fsl_semantics::model::intake::package_input(request.byte_provision().package_documents())
             .map_err(|refusal| ReplayRefusal::DomainPackages(Box::new(refusal)))?;
@@ -1339,6 +1345,12 @@ pub fn replay_protocol_trace_from_package(
         request.stage_limits(),
         request.accounting_limits(),
         replay_limits,
+    )?;
+    request.check_external_package_bytes(
+        supply
+            .dependencies
+            .iter()
+            .map(|artifact| artifact.bytes.len()),
     )?;
     let packages =
         fsl_semantics::model::intake::package_input(request.byte_provision().package_documents())

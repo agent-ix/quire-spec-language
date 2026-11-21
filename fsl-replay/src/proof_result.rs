@@ -948,6 +948,8 @@ pub enum InconclusiveCause {
         cause: &'static str,
         /// The setting that raises the bound.
         setting: &'static str,
+        /// The original numeric byte bound and full attempted input size.
+        exceeded: crate::BoundExceeded,
     },
     /// A requested package or refinement identity differs from the current
     /// package or refinement identity (FR-149, FR-282, FR-331).
@@ -1187,11 +1189,12 @@ impl InconclusiveCause {
     /// `replay.input_bytes` bound refused it (FR-940-AC-22).
     pub fn from_replay_refusal(refusal: &ReplayRefusal) -> Self {
         match refusal {
-            ReplayRefusal::Request(crate::ReplayRequestRefusal::BoundExceeded(_)) => {
+            ReplayRefusal::Request(crate::ReplayRequestRefusal::BoundExceeded(exceeded)) => {
                 Self::ReplayRefusedAtBound {
                     code: refusal.code(),
                     cause: "input-bytes-exceeded",
                     setting: "replay.input_bytes",
+                    exceeded: *exceeded,
                 }
             }
             _ => Self::ReplayRefused(refusal.code()),

@@ -2226,6 +2226,13 @@ pub(crate) fn recompile_with_temporal_selections(
                 .ok()
             }),
         })?;
+    request.check_external_package_bytes(
+        compiled
+            .checked
+            .shared_library_packages()
+            .values()
+            .map(|package| package.bytes().len()),
+    )?;
     Ok(compiled)
 }
 

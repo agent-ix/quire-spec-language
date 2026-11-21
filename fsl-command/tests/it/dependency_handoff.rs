@@ -226,6 +226,62 @@ fn analyze(directory: &Path, request: Value, replay_input_bytes: u64) -> (u8, Va
     }
 }
 
+fn replay_boundary(
+    directory: &Path,
+    request: &Value,
+    unlimited: &Value,
+    root_bytes: u64,
+    external_bytes: u64,
+) -> (u64, Value) {
+    // The existing decoder runs first. At the root file length it measures
+    // the unchanged encoded request, independently of the later artifact charge.
+    let (_, measured) = analyze(directory, request.clone(), root_bytes);
+    let cause = &measured["items"][0]["record"]["cause"];
+    assert_eq!(cause["code"], "stage_limit_exceeded", "{measured}");
+    let message = cause["message"]
+        .as_str()
+        .expect("the original byte refusal is retained");
+    let baseline = message
+        .split_once("encoded size ")
+        .and_then(|(_, rest)| rest.split_whitespace().next())
+        .and_then(|value| value.parse::<u64>().ok())
+        .expect("the typed byte refusal renders its attempted encoded size");
+    assert!(
+        baseline > root_bytes,
+        "target and source metadata remain charged"
+    );
+    let total = baseline.checked_add(external_bytes).unwrap();
+    let (_, refused) = analyze(directory, request.clone(), baseline);
+    assert_eq!(refused["items"].as_array().unwrap().len(), 2, "{refused}");
+    assert_eq!(
+        refused["items"][0]["record"]["result"], "inconclusive",
+        "{refused}"
+    );
+    assert_eq!(
+        refused["items"][0]["record"]["cause"],
+        json!({
+            "kind": "replay-refused", "code": "stage_limit_exceeded", "cause": "input-bytes-exceeded",
+            "setting": "replay.input_bytes", "bound": baseline.to_string(),
+            "message": fsl_replay::BoundExceeded { bound: baseline, actual: u128::from(total) }.to_string(),
+        }),
+        "the encoded request fits; only unique external artifacts exceed the allowance: {refused}"
+    );
+    assert_eq!(
+        refused["items"][1]["record"], unlimited["items"][1]["record"],
+        "the proved sibling's full record is unaffected"
+    );
+    let (exit, exact) = analyze(directory, request.clone(), total);
+    assert_eq!(
+        exit, 10,
+        "exact root-plus-external allowance reproduces the refutation: {exact}"
+    );
+    assert_eq!(
+        exact["items"], unlimited["items"],
+        "no root is charged a second time: {exact}"
+    );
+    (baseline, exact)
+}
+
 #[test]
 #[trace("FR-850-AC-12", "FR-850-AC-15", "TC-2410")]
 fn transitive_library_claim_analysis_and_replay_equal_source_after_source_deletion() {
@@ -259,7 +315,7 @@ fn transitive_library_claim_analysis_and_replay_equal_source_after_source_deleti
     fsl_command::command::compile(&compile_path).expect("the library-dependent Counter compiles");
     std::fs::write(directory.join("start.json"), serde_json::to_vec(&json!({"format": "filament.state.snapshot/v1", "identity": {"authority": "contracts", "identity": "counter-start"}, "observation": "current", "model": {"identity": "test/counter"}, "anchor": {"kind": "initialization", "name": "counter-start"}, "populations": [{"population": "ix://test/counter/counters", "complete": true, "objects": [{"key": "counter", "type": "ix://test/counter/Counter", "fields": {"value": {"integer": "0"}}}]}]})).unwrap()).unwrap();
     let source_request = json!({"program": {"source": source("unit.native")}, "libraries": compile["libraries"], "models": models, "documents": [{"file": "start.json"}], "items": [{"claim": "LibraryBound"}, {"claim": "Bounded"}]});
-    let (source_exit, source_result) = analyze(directory, source_request, 1 << 20);
+    let (source_exit, source_result) = analyze(directory, source_request.clone(), 1 << 20);
     assert_eq!(
         source_result["items"][0]["record"]["result"], "refuted",
         "{source_result}"
@@ -272,14 +328,46 @@ fn transitive_library_claim_analysis_and_replay_equal_source_after_source_deleti
         source_result["items"][0]["replay"]["reproduced"], true,
         "{source_result}"
     );
+    let root_bytes = std::fs::metadata(directory.join("handoff/checked-package.json"))
+        .unwrap()
+        .len();
+    let external_bytes = (0..2)
+        .map(|index| {
+            std::fs::metadata(
+                directory.join(format!("handoff/dependencies/{index}/checked-package.json")),
+            )
+            .unwrap()
+            .len()
+        })
+        .sum();
+    assert!(external_bytes > 0);
+    let (source_baseline, source_exact) = replay_boundary(
+        directory,
+        &source_request,
+        &source_result,
+        root_bytes,
+        external_bytes,
+    );
     let package_request = json!({"package": {"directory": "handoff"}, "models": models, "documents": [{"file": "start.json"}], "items": [{"claim": "LibraryBound"}, {"claim": "Bounded"}]});
     std::fs::remove_dir_all(directory.join("handoff/sources")).unwrap();
     for file in ["unit.native", "a.native", "z.native"] {
         std::fs::remove_file(directory.join(file)).unwrap();
     }
-    let (exit, result) = analyze(directory, package_request, 1 << 20);
+    let (exit, result) = analyze(directory, package_request.clone(), 1 << 20);
     assert_eq!(exit, source_exit, "{result}");
     assert_eq!(result["items"], source_result["items"], "{result}");
+    let (package_baseline, package_exact) = replay_boundary(
+        directory,
+        &package_request,
+        &result,
+        root_bytes,
+        external_bytes,
+    );
+    assert!(
+        source_baseline > package_baseline,
+        "source references and provisions keep their legitimate byte charges"
+    );
+    assert_eq!(source_exact["items"], package_exact["items"]);
 }
 
 #[test]

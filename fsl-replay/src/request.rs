@@ -288,6 +288,7 @@ pub struct DependencyEntryWire {
 /// recompilation input is reachable only through [`ByteProvision::get`].
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ReplayRequest {
+    encoded_input_bytes: usize,
     package: ReplayPackage,
     package_name: String,
     sources: Vec<DefinitionSourceRef>,
@@ -312,6 +313,27 @@ pub struct ReplayRequest {
 }
 
 impl ReplayRequest {
+    /// Extend the original FR-071 measurement by the unique external package
+    /// artifacts consumed after decode. Callers supply no root length here.
+    pub(crate) fn check_external_package_bytes(
+        &self,
+        lengths: impl IntoIterator<Item = usize>,
+    ) -> Result<(), ReplayRequestRefusal> {
+        let actual = lengths
+            .into_iter()
+            .fold(self.encoded_input_bytes as u128, |total, length| {
+                total.saturating_add(length as u128)
+            });
+        if actual > u128::from(self.replay_limits.input_bytes) {
+            return Err(BoundExceeded {
+                bound: self.replay_limits.input_bytes,
+                actual,
+            }
+            .into());
+        }
+        Ok(())
+    }
+
     /// The complete raw package retained for native admission before evaluation.
     pub fn package(&self) -> &ReplayPackage {
         &self.package
@@ -882,7 +904,8 @@ impl ReplayRequest {
         limits: ReplayLimits,
         provision: Provision,
     ) -> Result<Self, ReplayRequestRefusal> {
-        BoundExceeded::check(measured_encoded_bytes(&wire), limits)?;
+        let encoded_input_bytes = measured_encoded_bytes(&wire);
+        BoundExceeded::check(encoded_input_bytes, limits)?;
         if let Some(certificate) = &wire.certificate {
             if !matches!(&wire.source, ReplaySource::Hybrid(_))
                 || wire.replay_target.members.state_clause.is_none()
@@ -1007,6 +1030,7 @@ impl ReplayRequest {
         };
 
         Ok(Self {
+            encoded_input_bytes,
             package: wire.package,
             package_name,
             sources,

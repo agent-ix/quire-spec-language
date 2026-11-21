@@ -356,6 +356,12 @@ pub fn replay_model_graph_from_package(
         request.accounting_limits(),
         replay_limits,
     )?;
+    request.check_external_package_bytes(
+        supply
+            .dependencies
+            .iter()
+            .map(|artifact| artifact.bytes.len()),
+    )?;
     let packages =
         fsl_semantics::model::intake::package_input(request.byte_provision().package_documents())
             .map_err(|refusal| ReplayRefusal::DomainPackages(Box::new(refusal)))?;
