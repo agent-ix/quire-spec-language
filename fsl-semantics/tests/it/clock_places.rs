@@ -4531,6 +4531,7 @@ fn a_clock_reference_native_pseudo_name_is_refused_at_the_field() {
 #[trace("TC-3084", "FR-1040-AC-8", "FSpec-FR-154-AC-51")]
 #[test]
 fn native_target_constraint_refusals_name_the_keyword() {
+    let mut documents = Vec::new();
     for (native, keyword) in [("Clock", "maxLength"), ("Integer", "min")] {
         let watch = package("Watch");
         let operand = if keyword == "maxLength" {
@@ -4552,6 +4553,7 @@ fn native_target_constraint_refusals_name_the_keyword() {
             .as_array_mut()
             .expect("constructs")
             .push(native_target_value_construct());
+        documents.push(document.clone());
         let refusal = crate::model_operations::admit(&serde_json::to_vec(&document).expect("JSON"))
             .expect_err("invalid keyword");
         assert_eq!(
@@ -4594,6 +4596,75 @@ fn native_target_constraint_refusals_name_the_keyword() {
                 .expect("member path")
         );
     }
+
+    // A shared keyword diagnostic at index 1 must not hide a separate
+    // FSL-owned keyword diagnostic at index 0 on another value type.
+    let mut combined = documents.remove(0);
+    let watch = combined["types"]
+        .as_array_mut()
+        .expect("types")
+        .last_mut()
+        .expect("Watch");
+    let mut maximum = watch["constraints"][0].clone();
+    maximum["identity"] = json!(format!("{}/constraints/max", package("Watch")));
+    maximum["keyword"] = json!("max");
+    maximum["operands"]["value"] = json!("5");
+    watch["constraints"]
+        .as_array_mut()
+        .expect("constraints")
+        .insert(0, maximum);
+    let mut other = documents[0]["types"]
+        .as_array()
+        .expect("types")
+        .last()
+        .expect("Integer alias")
+        .clone();
+    other["identity"] = json!(package("Other"));
+    other["constraints"][0]["identity"] = json!(format!("{}/constraints/min", package("Other")));
+    other["constraints"][0]["appliesTo"] = json!(package("Other"));
+    combined["types"].as_array_mut().expect("types").push(other);
+    let refusal = crate::model_operations::admit(&serde_json::to_vec(&combined).expect("JSON"))
+        .expect_err("both keyword sites refuse");
+    let fsl_semantics::model::intake::UnitIntakeCause::Refused(refusals) = &refusal.cause else {
+        panic!("{refusal:?}")
+    };
+    assert_eq!(
+        refusals.len(),
+        2,
+        "one shared site and one distinct FSL site: {refusal:?}"
+    );
+    let actual: Vec<_> = refusals
+        .iter()
+        .map(|refusal| {
+            assert_eq!(refusal.code, Code::InvalidModelBinding);
+            let fsl_semantics::model::refusal::ModelRefusalCause::IntakeMalformedDeclaration {
+                node,
+                member,
+                ..
+            } = &refusal.cause
+            else {
+                panic!("{refusal:?}")
+            };
+            (node.clone(), member.clone())
+        })
+        .collect();
+    assert_eq!(
+        actual,
+        [
+            (
+                format!("{}/constraints/min", package("Other")),
+                "TypeDefinition.constraints[0].keyword"
+                    .parse()
+                    .expect("member path")
+            ),
+            (
+                package("Watch"),
+                "TypeDefinition.constraints[1].keyword"
+                    .parse()
+                    .expect("member path")
+            ),
+        ]
+    );
 }
 
 /// A model unit writes the canonical reference definition instead of a
