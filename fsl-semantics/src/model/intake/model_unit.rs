@@ -1585,6 +1585,22 @@ fn read_object(
                 let mut type_name = tokens.get(index)?.text.clone();
                 index += 1;
                 let mut type_reference = None;
+                if type_name == "Reference" && tokens.get(index).is_some_and(|t| t.text == "<") {
+                    let target = tokens.get(index + 1)?.text.clone();
+                    if target == "Clock" && tokens.get(index + 2)?.text == ">" {
+                        index += 3;
+                        let identity = format!("ix://{package}/Reference_{name}_{field_name}");
+                        additional_types.push(json!({
+                            "identity": identity,
+                            "displayName": "Reference<Clock>",
+                            "kind": "reference", "roles": [],
+                            "target": "ix://filament/native/Clock",
+                            "constraints": [], "extensions": [], "unknownPolicy": "reject",
+                            "origin": source_origin(parsed, Span { start: member_start, end: tokens[index - 1].span.end }),
+                        }));
+                        type_reference = Some(identity);
+                    }
+                }
                 if type_name == "Option" && tokens.get(index).is_some_and(|t| t.text == "<") {
                     index += 1;
                     let inner = tokens.get(index)?.text.clone();

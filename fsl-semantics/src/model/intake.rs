@@ -4423,6 +4423,9 @@ fn read_value_type(
             .malformed("a value type declares no supertype"));
     }
     if let Some(target) = type_value.get("target").and_then(Value::as_str) {
+        if type_value.get("scalar").is_some() {
+            return Err(ctx.malformed_in("scalar", "a native-target value type declares no scalar"));
+        }
         let value_type = read_value_type_ref(package, &ctx, target, false)?;
         let ValueTypeRef::Native(native) = value_type else {
             return Err(ctx.malformed_in("target", "an FSL value alias names a native value type"));
@@ -4433,12 +4436,13 @@ fn read_value_type(
                 "DECIMAL_POLICY_CONFLICT: a value type bound to native Decimal by target carries no policy",
             ));
         }
-        if !ctx.array_field("constraints")?.is_empty() {
-            return Err(unsupported_at(
-                type_value,
-                at,
-                format!("{}:target constraints", meaning::VALUE_TYPE),
-            ));
+        if let Some(constraint) = ctx.array_field("constraints")?.first() {
+            return Err(
+                NodeCtx::new(constraint, format!("{at}.constraints[0]")).malformed_in(
+                    "keyword",
+                    "a native-target value type carries no constraint",
+                ),
+            );
         }
         return Ok(ScalarTypeRecord {
             key: declaration_key(package, node),
@@ -5940,6 +5944,27 @@ fn read_type_node(
             }
         }
     }
+    if type_value.get("kind").and_then(Value::as_str) == Some("reference") {
+        for member in [
+            "fields",
+            "operations",
+            "relationships",
+            "supertypes",
+            "constraints",
+        ] {
+            if !ctx.array_field(member)?.is_empty() {
+                return Err(ctx
+                    .malformed_in(member, "a reference type declares no such members")
+                    .into());
+            }
+        }
+        let target = ctx.str_field("target")?;
+        let target = read_value_type_ref(package, &ctx, target, true)?;
+        return Ok(vec![DomainPackageRecord::AliasType(AliasTypeRecord {
+            key,
+            target,
+        })]);
+    }
     if type_value.get("kind").and_then(Value::as_str) == Some("alias") {
         if let Some(decimal) =
             decimal_type_for_identity(package, raw_types, type_positions, decimal_type_cache, node)?
@@ -6208,6 +6233,30 @@ fn read_type_node(
             read_clauses(package, node, &ctx, &mut records)?;
         }
         meaning::VALUE_TYPE => {
+            if type_value.get("target").and_then(Value::as_str)
+                == Some("ix://filament/native/Clock")
+            {
+                if type_value.get("scalar").is_some() {
+                    return Err(ctx
+                        .malformed_in("scalar", "a native-target value type declares no scalar")
+                        .into());
+                }
+                for member in ["fields", "operations", "relationships", "supertypes"] {
+                    if !ctx.array_field(member)?.is_empty() {
+                        return Err(ctx
+                            .malformed_in(member, "a clock value type declares no such members")
+                            .into());
+                    }
+                }
+                let target = ValueTypeRef::Clock;
+                let bounds = read_value_bounds(package, &ctx, at, node, Some((&key, &target)))?;
+                records.push(DomainPackageRecord::AliasType(AliasTypeRecord {
+                    key,
+                    target,
+                }));
+                records.extend(bounds);
+                return Ok(records);
+            }
             records.push(DomainPackageRecord::ScalarType(read_value_type(
                 package, type_value, node, at,
             )?));
@@ -7292,6 +7341,7 @@ fn read_nodes_partial(
     prefer_key_refusals(package_identity, types, &records, &mut refusals);
     if refusals.is_empty() {
         check_alias_chains(types, &mut records, &mut refusals);
+        resolve_clock_reference_types(types, &mut records, &mut refusals);
         check_map_types(types, &records, &mut refusals);
     }
     // FR-103: resolve every queued operation frame against the whole
@@ -7304,6 +7354,40 @@ fn read_nodes_partial(
         resolve_pending_frames(package_identity, &pending, &mut records, &mut refusals);
     }
     (records, refusals)
+}
+
+/// Resolve canonical reference definitions through the same alias records as
+/// clock places, then retain their declaration identity with a data leaf.
+fn resolve_clock_reference_types(
+    types: &[Value],
+    records: &mut [DomainPackageRecord],
+    refusals: &mut Vec<ModelRefusal>,
+) {
+    let snapshot = records.to_vec();
+    for record in records {
+        let DomainPackageRecord::AliasType(alias) = record else {
+            continue;
+        };
+        let Some((position, definition)) = types.iter().enumerate().find(|(_, definition)| {
+            definition.get("identity").and_then(Value::as_str) == Some(alias.key.node.as_str())
+                && definition.get("kind").and_then(Value::as_str) == Some("reference")
+        }) else {
+            continue;
+        };
+        let resolved = super::domain_package::unaliased(&alias.target, |key| {
+            snapshot.iter().find(|record| record.key() == key)
+        });
+        if matches!(resolved, Some((ValueTypeRef::Clock, 0))) {
+            alias.target = ValueTypeRef::Resolved(Box::new(crate::check::clock_reference_type()));
+        } else {
+            refusals.push(
+                NodeCtx::new(definition, format!("$.types[{position}]")).malformed_in(
+                    "target",
+                    "a clock reference target names Clock or an alias of Clock",
+                ),
+            );
+        }
+    }
 }
 
 /// What a map's key type resolves to (FSpec FR-154 "Map types").

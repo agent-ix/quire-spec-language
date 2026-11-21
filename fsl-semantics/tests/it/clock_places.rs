@@ -4207,8 +4207,7 @@ fn a_population_exists_over_slot_forall_lowers_at_the_binder() {
 
 /// FR-1040-AC-1: `ref(self.x)` in a postcondition checks, and its
 /// `clock_reference.ref` application is typed by the native `clock_reference`
-/// scalar. (A `Reference<Clock>` field has no domain-package type reference,
-/// so the write `self.r = ref(self.x)` is not expressible.)
+/// scalar.
 #[trace("TC-3084", "FR-1040-AC-1")]
 #[test]
 fn a_ref_in_a_postcondition_is_typed_by_the_clock_reference_scalar() {
@@ -4335,6 +4334,242 @@ fn a_clock_reference_function_has_typed_parameters_and_refuses_at_its_body() {
         format!("{:?}", refusals[0].location).contains("Body { function: \"same\""),
         "refused at the function body: {refusals:?}"
     );
+}
+
+/// TC-3084's clock model with a canonical reference definition and a data
+/// field writable independently of the clock it names.
+fn clock_reference_document(target: &str) -> Vec<u8> {
+    let mut document: Value =
+        serde_json::from_slice(&rpc_document_with(&["x", "y"], false)).expect("JSON");
+    let mut reference = wire_type(&package("ClockRef"), "unused", json!({"target": target}));
+    reference["kind"] = json!("reference");
+    document["types"]
+        .as_array_mut()
+        .expect("types")
+        .push(reference);
+    document["types"][1]["fields"]
+        .as_array_mut()
+        .expect("fields")
+        .push(field("r", &package("ClockRef")));
+    document["types"][1]["operations"]
+        .as_array_mut()
+        .expect("operations")
+        .push(crate::timed_model::call_operation("point", &["r"]));
+    serde_json::to_vec(&document).expect("JSON")
+}
+
+/// A clock reference is a data write, and the same field can be read in a
+/// population condition without reading any clock value.
+#[trace("TC-3084", "FR-1040-AC-8", "FR-1040-AC-3")]
+#[test]
+fn a_clock_reference_field_is_read_and_written_as_data() {
+    let document = clock_reference_document("ix://filament/native/Clock");
+    let graph = check(&document, &format!("{UNITS}{DENSE}\
+        post Point using v on Config::Call::point {{ self.r = ref(self.x) }}\n\
+        invariant Count using v on Config::Call at current {{ count(c in Config::calls where ref(c.x) = self.r) >= 0 }}\n"))
+        .unwrap_or_else(|refusals| panic!("data read/write and frame: {refusals:?}"));
+    assert_eq!(
+        timed(&graph).clocks().len(),
+        2,
+        "r contributes no clock place"
+    );
+    assert!(
+        timed(&graph)
+            .resets()
+            .iter()
+            .all(|resets| resets.resets().is_empty()),
+        "point resets no clock"
+    );
+    assert_eq!(
+        applications_of(&graph, "filament.op.clock_reference.ref").len(),
+        2
+    );
+    assert_eq!(
+        applications_of(&graph, "filament.op.clock_reference.eq").len(),
+        1
+    );
+}
+
+/// Alias and native-target value definitions keep the reference data leaf;
+/// field presence and multiplicity keep their ordinary wrappers.
+#[trace("TC-3084", "FR-1040-AC-8", "FSpec-FR-154-AC-53")]
+#[test]
+fn clock_reference_targets_and_wrappers_preserve_data_types() {
+    for value in [false, true] {
+        let mut document: Value =
+            serde_json::from_slice(&clock_reference_document(&package("Watch"))).expect("JSON");
+        let mut watch = wire_type(
+            &package("Watch"),
+            "clock_value_type",
+            json!({"target": "ix://filament/native/Clock"}),
+        );
+        if !value {
+            watch["kind"] = json!("alias");
+        }
+        document["types"].as_array_mut().expect("types").push(watch);
+        if value {
+            document["constructs"]
+                .as_array_mut()
+                .expect("constructs")
+                .push(wire_construct(
+                    "clock_value_type",
+                    meaning::VALUE_TYPE,
+                    json!({}),
+                ));
+        }
+        let mut optional = field("optional", &package("ClockRef"));
+        optional["presence"] = json!("optional");
+        let mut sequence = field("refs", &package("ClockRef"));
+        sequence["multiplicity"] =
+            json!({"lower": 0, "upper": 3, "ordered": true, "unique": false});
+        document["types"][1]["fields"]
+            .as_array_mut()
+            .expect("fields")
+            .extend([optional, sequence]);
+        let graph = check(&serde_json::to_vec(&document).expect("JSON"), &format!("{UNITS}{DENSE}\
+            invariant Data using v on Config::Call at current {{ present(self.optional) implies value(self.optional) = self.r }}\n\
+            invariant Refs using v on Config::Call at current {{ size(self.refs) <= 3 }}\n"))
+            .unwrap_or_else(|refusals| panic!("value target {value}: {refusals:?}"));
+        assert_eq!(timed(&graph).clocks().len(), 2);
+        assert_eq!(
+            applications_of(&graph, "filament.op.clock_reference.eq").len(),
+            1
+        );
+    }
+}
+
+/// Direct Clock stays a place; using it as a data assignment is a clock write.
+#[trace("TC-3084", "FR-1040-AC-8")]
+#[test]
+fn a_direct_clock_field_keeps_its_clock_write_refusal() {
+    let mut document: Value =
+        serde_json::from_slice(&clock_reference_document("ix://filament/native/Clock"))
+            .expect("JSON");
+    let r = document["types"][1]["fields"]
+        .as_array_mut()
+        .expect("fields")
+        .iter_mut()
+        .find(|field| field["name"] == "r")
+        .expect("r");
+    r["typeRef"] = json!("ix://filament/native/Clock");
+    r["multiplicity"]["unique"] = json!(false);
+    let body = format!(
+        "{UNITS}{DENSE}post Point using v on Config::Call::point {{ self.r = ref(self.x) }}\n"
+    );
+    let refusals = check(&serde_json::to_vec(&document).expect("JSON"), &body)
+        .expect_err("a clock is not a data field");
+    assert!(
+        refusals
+            .iter()
+            .any(|refusal| refusal.cause.code() == Code::InvalidTimedModel
+                && refusal.cause.cause() == Some("clock-write")),
+        "{refusals:?}"
+    );
+}
+
+/// The native set has no ClockReference pseudo-name.
+#[trace("TC-3084", "FR-1040-AC-8", "FSpec-FR-154-AC-53")]
+#[test]
+fn a_clock_reference_native_pseudo_name_is_refused_at_the_field() {
+    let mut document: Value =
+        serde_json::from_slice(&clock_reference_document("ix://filament/native/Clock"))
+            .expect("JSON");
+    document["types"][1]["fields"]
+        .as_array_mut()
+        .expect("fields")
+        .iter_mut()
+        .find(|field| field["name"] == "r")
+        .expect("r")["typeRef"] = json!("ix://filament/native/ClockReference");
+    let refusal = crate::model_operations::admit(&serde_json::to_vec(&document).expect("JSON"))
+        .expect_err("no native pseudo-name");
+    assert_eq!(refusal.cause.code(), Code::InvalidModelBinding);
+    assert_eq!(refusal.cause.cause(), Some("malformed-declaration"));
+    assert!(
+        format!("{refusal:?}").contains("Field.typeRef"),
+        "{refusal:?}"
+    );
+}
+
+/// Native-target constraints preserve their keyword locus and catalog code.
+#[trace("TC-3084", "FR-1040-AC-8", "FSpec-FR-154-AC-51")]
+#[test]
+fn native_target_constraint_refusals_name_the_keyword() {
+    for (native, keyword) in [("Clock", "maxLength"), ("Integer", "min")] {
+        let watch = package("Watch");
+        let mut document: Value =
+            serde_json::from_slice(&rpc_document_with(&["x"], false)).expect("JSON");
+        let constraint = json!({
+            "identity": format!("{watch}/constraints/{keyword}"), "keyword": keyword,
+            "operands": {"value": 5}, "appliesTo": watch,
+            "diagnosticCode": "watch.bound", "origin": {"generated": {
+                "generatorIdentity": watch, "generatorVersion": "1.0.0", "inputIdentities": [watch],
+            }},
+        });
+        document["types"].as_array_mut().expect("types").push(wire_type(&watch, "clock_value_type", json!({"target": format!("ix://filament/native/{native}"), "constraints": [constraint]})));
+        document["constructs"]
+            .as_array_mut()
+            .expect("constructs")
+            .push(wire_construct(
+                "clock_value_type",
+                meaning::VALUE_TYPE,
+                json!({}),
+            ));
+        let refusal = crate::model_operations::admit(&serde_json::to_vec(&document).expect("JSON"))
+            .expect_err("invalid keyword");
+        assert_eq!(
+            refusal.cause.code(),
+            Code::InvalidModelBinding,
+            "{native}: {refusal:?}"
+        );
+        assert_eq!(refusal.cause.cause(), Some("malformed-declaration"));
+        assert!(
+            format!("{refusal:?}").contains("Constraint.keyword"),
+            "{native}: {refusal:?}"
+        );
+    }
+}
+
+/// A model unit writes the canonical reference definition instead of a
+/// NativeClockReference pseudo-name or a direct clock field.
+#[trace("TC-3084", "FR-1040-AC-8")]
+#[test]
+fn a_model_unit_emits_a_clock_reference_definition() {
+    let source = "language \"ix:native\" edition \"1-draft\"; domain \"acme/rpc\"; object Call { x: Clock; r: Reference<Clock>; }";
+    let parsed = fsl_cst::parse(
+        fsl_foundation::SourceIdentity::new("test", "clock-reference"),
+        "model.fsl",
+        source.as_bytes(),
+        fsl_cst::Limits::default(),
+    )
+    .expect("source parses");
+    let compiled = fsl_semantics::model::intake::compile_model_unit(
+        &parsed,
+        fsl_semantics::model::accounting::ModelNormalizationLimits::default(),
+    )
+    .expect("model compiles");
+    let document: Value = serde_json::from_slice(compiled.bytes()).expect("JSON");
+    let reference = document["types"]
+        .as_array()
+        .expect("types")
+        .iter()
+        .find(|ty| ty["identity"] == "ix://acme/rpc/Reference_Call_r")
+        .expect("canonical reference definition");
+    assert_eq!(reference["kind"], "reference");
+    assert_eq!(reference["target"], "ix://filament/native/Clock");
+    let call = document["types"]
+        .as_array()
+        .expect("types")
+        .iter()
+        .find(|ty| ty["identity"] == "ix://acme/rpc/Call")
+        .expect("Call");
+    let r = call["fields"]
+        .as_array()
+        .expect("fields")
+        .iter()
+        .find(|field| field["name"] == "r")
+        .expect("r");
+    assert_eq!(r["typeRef"], "ix://acme/rpc/Reference_Call_r");
+    crate::model_operations::admit(compiled.bytes()).expect("canonical output admits");
 }
 
 /// FR-1040-AC-6: a call to a clock-reading function over a population
@@ -4703,7 +4938,6 @@ fn a_clock_tuple_position_and_union_case_are_clock_places() {
 /// typed by it is a clock place and its `max` constraint bounds that place.
 #[trace("TC-3031", "FR-056-AC-64")]
 #[test]
-#[ignore = "QSL-2176 completed; current blocker has no assigned owner: model intake refuses the by-target Clock alias (InvalidModelBinding, malformed `target` member of the type definition) before the check"]
 fn a_value_type_bound_to_clock_by_target_types_a_clock_place() {
     let document = timer_document(|document: &mut Value| {
         let watch = package("Watch");
