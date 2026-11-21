@@ -695,7 +695,7 @@ fn admit_package<'d>(
         directory,
         FileCounts {
             // The handoff's package, identity and equality files.
-            programs: 3,
+            programs: 2,
             models: request.models.len(),
             observations: request.documents.len(),
             extensions: 0,
@@ -719,7 +719,7 @@ fn admit_package<'d>(
             "the handoff directory holds no checked package",
         ));
     }
-    let bytes = intake.file(&format!("{handoff}/{PACKAGE_FILE}"), intake.remaining)?;
+    let bytes = super::handoff::read_file(&mut intake, &handoff, PACKAGE_FILE, false)?;
     if request
         .models
         .iter()
@@ -836,6 +836,7 @@ fn package_refusal(refusal: fsl_package::PackageAdmissionRefusal) -> RunCause {
         cause,
         pointer,
         identity,
+        ..
     } = refusal;
     let named = match (&identity, &pointer) {
         (Some(identity), _) => format!(": no models entry supplies {identity}"),

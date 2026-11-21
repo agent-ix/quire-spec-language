@@ -34,12 +34,20 @@ pub(super) fn refusal(
     }
 }
 
-fn read_file(
+pub(super) fn read_file(
     intake: &mut Intake<'_>,
     directory: &str,
     relative: &str,
     additional: bool,
 ) -> Result<Vec<u8>> {
+    if directory.contains('\\') {
+        return Err(refusal(
+            relative,
+            "invalid-value",
+            None,
+            "backslash in artifact path",
+        ));
+    }
     let selected = Path::new(directory).join(relative);
     let mut current = intake.directory.to_path_buf();
     for component in selected.components() {
@@ -94,6 +102,14 @@ fn read_file(
 }
 
 fn package_failure(file: &str, error: fsl_package::PackageAdmissionRefusal) -> RunCause {
+    if let Some(limit) = &error.limit {
+        return RunCause::AnalyzePackage {
+            code: error.code,
+            cause: error.cause,
+            pointer: error.pointer,
+            message: format!("{file}: {limit:?}"),
+        };
+    }
     RunCause::AnalyzePackage {
         code: error.code,
         cause: error.cause.clone(),
@@ -224,7 +240,10 @@ pub(super) fn admit(
     }
     let mut admitted = BTreeMap::new();
     let mut dependencies = Vec::new();
-    let mut budget = limits.native_join_limits().budget();
+    let mut budget = limits
+        .native_join_limits()
+        .budget()
+        .with_read_storage_limit(limits.storage);
     while !pending.is_empty() {
         let ready = pending
             .iter()
@@ -256,11 +275,12 @@ pub(super) fn admit(
             })
             .collect();
         let file = format!("{}/checked-package.json", package.directory);
-        let read = fsl_package::admit_checked_package_with_dependencies(
+        let read = fsl_package::admit_checked_package_with_budget(
             &package.bytes,
             supplied,
             &own,
             limits,
+            &mut budget,
         )
         .map_err(|error| package_failure(&file, error))?;
         if read.name() != package.identity {
@@ -299,7 +319,7 @@ pub(super) fn admit(
         })
         .collect();
     let package =
-        fsl_package::admit_checked_package_with_dependencies(&bytes, supplied, &own, limits)
+        fsl_package::admit_checked_package_with_budget(&bytes, supplied, &own, limits, &mut budget)
             .map_err(|error| package_failure("checked-package.json", error))?;
     for dependency in &dependencies {
         if !visited.contains(&dependency.identity) {
@@ -338,7 +358,7 @@ pub(super) fn admit(
         .join("equality.json")
         .exists()
     {
-        Some(read_file(intake, directory, "equality.json", false)?)
+        Some(read_file(intake, directory, "equality.json", true)?)
     } else if package
         .checked_term_data()
         .is_some_and(|data| !data.equality_decisions.is_empty())

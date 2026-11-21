@@ -107,7 +107,7 @@ impl FileCategory {
     }
 }
 
-#[derive(Default)]
+#[derive(Clone, Copy, Default)]
 struct FileCounts {
     programs: usize,
     models: usize,
@@ -3835,9 +3835,9 @@ fn check_file_count(counts: FileCounts) -> Result<()> {
 }
 
 fn intake(directory: &Path, counts: FileCounts) -> Result<Intake<'_>> {
+    check_file_count(counts)?;
     let additional_files =
         FILES - counts.programs - counts.models - counts.observations - counts.extensions;
-    check_file_count(counts)?;
     Ok(Intake {
         additional_files,
         directory,
@@ -3850,9 +3850,9 @@ fn intake(directory: &Path, counts: FileCounts) -> Result<Intake<'_>> {
 }
 
 fn intake_with_bytes(directory: &Path, counts: FileCounts, maximum: usize) -> Result<Intake<'_>> {
+    check_file_count(counts)?;
     let additional_files =
         FILES - counts.programs - counts.models - counts.observations - counts.extensions;
-    check_file_count(counts)?;
     Ok(Intake {
         additional_files,
         directory,
@@ -3869,9 +3869,9 @@ fn intake_with_fixed_bytes(
     counts: FileCounts,
     maximum: usize,
 ) -> Result<Intake<'_>> {
+    check_file_count(counts)?;
     let additional_files =
         FILES - counts.programs - counts.models - counts.observations - counts.extensions;
-    check_file_count(counts)?;
     Ok(Intake {
         additional_files,
         directory,
@@ -4842,6 +4842,7 @@ mod tests {
             cause: RunCause::AnalyzeRefused(Box::new(
                 fsl_analyze::analyze::AnalyzeRefusal::Package(
                     fsl_package::PackageAdmissionRefusal {
+                        limit: None,
                         code: Code::InvalidPackage,
                         cause: Some("invalid-value".to_owned()),
                         pointer: Some("/claim_names/2".to_owned()),

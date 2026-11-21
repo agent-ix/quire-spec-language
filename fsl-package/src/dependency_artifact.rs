@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Retained authenticated dependency artifacts and their own witnesses (FR-850).
 
-use std::sync::Arc;
-use filament_contract_model::CheckedPackageV2;
 use crate::{ReadEqualityRows, ReadIdentityRows};
+use filament_contract_model::CheckedPackageV2;
+use std::sync::Arc;
 
 /// One admitted library, shared by all import paths through the closure.
 #[derive(Debug)]

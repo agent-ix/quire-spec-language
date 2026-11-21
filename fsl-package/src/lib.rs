@@ -366,13 +366,16 @@ mod behind_std {}
 const TEST_PACKAGE_NAME: &str = "pkg";
 
 #[cfg(feature = "std")]
-mod package_admission;
-#[cfg(feature = "std")]
 mod dependency_artifact;
+#[cfg(feature = "std")]
+mod package_admission;
 #[cfg(feature = "std")]
 pub use dependency_artifact::DependencyArtifact;
 #[cfg(feature = "std")]
-pub use package_admission::{admit_checked_package, admit_checked_package_with_dependencies, PackageAdmissionRefusal};
+pub use package_admission::{
+    admit_checked_package, admit_checked_package_with_budget,
+    admit_checked_package_with_dependencies, PackageAdmissionRefusal,
+};
 #[cfg(feature = "std")]
 mod native_join_failure;
 #[cfg(feature = "std")]

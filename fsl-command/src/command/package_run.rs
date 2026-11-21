@@ -25,6 +25,7 @@ const CONTRACT_VERSION: &str = "filament.checked-package/v2";
 /// A prepared call over a selected checked package: the admitted package,
 /// its handoff witness rows when the selection is a directory, and the call.
 pub struct PreparedPackageRun {
+    dependencies: Vec<fsl_package::DependencyArtifact>,
     package: filament_contract_model::CheckedPackageV2,
     identities: Option<fsl_package::ReadIdentityRows>,
     equality: Option<fsl_package::ReadEqualityRows>,
@@ -70,6 +71,7 @@ struct ClauseWork {
 /// export route shares this reader so package execution and mapping apply the
 /// same strict V2 admission and file/directory handoff rules.
 pub(super) struct AdmittedPackage {
+    pub(super) dependencies: Vec<fsl_package::DependencyArtifact>,
     pub(super) package: filament_contract_model::CheckedPackageV2,
     pub(super) identities: Option<fsl_package::ReadIdentityRows>,
     pub(super) equality: Option<fsl_package::ReadEqualityRows>,
@@ -104,6 +106,7 @@ fn package_refusal(refusal: fsl_package::PackageAdmissionRefusal) -> RunCause {
         cause,
         pointer,
         identity,
+        ..
     } = refusal;
     let label = match &cause {
         Some(cause) => format!("{}/{cause}", code.as_str()),
@@ -216,6 +219,7 @@ pub(super) fn prepare(
     }
     Ok(PreparedPackageRun {
         package: admitted.package,
+        dependencies: admitted.dependencies,
         identities: admitted.identities,
         equality: admitted.equality,
         budget: admitted.budget,
@@ -368,6 +372,7 @@ fn prepare_clause(
     };
     Ok(PreparedPackageRun {
         package: admitted.package,
+        dependencies: admitted.dependencies,
         identities: admitted.identities,
         equality: admitted.equality,
         budget: admitted.budget,
@@ -495,6 +500,7 @@ fn prepare_lowering(
     let admitted = admit(directory, request, package, dependent_bytes, initial)?;
     Ok(PreparedPackageRun {
         package: admitted.package,
+        dependencies: admitted.dependencies,
         identities: admitted.identities,
         equality: admitted.equality,
         budget: admitted.budget,
@@ -612,7 +618,7 @@ pub(super) fn admit_files(
         FileCounts {
             programs: match handoff {
                 Selected::File(_) => 1 + usize::from(equality_file.is_some()),
-                Selected::Directory(_) => 3,
+                Selected::Directory(_) => 2,
             },
             models: request.models.len(),
             observations: files.len(),
@@ -630,7 +636,12 @@ pub(super) fn admit_files(
             format!("no checked package is at {package_path}"),
         ));
     }
-    let bytes = intake.file(&package_path, intake.remaining)?;
+    let bytes = match &handoff {
+        Selected::Directory(handoff) => {
+            super::handoff::read_file(&mut intake, handoff, PACKAGE_FILE, false)?
+        }
+        Selected::File(_) => intake.file(&package_path, intake.remaining)?,
+    };
     require_contract_version(&bytes)?;
     let documents = request
         .models
@@ -646,28 +657,40 @@ pub(super) fn admit_files(
     )?;
     let limits =
         fsl_package::V2ReadLimits::bounded(fsl_replay::spine::I2_NATIVE_JOIN_STORAGE_DEFAULT);
-    let admitted =
-        fsl_package::admit_checked_package(&bytes, &supplied, limits).map_err(package_refusal)?;
-    // FR-1039: a `models` entry the package records no selection of.
-    let identities = supplied.keys().collect::<Vec<_>>();
-    if let Some((index, identity)) = identities.iter().enumerate().find(|(_, identity)| {
-        !admitted
-            .selected_model_packages()
-            .any(|recorded| recorded == identity.as_str())
-    }) {
-        return Err(invalid(
-            &format!("/request/models/{index}"),
-            format!("the package records no model selection {identity}"),
-        ));
-    }
-    let mut budget = limits.native_join_limits().budget();
-    let (identities, equality) = match &handoff {
-        Selected::File(_) => (
-            None,
-            read_equality_file(directory, &mut intake, equality_file.as_deref(), &admitted)?,
-        ),
+    let (admitted, identities, equality, budget, dependencies) = match &handoff {
         Selected::Directory(handoff) => {
-            read_witness(directory, &mut intake, handoff, &admitted, &mut budget)?
+            let loaded = super::handoff::admit(&mut intake, handoff, bytes, &supplied, limits)?;
+            (
+                loaded.package,
+                Some(loaded.identities),
+                loaded.equality,
+                loaded.budget,
+                loaded.dependencies,
+            )
+        }
+        Selected::File(_) => {
+            let admitted = fsl_package::admit_checked_package(&bytes, &supplied, limits)
+                .map_err(package_refusal)?;
+            for (index, identity) in supplied.keys().enumerate() {
+                if !admitted
+                    .selected_model_packages()
+                    .any(|recorded| recorded == identity)
+                {
+                    return Err(invalid(
+                        &format!("/request/models/{index}"),
+                        format!("the package records no model selection {identity}"),
+                    ));
+                }
+            }
+            let equality =
+                read_equality_file(directory, &mut intake, equality_file.as_deref(), &admitted)?;
+            (
+                admitted,
+                None,
+                equality,
+                limits.native_join_limits().budget(),
+                Vec::new(),
+            )
         }
     };
     let observations = files
@@ -675,6 +698,7 @@ pub(super) fn admit_files(
         .map(|file| intake.file(file, intake.remaining))
         .collect::<Result<Vec<_>>>()?;
     Ok(AdmittedPackage {
+        dependencies,
         package: admitted,
         identities,
         equality,
@@ -837,6 +861,7 @@ pub(super) fn execute(prepared: PreparedPackageRun) -> Result<RunResult> {
         identities,
         equality,
         mut budget,
+        dependencies,
         packages,
         model_limits,
         work,
