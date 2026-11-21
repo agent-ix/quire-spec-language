@@ -9,7 +9,7 @@ fn attempt_contract_sets_are_structural_across_source_permutations() {
     let declarations = "\
         post Zed using v on Config::ConfigVersion::attemptUpdate { true }\n\
         post Alpha using v on Config::ConfigVersion::attemptUpdate { false }\n\
-        post Middle using v on Config::ConfigVersion::attemptUpdate { true }";
+        post Middle using v on Config::ConfigVersion::attemptUpdate { self.versionNumber = self.versionNumber }";
     let mut sets = Vec::new();
     for contracts in [
         "Zed, Alpha, Middle",
