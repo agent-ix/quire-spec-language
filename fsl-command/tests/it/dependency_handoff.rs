@@ -22,12 +22,12 @@ fn prepare(directory: &Path, diamond: bool) -> Value {
             (
                 "test/a",
                 "a.native",
-                "function answer using v(): Integer pure { 42 }".to_owned(),
+                "record A { value: Integer; } function answer using v(): Integer pure { if 1 = 1 then 42 else 41 }".to_owned(),
             ),
             (
                 "test/z",
                 "z.native",
-                "import \"test/a\" as a; function answer using v(): Integer pure { a::answer() }"
+                "import \"test/a\" as a; record Z { value: Integer; } function answer using v(): Integer pure { if 2 = 2 then a::answer() else 41 }"
                     .to_owned(),
             ),
         ]
@@ -59,9 +59,25 @@ fn prepare(directory: &Path, diamond: bool) -> Value {
 }
 
 fn run(directory: &Path, package: Value) -> (u8, Value) {
+    run_request(
+        directory,
+        json!({"models": [], "package": package, "call": {"function": "answer", "arguments": []}}),
+        Default::default(),
+    )
+}
+
+fn run_request(
+    directory: &Path,
+    request: Value,
+    limits: fsl_command::command::RunLimits,
+) -> (u8, Value) {
     let path = directory.join("run.json");
-    std::fs::write(&path, serde_json::to_vec(&json!({"format": "native-run/1", "request": {"models": [], "package": package, "call": {"function": "answer", "arguments": []}}})).unwrap()).unwrap();
-    match fsl_command::command::run(&path, &crate::negotiation::Fr290) {
+    std::fs::write(
+        &path,
+        serde_json::to_vec(&json!({"format": "native-run/1", "request": request})).unwrap(),
+    )
+    .unwrap();
+    match fsl_command::command::run_with_limits(&path, limits, &crate::negotiation::Fr290) {
         Ok(result) => (result.exit_code, result.value.as_value().clone()),
         Err(error) => (error.category().exit_code(), error.value().unwrap()),
     }
@@ -264,4 +280,170 @@ fn transitive_library_claim_analysis_and_replay_equal_source_after_source_deleti
     let (exit, result) = analyze(directory, package_request, 1 << 20);
     assert_eq!(exit, source_exit, "{result}");
     assert_eq!(result["items"], source_result["items"], "{result}");
+}
+
+#[test]
+#[trace("FR-850-AC-15", "TC-2410")]
+fn artifact_intake_counts_the_unique_closure_bytes_at_exact_and_one_short_bounds() {
+    let directory = tempfile::tempdir().unwrap();
+    prepare(directory.path(), true);
+    let handoff = directory.path().join("handoff");
+    let manifest: Value =
+        serde_json::from_slice(&std::fs::read(handoff.join("dependencies.json")).unwrap()).unwrap();
+    let mut files = vec![
+        "checked-package.json".to_owned(),
+        "dependencies.json".to_owned(),
+        "identities.json".to_owned(),
+        "equality.json".to_owned(),
+    ];
+    for row in manifest["dependencies"].as_array().unwrap() {
+        for file in ["checked-package.json", "identities.json", "equality.json"] {
+            files.push(format!("{}/{file}", row["directory"].as_str().unwrap()));
+        }
+    }
+    assert_eq!(files.len(), 13, "the diamond's shared triple counts once");
+    let bytes = files
+        .iter()
+        .map(|file| std::fs::read(handoff.join(file)).unwrap().len())
+        .sum::<usize>();
+    let request = json!({"models": [], "package": {"directory": "handoff"}, "call": {"function": "answer", "arguments": []}});
+    for (bound, expected) in [(bytes, 0), (bytes - 1, 22)] {
+        let (exit, result) = run_request(
+            directory.path(),
+            request.clone(),
+            fsl_command::command::RunLimits {
+                dependent_bytes: bound,
+                ..Default::default()
+            },
+        );
+        assert_eq!(exit, expected, "bound {bound}: {result}");
+        if expected == 22 {
+            assert_eq!(result["code"], "resource_exhausted", "{result}");
+            assert!(result.to_string().contains("dependent_bytes"), "{result}");
+            assert!(result.to_string().contains(&bound.to_string()), "{result}");
+            assert!(result.to_string().contains("--dependent-bytes"), "{result}");
+        }
+    }
+}
+
+#[test]
+#[trace("FR-850-AC-16", "TC-2410")]
+fn a_domain_document_selected_only_by_a_library_is_bound_to_that_library() {
+    let directory = tempfile::tempdir().unwrap();
+    let directory = directory.path();
+    let mut compile = prepare(directory, false);
+    std::fs::remove_dir_all(directory.join("handoff")).unwrap();
+    std::fs::write(directory.join("a.native"), format!("{HEADER}model M = \"test/counter\"; function answer using v(): Integer pure {{ 42 }}\n")).unwrap();
+    std::fs::write(
+        directory.join("counter.json"),
+        include_bytes!("../fixtures/cli-contract/counter.semantic-ir.json"),
+    )
+    .unwrap();
+    let models = json!([{"format": "semantic-ir/2.0.0", "source": source("counter.json")}]);
+    compile["models"] = models.clone();
+    let path = directory.join("compile.json");
+    std::fs::write(
+        &path,
+        serde_json::to_vec(&json!({"format": "native-compile/1", "request": compile})).unwrap(),
+    )
+    .unwrap();
+    fsl_command::command::compile(&path).expect("a library-only model selection compiles");
+    let request = json!({"models": models, "package": {"directory": "handoff"}, "call": {"function": "answer", "arguments": []}});
+    let (exit, result) = run_request(directory, request.clone(), Default::default());
+    assert_eq!(
+        exit, 0,
+        "library-only selected model is not extraneous: {result}"
+    );
+    let (exit, result) = run(directory, json!({"directory": "handoff"}));
+    assert_eq!(exit, 20, "{result}");
+    assert_eq!(result["code"], "missing_import", "{result}");
+    assert_eq!(result["cause"], "missing-selection", "{result}");
+    assert!(result.to_string().contains("test/counter"), "{result}");
+    assert!(
+        result
+            .to_string()
+            .contains("dependencies/0/checked-package.json"),
+        "{result}"
+    );
+    let mut changed: Value =
+        serde_json::from_slice(&std::fs::read(directory.join("counter.json")).unwrap()).unwrap();
+    changed["package"]["version"] = json!("foreign");
+    std::fs::write(
+        directory.join("counter.json"),
+        serde_json::to_vec(&changed).unwrap(),
+    )
+    .unwrap();
+    let (exit, result) = run_request(directory, request, Default::default());
+    assert_eq!(exit, 20, "{result}");
+    assert!(
+        result
+            .to_string()
+            .contains("dependencies/0/checked-package.json"),
+        "{result}"
+    );
+}
+
+#[test]
+#[trace("FR-850-AC-13", "FR-850-AC-14", "TC-2410")]
+fn foreign_artifacts_and_dependency_witnesses_and_unsafe_files_are_refused() {
+    let directory = tempfile::tempdir().unwrap();
+    prepare(directory.path(), false);
+    let handoff = directory.path().join("handoff");
+    let package = handoff.join("dependencies/1/checked-package.json");
+    let original = std::fs::read(&package).unwrap();
+    std::fs::copy(
+        handoff.join("dependencies/0/checked-package.json"),
+        &package,
+    )
+    .unwrap();
+    let (exit, result) = run(directory.path(), json!({"directory": "handoff"}));
+    assert_eq!(exit, 20, "{result}");
+    assert_eq!(result["cause"], "conflicting-definition", "{result}");
+    assert!(
+        result
+            .to_string()
+            .contains("dependencies/1/checked-package.json"),
+        "{result}"
+    );
+    std::fs::write(&package, original).unwrap();
+    let witness = handoff.join("dependencies/1/identities.json");
+    let original = std::fs::read(&witness).unwrap();
+    std::fs::copy(handoff.join("dependencies/0/identities.json"), &witness).unwrap();
+    let (exit, result) = run(directory.path(), json!({"directory": "handoff"}));
+    assert_eq!(exit, 20, "{result}");
+    assert!(
+        result
+            .to_string()
+            .contains("dependencies/1/identities.json"),
+        "{result}"
+    );
+    std::fs::write(&witness, original).unwrap();
+    let equality = handoff.join("dependencies/1/equality.json");
+    let original = std::fs::read(&equality).unwrap();
+    std::fs::copy(handoff.join("dependencies/0/equality.json"), &equality).unwrap();
+    let (exit, result) = run(directory.path(), json!({"directory": "handoff"}));
+    assert_eq!(exit, 20, "{result}");
+    assert_eq!(result["cause"], "refused-file", "{result}");
+    assert!(
+        result.to_string().contains("dependencies/1/equality.json"),
+        "{result}"
+    );
+    std::fs::write(&equality, original).unwrap();
+    std::fs::remove_file(&package).unwrap();
+    std::fs::create_dir(&package).unwrap();
+    let (exit, result) = run(directory.path(), json!({"directory": "handoff"}));
+    assert_eq!(exit, 20, "{result}");
+    assert_eq!(result["cause"], "invalid-value", "{result}");
+    #[cfg(unix)]
+    {
+        std::fs::remove_dir(&package).unwrap();
+        std::os::unix::fs::symlink(
+            handoff.join("dependencies/0/checked-package.json"),
+            &package,
+        )
+        .unwrap();
+        let (exit, result) = run(directory.path(), json!({"directory": "handoff"}));
+        assert_eq!(exit, 20, "{result}");
+        assert_eq!(result["cause"], "invalid-value", "{result}");
+    }
 }
