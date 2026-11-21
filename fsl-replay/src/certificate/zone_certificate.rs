@@ -82,6 +82,8 @@
 //! initial node of the certificate's `initials` (FSpec FR-418).
 
 mod divergence;
+mod wire;
+pub use wire::ZoneCertificateWireError;
 mod product;
 pub use task_check::{
     explore_task_product, recomputed_member, QuotientEdge, QuotientIdentity, QuotientInitial,
@@ -3255,11 +3257,9 @@ impl<O> Checker<'_, '_, O> {
                 continue;
             };
             for constraint in constraints {
-                let strict_lower = match constraint.op() {
-                    ClockOp::Greater => true,
-                    ClockOp::GreaterOrEqual | ClockOp::Equal => false,
-                    ClockOp::Less | ClockOp::LessOrEqual => continue,
-                };
+                if matches!(constraint.op(), ClockOp::Less | ClockOp::LessOrEqual) {
+                    continue;
+                }
                 // The last reset of the clock before this guard, going back
                 // around the cycle; this edge's own resets come after it.
                 let reset = (1..=length).find_map(|back| {
@@ -3275,7 +3275,7 @@ impl<O> Checker<'_, '_, O> {
                     continue;
                 };
                 let bound = constraint.bound();
-                if bound > &reset || (strict_lower && bound == &reset) {
+                if bound > &reset {
                     return Ok(true);
                 }
             }

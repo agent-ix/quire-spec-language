@@ -196,7 +196,7 @@ pub use certificate::zone_certificate::{
     FairnessMember, ItemIdentity, NonZeno, ProductMark, QuotientEdge, QuotientIdentity,
     QuotientInitial, QuotientStop, QuotientVertex, RefinementIdentity, RefinementPart, SilentMove,
     StateGraphCertificateForm, StateGraphPart, TaskProductQuotient, ZoneCertificate,
-    ZoneCertificateRefusal, ZoneCertificateRequest, ZoneCertificateVerdict,
+    ZoneCertificateRefusal, ZoneCertificateRequest, ZoneCertificateVerdict, ZoneCertificateWireError,
 };
 pub use certificate::{CertificateLocus, CertificateMember, CertificateRule, QueryPart};
 /// FR-322 "Operand index segments": a package's graph and its wire ids.
