@@ -5783,9 +5783,20 @@ mod tests {
             crate::test_ids::effective_id([2]),
             ObjectId::new("call").expect("fixture object id is non-empty"),
         );
-        let clock_type = crate::test_ids::effective_id([3]);
+        let clock_type = fsl_semantics::check::clock_reference_target();
         let place = crate::test_ids::node_key([4]);
         let expected_prefix = "place/v1/63616c6c/7b226f7264696e616c223a302c227061636b616765223a2266697874757265222c2270617468223a5b225b345d225d7d";
+
+        assert!(
+            clock_place_reference(
+                owner.clone(),
+                crate::test_ids::effective_id([3]),
+                &place,
+                Vec::new(),
+            )
+            .is_err(),
+            "a non-clock target is refused"
+        );
 
         let unindexed =
             clock_place_reference(owner.clone(), clock_type.clone(), &place, Vec::new())
