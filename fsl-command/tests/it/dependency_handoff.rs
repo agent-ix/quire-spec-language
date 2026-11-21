@@ -728,3 +728,57 @@ fn closure_expansion_shares_the_sixty_four_selected_file_limit_with_runtime_inpu
         "{result}"
     );
 }
+
+#[test]
+#[trace("FR-850-AC-13", "TC-2410")]
+fn every_raw_manifest_member_refusal_keeps_its_exact_pointer_before_analysis() {
+    let directory = tempfile::tempdir().unwrap();
+    prepare(directory.path(), true);
+    let manifest = directory.path().join("handoff/dependencies.json");
+    let original = std::fs::read(&manifest).unwrap();
+    let format = "\"format\":\"filament.checked-handoff.dependencies/1\"";
+    let cases = [
+            ("not json".to_owned(), ""),
+            ("{\"dependencies\":[]}".to_owned(), "/format"),
+            (format!("{{{format},{format},\"dependencies\":[]}}"), "/format"),
+            (format!("{{{format}}}"), "/dependencies"),
+            (format!("{{{format},\"dependencies\":[],\"dependencies\":[]}}"), "/dependencies"),
+            (format!("{{{format},\"dependencies\":[],\"extra\":0}}"), "/extra"),
+            ("{\"format\":7,\"dependencies\":[]}".to_owned(), "/format"),
+            (format!("{{{format},\"dependencies\":{{}}}}"), "/dependencies"),
+            (format!("{{{format},\"dependencies\":[null]}}"), "/dependencies/0"),
+            (format!("{{{format},\"dependencies\":[{{\"directory\":\"dependencies/0\"}}]}}"), "/dependencies/0/identity"),
+            (format!("{{{format},\"dependencies\":[{{\"identity\":\"test/a\"}}]}}"), "/dependencies/0/directory"),
+            (format!("{{{format},\"dependencies\":[{{\"identity\":\"test/a\",\"identity\":\"test/a\",\"directory\":\"dependencies/0\"}}]}}"), "/dependencies/0/identity"),
+            (format!("{{{format},\"dependencies\":[{{\"identity\":\"test/a\",\"directory\":\"dependencies/0\",\"directory\":\"dependencies/0\"}}]}}"), "/dependencies/0/directory"),
+            (format!("{{{format},\"dependencies\":[{{\"identity\":\"test/a\",\"directory\":\"dependencies/0\",\"extra\":0}}]}}"), "/dependencies/0/extra"),
+            (format!("{{{format},\"dependencies\":[{{\"identity\":7,\"directory\":\"dependencies/0\"}}]}}"), "/dependencies/0/identity"),
+            (format!("{{{format},\"dependencies\":[{{\"identity\":\"test/a\",\"directory\":7}}]}}"), "/dependencies/0/directory"),
+        ];
+    for (bytes, pointer) in cases {
+        std::fs::write(&manifest, &bytes).unwrap();
+        let request = json!({"package": {"directory": "handoff"}, "models": [], "items": [{"claim": "Missing"}]});
+        let (exit, outcome) = analyze(directory.path(), request, 1 << 20);
+        assert_eq!(exit, 20, "{bytes}: {outcome}");
+        assert_eq!(outcome["category"], "refusal", "{outcome}");
+        assert_eq!(outcome["last_stage"], Value::Null, "{outcome}");
+        assert_eq!(outcome["items"], json!([]), "{outcome}");
+        let diagnostic = &outcome["diagnostics"][0];
+        assert_eq!(diagnostic["code"], "invalid_package", "{bytes}: {outcome}");
+        assert_eq!(diagnostic["cause"], "malformed-file", "{bytes}: {outcome}");
+        assert_eq!(diagnostic["details"]["path"], pointer, "{bytes}: {outcome}");
+        assert!(
+            diagnostic["message"]
+                .as_str()
+                .unwrap()
+                .contains("dependencies.json"),
+            "{outcome}"
+        );
+    }
+    std::fs::write(manifest, original).unwrap();
+    let (exit, outcome) = run(directory.path(), json!({"directory": "handoff"}));
+    assert_eq!(
+        exit, 0,
+        "the unchanged positive control completes: {outcome}"
+    );
+}
