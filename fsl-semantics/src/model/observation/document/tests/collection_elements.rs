@@ -147,6 +147,7 @@ fn admitted_source(source: &str, slot: ValueType) -> Result<Value, AdmissionReco
         admitted: BTreeMap::new(),
         completeness: BTreeMap::new(),
         unresolved: Vec::new(),
+        clock_references: Vec::new(),
         record_keys: None,
         variant_keys: None,
     };
