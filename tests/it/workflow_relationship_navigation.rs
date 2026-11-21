@@ -3,6 +3,7 @@
 //! by a native-run snapshot, with concrete workflow object keys.
 
 use crate::command_harness::{run_file, Output};
+use crate::workflow_population_aggregates::{rename, source};
 use ix_trace_rs::trace;
 use serde_json::{json, Value};
 use std::path::Path;
@@ -23,44 +24,36 @@ const PROVIDERS: &str = "ix://test/workflow-relationships/relationship/Order-use
 const UNIT: &str = "language \"ix:native\" edition \"1-draft\";\n\
 profile v = \"filament.model.complete/v1\";\n\
 model Workflow = \"test/workflow-relationships\";\n\
-function hasShipment using v(order: Reference<Workflow::Order>, shipment: Reference<Workflow::Shipment>): Boolean pure {\
-  reaches(order, shipment, shipments)\
-}\n\
-function hasPayment using v(order: Reference<Workflow::Order>, payment: Reference<Workflow::PaymentAttempt>): Boolean pure {\
-  reaches(order, payment, paymentAttempts)\
-}\n\
-function hasRefund using v(order: Reference<Workflow::Order>, refund: Reference<Workflow::Refund>): Boolean pure {\
-  reaches(order, refund, refunds)\
-}\n\
-function hasProvider using v(order: Reference<Workflow::Order>, provider: Reference<Workflow::Provider>): Boolean pure {\
-  reaches(order, provider, usesProvider)\
-}\n";
+function shipments using v(order: Reference<Workflow::Order>): Set<Reference<Workflow::Shipment>>[0,3] pure { order.shipments }\n\
+function paymentAttempts using v(order: Reference<Workflow::Order>): Reference<Workflow::PaymentAttempt> pure { order.paymentAttempts }\n\
+function refunds using v(order: Reference<Workflow::Order>): Option<Reference<Workflow::Refund>> pure { order.refunds }\n\
+function provider using v(order: Reference<Workflow::Order>): Option<Reference<Workflow::Provider>> pure { order.usesProvider }\n\
+function providerOrders using v(provider: Reference<Workflow::Provider>): Set<Reference<Workflow::Order>>[0,3] pure { provider.orders }\n";
 
-fn rename(value: &mut Value, from: &str, to: &str) {
-    match value {
-        Value::String(text) => *text = text.replace(from, to),
-        Value::Array(items) => items.iter_mut().for_each(|item| rename(item, from, to)),
-        Value::Object(fields) => fields.values_mut().for_each(|item| rename(item, from, to)),
-        _ => {}
-    }
-}
-
-fn relationship(identity: &str, source_role: &str, target_type: &str, target_role: &str) -> Value {
+fn relationship(
+    identity: &str,
+    source_role: &str,
+    target_type: &str,
+    target_role: &str,
+    target_lower: u64,
+    target_upper: u64,
+    direction: &str,
+) -> Value {
     json!({
         "identity": identity,
         "sourceEnd": {
             "type": ORDER,
             "role": source_role,
-            "multiplicity": {"lower": 0, "upper": null, "ordered": false, "unique": true}
+            "multiplicity": {"lower": 0, "upper": 3, "ordered": false, "unique": true}
         },
         "targetEnd": {
             "type": target_type,
             "role": target_role,
-            "multiplicity": {"lower": 0, "upper": 1, "ordered": false, "unique": true}
+            "multiplicity": {"lower": target_lower, "upper": target_upper, "ordered": false, "unique": true}
         },
         "category": "structural",
         "composite": false,
-        "direction": "source-to-target",
+        "direction": direction,
         "origin": {"source": {
             "sourceIdentity": "ix://test/workflow-relationships/spec",
             "path": "workflow.fspec",
@@ -88,10 +81,42 @@ fn workflow_model() -> Value {
     order["fields"] = json!([]);
     order["operations"] = json!([]);
     order["relationships"] = json!([
-        relationship(SHIPMENTS, "shipments", SHIPMENT, "order"),
-        relationship(PAYMENTS, "paymentAttempts", PAYMENT_ATTEMPT, "order"),
-        relationship(REFUNDS, "refunds", REFUND, "order"),
-        relationship(PROVIDERS, "usesProvider", PROVIDER, "orders")
+        relationship(
+            SHIPMENTS,
+            "shipments",
+            SHIPMENT,
+            "order",
+            0,
+            3,
+            "source-to-target"
+        ),
+        relationship(
+            PAYMENTS,
+            "paymentAttempts",
+            PAYMENT_ATTEMPT,
+            "order",
+            1,
+            1,
+            "source-to-target",
+        ),
+        relationship(
+            REFUNDS,
+            "refunds",
+            REFUND,
+            "order",
+            0,
+            1,
+            "source-to-target"
+        ),
+        relationship(
+            PROVIDERS,
+            "usesProvider",
+            PROVIDER,
+            "orders",
+            0,
+            1,
+            "bidirectional"
+        )
     ]);
 
     let workflow_type = |name: &str, identity: &str| {
@@ -161,21 +186,11 @@ fn workflow_snapshot(relationships: Vec<Value>) -> Value {
     })
 }
 
-fn source(file: &str, document: &str) -> Value {
-    json!({
-        "file": file,
-        "authority": "agent-ix",
-        "identity": format!("test:qsl-2740:{file}"),
-        "document": document,
-        "formal_revision": 1
-    })
-}
-
 fn relationship_row(identity: &str, complete: bool, instances: Vec<Value>) -> Value {
     json!({"relationship": identity, "complete": complete, "instances": instances})
 }
 
-fn run(function: &str, first_key: &str, second_key: &str, relationships: Vec<Value>) -> Output {
+fn run(function: &str, input_key: &str, relationships: Vec<Value>) -> Output {
     let directory = tempfile::tempdir().unwrap();
     let path: &Path = directory.path();
     std::fs::write(
@@ -189,19 +204,12 @@ fn run(function: &str, first_key: &str, second_key: &str, relationships: Vec<Val
         workflow_snapshot(relationships).to_string(),
     )
     .unwrap();
-    let second_parameter = match function {
-        "hasShipment" => "shipment",
-        "hasPayment" => "payment",
-        "hasRefund" => "refund",
-        _ => "provider",
-    };
     let request = json!({"format": "native-run/1", "request": {
         "models": [{"format": "semantic-ir/2.0.0", "source": source("model.semantic-ir.json", "WorkflowModel")}],
         "program": {"source": source("workflow.native", "WorkflowUnit")},
         "call": {"function": function, "snapshot": "snapshot.json", "arguments": [
-            {"parameter": "order", "value": {"reference": {"population": RECORDS, "key": first_key}}},
-            {"parameter": second_parameter,
-                "value": {"reference": {"population": RECORDS, "key": second_key}}}
+            {"parameter": if function == "providerOrders" { "provider" } else { "order" },
+                "value": {"reference": {"population": RECORDS, "key": input_key}}}
         ]}
     }});
     std::fs::write(
@@ -250,52 +258,43 @@ fn relationship_set() -> Vec<Value> {
     ]
 }
 
-fn assert_boolean(function: &str, first_key: &str, second_key: &str, expected: bool) {
-    let output = run(function, first_key, second_key, relationship_set());
+fn assert_value(function: &str, input_key: &str, expected: Value) {
+    let output = run(function, input_key, relationship_set());
     let document = result(&output);
     assert_eq!(output.status.code(), Some(0), "{document}");
     assert_eq!(document["outcome"]["kind"], "completed", "{document}");
-    assert_eq!(
-        document["outcome"]["value"],
-        json!({"boolean": expected}),
-        "{document}"
+    assert_eq!(document["outcome"]["value"], expected, "{document}");
+}
+
+#[test]
+#[trace("FR-363-AC-1", "FR-364-AC-7")]
+fn source_relationship_members_return_concrete_workflow_references() {
+    let reference = |key| json!({"reference": {"population": RECORDS, "key": key}});
+    assert_value(
+        "shipments",
+        "o1",
+        json!({"set": [reference("s1"), reference("s2")]}),
+    );
+    assert_value("shipments", "o2", json!({"set": [reference("s3")]}));
+    assert_value("paymentAttempts", "o1", reference("p1"));
+    assert_value("paymentAttempts", "o2", reference("p2"));
+    assert_value("refunds", "o1", json!({"present": reference("r1")}));
+    assert_value("refunds", "o2", json!({"present": reference("r2")}));
+    assert_value("provider", "o1", json!({"present": reference("provider0")}));
+    assert_value("provider", "o2", json!({"present": reference("provider0")}));
+    assert_value(
+        "providerOrders",
+        "provider0",
+        json!({"set": [reference("o1"), reference("o2")]}),
     );
 }
 
 #[test]
-#[trace(
-    "FR-106-AC-23",
-    "FR-364-AC-7",
-    "FSpec-FR-049-AC-7",
-    "FSpec-FR-050-AC-3"
-)]
-fn source_navigation_keeps_concrete_related_workflow_instances_distinct() {
-    assert_boolean("hasShipment", "o1", "s1", true);
-    assert_boolean("hasShipment", "o1", "s2", true);
-    assert_boolean("hasShipment", "o1", "s3", false);
-    assert_boolean("hasShipment", "o2", "s3", true);
-    assert_boolean("hasPayment", "o1", "p1", true);
-    assert_boolean("hasPayment", "o1", "p2", false);
-    assert_boolean("hasPayment", "o2", "p2", true);
-    assert_boolean("hasRefund", "o1", "r1", true);
-    assert_boolean("hasRefund", "o1", "r2", false);
-    assert_boolean("hasRefund", "o2", "r2", true);
-    assert_boolean("hasProvider", "o1", "provider0", true);
-    assert_boolean("hasProvider", "o2", "provider0", true);
-}
-
-#[test]
-#[trace(
-    "FR-106-AC-23",
-    "FR-364-AC-9",
-    "FSpec-FR-049-AC-7",
-    "FSpec-FR-049-AC-8"
-)]
-fn source_navigation_keeps_complete_empty_distinct_from_missing_completeness() {
+#[trace("FR-363-AC-1", "FR-364-AC-9")]
+fn source_relationship_members_distinguish_empty_and_incomplete_extents() {
     let complete_empty = run(
-        "hasRefund",
+        "refunds",
         "o1",
-        "r1",
         vec![relationship_row(REFUNDS, true, Vec::new())],
     );
     let document = result(&complete_empty);
@@ -303,7 +302,7 @@ fn source_navigation_keeps_complete_empty_distinct_from_missing_completeness() {
     assert_eq!(document["outcome"]["kind"], "completed", "{document}");
     assert_eq!(
         document["outcome"]["value"],
-        json!({"boolean": false}),
+        json!({"absent": {}}),
         "{document}"
     );
 
@@ -311,7 +310,7 @@ fn source_navigation_keeps_complete_empty_distinct_from_missing_completeness() {
         vec![relationship_row(REFUNDS, false, Vec::new())],
         Vec::new(),
     ] {
-        let output = run("hasRefund", "o1", "r1", relationships);
+        let output = run("refunds", "o1", relationships);
         let document = result(&output);
         assert_eq!(output.status.code(), Some(22), "{document}");
         assert_eq!(document["outcome"]["kind"], "refused", "{document}");

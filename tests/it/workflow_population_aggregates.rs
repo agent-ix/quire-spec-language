@@ -41,7 +41,7 @@ function recovered using v(order: Workflow::Order, reservations: Population<Work
   reservationTotal(order, reservations) = refundTotal(order, refunds, receipts)\
 }\n";
 
-fn source(file: &str, document: &str) -> Value {
+pub(super) fn source(file: &str, document: &str) -> Value {
     json!({
         "file": file,
         "authority": "agent-ix",
@@ -51,7 +51,7 @@ fn source(file: &str, document: &str) -> Value {
     })
 }
 
-fn rename(value: &mut Value, from: &str, to: &str) {
+pub(super) fn rename(value: &mut Value, from: &str, to: &str) {
     match value {
         Value::String(text) => *text = text.replace(from, to),
         Value::Array(items) => items.iter_mut().for_each(|item| rename(item, from, to)),
