@@ -20,11 +20,11 @@ use filament_exact::{Cancel, Meter, ScalarLimits, Value};
 use filament_semantic_value::catalog::InternalFault;
 use filament_semantic_value::checking::CheckingLimits;
 use fsl_analyze::model_check::{
+    alias_provisions, alias_system, check_hyper, check_single_existential, retain,
     HyperCheckRequest, ModelCheckRefusal, RetainedGraph, SingleExistentialRequest,
-    SingleExistentialRun, alias_provisions, alias_system, check_hyper, check_single_existential,
-    retain,
+    SingleExistentialRun,
 };
-use fsl_eval::fairness::{EdgeLabel, Graph, Identity, Outcome as FairnessOutcome, Vertex, analyze};
+use fsl_eval::fairness::{analyze, EdgeLabel, Graph, Identity, Outcome as FairnessOutcome, Vertex};
 use fsl_eval::hyper::{
     BodySense, CheckedHyperLetters, CheckedStepMatch, HyperFinding, HyperInputs, HyperLetters,
     HyperProduct, HyperState, HyperTransition, MatchIncomplete, MatchReading, ParameterBinding,
@@ -46,14 +46,14 @@ use fsl_replay::{
 };
 use fsl_route::reductions::Reductions;
 use fsl_semantics::check::{
-    CheckCause, CheckedHyper, CheckedHyperClause, FormulaNode, FormulaNodeId, PackageDeclarations,
-    check_hyper_clauses,
+    check_hyper_clauses, CheckCause, CheckedHyper, CheckedHyperClause, FormulaNode, FormulaNodeId,
+    PackageDeclarations,
 };
 use fsl_semantics::model::accounting::ModelNormalizationLimits;
 use fsl_semantics::model::intake::{admit_unit, meaning, package_input};
 use fsl_semantics::model::observation::{DocumentRef, ObservationLimits};
-use fsl_semantics::value::{DefinitionRole, admit_integer_division};
-use serde_json::{Value as Json, json};
+use fsl_semantics::value::{admit_integer_division, DefinitionRole};
+use serde_json::{json, Value as Json};
 
 use crate::counter::UNLIMITED;
 

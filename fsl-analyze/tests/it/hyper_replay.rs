@@ -9,14 +9,14 @@
 //! emit a hyper clause), so FR-183-AC-2 and AC-5 are not claimed.
 
 use filament_exact::{Cancel, Meter, Undefined};
-use fsl_eval::simulation::TransitionSystem;
 use fsl_eval::simulation::model::{ModelSimState, ModelSystem};
+use fsl_eval::simulation::TransitionSystem;
 use fsl_eval::temporal::UndefinedCause;
 use fsl_replay::{
-    DisagreementCause, HyperCounterexample, HyperCounterexampleKind, HyperLocus, HyperOutcome,
-    HyperStep, InconclusiveCause, ModelCheckLimit, ModelCheckLimits, ModelStep, ModelTraceRefusal,
-    ModelTraceSettlement, ModelTraceValue, ReachedLimit, ReplayRefusal, RunStats, StepMark,
-    TerminalValue, settle_hyper_check,
+    settle_hyper_check, DisagreementCause, HyperCounterexample, HyperCounterexampleKind,
+    HyperLocus, HyperOutcome, HyperStep, InconclusiveCause, ModelCheckLimit, ModelCheckLimits,
+    ModelStep, ModelTraceRefusal, ModelTraceSettlement, ModelTraceValue, ReachedLimit,
+    ReplayRefusal, RunStats, StepMark, TerminalValue,
 };
 use ix_trace_rs::trace;
 
@@ -26,7 +26,7 @@ use crate::hyper_witness::{
     KERNEL_MOD_FUNCTION,
 };
 use crate::hyper_world::{
-    EQUAL_INPUTS, STARTS, Vault, World, busy_of, high, low, non_interference, opaque,
+    busy_of, high, low, non_interference, opaque, Vault, World, EQUAL_INPUTS, STARTS,
 };
 
 mod certificate_boundary_cases;

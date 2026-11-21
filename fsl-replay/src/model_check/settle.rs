@@ -29,8 +29,8 @@ use crate::model_check::counterexample::TemporalCounterexample;
 use crate::model_check::limits::{ModelCheckLimit, ModelCheckLimits, ReachedLimit};
 use crate::model_check::outcome::{MemoryCause, ModelCheckOutcome, ReductionCause, RunStats};
 use crate::model_check::replay::{
-    ModelTraceRefusal, ModelTraceReplayResult, ModelTraceSettlement, StrongFairnessHint,
-    no_value_cause,
+    no_value_cause, ModelTraceRefusal, ModelTraceReplayResult, ModelTraceSettlement,
+    StrongFairnessHint,
 };
 use crate::proof_result::{
     Certification, IncompleteCause, InconclusiveCause, InstanceBound, MemoryBound,

@@ -18,20 +18,19 @@
 use filament_exact::{Cancel, Origin, Role, Undefined};
 use filament_semantic_value::catalog::Category;
 use filament_semantic_value::catalog::InternalFault;
-use fsl_analyze::analyze::{DispositionKind, Engines, Settlement, analyze_items, hyper_form_item};
+use fsl_analyze::analyze::{analyze_items, hyper_form_item, DispositionKind, Engines, Settlement};
 use fsl_analyze::model_check::ModelCheckRefusal;
 use fsl_eval::temporal::UndefinedCause;
-use fsl_foundation::ReductionKind;
 use fsl_foundation::bound::{DomainKey, DomainKind};
 use fsl_foundation::source::provenance::OccurrenceKey;
+use fsl_foundation::ReductionKind;
 use fsl_foundation::{BackendId, RequestIndex};
 use fsl_replay::{
-    BoundCovers, Code, DisagreementCause, EXPLICIT_STATE, Execution, HyperCounterexample,
-    HyperCounterexampleKind, HyperOutcome, HyperRecord, HyperReductionCause, HyperSettleRefusal,
-    IncompleteCause, InconclusiveCause, LimitOrigin, ModelCheckLimit, ModelCheckLimits,
-    ModelTraceSettlement, ReachedLimit, ReplayRefusal, ResultLabel, RunStats, SettlementBasis,
-    TerminalValue, Truth, UnavailabilityCause, UndecidedCause, settle_hyper_check,
-    settle_hyper_form,
+    settle_hyper_check, settle_hyper_form, BoundCovers, Code, DisagreementCause, Execution,
+    HyperCounterexample, HyperCounterexampleKind, HyperOutcome, HyperRecord, HyperReductionCause,
+    HyperSettleRefusal, IncompleteCause, InconclusiveCause, LimitOrigin, ModelCheckLimit,
+    ModelCheckLimits, ModelTraceSettlement, ReachedLimit, ReplayRefusal, ResultLabel, RunStats,
+    SettlementBasis, TerminalValue, Truth, UnavailabilityCause, UndecidedCause, EXPLICIT_STATE,
 };
 use fsl_route::reductions::Reductions;
 use fsl_route::request::items_from_requirements;

@@ -585,7 +585,7 @@ impl<'a> Run<'_, 'a> {
         match outcome {
             TemporalOutcome::Holds => {}
             TemporalOutcome::Violated { .. } | TemporalOutcome::Undefined(_) => {
-                return Ok(Ok(None));
+                return Ok(Ok(None))
             }
             TemporalOutcome::Incomplete(incomplete) => {
                 return Ok(Err(cancelled(self.cancel).unwrap_or_else(|| {
@@ -709,7 +709,7 @@ impl<'a> Run<'_, 'a> {
             Err(fsl_eval::automaton::AutomatonError::StateLimit { limit }) => {
                 return Ok(Explored::Halted(
                     stopped(ModelCheckLimit::MaxAutomatonStates, limit).end(),
-                ));
+                ))
             }
             Err(other) => return Err(HyperRefusal::Automaton(other).into()),
         };
@@ -875,7 +875,7 @@ impl<'a> Decision<'_, '_, 'a> {
                     return Ok(ExistentialOutcome::NoDecision {
                         end,
                         open: self.open_causes(),
-                    });
+                    })
                 }
             }
         } else {
@@ -900,7 +900,7 @@ impl<'a> Decision<'_, '_, 'a> {
                     return Ok(ExistentialOutcome::NoDecision {
                         end,
                         open: self.open_causes(),
-                    });
+                    })
                 }
             }
         }

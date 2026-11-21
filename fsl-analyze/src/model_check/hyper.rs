@@ -110,25 +110,25 @@ use filament_semantic_value::fairness::FairnessGranularity;
 use filament_semantic_value::model_transition::ModelTransition;
 use fsl_eval::automaton::{AutomatonError, PropertyAutomaton};
 use fsl_eval::fairness::{
-    Analysis, Constraint, EdgeLabel, FairnessError, Graph, Identity, Strength, Vertex, analyze,
+    analyze, Analysis, Constraint, EdgeLabel, FairnessError, Graph, Identity, Strength, Vertex,
 };
 use fsl_eval::hyper::{
-    BodySense, ComponentStep, CopySwapInputs, Halt, HyperFinding, HyperInputs, HyperLetters,
-    HyperProduct, HyperState, HyperTransition, ParameterBinding, Partner, PartnerStep,
-    ProjectedInputs, ProjectedProduct, Property, StepMatch, WitnessInputs, WitnessProduct,
-    cartesian, copy_symmetry,
+    cartesian, copy_symmetry, BodySense, ComponentStep, CopySwapInputs, Halt, HyperFinding,
+    HyperInputs, HyperLetters, HyperProduct, HyperState, HyperTransition, ParameterBinding,
+    Partner, PartnerStep, ProjectedInputs, ProjectedProduct, Property, StepMatch, WitnessInputs,
+    WitnessProduct,
 };
 use fsl_eval::model_subject::ModelSubject;
 use fsl_eval::simulation::model::{
-    ModelFinding, ModelKey, ModelSimState, ModelSystem, check_model_bounds,
+    check_model_bounds, ModelFinding, ModelKey, ModelSimState, ModelSystem,
 };
 use fsl_eval::simulation::{
     Expansion, ExpansionLimit, ExpansionStop, Limit, Limits, Outcome, SymmetryGroup,
     TransitionSystem,
 };
 use fsl_eval::temporal::{
-    AtomReading, ComponentPosition, ComponentTrace, LetterStop, TemporalOutcome, TemporalPosition,
-    TupleLetters, evaluate_tuple,
+    evaluate_tuple, AtomReading, ComponentPosition, ComponentTrace, LetterStop, TemporalOutcome,
+    TemporalPosition, TupleLetters,
 };
 use fsl_foundation::IdentityLimits;
 use fsl_replay::{
@@ -139,14 +139,14 @@ use fsl_replay::{
 };
 use fsl_semantics::check::{CheckedHyperClause, CopyGroup, FormulaNodeId, HyperForm};
 
-use super::check::{BOUND_POSITIONS, ModelCheckRefusal, atom_refusal, fault, not_simulated, widen};
-use super::fair_walk::{FairModel, tree_path};
+use super::check::{atom_refusal, fault, not_simulated, widen, ModelCheckRefusal, BOUND_POSITIONS};
+use super::fair_walk::{tree_path, FairModel};
 use super::graph::{
-    GraphExploration, ProductStateId, RetainedEdge, RetainedGraph, retain, retain_reduced,
+    retain, retain_reduced, GraphExploration, ProductStateId, RetainedEdge, RetainedGraph,
 };
 use super::reduce;
 use fsl_route::reductions::Reductions;
-use lift::{Lifted, through};
+use lift::{through, Lifted};
 
 mod alias;
 mod projected;
@@ -154,7 +154,7 @@ mod single;
 
 pub use alias::{alias_provisions, alias_system};
 
-pub use single::{SingleExistentialRequest, SingleExistentialRun, check_single_existential};
+pub use single::{check_single_existential, SingleExistentialRequest, SingleExistentialRun};
 
 /// The refusal that an atom's recorded stop settles, as the temporal check
 /// maps a letter stop (FR-487): the product records an exhausted meter as its
@@ -198,9 +198,7 @@ pub struct HyperCheckRequest<'a> {
 #[derive(Debug, thiserror::Error)]
 pub enum HyperRefusal {
     /// The clause is not an HP-2, HP-3 or HP-6 clause.
-    #[error(
-        "EN-1 decides a universal (HP-2), forall-exists safety (HP-3) or projection-aligned (HP-6) hyperproperty here, not {form:?}"
-    )]
+    #[error("EN-1 decides a universal (HP-2), forall-exists safety (HP-3) or projection-aligned (HP-6) hyperproperty here, not {form:?}")]
     FormNotDecided {
         /// The clause's form.
         form: Option<HyperForm>,
@@ -1525,7 +1523,7 @@ impl<'a> Run<'_, 'a> {
                     ModelCheckLimit::MaxAutomatonStates,
                     limit,
                     totals,
-                )));
+                )))
             }
             Err(other) => return Err(HyperRefusal::Automaton(other).into()),
         };
@@ -1551,10 +1549,10 @@ impl<'a> Run<'_, 'a> {
     ) -> Result<GraphExploration<HyperState, HyperTransition, HyperFinding>, ModelCheckRefusal>
     where
         P: TransitionSystem<
-                State = HyperState,
-                TransitionId = HyperTransition,
-                Finding = HyperFinding,
-            >,
+            State = HyperState,
+            TransitionId = HyperTransition,
+            Finding = HyperFinding,
+        >,
     {
         let retained = retain_reduced(
             product,

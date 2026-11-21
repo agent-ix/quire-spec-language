@@ -30,9 +30,9 @@ use fsl_semantics::check::{FormulaNodeId, HyperForm};
 use ix_trace_rs::trace;
 
 use crate::hyper::{inputs, positions, refuted};
-use crate::hyper_projected::{IDLE, aligned};
+use crate::hyper_projected::{aligned, IDLE};
 use crate::hyper_world::{
-    EQUAL_INPUTS, KEY, STARTS, Seams, Vault, World, key, low_of, non_interference,
+    key, low_of, non_interference, Seams, Vault, World, EQUAL_INPUTS, KEY, STARTS,
 };
 
 /// The classes `NonInterference` is swappable in.

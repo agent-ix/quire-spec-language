@@ -1270,7 +1270,7 @@ fn temporal<T: Spelling>(
         (None, _) => Json::Null,
         (Some(_), Some(found)) => reference(found)?,
         (Some(ModelInstance { .. }), None) => {
-            return Err(CounterexampleWireError::Unspelled("over binding"));
+            return Err(CounterexampleWireError::Unspelled("over binding"))
         }
     };
     let fairness = counterexample

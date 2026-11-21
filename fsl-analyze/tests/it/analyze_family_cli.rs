@@ -6,10 +6,10 @@
 //! through the driver binary (`$FSL_BIN`).
 
 use ix_trace_rs::trace;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 
 use crate::analyze_cli_support::{
-    Workspace, analyze, counter_request, counter_request_with, label, request_members, request_over,
+    analyze, counter_request, counter_request_with, label, request_members, request_over, Workspace,
 };
 
 /// The two items' results, in request order.
@@ -389,7 +389,7 @@ fn non_interference_proves_and_refutes() {
 #[test]
 #[ignore = "QSL-2128: hyperproperty items are not reachable through fsl analyze yet"]
 fn an_object_free_hyper_clause_is_analyzed() {
-    use crate::hyper_world::{Vault, request_files};
+    use crate::hyper_world::{request_files, Vault};
     let declaration = "hyper Whole using inf over behaviours () \
                        forall trace a of V forall trace b of V { always holds(true) }";
     let (unit, model, snapshot) = request_files(Vault::Secure, false, (1, 0), declaration);
@@ -413,7 +413,7 @@ pub(crate) fn rpc_unit(t: u32, claim: &str) -> String {
 /// `self.x {timeout} {t} ms`: ADR-026 section 11's strict-guard variant is
 /// `("> 3", ">")`.
 pub(crate) fn rpc_unit_with(t: u32, reply: &str, timeout: &str, claim: &str) -> String {
-    use crate::timed_world::{DENSE, PACKAGE, unit_text};
+    use crate::timed_world::{unit_text, DENSE, PACKAGE};
     let body = format!(
         "{DENSE}\
          pre SendIdle using v on M::Call::send {{ self.phase = 0 }}\n\
@@ -690,15 +690,13 @@ fn an_item_naming_a_registered_provider_settles_on_it() {
     assert!(registry.contains(&json!(provider)));
     assert!(registry.contains(&json!("en-1")) && registry.contains(&json!("en-7")));
     // FR-635 "Outputs": each entry carries its backend's FSpec FR-331 tool.
-    assert!(
-        run.document()["registry"]
-            .as_array()
-            .expect("registry")
-            .iter()
-            .all(|entry| entry["tool"]["name"]
-                .as_str()
-                .is_some_and(|name| !name.is_empty()))
-    );
+    assert!(run.document()["registry"]
+        .as_array()
+        .expect("registry")
+        .iter()
+        .all(|entry| entry["tool"]["name"]
+            .as_str()
+            .is_some_and(|name| !name.is_empty())));
     assert_eq!(label(&run.item(1)), "proved");
 }
 

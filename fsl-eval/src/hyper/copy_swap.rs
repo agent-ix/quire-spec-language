@@ -261,7 +261,7 @@ impl HyperProduct<'_, '_> {
                 partner: partner.clone(),
             },
             Property::Witnesses(_) | Property::Rejected | Property::MatchUndefined { .. } => {
-                return Err(self.fault("a-self-composition-state-has-a-self-composition-property"));
+                return Err(self.fault("a-self-composition-state-has-a-self-composition-property"))
             }
         };
         let property_key = self.property_key(&property);

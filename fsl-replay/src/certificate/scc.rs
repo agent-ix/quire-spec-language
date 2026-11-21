@@ -57,7 +57,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use filament_exact::Cancel;
 use fsl_eval::fairness::{
-    Constraint, EdgeLabel, FairnessError, Graph, Identity, Obligation, Strength, Vertex, is_live,
+    is_live, Constraint, EdgeLabel, FairnessError, Graph, Identity, Obligation, Strength, Vertex,
 };
 
 use crate::certificate::closure::{
@@ -472,7 +472,11 @@ impl<'p, K: CertificateState> Checker<'p, K> {
                 }));
             }
         };
-        if holds { Ok(None) } else { Err(fails()) }
+        if holds {
+            Ok(None)
+        } else {
+            Err(fails())
+        }
     }
 
     fn constraint(&self, at: u32) -> Option<&'p Constraint> {

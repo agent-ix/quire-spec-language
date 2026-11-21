@@ -126,9 +126,7 @@ pub enum HyperSettleRefusal {
     /// Deferred: QSL-929. FR-182's V-6 row says this outcome is inconclusive
     /// `ReductionNotPreserving`; representing it needs an owner decision on the
     /// external `PropertyForm` type, so the refusal stands until then.
-    #[error(
-        "a hyper `ReductionNotPreserving` names a hyper form, which the cause's `PropertyForm` member cannot hold"
-    )]
+    #[error("a hyper `ReductionNotPreserving` names a hyper form, which the cause's `PropertyForm` member cannot hold")]
     ReductionFormNotRepresentable,
     /// An HP-2 SMT outcome whose product identity is not the item's is no
     /// evidence for the item (FR-182).
@@ -265,7 +263,7 @@ pub fn settle_hyper_check(
         }
         HyperOutcome::Reduction { cause, .. } => match cause {
             HyperReductionCause::NotPreserving { .. } => {
-                return Err(HyperSettleRefusal::ReductionFormNotRepresentable);
+                return Err(HyperSettleRefusal::ReductionFormNotRepresentable)
             }
             HyperReductionCause::Unsupported { reduction } => {
                 Row::unsupported(UnavailabilityCause::UnsupportedReduction {
@@ -511,7 +509,7 @@ fn inductive_row(
     for subject in item.subjects {
         match ModelSystem::new(subject.simulation.clone()) {
             Ok(system) if system.initial().is_empty() => {
-                return Row::inconclusive(InconclusiveCause::NoInitialState);
+                return Row::inconclusive(InconclusiveCause::NoInitialState)
             }
             Ok(_) => {}
             Err(_) => return Row::failed(),

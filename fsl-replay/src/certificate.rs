@@ -14,7 +14,7 @@
 //! implementation.
 
 pub use filament_contract_model::CertificateMember;
-use serde::{Serialize, Serializer, ser::SerializeStruct};
+use serde::{ser::SerializeStruct, Serialize, Serializer};
 
 use fsl_eval::simulation::StateKey;
 

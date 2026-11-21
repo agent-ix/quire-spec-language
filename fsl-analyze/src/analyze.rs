@@ -89,24 +89,22 @@ use fsl_semantics::model::observation::{
 
 pub use crate::contract_check::contract_item;
 pub use crate::value_check::value_item;
-pub use clause_item::{
-    CLAUSE_TRANSCRIPT, ClauseItemRefusal, ClauseLimits, ClauseSubject, PackageClauseSubject,
-};
 pub(crate) use clause_item::{replay_protocol_over, ProtocolReplayInputs, ReplayShape};
+pub use clause_item::{
+    ClauseItemRefusal, ClauseLimits, ClauseSubject, PackageClauseSubject, CLAUSE_TRANSCRIPT,
+};
 pub use derived_item::{deadlock_model_item, PackageDeadlockSubject};
 pub(crate) use derived_item::{derived_target, NoLetters};
 pub use exact::{exact_probabilistic_item, ExactProbabilityEvidence};
 #[cfg(feature = "test-support")]
 pub use exact::{exact_probabilistic_item_tampered, exact_probabilistic_item_witness_tampered};
-pub use invariant_item::{PackageInvariantSubject, PackageItemInputs};
 pub(crate) use items::admission;
 pub use items::{
-    DerivedItemMismatch, ModelItem, ProtocolItem, ProtocolReplayFn, RefinementReplayFn, TimedItem,
-    TimedRefinementItem, derived_model_item, derived_protocol_item, derived_zone_item,
-    hyper_form_item, model_item, protocol_item, statistical_item, timed_refinement_item, zone_item,
+    derived_model_item, derived_protocol_item, derived_zone_item, hyper_form_item, model_item,
+    protocol_item, statistical_item, timed_refinement_item, zone_item, DerivedItemMismatch,
+    ModelItem, ProtocolItem, ProtocolReplayFn, RefinementReplayFn, TimedItem, TimedRefinementItem,
 };
 pub use simulation_item::{SimulationItem, SimulationMode, SimulationSelection};
-pub use state_graph_item::PackageStateGraphSubject;
 
 use crate::provider::{
     ExternalProvider, ProviderOptions, ProviderRegistrationCause, ProviderRegistrationRefusal,
@@ -519,9 +517,7 @@ impl Engine {
 /// [`Engine::hybrid`] was given a descriptor that is no hybrid provider's
 /// (FR-750): `invalid_capability`/`invalid-dynamics`.
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
-#[error(
-    "invalid-dynamics: {backend:?} does not publish `hybrid` dynamics for temporal-satisfaction"
-)]
+#[error("invalid-dynamics: {backend:?} does not publish `hybrid` dynamics for temporal-satisfaction")]
 pub struct NotHybrid {
     /// The backend whose descriptor was refused.
     pub backend: BackendId,
@@ -1014,10 +1010,13 @@ pub(crate) fn refusal_document(
         }
         AdmissionFailure::Fault(fault) => (fault.catalog_code(), fault.category(), None),
     };
-    OutcomeDocument::new(operation, None, category).with_diagnostics(vec![
-        OutcomeDiagnostic::new(Some(catalog.cause()), catalog.code(), None, message)
-            .with_details(details),
-    ])
+    OutcomeDocument::new(operation, None, category).with_diagnostics(vec![OutcomeDiagnostic::new(
+        Some(catalog.cause()),
+        catalog.code(),
+        None,
+        message,
+    )
+    .with_details(details)])
 }
 
 impl AnalyzeOutcome {
@@ -1396,7 +1395,7 @@ impl Payload {
     /// `family`).
     #[must_use]
     pub fn detail(&self) -> serde_json::Map<String, serde_json::Value> {
-        use serde_json::{Value, json};
+        use serde_json::{json, Value};
         let entries: Vec<(&str, Value)> = match self {
             Self::None => Vec::new(),
             Self::Kind(kind) => vec![("kind", json!(kind.to_wire()))],
@@ -2531,7 +2530,7 @@ fn run(
         Disposition::RequiresBound => return disposed(DispositionKind::RequiresBound, diagnostic),
         Disposition::Unsupported => return disposed(DispositionKind::Unsupported, diagnostic),
         Disposition::InvalidRequest => {
-            return disposed(DispositionKind::InvalidRequest, diagnostic);
+            return disposed(DispositionKind::InvalidRequest, diagnostic)
         }
     };
     let backend = candidate.id().clone();
@@ -3017,9 +3016,7 @@ fn settle(
             None,
         ),
         EngineReport::Refused(Refusal::FailedWithDetail(code, detail)) => record(
-            terminal(
-                TerminalRecord::failed_with(index, backend, code).with_diagnostic_detail(detail),
-            ),
+            terminal(TerminalRecord::failed_with(index, backend, code).with_diagnostic_detail(detail)),
             None,
         ),
         EngineReport::Refused(Refusal::UnsupportedConstruct(mut detail)) => {
@@ -3351,10 +3348,8 @@ mod tests {
                 panic!("inapplicable pair has its typed family diagnostic");
             };
             assert_eq!(*request_index, record.request_index);
-            assert!(
-                !capability
-                    .applies_to_declaration(family.expect("this matrix row has a known family"))
-            );
+            assert!(!capability
+                .applies_to_declaration(family.expect("this matrix row has a known family")));
             assert_eq!(code.cause(), "inapplicable-kind");
         }
     }
@@ -3655,33 +3650,24 @@ mod tests {
             en7.advertises().collect::<Vec<_>>(),
             [(Capability::Schedulability, Mode::Unbounded)]
         );
-        assert!(
-            registrations
-                .iter()
-                .all(|descriptor| descriptor.origin() == ProviderOrigin::Linked)
-        );
-        assert!(
-            en1.advertises()
-                .any(|(kind, _)| kind == Capability::TemporalSatisfaction)
-        );
-        assert!(
-            en4.advertises()
-                .any(|(kind, _)| kind == Capability::ProbabilisticSatisfaction)
-        );
-        assert!(
-            en5.advertises()
-                .any(|(kind, _)| kind == Capability::ProbabilisticSatisfaction)
-        );
-        assert!(
-            value
-                .advertises()
-                .any(|(kind, _)| kind == Capability::ValueValidity)
-        );
-        assert!(
-            contract
-                .advertises()
-                .any(|(kind, _)| kind == Capability::OperationContract)
-        );
+        assert!(registrations
+            .iter()
+            .all(|descriptor| descriptor.origin() == ProviderOrigin::Linked));
+        assert!(en1
+            .advertises()
+            .any(|(kind, _)| kind == Capability::TemporalSatisfaction));
+        assert!(en4
+            .advertises()
+            .any(|(kind, _)| kind == Capability::ProbabilisticSatisfaction));
+        assert!(en5
+            .advertises()
+            .any(|(kind, _)| kind == Capability::ProbabilisticSatisfaction));
+        assert!(value
+            .advertises()
+            .any(|(kind, _)| kind == Capability::ValueValidity));
+        assert!(contract
+            .advertises()
+            .any(|(kind, _)| kind == Capability::OperationContract));
         let mut kinds: Vec<_> = protocol.advertises().map(|(kind, _)| kind).collect();
         kinds.sort_by_key(|kind| kind.to_wire());
         assert_eq!(
