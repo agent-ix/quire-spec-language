@@ -257,7 +257,12 @@ fn replay_boundary(
         "target and source metadata remain charged"
     );
     let total = baseline.checked_add(external_bytes).unwrap();
-    let (_, refused) = analyze(directory, request.clone(), baseline);
+    let (exit, refused) = analyze(directory, request.clone(), baseline);
+    assert_eq!(
+        exit, 22,
+        "the item-local replay refusal keeps FR-621's inconclusive exit: {refused}"
+    );
+    assert_eq!(refused["category"], "inconclusive", "{refused}");
     assert_eq!(refused["items"].as_array().unwrap().len(), 2, "{refused}");
     assert_eq!(
         refused["items"][0]["record"]["result"], "inconclusive",
