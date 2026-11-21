@@ -22,7 +22,7 @@ fn prepare(directory: &Path, diamond: bool) -> Value {
             (
                 "test/a",
                 "a.native",
-                "record A { level: Integer; } function answer using v(): Integer pure { if 1 = 1 then 42 else 41 }".to_owned(),
+                "record A { level: Integer; } function answer using v(): Integer pure { if 1 = 1 then (let reading = A{level: 42} in reading.level) else 41 }".to_owned(),
             ),
             (
                 "test/z",
