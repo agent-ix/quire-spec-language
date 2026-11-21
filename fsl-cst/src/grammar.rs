@@ -3211,7 +3211,15 @@ fn analysis(g: &mut Grammar) {
             x("=>"),
             r(P::Expression),
             x(")"),
-            opt(s(vec![x("+"), opt(x("-")), r(P::ExactValue)])),
+            opt(s(vec![
+                x("+"),
+                opt(x("-")),
+                c(vec![
+                    r(P::QuantityLiteral),
+                    r(P::FloatValue),
+                    r(P::ExactValue),
+                ]),
+            ])),
         ]),
     );
     g.insert(

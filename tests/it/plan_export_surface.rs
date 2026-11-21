@@ -334,15 +334,29 @@ fn a_decimal_step_cost_is_exact_and_certified() {
 fn a_step_sum_adds_its_offset_once_and_certifies_empty_plans() {
     for (minimum, expected) in [(0, "7"), (1, "9"), (3, "13")] {
         let (exit, value) = plan(
-            &plan_unit("Int[0, 3]", "minimize Reach.steps.sum(s => 2) + 7", &format!("Reach.length >= {minimum}")),
+            &plan_unit(
+                "Int[0, 3]",
+                "minimize Reach.steps.sum(s => 2) + 7",
+                &format!("Reach.length >= {minimum}"),
+            ),
             json!({}),
         );
         let outcome = &value["synthesis"];
         assert_eq!(exit, 0, "{value}");
         assert_eq!(outcome["status"], "optimal", "{value}");
-        assert_eq!(outcome["objective"]["value"], json!({"type": "integer", "value": expected}), "{value}");
-        assert_eq!(outcome["plan"]["steps"].as_array().unwrap().len(), minimum, "{value}");
+        assert_eq!(
+            outcome["objective"]["value"],
+            json!({"type": "integer", "value": expected}),
+            "{value}"
+        );
+        assert_eq!(
+            outcome["plan"]["steps"].as_array().unwrap().len(),
+            minimum,
+            "{value}"
+        );
         assert_eq!(outcome["certificate"]["type"], "potential", "{value}");
+        assert_eq!(outcome["certification"], "certified", "{value}");
+        assert_eq!(outcome["replay"]["outcome"], "reproduced", "{value}");
     }
 }
 
@@ -351,13 +365,23 @@ fn a_step_sum_adds_its_offset_once_and_certifies_empty_plans() {
 fn a_converted_decimal_step_sum_preserves_cost_and_adds_one_typed_offset() {
     for (offset, expected) in [("", "30"), (" + 0.05", "35")] {
         let unit = plan_unit(
-            "Int[0, 3]", &format!("minimize Reach.steps.sum(s => convert<Cost>(0.10)){offset}"), "Reach.length >= 3",
-        ).replace("type Lengths", "type Cost = Decimal[0,10000;2,2;exact];\ntype Lengths");
+            "Int[0, 3]",
+            &format!("minimize Reach.steps.sum(s => convert<Cost>(0.10)){offset}"),
+            "Reach.length >= 3",
+        )
+        .replace(
+            "type Lengths",
+            "type Cost = Decimal[0,10000;2,2;exact];\ntype Lengths",
+        );
         let (exit, value) = plan(&unit, json!({}));
         let outcome = &value["synthesis"];
         assert_eq!(exit, 0, "{value}");
         assert_eq!(outcome["status"], "optimal", "{value}");
-        assert_eq!(outcome["objective"]["value"], json!({"type": "decimal", "coefficient": expected, "scale": "2"}), "{value}");
+        assert_eq!(
+            outcome["objective"]["value"],
+            json!({"type": "decimal", "coefficient": expected, "scale": "2"}),
+            "{value}"
+        );
         assert_eq!(outcome["certificate"]["type"], "potential", "{value}");
     }
 }
@@ -367,13 +391,23 @@ fn a_converted_decimal_step_sum_preserves_cost_and_adds_one_typed_offset() {
 fn a_rational_step_sum_and_its_offset_are_exact_and_certified() {
     for (offset, numerator, denominator) in [("", "1", "1"), (" + rational(1,3)", "4", "3")] {
         let unit = plan_unit(
-            "Int[0, 3]", &format!("minimize Reach.steps.sum(s => convert<Cost>(rational(1,3))){offset}"), "Reach.length = 3",
-        ).replace("type Lengths", "type Cost = Rational[0,100;1,100];\ntype Lengths");
+            "Int[0, 3]",
+            &format!("minimize Reach.steps.sum(s => convert<Cost>(rational(1,3))){offset}"),
+            "Reach.length = 3",
+        )
+        .replace(
+            "type Lengths",
+            "type Cost = Rational[0,100;1,100];\ntype Lengths",
+        );
         let (exit, value) = plan(&unit, json!({}));
         let outcome = &value["synthesis"];
         assert_eq!(exit, 0, "{value}");
         assert_eq!(outcome["status"], "optimal", "{value}");
-        assert_eq!(outcome["objective"]["value"], json!({"type": "rational", "numerator": numerator, "denominator": denominator}), "{value}");
+        assert_eq!(
+            outcome["objective"]["value"],
+            json!({"type": "rational", "numerator": numerator, "denominator": denominator}),
+            "{value}"
+        );
         assert_eq!(outcome["certificate"]["type"], "potential", "{value}");
     }
 }
@@ -382,24 +416,40 @@ fn a_rational_step_sum_and_its_offset_are_exact_and_certified() {
 #[trace("FSpec-FR-802-AC-2")]
 fn a_step_sum_integer_intermediate_obeys_its_accounting_limit() {
     let (exit, value) = plan(
-        &plan_unit("Int[0, 2]", "minimize Reach.steps.sum(s => 100 * 100)", "Reach.length = 2"),
+        &plan_unit(
+            "Int[0, 2]",
+            "minimize Reach.steps.sum(s => 100 * 100)",
+            "Reach.length = 2",
+        ),
         json!({"accounting": {"integer_bits": 12}}),
     );
     assert_eq!(exit, 22, "{value}");
     assert_eq!(value["synthesis"]["status"], "incomplete", "{value}");
-    assert_eq!(value["synthesis"]["cause"]["setting"], "accounting.integer_bits", "{value}");
+    assert_eq!(
+        value["synthesis"]["cause"]["setting"], "accounting.integer_bits",
+        "{value}"
+    );
 }
 
 #[test]
 #[trace("FSpec-FR-802-AC-1")]
 fn a_step_sum_outside_its_authored_decimal_domain_is_undefined() {
     let (exit, value) = plan(
-        &plan_unit("Int[0, 2]", "minimize Reach.steps.sum(s => let cost: Decimal[0,100;2,2;exact] = 0.60 in cost)", "Reach.length = 2"),
+        &plan_unit(
+            "Int[0, 2]",
+            "minimize Reach.steps.sum(s => let cost: Decimal[0,100;2,2;exact] = 0.60 in cost)",
+            "Reach.length = 2",
+        ),
         json!({}),
     );
     assert_eq!(exit, 10, "{value}");
     assert_eq!(value["synthesis"]["status"], "infeasible", "{value}");
-    assert!(value["synthesis"]["explored"]["undefined_objectives"].as_u64().is_some_and(|count| count > 0), "{value}");
+    assert!(
+        value["synthesis"]["explored"]["undefined_objectives"]
+            .as_u64()
+            .is_some_and(|count| count > 0),
+        "{value}"
+    );
 }
 
 #[test]
@@ -410,7 +460,12 @@ fn decimal_step_objectives_refuse_untyped_primaries_and_constructors() {
         "if s.index < 2 then decimal(10,2) else decimal(5,2)",
     ] {
         let (exit, value) = plan(
-            &plan_unit("Int[0, 3]", &format!("minimize Reach.steps.sum(s => {term})"), "true"), json!({}),
+            &plan_unit(
+                "Int[0, 3]",
+                &format!("minimize Reach.steps.sum(s => {term})"),
+                "true",
+            ),
+            json!({}),
         );
         assert_eq!(exit, 20, "{value}");
         names(&value, "ambiguous-literal");
@@ -425,17 +480,33 @@ fn a_large_step_sum_coefficient_obeys_the_named_decimal_budget() {
     let coefficient = format!("9{}", "0".repeat(4095));
     let upper = format!("1{}", "0".repeat(4098));
     let unit = plan_unit(
-        "Int[0, 2]", &format!("minimize Reach.steps.sum(s => convert<Cost>(decimal({coefficient},0)))"), "Reach.length = 2",
-    ).replace("type Lengths", &format!("type Cost = Decimal[0,{upper};0,0;exact];\ntype Lengths"));
+        "Int[0, 2]",
+        &format!("minimize Reach.steps.sum(s => convert<Cost>(decimal({coefficient},0)))"),
+        "Reach.length = 2",
+    )
+    .replace(
+        "type Lengths",
+        &format!("type Cost = Decimal[0,{upper};0,0;exact];\ntype Lengths"),
+    );
     let (exit, value) = plan(&unit, json!({"accounting": {"decimal_digits": 4096}}));
     assert_eq!(exit, 22, "{value}");
     assert_eq!(value["synthesis"]["status"], "incomplete", "{value}");
-    assert_eq!(value["synthesis"]["cause"]["setting"], "accounting.decimal_digits", "{value}");
+    assert_eq!(
+        value["synthesis"]["cause"]["setting"], "accounting.decimal_digits",
+        "{value}"
+    );
     let (exit, value) = plan(&unit, json!({"accounting": {"decimal_digits": 5000}}));
     assert_eq!(exit, 0, "{value}");
     assert_eq!(value["synthesis"]["status"], "optimal", "{value}");
-    assert_eq!(value["synthesis"]["objective"]["value"], json!({"type": "decimal", "coefficient": format!("18{}", "0".repeat(4095)), "scale": "0"}), "{value}");
-    assert_eq!(value["synthesis"]["certificate"]["type"], "potential", "{value}");
+    assert_eq!(
+        value["synthesis"]["objective"]["value"],
+        json!({"type": "decimal", "coefficient": format!("18{}", "0".repeat(4095)), "scale": "0"}),
+        "{value}"
+    );
+    assert_eq!(
+        value["synthesis"]["certificate"]["type"], "potential",
+        "{value}"
+    );
 }
 
 #[test]
@@ -449,8 +520,42 @@ fn negative_and_maximized_step_sums_keep_their_once_only_offset_and_closure() {
         let outcome = &value["synthesis"];
         assert_eq!(exit, 0, "{value}");
         assert_eq!(outcome["status"], "optimal", "{value}");
-        assert_eq!(outcome["objective"]["value"], json!({"type": "integer", "value": expected}), "{value}");
-        assert_eq!(outcome["plan"]["steps"].as_array().unwrap().len(), 3, "{value}");
+        assert_eq!(
+            outcome["objective"]["value"],
+            json!({"type": "integer", "value": expected}),
+            "{value}"
+        );
+        assert_eq!(
+            outcome["plan"]["steps"].as_array().unwrap().len(),
+            3,
+            "{value}"
+        );
+        assert_eq!(outcome["certificate"]["type"], "closure", "{value}");
+    }
+}
+
+#[test]
+#[trace("FSpec-FR-802-AC-6")]
+fn a_nonconstant_suffix_on_an_explicit_sum_remains_general() {
+    for (objective, expected) in [
+        (
+            "minimize sum<Integer>(s in Reach.steps: 2) + Reach.length",
+            "6",
+        ),
+        ("minimize sum<Integer>(s in [1,2]: s) + 7", "10"),
+    ] {
+        let (exit, value) = plan(
+            &plan_unit("Int[0, 3]", objective, "Reach.length >= 2"),
+            json!({}),
+        );
+        let outcome = &value["synthesis"];
+        assert_eq!(exit, 0, "{value}");
+        assert_eq!(outcome["status"], "optimal", "{value}");
+        assert_eq!(
+            outcome["objective"]["value"],
+            json!({"type": "integer", "value": expected}),
+            "{value}"
+        );
         assert_eq!(outcome["certificate"]["type"], "closure", "{value}");
     }
 }

@@ -1396,10 +1396,11 @@ impl<'c> Mapping<'c> {
             Production::Postfix | Production::ScrutineePostfix | Production::HyperPostfix => {
                 self.postfix(task, &items)
             }
-            Production::Primary | Production::ScrutineePrimary | Production::HyperPrimary
-            | Production::ExactValue => {
-                self.primary(task, &items)
-            }
+            Production::Primary
+            | Production::ScrutineePrimary
+            | Production::HyperPrimary
+            | Production::ExactValue => self.primary(task, &items),
+            Production::FloatValue | Production::QuantityLiteral => self.primary_node(task, node),
             Production::IndexedRead => self.indexed_read(task, &items),
             Production::StepSumObjective => self.step_sum(task, &items),
             Production::CompleteUnit
@@ -1447,7 +1448,6 @@ impl<'c> Mapping<'c> {
             | Production::DeleteTarget
             | Production::Block
             | Production::ExactNumber
-            | Production::FloatValue
             | Production::ReferenceLiteral
             | Production::Hex32
             | Production::Hex64
@@ -1505,7 +1505,6 @@ impl<'c> Mapping<'c> {
             | Production::Fraction
             | Production::Weighting
             | Production::Horizon
-            | Production::QuantityLiteral
             | Production::StateGraphClaim
             | Production::StateGraphBody
             | Production::StateGraphPredicate
@@ -1651,12 +1650,27 @@ impl<'c> Mapping<'c> {
             [term] => *term,
             _ => return Err(unexpected(node)),
         };
-        let constant = nodes_of(items, Production::ExactValue).first().copied();
+        let constant = items.iter().find_map(|item| match item {
+            Item::Node(node)
+                if matches!(
+                    node.production(),
+                    Production::ExactValue | Production::FloatValue | Production::QuantityLiteral
+                ) =>
+            {
+                Some(*node)
+            }
+            _ => None,
+        });
         let production = node.production();
         let start = node.span().start;
         let mut parent = task.parent;
         if let (Some(_), Some(plus)) = (constant, plus) {
-            let total = self.node(Shape::Binary(BinaryOperator::Add), production, node.span(), parent);
+            let total = self.node(
+                Shape::Binary(BinaryOperator::Add),
+                production,
+                node.span(),
+                parent,
+            );
             self.arena[total].operator_span = Some(plus.span());
             parent = Some(total);
         }
@@ -1687,11 +1701,20 @@ impl<'c> Mapping<'c> {
         );
         self.queue(sum, vec![term]);
         if let (Some(constant), Some(total), Some(_)) = (constant, parent, plus) {
-            let constant_parent = if let Some(minus) = tokens.iter().find(|token| token.spelling() == b"-") {
-                self.node(Shape::Negate, production, Span { start: minus.span().start, end: constant.span().end }, Some(total))
-            } else {
-                total
-            };
+            let constant_parent =
+                if let Some(minus) = tokens.iter().find(|token| token.spelling() == b"-") {
+                    self.node(
+                        Shape::Negate,
+                        production,
+                        Span {
+                            start: minus.span().start,
+                            end: constant.span().end,
+                        },
+                        Some(total),
+                    )
+                } else {
+                    total
+                };
             self.queue(constant_parent, vec![constant]);
         }
         Ok(())

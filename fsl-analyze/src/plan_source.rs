@@ -528,7 +528,10 @@ fn reads_field(body: &CheckedBody, record: &filament_exact::NodeKey, field: &str
 /// step it is evaluated for (FSpec FR-802 "Classification").
 fn is_step_sum(body: &CheckedBody, plan: &filament_exact::NodeKey) -> bool {
     let root = step_sum_node(body.root());
-    if !matches!(root.value_type(), ValueType::Integer | ValueType::Int(_) | ValueType::Rational(_) | ValueType::Decimal(_)) {
+    if !matches!(
+        root.value_type(),
+        ValueType::Integer | ValueType::Int(_) | ValueType::Rational(_) | ValueType::Decimal(_)
+    ) {
         return false;
     }
     if matches!(
@@ -569,19 +572,54 @@ fn is_step_sum(body: &CheckedBody, plan: &filament_exact::NodeKey) -> bool {
     true
 }
 
-/// Split only the admitted root sum plus constant form. The grammar has
-/// already restricted the right operand to an exact numeric constant.
+/// Split only a root sum plus constant. The explicit `sum<N>` expression
+/// grammar also reaches this classifier and admits nonconstant additions.
 fn step_sum_node(root: CheckedNode<'_>) -> CheckedNode<'_> {
-    let left = match root.kind() {
-        NodeKind::Arithmetic(Arithmetic::Add, left, _)
-        | NodeKind::Rational { operator: filament_exact::ArithmeticOperator::Add, left, .. }
-        | NodeKind::Decimal { operator: filament_exact::ArithmeticOperator::Add, left, .. } => root.at(*left),
+    let (left, right) = match root.kind() {
+        NodeKind::Arithmetic(Arithmetic::Add, left, right)
+        | NodeKind::Rational {
+            operator: filament_exact::ArithmeticOperator::Add,
+            left,
+            right,
+            ..
+        }
+        | NodeKind::Decimal {
+            operator: filament_exact::ArithmeticOperator::Add,
+            left,
+            right,
+            ..
+        } => (root.at(*left), root.at(*right)),
         _ => return root,
     };
-    if matches!(left.kind(), NodeKind::Query { visit: Visit::Sum, .. }) {
+    if matches!(
+        left.kind(),
+        NodeKind::Query {
+            visit: Visit::Sum,
+            ..
+        }
+    ) && constant_offset(right)
+    {
         left
     } else {
         root
+    }
+}
+
+fn constant_offset(mut node: CheckedNode<'_>) -> bool {
+    loop {
+        match node.kind() {
+            NodeKind::Literal(literal) => {
+                return matches!(
+                    &literal.0,
+                    Value::Integer(_) | Value::Rational(_) | Value::Decimal(_)
+                )
+            }
+            NodeKind::Negate(inner)
+            | NodeKind::RationalNegate(inner, _)
+            | NodeKind::DecimalNegate(inner, _)
+            | NodeKind::Coerce(inner, _) => node = node.at(*inner),
+            _ => return false,
+        }
     }
 }
 
@@ -695,10 +733,12 @@ impl PlanRules for SourcePlan<'_> {
         let Some(value) = self.plan_value(&one, index) else {
             return Ok(None);
         };
-        Ok(match self.evaluate_node(step_sum_node(body.root()), value)? {
-            Evaluated::Value(value) => Self::exact(&value),
-            Evaluated::Undefined => None,
-        })
+        Ok(
+            match self.evaluate_node(step_sum_node(body.root()), value)? {
+                Evaluated::Value(value) => Self::exact(&value),
+                Evaluated::Undefined => None,
+            },
+        )
     }
 
     fn accumulate_step_cost(
@@ -715,10 +755,12 @@ impl PlanRules for SourcePlan<'_> {
         };
         // Reuse the evaluator's ordered, typed sum rather than adding the
         // Rational projection outside its decimal domain or meter.
-        Ok(match self.evaluate_node(step_sum_node(body.root()), value)? {
-            Evaluated::Value(value) => Self::exact(&value),
-            Evaluated::Undefined => None,
-        })
+        Ok(
+            match self.evaluate_node(step_sum_node(body.root()), value)? {
+                Evaluated::Value(value) => Self::exact(&value),
+                Evaluated::Undefined => None,
+            },
+        )
     }
 
     fn add_objective_values(
@@ -727,11 +769,14 @@ impl PlanRules for SourcePlan<'_> {
         right: &Rational,
     ) -> Result<Option<Rational>, RuleStop> {
         match filament_exact::evaluate_rational_arithmetic(
-            filament_exact::RationalArithmetic::Add(left, right), None, &mut self.meter,
+            filament_exact::RationalArithmetic::Add(left, right),
+            None,
+            &mut self.meter,
         ) {
             Outcome::Completed(value) => Ok(Some(value)),
             Outcome::Incomplete(incomplete) => Err(RuleStop::Accounting {
-                counter: incomplete.limit_kind.as_str(), value: incomplete.limit,
+                counter: incomplete.limit_kind.as_str(),
+                value: incomplete.limit,
             }),
             Outcome::Undefined(_) | Outcome::Refused(_) => Ok(None),
         }
@@ -747,8 +792,16 @@ impl PlanRules for SourcePlan<'_> {
         }
         let right = match root.kind() {
             NodeKind::Arithmetic(Arithmetic::Add, _, right)
-            | NodeKind::Rational { operator: filament_exact::ArithmeticOperator::Add, right, .. }
-            | NodeKind::Decimal { operator: filament_exact::ArithmeticOperator::Add, right, .. } => *right,
+            | NodeKind::Rational {
+                operator: filament_exact::ArithmeticOperator::Add,
+                right,
+                ..
+            }
+            | NodeKind::Decimal {
+                operator: filament_exact::ArithmeticOperator::Add,
+                right,
+                ..
+            } => *right,
             _ => return Ok(None),
         };
         let Some(value) = self.plan_value(plan, 0) else {

@@ -975,10 +975,16 @@ impl<R: PlanRules> Search<'_, '_, R> {
             };
             let accumulated = if self.kind == ObjectiveKind::StepSum {
                 let (states, steps) = self.prefix_with(parent, &step, &state);
-                let view = PlanView { states: &states, steps: &steps };
+                let view = PlanView {
+                    states: &states,
+                    steps: &steps,
+                };
                 let Some(total) = self.rules.accumulate_step_cost(
-                    &view, &self.nodes[parent].accumulated, &cost,
-                )? else {
+                    &view,
+                    &self.nodes[parent].accumulated,
+                    &cost,
+                )?
+                else {
                     self.explored.undefined_objectives += 1;
                     continue;
                 };
@@ -1104,7 +1110,10 @@ impl<R: PlanRules> Search<'_, '_, R> {
             ObjectiveKind::StepSum => {
                 let (states, steps) = self.prefix_of(index);
                 self.rules.step_sum_objective(
-                    &PlanView { states: &states, steps: &steps },
+                    &PlanView {
+                        states: &states,
+                        steps: &steps,
+                    },
                     &self.nodes[index].accumulated,
                 )?
             }

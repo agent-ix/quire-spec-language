@@ -314,7 +314,7 @@ productions! {
     #[doc = "`mode <identifier> when <block> ;`: one initial entry of a `hybrid` declaration."]
     InitialEntry,
     HybridMode, Equation, SynthesisDeclaration,
-    #[doc = "`<identifier> . steps . sum ( <identifier> => <expression> ) [+ [-] <exact-value>]`: the per-step sum of a plan synthesis objective, the only position that admits `=>`."]
+    #[doc = "`<identifier> . steps . sum ( <identifier> => <expression> ) [+ [-] <numeric-literal>]`: the per-step sum of a plan synthesis objective, the only position that admits `=>`."]
     StepSumObjective,
     VerificationPlan, VerificationStep,
     #[doc = "`abstraction <identifier> using <identifier> { <binding>+ }`: a model-to-implementation abstraction relation."]
@@ -969,7 +969,7 @@ impl LosslessCst {
 #[cfg(test)]
 mod tests {
     use super::{LosslessCst, Production, SourceChange};
-    use crate::{Limits, parse};
+    use crate::{parse, Limits};
     use fsl_foundation::{SourceIdentity, Span};
 
     const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\nprofile Complete = \"filament.value.complete/v1\";\n";

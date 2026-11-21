@@ -30,7 +30,12 @@ fn check(lengths: &str, objective: &str, goal: &str) -> Result<CheckedSynthesis,
     check_with_types(lengths, objective, goal, "")
 }
 
-fn check_with_types(lengths: &str, objective: &str, goal: &str, types: &str) -> Result<CheckedSynthesis, String> {
+fn check_with_types(
+    lengths: &str,
+    objective: &str,
+    goal: &str,
+    types: &str,
+) -> Result<CheckedSynthesis, String> {
     let model = fsl_cst::diagnostic::read_source(
         fsl_foundation::SourceIdentity::new("agent-ix", "test:shop-model"),
         "shop.fsl",
@@ -154,7 +159,7 @@ fn a_step_sum_types_its_binder_as_the_step_record() {
     assert!(refusals.contains("cost"), "{refusals}");
 }
 
-#[trace("FSpec-FR-802-AC-1", "FSpec-TC-1952")]
+#[trace("FSpec-FR-802-AC-1", "FSpec-FR-802-AC-7", "FSpec-TC-1952")]
 #[test]
 fn a_decimal_step_sum_retains_its_complete_declared_summand_type() {
     for term in [
@@ -163,12 +168,18 @@ fn a_decimal_step_sum_retains_its_complete_declared_summand_type() {
         "convert<Cost>(0.10) + 0.05",
     ] {
         let checked = check_with_types(
-            "Int[0, 3]", &format!("minimize Reach.steps.sum(s => {term})"),
-            "Reach.length >= 1", "type Cost = Decimal[0,10000;2,2;exact];",
-        ).expect("an FR-140 typed context supplies the complete decimal type");
+            "Int[0, 3]",
+            &format!("minimize Reach.steps.sum(s => {term})"),
+            "Reach.length >= 1",
+            "type Cost = Decimal[0,10000;2,2;exact];",
+        )
+        .expect("an FR-140 typed context supplies the complete decimal type");
         let objective = checked.objective().expect("the objective is checked");
         let ValueType::Decimal(total) = objective.root().value_type() else {
-            panic!("the total is a decimal: {:?}", objective.root().value_type());
+            panic!(
+                "the total is a decimal: {:?}",
+                objective.root().value_type()
+            );
         };
         assert_eq!(total.lower().to_string(), "0");
         assert_eq!(total.upper().to_string(), "10000");
@@ -185,8 +196,12 @@ fn a_decimal_step_sum_without_a_typed_context_refuses_ambiguity() {
         "if s.index < 2 then decimal(10,2) else decimal(5,2)",
         "let cost = 0.10 in cost",
     ] {
-        let refusals = check("Int[0, 3]", &format!("minimize Reach.steps.sum(s => {term})"), "true")
-            .expect_err("the objective and decimal spelling cannot supply a type");
+        let refusals = check(
+            "Int[0, 3]",
+            &format!("minimize Reach.steps.sum(s => {term})"),
+            "true",
+        )
+        .expect_err("the objective and decimal spelling cannot supply a type");
         assert!(refusals.contains("AmbiguousLiteral"), "{term}: {refusals}");
     }
 }

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Original S1 synthesis and ordered verification-plan near-neighbours.
-use super::time_declaration::{PREFIX, accepts, refuses};
+use super::time_declaration::{accepts, refuses, PREFIX};
 use fsl_cst::{CompleteCause, CompleteCode, Limits, Production};
 use fsl_foundation::{SourceIdentity, Span};
 use ix_trace_rs::trace;
@@ -66,6 +66,8 @@ fn step_sum_objective_reads_only_at_the_objective_root() {
         "maximize Reach.steps.sum(s => s.after.cost) + 3",
         "minimize Reach.steps.sum(s => 1) + -2",
         "minimize Reach.steps.sum(s => 1) + rational(1,3)",
+        "minimize Reach.steps.sum(s => float64(bits: 0x3ff0000000000000)) + float64(bits: 0x3ff0000000000000)",
+        "minimize Reach.steps.sum(s => 30 M::seconds) + 1 M::seconds",
     ] {
         accepts(
             &format!("synthesis Reach using p grammar M::G domain M::D {objective} satisfies {{ true }};"),
@@ -90,7 +92,10 @@ fn step_sum_objective_reads_only_at_the_objective_root() {
     )
     .expect("valid source identity and UTF-8");
     assert!(reparsed.is_admissible(), "{:?}", reparsed.diagnostics());
-    assert_eq!(fsl_cst::format::format(&reparsed).expect("formats"), formatted);
+    assert_eq!(
+        fsl_cst::format::format(&reparsed).expect("formats"),
+        formatted
+    );
     for (bad, token) in [
         (
             "synthesis Reach using p grammar M::G domain M::D satisfies { Reach.steps.sum(s => 1) > 0 };",

@@ -727,10 +727,11 @@ fn step_sum_total(summand: &ValueType) -> Option<ValueType> {
     match summand {
         ValueType::Integer | ValueType::Int(_) => Some(ValueType::Integer),
         ValueType::BoundedQuantity(bounded) => Some(ValueType::Quantity(bounded.unit().clone())),
-        ValueType::Rational(_) | ValueType::Decimal(_) | ValueType::Float(_)
-        | ValueType::Quantity(_) | ValueType::CarriedQuantity(_) => {
-            Some(summand.clone())
-        }
+        ValueType::Rational(_)
+        | ValueType::Decimal(_)
+        | ValueType::Float(_)
+        | ValueType::Quantity(_)
+        | ValueType::CarriedQuantity(_) => Some(summand.clone()),
         _ => None,
     }
 }
@@ -2977,21 +2978,22 @@ impl<'a> Typer<'a> {
             Some(name) => self.type_named(name, &location)?,
             None => ValueType::Integer,
         };
-        let admitted = result_type.is_none() || match tally {
-            Tally::Count => is_integer(&value_type),
-            // FR-145: a `sum` totals any numeric family a
-            // `filament.op.collection.sum` identity exists for.
-            Tally::Sum => matches!(
-                value_type,
-                ValueType::Integer
-                    | ValueType::Int(_)
-                    | ValueType::Rational(_)
-                    | ValueType::Decimal(_)
-                    | ValueType::Float(_)
-                    | ValueType::Quantity(_)
-                    | ValueType::CarriedQuantity(_)
-            ),
-        };
+        let admitted = result_type.is_none()
+            || match tally {
+                Tally::Count => is_integer(&value_type),
+                // FR-145: a `sum` totals any numeric family a
+                // `filament.op.collection.sum` identity exists for.
+                Tally::Sum => matches!(
+                    value_type,
+                    ValueType::Integer
+                        | ValueType::Int(_)
+                        | ValueType::Rational(_)
+                        | ValueType::Decimal(_)
+                        | ValueType::Float(_)
+                        | ValueType::Quantity(_)
+                        | ValueType::CarriedQuantity(_)
+                ),
+            };
         if !admitted {
             return Err(mismatch(&location));
         }
@@ -4258,8 +4260,8 @@ impl<'a> Typer<'a> {
                     ..
                 } = *frame;
                 if type_argument.is_none() {
-                    value_type = step_sum_total(&body.value_type)
-                        .ok_or_else(|| mismatch(&body.location))?;
+                    value_type =
+                        step_sum_total(&body.value_type).ok_or_else(|| mismatch(&body.location))?;
                     if matches!(value_type, ValueType::Float(_))
                         && self.scope.ieee_profile.is_none()
                     {
