@@ -698,7 +698,7 @@ fn encode_expression(
                 summand,
             } => {
                 out.write_str("sum");
-                out.write_str(result_type);
+                out.write_str(result_type.as_deref().unwrap_or(""));
                 out.write_str(binder);
                 pending.extend([expr.at(*source), expr.at(*summand)]);
             }

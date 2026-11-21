@@ -230,7 +230,7 @@ fn expression_uses<'e>(
                     ..
                 }
                 | ExprNode::Sum {
-                    result_type: name,
+                    result_type: Some(name),
                     result_type_span: span,
                     ..
                 } => forms.push((TypeForm::name(name.clone(), *span), ClockUse::Accumulation)),
