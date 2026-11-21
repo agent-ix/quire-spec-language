@@ -26,6 +26,8 @@ mod search;
 mod settle;
 mod state_graph;
 mod task_product;
+mod task_certificate;
+mod task_symbolic;
 mod time_lock;
 
 pub use certificate::certificate_item;
@@ -37,6 +39,11 @@ pub use refine::{
 pub mod manifest;
 pub use dbm::{Bound, Dbm, DbmError};
 pub use scale::{scale_constants, ScaledConstants};
+pub use task_certificate::{task_product_certificate, TaskCertificateRefusal};
+pub use task_symbolic::{
+    explore as explore_task_symbolic, SymbolicEdge, SymbolicGraph, SymbolicIdentity, SymbolicStop,
+    SymbolicVertex,
+};
 pub use search::{
     canonical_symbolic_state, check_timed_model, concretise_timed_state_graph_path,
     explore_timed_state_graph, TimedStateGraph, TimedStateGraphEdge, TimedStateGraphNode,
