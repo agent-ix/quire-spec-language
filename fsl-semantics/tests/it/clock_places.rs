@@ -4358,6 +4358,17 @@ fn clock_reference_document(target: &str) -> Vec<u8> {
     serde_json::to_vec(&document).expect("JSON")
 }
 
+/// FCD's alias construct is the canonical native-target value-type shape.
+fn native_target_value_construct() -> Value {
+    let mut construct = wire_construct(
+        "native_target_value_type",
+        meaning::VALUE_TYPE,
+        json!({"target": "required"}),
+    );
+    construct["construct"]["shape"] = json!("alias");
+    construct
+}
+
 /// A clock reference is a data write, and the same field can be read in a
 /// population condition without reading any clock value.
 #[trace("TC-3084", "FR-1040-AC-8", "FR-1040-AC-3")]
@@ -4369,8 +4380,12 @@ fn a_clock_reference_field_is_read_and_written_as_data() {
         invariant Count using v on Config::Call at current {{ count(c in Config::calls where ref(c.x) = self.r) >= 0 }}\n"))
         .unwrap_or_else(|refusals| panic!("data read/write and frame: {refusals:?}"));
     assert_eq!(
-        timed(&graph).clocks().len(),
-        2,
+        timed(&graph)
+            .clocks()
+            .iter()
+            .map(|clock| clock.name())
+            .collect::<Vec<_>>(),
+        ["x", "y"],
         "r contributes no clock place"
     );
     assert!(
@@ -4386,7 +4401,8 @@ fn a_clock_reference_field_is_read_and_written_as_data() {
     );
     assert_eq!(
         applications_of(&graph, "filament.op.clock_reference.eq").len(),
-        1
+        2,
+        "the post-state read of r and the population condition each compare a data reference"
     );
 }
 
@@ -4411,11 +4427,7 @@ fn clock_reference_targets_and_wrappers_preserve_data_types() {
             document["constructs"]
                 .as_array_mut()
                 .expect("constructs")
-                .push(wire_construct(
-                    "native_target_value_type",
-                    meaning::VALUE_TYPE,
-                    json!({"target": "required"}),
-                ));
+                .push(native_target_value_construct());
         }
         let mut optional = field("optional", &package("ClockRef"));
         optional["presence"] = json!("optional");
@@ -4484,8 +4496,33 @@ fn a_clock_reference_native_pseudo_name_is_refused_at_the_field() {
         .expect_err("no native pseudo-name");
     assert_eq!(refusal.cause.code(), Code::InvalidModelBinding);
     assert_eq!(refusal.cause.cause(), Some("malformed-declaration"));
+    let fsl_semantics::model::intake::UnitIntakeCause::Refused(refusals) = &refusal.cause else {
+        panic!("{refusal:?}")
+    };
+    assert_eq!(
+        refusals.len(),
+        1,
+        "the authoritative shared refusal is not duplicated"
+    );
+    let fsl_semantics::model::refusal::ModelRefusalCause::IntakeMalformedDeclaration {
+        node,
+        member,
+        ..
+    } = &refusals[0].cause
+    else {
+        panic!("{refusal:?}")
+    };
+    assert_eq!(node, &call("r"));
+    assert_eq!(
+        member,
+        &"TypeDefinition.fields[7].typeRef"
+            .parse()
+            .expect("member path")
+    );
     assert!(
-        format!("{refusal:?}").contains("Field.typeRef"),
+        refusals[0]
+            .detail
+            .contains("agent-ix.semantic-ir.UNRESOLVED_TYPE_REF"),
         "{refusal:?}"
     );
 }
@@ -4500,7 +4537,7 @@ fn native_target_constraint_refusals_name_the_keyword() {
             serde_json::from_slice(&rpc_document_with(&["x"], false)).expect("JSON");
         let constraint = json!({
             "identity": format!("{watch}/constraints/{keyword}"), "keyword": keyword,
-            "operands": {"value": 5}, "appliesTo": watch,
+            "operands": {"value": "5"}, "appliesTo": watch,
             "diagnosticCode": "watch.bound", "origin": {"generated": {
                 "generatorIdentity": watch, "generatorVersion": "1.0.0", "inputIdentities": [watch],
             }},
@@ -4509,11 +4546,7 @@ fn native_target_constraint_refusals_name_the_keyword() {
         document["constructs"]
             .as_array_mut()
             .expect("constructs")
-            .push(wire_construct(
-                "native_target_value_type",
-                meaning::VALUE_TYPE,
-                json!({"target": "required"}),
-            ));
+            .push(native_target_value_construct());
         let refusal = crate::model_operations::admit(&serde_json::to_vec(&document).expect("JSON"))
             .expect_err("invalid keyword");
         assert_eq!(
@@ -4522,9 +4555,25 @@ fn native_target_constraint_refusals_name_the_keyword() {
             "{native}: {refusal:?}"
         );
         assert_eq!(refusal.cause.cause(), Some("malformed-declaration"));
-        assert!(
-            format!("{refusal:?}").contains("Constraint.keyword"),
-            "{native}: {refusal:?}"
+        let fsl_semantics::model::intake::UnitIntakeCause::Refused(refusals) = &refusal.cause
+        else {
+            panic!("{native}: {refusal:?}")
+        };
+        assert_eq!(refusals.len(), 1, "{native}: {refusal:?}");
+        let fsl_semantics::model::refusal::ModelRefusalCause::IntakeMalformedDeclaration {
+            node,
+            member,
+            ..
+        } = &refusals[0].cause
+        else {
+            panic!("{native}: {refusal:?}")
+        };
+        assert_eq!(node, &format!("{watch}/constraints/{keyword}"));
+        assert_eq!(
+            member,
+            &"TypeDefinition.constraints[0].keyword"
+                .parse()
+                .expect("member path")
         );
     }
 }
@@ -4960,7 +5009,7 @@ fn a_value_type_bound_to_clock_by_target_types_a_clock_place() {
         let constraint = json!({
             "identity": format!("{watch}/constraints/max"),
             "keyword": "max",
-            "operands": {"value": "5/1"},
+            "operands": {"value": "5"},
             "appliesTo": watch.clone(),
             "diagnosticCode": "clock.max",
             "origin": {"generated": {
@@ -4982,11 +5031,7 @@ fn a_value_type_bound_to_clock_by_target_types_a_clock_place() {
         document["constructs"]
             .as_array_mut()
             .expect("constructs")
-            .push(wire_construct(
-                "native_target_value_type",
-                meaning::VALUE_TYPE,
-                json!({"target": "required"}),
-            ));
+            .push(native_target_value_construct());
     });
     let graph = check(&document, &format!("{UNITS}{DENSE}"))
         .unwrap_or_else(|refusals| panic!("a clock-bound value type checks: {refusals:?}"));
