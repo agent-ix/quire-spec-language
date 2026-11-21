@@ -1033,3 +1033,37 @@ allocate Alloc from pump to pump;
     )
     .expect("FR-154 admits the all-form document");
 }
+
+/// A named model-unit range is a schema-valid type definition and reaches
+/// the checked attribute with its authored bounds intact.
+#[test]
+#[trace("FR-710-AC-5", "TC-1943")]
+fn a_named_integer_model_type_admits_and_retains_its_bounds() {
+    let source = r#"language "ix:native" edition "1-draft";
+domain "example/shop";
+type Total = Int[0, 3];
+object Order { total: Total; }
+population orders: Order;
+"#;
+    let packages = package_input([source.as_bytes()])
+        .expect("the authored model unit compiles to package input");
+    let _checked_document = checked_domain_package("example/shop", &packages);
+    let mut declarations = selected_unit_declarations("example/shop", &packages)
+        .expect("the named type's compiled document passes strict intake");
+    declarations.link_dispatch(ModelNormalizationLimits::default()).expect("dispatch links");
+    let graph = declarations.check(
+        CheckMode::Linked, CheckingLimits::default(),
+        &crate::reward_evaluator::ZeroRewardEvaluator,
+    ).expect("the invariant over the named bounded field checks");
+    let types = graph.scope().types();
+    let order = types.object_types().find(|object| object.name() == "Order")
+        .expect("the model declares Order");
+    let attributes = types.attributes(order.key()).expect("Order has attributes");
+    let total = attributes.iter().find(|attribute| attribute.field().name() == "total")
+        .expect("Order declares total");
+    let filament_exact::ValueType::Int(bounds) = total.field().value_type() else {
+        panic!("the named field retains its integer range: {:?}", total.field().value_type());
+    };
+    assert_eq!(bounds.lower().to_string(), "0");
+    assert_eq!(bounds.upper().to_string(), "3");
+}

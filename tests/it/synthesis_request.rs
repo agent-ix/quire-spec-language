@@ -533,3 +533,114 @@ fn a_synthesis_beside_another_run_member_refuses() {
     names(&value, "mutually exclusive");
     assert!(value["synthesis"].get("status").is_none(), "{value}");
 }
+
+/// The plan candidate projects generated records rooted at the authored
+/// synthesis span, and the strict reader admits every declaration's region.
+#[test]
+#[trace("FR-1036-AC-2", "FSpec-FR-800-AC-1")]
+fn a_source_plan_candidate_emits_its_record_types_and_source_regions() {
+    let directory = tempfile::tempdir().unwrap();
+    spine::write(directory.path(), Case::Healthy).unwrap();
+    let document = std::fs::read(directory.path().join("spine-model.semantic-ir.json")).unwrap();
+    let packages = fsl_semantics::model::intake::package_input([document.as_slice()])
+        .expect("the spine model admits");
+    let unit = format!(
+        "{}type Lengths = Int[0, 3];\n\
+         synthesis Reach using v grammar Config::ConfigVersion domain Lengths \
+         minimize Reach.length satisfies {{ Reach.length >= 1 and Reach.final.versionNumber >= 0 }};\n",
+        MODEL_HEADER.replace(
+            "filament.model.complete/v1",
+            "filament.temporal.infinite-trace/v1"
+        ),
+    );
+    let emitted = emitted(
+        SourceIdentity::new("test", "synthesis-request"),
+        "unit.native",
+        unit.as_bytes(),
+        &packages,
+        &DependencyInput::default(),
+    )
+    .expect("the source plan emits with its generated type declarations");
+    let records = emitted.emission().selected_source_record_rows();
+    assert!(
+        records.iter().any(|row| row
+            .members
+            .iter()
+            .map(|field| field.admitted_name.as_ref())
+            .eq(["length", "final", "initial", "steps"])),
+        "the plan record has a producer identity row"
+    );
+    assert!(
+        records
+            .iter()
+            .all(|row| row.source_authority.as_ref() == "test"
+                && row.source_identity.as_ref() == "synthesis-request"),
+        "generated records retain the authored source identity"
+    );
+    let operation = emitted
+        .emission()
+        .selected_enum_declaration_rows()
+        .iter()
+        .find(|row| {
+            row.qualified_declaration
+                .iter()
+                .map(|segment| segment.as_ref())
+                .eq(["Reach", "Config", "Op"])
+        })
+        .expect("the plan operation enum has its producer identity row");
+    assert_eq!(
+        (
+            operation.source_authority.as_ref(),
+            operation.source_identity.as_ref()
+        ),
+        ("test", "synthesis-request")
+    );
+    let bytes = emitted.package().bytes();
+    fsl_package::admit_checked_package(
+        bytes,
+        &packages,
+        fsl_package::V2ReadLimits::bounded(fsl_replay::spine::I2_NATIVE_JOIN_STORAGE_DEFAULT),
+    )
+    .expect("all generated plan declarations and occurrences admit");
+    // Operand slots belong to their holder's row; resolve them before
+    // comparing the claim's reference to the parameter's own node id.
+    let mut wire: Value = serde_json::from_slice(bytes).expect("a JSON package");
+    fsl_semantics::check::wire_id::resolve_operand_slots(&mut wire)
+        .expect("every operand slot names its holder's row entry");
+    let claim = synthesis_nodes(&wire)[0];
+    let nodes = wire["semantic_graph"]["nodes"]
+        .as_array()
+        .expect("graph nodes");
+    let candidates = nodes
+        .iter()
+        .filter(|node| node["node_id"] == binding(claim, "candidate")["value"]["target"])
+        .collect::<Vec<_>>();
+    let [candidate] = candidates.as_slice() else {
+        panic!("the plan candidate resolves to exactly one parameter node: {candidates:?}");
+    };
+    assert_eq!(candidate["node_tag"], "value", "{candidate}");
+    assert_eq!(candidate["semantic_form"], "parameter", "{candidate}");
+    let plan_types = nodes
+        .iter()
+        .filter(|node| node["node_id"] == candidate["semantic_type"])
+        .collect::<Vec<_>>();
+    let [plan_type] = plan_types.as_slice() else {
+        panic!("the parameter is typed by exactly one emitted plan record: {plan_types:?}");
+    };
+    assert_eq!(plan_type["semantic_form"], "record", "{plan_type}");
+    assert_eq!(
+        records
+            .iter()
+            .filter(
+                |row| serde_json::to_value(&row.structural_node).expect("a node id serializes")
+                    == plan_type["node_id"]
+            )
+            .count(),
+        1,
+        "the exact plan record has one producer identity row"
+    );
+    assert_eq!(
+        binding_names(plan_type),
+        ["length", "final", "initial", "steps"]
+    );
+}

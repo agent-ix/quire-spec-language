@@ -64,6 +64,7 @@ pub mod monitor_root;
 pub mod monitor_session;
 pub mod plan;
 pub mod plan_search;
+pub mod plan_source;
 pub mod protocol_analysis;
 pub mod provider;
 pub mod schedulability;

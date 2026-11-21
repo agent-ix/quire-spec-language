@@ -15,6 +15,16 @@ const MODEL_HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
      profile v = \"filament.model.complete/v1\";\n\
      model Config = \"example/config-version\";\n";
 
+// The domain document supplies the operation frame; the authored spine
+// postcondition constrains that frame's possible post-states.
+const PLAN_HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
+     profile v = \"filament.temporal.infinite-trace/v1\";\n\
+     profile g = \"filament.state.graph/v1\";\n\
+     model Config = \"example/config-version\";\n\
+     post VersionAdvances using g on Config::ConfigVersion::attemptUpdate {\n\
+       (result implies convert<Integer>(self.versionNumber) = pre(self.versionNumber) + 1)\n\
+       and (not result implies self.versionNumber = pre(self.versionNumber)) }\n";
+
 /// FR-447's `Braking` without `t`, with `SlowEnough` over it.
 const BRAKING: &str = "language \"ix:native\" edition \"1-draft\";\n\
      profile p = \"filament.temporal.infinite-trace/v1\";\n\
@@ -54,6 +64,19 @@ fn run(unit: &str, with_model: bool, member: (&str, Value)) -> (u8, Value) {
 }
 
 fn write_request(directory: &Path, request: &Value) -> (u8, Value) {
+    if request["request"]["synthesis"]["initial"].as_str() == Some("spine-snapshot.json") {
+        std::fs::write(
+            directory.join("spine-model.semantic-ir.json"),
+            crate::support::plan_model::document(),
+        )
+        .expect("the authored small planning model is written");
+        let snapshot_path = directory.join("spine-snapshot.json");
+        let bytes = std::fs::read(&snapshot_path).expect("the plan's spine snapshot exists");
+        let mut snapshot: Value = serde_json::from_slice(&bytes).expect("a JSON snapshot");
+        snapshot["anchor"] = json!({"kind": "initialization", "name": "start"});
+        std::fs::write(snapshot_path, serde_json::to_vec(&snapshot).unwrap())
+            .expect("the plan's initialization snapshot is written");
+    }
     let path = directory.join("request.json");
     std::fs::write(&path, serde_json::to_vec(request).unwrap()).unwrap();
     match fsl_command::command::run(&path, &crate::negotiation::Fr290) {
@@ -76,7 +99,7 @@ fn names(value: &Value, member: &str) {
 /// optional objective, plus the two temporal clauses a policy may name.
 fn plan_unit(lengths: &str, objective: &str, goal: &str) -> String {
     format!(
-        "{MODEL_HEADER}type Lengths = {lengths};\n\
+        "{PLAN_HEADER}type Lengths = {lengths};\n\
          temporal SomeTime using v over (c: Config::ConfigVersion) clock \"model-steps\" \
          on origin {{ eventually holds(c.versionNumber = 3) }}\n\
          synthesis Reach using v grammar Config::ConfigVersion domain Lengths \
@@ -100,32 +123,44 @@ fn plan(unit: &str, synthesis: Value) -> (u8, Value) {
 #[trace("TC-2860", "FR-1010-AC-1")]
 #[trace("FSpec-TC-1955", "FSpec-FR-805-AC-1")]
 #[trace("FSpec-TC-1950", "FSpec-FR-800-AC-1")]
-#[ignore = "QSL-1978: the plan outcome document is not implemented yet"]
 fn an_optimal_plan_writes_the_plan_outcome_document() {
-    let (exit, value) = plan(&plan_unit("Int[0, 3]", "", "Reach.length >= 1"), json!({}));
-    let outcome = &value["synthesis"];
-    assert_eq!(outcome["format"], "filament.plan-outcome/v1", "{value}");
-    assert_eq!(outcome["status"], "optimal", "{value}");
-    for member in [
-        "objective",
-        "plan",
-        "replay",
-        "certificate",
-        "certification",
-        "explored",
-        "limits",
-    ] {
-        assert!(outcome.get(member).is_some(), "{member}: {value}");
+    for objective in ["", "minimize Reach.length"] {
+        let (exit, value) = plan(
+            &plan_unit("Int[0, 3]", objective, "Reach.length >= 1"),
+            json!({}),
+        );
+        let outcome = &value["synthesis"];
+        assert_eq!(outcome["format"], "filament.plan-outcome/v1", "{value}");
+        assert_eq!(outcome["status"], "optimal", "{value}");
+        for member in [
+            "objective",
+            "plan",
+            "replay",
+            "certificate",
+            "certification",
+            "explored",
+            "limits",
+        ] {
+            assert!(outcome.get(member).is_some(), "{member}: {value}");
+        }
+        assert_eq!(outcome["replay"]["outcome"], "reproduced", "{value}");
+        let steps = outcome["plan"]["steps"].as_array().expect("steps");
+        assert_eq!(steps.len(), 1, "the shortest admissible plan: {value}");
+        assert_eq!(steps[0]["index"], 0, "{value}");
+        assert_eq!(
+            outcome["objective"]["value"],
+            json!({"type": "integer", "value": "1"}),
+            "{value}"
+        );
+        assert_eq!(outcome["certificate"]["type"], "potential", "{value}");
+        assert_eq!(outcome["certification"], "certified", "{value}");
+        assert_eq!(
+            outcome["plan"]["states"].as_array().map(Vec::len),
+            Some(steps.len() + 1),
+            "{value}"
+        );
+        assert_eq!(exit, 0, "{value}");
     }
-    assert_eq!(outcome["replay"]["outcome"], "reproduced", "{value}");
-    let steps = outcome["plan"]["steps"].as_array().expect("steps");
-    assert_eq!(steps[0]["index"], 0, "{value}");
-    assert_eq!(
-        outcome["plan"]["states"].as_array().map(Vec::len),
-        Some(steps.len() + 1),
-        "{value}"
-    );
-    assert_eq!(exit, 0, "{value}");
 }
 
 /// FR-1010-AC-2 and FSpec FR-805-AC-2/AC-4, FR-806-AC-5: `infeasible`
@@ -135,7 +170,6 @@ fn an_optimal_plan_writes_the_plan_outcome_document() {
 #[trace("FSpec-TC-1955", "FSpec-FR-805-AC-2")]
 #[trace("FSpec-TC-1955", "FSpec-FR-805-AC-4")]
 #[trace("FSpec-TC-1956", "FSpec-FR-806-AC-5")]
-#[ignore = "QSL-1978: plan outcome exits and the strict plan request reader are not implemented yet"]
 fn an_infeasible_plan_exits_ten_and_a_malformed_request_refuses() {
     let unit = plan_unit("Int[0, 0]", "", "Reach.length >= 1");
     let (exit, value) = plan(&unit, json!({}));
@@ -154,7 +188,6 @@ fn an_infeasible_plan_exits_ten_and_a_malformed_request_refuses() {
 #[trace("TC-2861", "FR-1011-AC-1")]
 #[trace("FSpec-TC-1951", "FSpec-FR-801-AC-1")]
 #[trace("FSpec-TC-1951", "FSpec-FR-801-AC-6")]
-#[ignore = "QSL-1978: plan_search limits are not implemented yet"]
 fn the_plan_search_stops_at_its_named_limits() {
     let unit = plan_unit("Int[0, 3]", "", "Reach.length >= 3");
     for (member, setting) in [
@@ -175,7 +208,6 @@ fn the_plan_search_stops_at_its_named_limits() {
 #[test]
 #[trace("FSpec-TC-2003", "FSpec-FR-801-AC-7")]
 #[trace("TC-2861", "FR-1011-AC-3")]
-#[ignore = "QSL-1978: plan_search limit defaults and their refusals are not implemented yet"]
 fn plan_search_limits_have_published_defaults_and_refuse_invalid_values() {
     let unit = plan_unit("Int[0, 3]", "", "Reach.length >= 1");
     let defaults = json!({
@@ -220,7 +252,6 @@ fn plan_search_limits_have_published_defaults_and_refuse_invalid_values() {
 #[test]
 #[trace("TC-2861", "FR-1011-AC-2")]
 #[trace("FSpec-TC-1951", "FSpec-FR-801-AC-2")]
-#[ignore = "QSL-1978: the plan search does not charge the evaluation meter yet"]
 fn an_exhausted_evaluation_meter_names_its_accounting_setting() {
     let (_, value) = plan(
         &plan_unit("Int[0, 3]", "", "Reach.length >= 3"),
@@ -238,7 +269,6 @@ fn an_exhausted_evaluation_meter_names_its_accounting_setting() {
 #[test]
 #[trace("TC-2862", "FR-1012-AC-1")]
 #[trace("FSpec-TC-1953", "FSpec-FR-803-AC-2")]
-#[ignore = "QSL-1978: non-safety plan policies are not implemented yet"]
 fn a_non_safety_policy_is_evaluated_on_each_completed_plan() {
     let (exit, value) = plan(
         &plan_unit("Int[0, 3]", "", "Reach.length >= 1"),
@@ -263,7 +293,6 @@ fn a_non_safety_policy_is_evaluated_on_each_completed_plan() {
 #[test]
 #[trace("TC-2862", "FR-1012-AC-2")]
 #[trace("FSpec-TC-1954", "FSpec-FR-804-AC-4")]
-#[ignore = "QSL-1978: deterministic plan outcomes are not implemented yet"]
 fn equal_plan_requests_give_byte_identical_outcomes() {
     let unit = plan_unit("Int[0, 3]", "", "Reach.length >= 2");
     let (_, first) = plan(&unit, json!({}));
@@ -278,7 +307,7 @@ fn equal_plan_requests_give_byte_identical_outcomes() {
 #[trace("TC-2862", "FR-1012-AC-3")]
 #[trace("FSpec-TC-1952", "FSpec-FR-802-AC-1")]
 #[trace("FSpec-TC-1955", "FSpec-FR-805-AC-3")]
-#[ignore = "QSL-1978: exact decimal plan objectives are not implemented yet"]
+#[ignore = "lambda objective form lands in the follow-up grammar PR (QSL-1978)"]
 fn a_decimal_step_cost_is_exact_and_certified() {
     let (_, value) = plan(
         &plan_unit(
@@ -304,11 +333,17 @@ fn a_decimal_step_cost_is_exact_and_certified() {
 #[test]
 #[trace("TC-2863", "FR-1013-AC-1")]
 #[trace("FSpec-TC-1956", "FSpec-FR-806-AC-2")]
-#[ignore = "QSL-1978: plan declaration refusals at S3 are not implemented yet"]
 fn plan_declarations_refuse_at_check() {
     let (exit, value) = plan(&plan_unit("Int[-1, 3]", "", "Reach.length >= 1"), json!({}));
     assert_eq!(exit, 20, "{value}");
     names(&value, "type-mismatch");
+}
+
+/// FSpec FR-806-AC-2: a read of `elapsed` over an untimed model refuses
+/// `missing-name`.
+#[test]
+#[trace("FSpec-TC-1956", "FSpec-FR-806-AC-2")]
+fn an_elapsed_read_over_an_untimed_plan_refuses_missing_name() {
     let (exit, value) = plan(
         &plan_unit("Int[0, 3]", "minimize Reach.elapsed", "Reach.length >= 1"),
         json!({}),
@@ -378,7 +413,9 @@ fn the_six_reference_planning_examples_plan_as_specified() {
 // ---- QSL-1979: TLA+ and Lean export -------------------------------------
 
 fn low_unit() -> String {
-    format!("{MODEL_HEADER}invariant Low using v on Config::ConfigVersion at current {{ self.versionNumber >= 0 }}\n")
+    format!(
+        "{MODEL_HEADER}invariant Low using v on Config::ConfigVersion at current {{ self.versionNumber >= 0 }}\n"
+    )
 }
 
 fn export(unit: &str, with_model: bool, member: Value) -> (u8, Value) {
@@ -1373,13 +1410,18 @@ fn probabilistic_plans_compute_exact_probabilities() {
 #[trace("FSpec-TC-1956", "FSpec-FR-806-AC-3")]
 #[trace("FSpec-TC-2038", "FSpec-FR-823-AC-4")]
 #[trace("FSpec-TC-1956", "FSpec-FR-806-AC-4")]
-#[ignore = "QSL-1978: plan request admission refusals are not implemented yet"]
 fn plan_requests_refuse_at_admission() {
     let unit = format!(
         "{}type Digit = Int[0, 9];\n\
-         synthesis Pick using v grammar Digit domain Digit satisfies {{ Pick = 7 }};\n\
-         profile p = \"filament.temporal.infinite-trace/v1\";\n{}",
-        plan_unit("Int[0, 3]", "", "Reach.length >= 1"),
+         synthesis Pick using v grammar Digit domain Digit satisfies {{ Pick = 7 }};\n{}",
+        plan_unit("Int[0, 3]", "", "Reach.length >= 1").replacen(
+            PLAN_HEADER,
+            &PLAN_HEADER.replace(
+                "model Config",
+                "profile p = \"filament.temporal.infinite-trace/v1\";\nmodel Config"
+            ),
+            1
+        ),
         BRAKING
             .split_once("hybrid")
             .map(|(_, rest)| format!("hybrid{rest}"))
@@ -1833,4 +1875,28 @@ fn evidence_for_an_unrepresented_record_is_refused() {
     );
     assert_eq!(exit, 20, "{value}");
     names(&value, "/export_evidence/obligation");
+}
+
+/// Policy evaluation spends the request's accounting budget before a
+/// trivial empty-plan goal can give a planning verdict.
+#[test]
+#[trace("FR-1011-AC-2", "FSpec-FR-801-AC-2")]
+fn policy_accounting_exhaustion_is_an_incomplete_run() {
+    let unit = plan_unit("Int[0, 0]", "", "true");
+    let (unlimited_exit, unlimited) = plan(&unit, json!({"policy": ["SomeTime"]}));
+    assert_eq!(unlimited_exit, 10, "{unlimited}");
+    assert_eq!(
+        unlimited["synthesis"]["status"], "infeasible",
+        "{unlimited}"
+    );
+    let (exit, limited) = plan(
+        &unit,
+        json!({"policy": ["SomeTime"], "accounting": {"work_units": 1}}),
+    );
+    assert_eq!(exit, 22, "{limited}");
+    assert_eq!(limited["synthesis"]["status"], "incomplete", "{limited}");
+    assert_eq!(
+        limited["synthesis"]["cause"]["setting"], "accounting.work_units",
+        "{limited}"
+    );
 }

@@ -4139,6 +4139,40 @@ fn checked_effective_id(
     current.ok_or(EmitRefusal::SourceMapInvariant)
 }
 
+/// Checked composite declarations whose nodes can be emitted. A plan's
+/// records belong to its isolated checking scope, alongside the unit's
+/// ordinary types, and need the same producer identity rows.
+fn emission_composites(
+    graph: &CheckedGraph,
+) -> impl Iterator<Item = &filament_semantic_value::declaration::CompositeDeclaration> {
+    let mut seen = BTreeSet::new();
+    graph
+        .scope()
+        .types()
+        .composites()
+        .chain(
+            graph
+                .syntheses()
+                .iter()
+                .filter_map(|synthesis| synthesis.plan())
+                .flat_map(|plan| {
+                    let shape = plan.shape();
+                    plan.scope()
+                        .types()
+                        .composites()
+                        .filter(move |declaration| {
+                            let key = declaration.key();
+                            key == shape.plan
+                                || key == shape.state
+                                || key == shape.step
+                                || key == shape.arguments
+                                || shape.objects.values().any(|object| object == &key)
+                        })
+                }),
+        )
+        .filter(move |declaration| seen.insert(declaration.key()))
+}
+
 /// Map the source model's private package identities to the identities that
 /// its emitted SourceOwner nodes carry. The source package keys remain useful
 /// during checking, but they are not available to a package reader.
@@ -4170,7 +4204,7 @@ fn source_declaration_key_rewrites(
             source_declaration_identity(owner, name),
         );
     }
-    for declaration in graph.scope().types().composites() {
+    for declaration in emission_composites(graph) {
         let Some(node_key) = graph.semantic_graph().composite_node(&declaration.key()) else {
             continue;
         };
@@ -7608,7 +7642,12 @@ pub(crate) fn source_enum_rows(
     let semantic = graph.semantic_graph();
     let mut declarations = std::collections::BTreeMap::new();
     let mut members = std::collections::BTreeMap::new();
-    for binding in graph.scope().enums() {
+    let plan_enums = graph
+        .syntheses()
+        .iter()
+        .filter_map(|synthesis| synthesis.plan())
+        .map(|plan| &plan.shape().operation_enum);
+    for binding in graph.scope().enums().iter().chain(plan_enums) {
         let key = binding.declaration.key();
         let Some(structural_node) = emitted.get(&key) else {
             continue;
@@ -7675,7 +7714,7 @@ fn source_union_rows(
     use filament_semantic_value::declaration::CompositeShape;
 
     let mut rows = Vec::new();
-    for declaration in graph.scope().types().composites() {
+    for declaration in emission_composites(graph) {
         let CompositeShape::Union(declared) = declaration.shape() else {
             continue;
         };
@@ -7724,7 +7763,7 @@ fn source_record_rows(
     graph: &CheckedGraph,
     emitted: &HashMap<NodeKey, CheckedNodeId>,
 ) -> Result<Vec<SelectedSourceRecordRow>, EmitRefusal> {
-    source_record_rows_over(graph, emitted, graph.scope().types().composites())
+    source_record_rows_over(graph, emitted, emission_composites(graph))
 }
 
 /// [`source_record_rows`] over the record declarations `declarations`. An
@@ -8155,7 +8194,7 @@ fn source_tuple_rows(
     graph: &CheckedGraph,
     emitted: &HashMap<NodeKey, CheckedNodeId>,
 ) -> Result<Vec<filament_contract_model::SelectedSourceTupleRow>, EmitRefusal> {
-    source_tuple_rows_over(graph, emitted, graph.scope().types().composites())
+    source_tuple_rows_over(graph, emitted, emission_composites(graph))
 }
 
 /// [`source_tuple_rows`] over the declarations `declarations`. An emitted

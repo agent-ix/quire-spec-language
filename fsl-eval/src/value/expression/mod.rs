@@ -1045,6 +1045,34 @@ pub fn evaluate_protocol_slot(
     .run_frame(body.root(), frame)
 }
 
+/// FSpec FR-800: evaluate one checked `satisfies` or objective body of a
+/// plan synthesis over `package`. `scope` is the unit's scope with the plan
+/// value's records and operation enum declared
+/// ([`fsl_semantics::check::CheckedPlan::scope`]), which the body's record
+/// reads resolve against; `frame[0]` is the plan value. A plan value reads
+/// no object, so the body observes no object environment.
+pub fn evaluate_plan_body(
+    package: &CheckedPackage,
+    scope: &fsl_semantics::check::Scope,
+    body: &fsl_semantics::check::CheckedBody,
+    mut frame: Vec<Option<Value>>,
+    meter: &mut Meter,
+) -> Result<Evaluation, InternalFault> {
+    frame.resize(body.frame_slots(frame.len()), None);
+    let objects = ObjectEnvironment::default();
+    let reads = std::collections::BTreeMap::new();
+    Machine::with_pre(
+        scope,
+        package.graph(),
+        &objects,
+        None,
+        Some(&reads),
+        meter,
+        package.graph().dispatch_tables(),
+    )
+    .run_frame(body.root(), frame)
+}
+
 /// Evaluate the declared function `function` of `package` on `arguments`,
 /// one value per parameter in declared order, over no model state: the
 /// function a `join predicate(..)` names is pure and reads only its

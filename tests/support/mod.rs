@@ -4,6 +4,7 @@
 #[path = "../../examples/config-version/spine_corpus.rs"]
 pub mod config_version_spine;
 pub mod front_end;
+pub(crate) mod plan_model;
 #[path = "refinement_cas.rs"]
 pub mod refinement_cas;
 pub mod spine_model;

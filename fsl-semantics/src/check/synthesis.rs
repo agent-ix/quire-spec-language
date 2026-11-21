@@ -6,7 +6,9 @@ use filament_exact::{IllTypedCause, ValueType};
 use filament_semantic_value::declaration::{CompositeShape, TypeEnvironment};
 use filament_semantic_value::location::ExpressionLocation as Location;
 
+use super::check::NamedScope;
 use super::ir::CheckedBody;
+pub use super::plan_value::{CheckedPlan, PlanOperation, PlanPopulation, PlanShape};
 use super::{CheckCause, CheckRefusal, Scope, Signatures, Typer};
 use crate::family::{CheckContext, DiagnosticSink, ScopeStack, StageLimits};
 
@@ -61,6 +63,9 @@ pub struct CheckedSynthesis {
     pub(crate) objective: Option<CheckedBody>,
     /// The candidate binder name shared by both checked expressions.
     pub(crate) slot_names: Vec<String>,
+    /// The plan value of a plan synthesis (FSpec FR-800), whose grammar is a
+    /// model object type.
+    pub(crate) plan: Option<CheckedPlan>,
 }
 
 impl CheckedSynthesis {
@@ -72,6 +77,12 @@ impl CheckedSynthesis {
     /// The complete source span of this declaration.
     pub fn span(&self) -> fsl_foundation::Span {
         self.form.span
+    }
+
+    /// The plan value's declarations when this is a plan synthesis (FSpec
+    /// FR-800), whose checked expressions read the plan through them.
+    pub fn plan(&self) -> Option<&CheckedPlan> {
+        self.plan.as_ref()
     }
 
     /// The checked finite domain type.
@@ -127,6 +138,13 @@ pub(crate) fn check_forms(
     forms: &[fsl_forms::SynthesisForm],
     scope: &Scope,
     signatures: &Signatures,
+    named: &NamedScope,
+    source: &fsl_foundation::source::provenance::RawSourceRef,
+    source_owners: &std::collections::BTreeMap<
+        String,
+        fsl_foundation::source::provenance::RawSourceRef,
+    >,
+    package_name: &str,
 ) -> Result<Vec<CheckedSynthesis>, Vec<CheckRefusal>> {
     let mut checked = Vec::with_capacity(forms.len());
     for (index, form) in forms.iter().enumerate() {
@@ -148,11 +166,39 @@ pub(crate) fn check_forms(
             }]);
         };
 
-        let candidate_type = if matches!(grammar, ValueType::Reference(_)) {
-            grammar.clone()
-        } else {
-            domain.clone()
+        // FSpec FR-800: a grammar that is a model object type selects plan
+        // synthesis, whose candidate is the plan and whose domain is the
+        // plan lengths, never negative.
+        let plan = match &grammar {
+            ValueType::Reference(object) => {
+                let lengths =
+                    matches!(&domain, ValueType::Int(lengths) if !lengths.lower().is_negative());
+                if !lengths {
+                    return Err(vec![CheckRefusal::ill_typed(
+                        &location,
+                        IllTypedCause::TypeMismatch,
+                    )]);
+                }
+                Some(
+                    super::plan_value::declare(
+                        scope,
+                        named,
+                        form,
+                        object,
+                        source_owners.get(&form.name.name).unwrap_or(source),
+                        package_name,
+                        &location,
+                    )
+                    .map_err(|refusal| vec![refusal])?,
+                )
+            }
+            _ => None,
         };
+        let candidate_type = match &plan {
+            Some(plan) => ValueType::Composite(plan.shape.plan.clone()),
+            None => domain.clone(),
+        };
+        let scope = plan.as_ref().map_or(scope, |plan| &plan.scope);
         let parameters = vec![(form.name.name.clone(), candidate_type)];
         let (satisfies, slot_names) = check_expression(
             scope,
@@ -190,6 +236,7 @@ pub(crate) fn check_forms(
             satisfies,
             objective,
             slot_names,
+            plan,
         });
     }
     Ok(checked)

@@ -1028,3 +1028,202 @@ fn an_undecided_prune_caps_a_found_plan_at_incomplete() {
     assert_eq!(result.status, PlanStatus::Incomplete);
     assert!(result.plan.is_none());
 }
+
+/// A source plan with one non-safety policy whose truth needs continuation.
+fn source_policy_world(start: &[(&str, serde_json::Value)]) -> World {
+    World::new(
+        model_world::counter(),
+        "type Lengths = Int[0, 1];\n\
+         synthesis Reach using t grammar M::Counter domain Lengths satisfies { true };\n",
+        model_world::INFINITE,
+        &[model_world::Clause {
+            activation: "on origin",
+            formula: "eventually holds(c.value = 3)",
+        }],
+        start,
+    )
+}
+
+/// Policy prefixes, separate policies and terminal reads all use the
+/// request meter; a successful exact-bound first read leaves no second budget.
+#[test]
+#[trace("FR-1011-AC-2", "FSpec-FR-801-AC-2")]
+fn source_policy_reads_share_the_request_work_counter() {
+    use filament_exact::{LimitKind, Meter};
+    use fsl_analyze::plan_source::SourcePlan;
+    use fsl_eval::simulation::model::{read_clause, ClauseReading};
+    use fsl_eval::simulation::TransitionSystem;
+
+    let world = source_policy_world(&[("c", json!({"value": {"integer": "0"}}))]);
+    let system = world_system(&world);
+    let state = system
+        .initial()
+        .into_iter()
+        .next()
+        .expect("one initial state");
+    let node = &world.package.graph().temporal_clauses()[0];
+    let mut calibration = Meter::new(UNLIMITED);
+    assert_eq!(
+        read_clause(
+            &system,
+            node,
+            std::slice::from_ref(&state),
+            false,
+            &mut calibration
+        )
+        .expect("the policy reads the initial prefix"),
+        ClauseReading::Undecided,
+    );
+    let one_read = calibration.consumed(LimitKind::WorkUnits);
+    assert!(one_read > 0, "the policy read must charge work");
+    let limits = ScalarLimits {
+        work_units: one_read,
+        ..UNLIMITED
+    };
+    let synthesis = &world.package.graph().syntheses()[0];
+    for next in ["other-policy", "advance", "terminal"] {
+        let mut rules =
+            SourcePlan::new(&world.package, synthesis, &system, vec![node, node], limits)
+                .expect("the source plan and policies are checked");
+        let MonitorStep::Continue(monitor) = rules
+            .policy_start(0, &state)
+            .expect("the exact-bound first policy read completes")
+        else {
+            panic!("an unsettled prefix is retained");
+        };
+        let stopped = match next {
+            "other-policy" => rules.policy_start(1, &state).map(|_| ()),
+            "advance" => rules.policy_advance(0, &monitor, &state).map(|_| ()),
+            "terminal" => rules.policy_accepts(0, &monitor, &state).map(|_| ()),
+            _ => unreachable!("the listed read modes are exhaustive"),
+        };
+        assert!(
+            matches!(stopped,
+                Err(RuleStop::Accounting { counter: "work_units", value }) if value == one_read
+            ),
+            "the next policy read uses the exhausted request budget: {stopped:?}"
+        );
+    }
+}
+
+/// A policy quantified over two objects shares one budget across instances.
+#[test]
+#[trace("FR-1011-AC-2", "FSpec-FR-801-AC-2")]
+fn source_policy_instances_share_the_request_work_counter() {
+    use filament_exact::{LimitKind, Meter};
+    use fsl_eval::simulation::model::{read_clause, ClauseReading};
+    use fsl_eval::simulation::TransitionSystem;
+
+    let both = source_policy_world(&[
+        ("c", json!({"value": {"integer": "0"}})),
+        ("d", json!({"value": {"integer": "0"}})),
+    ]);
+    let system = ModelSystem::new(both.subject(&["c", "d"], UNLIMITED).simulation)
+        .expect("both objects are in the universe");
+    let state = system
+        .initial()
+        .into_iter()
+        .next()
+        .expect("one initial state");
+    let node = &both.package.graph().temporal_clauses()[0];
+    let mut calibration = Meter::new(UNLIMITED);
+    assert_eq!(
+        read_clause(
+            &system,
+            node,
+            std::slice::from_ref(&state),
+            false,
+            &mut calibration,
+        )
+        .expect("both instances read with an unlimited budget"),
+        ClauseReading::Undecided
+    );
+    let total_work = calibration.consumed(LimitKind::WorkUnits);
+    assert!(
+        total_work > 1,
+        "two nontrivial policy instances charge work"
+    );
+    let budget = total_work - 1;
+    let mut meter = Meter::new(ScalarLimits {
+        work_units: budget,
+        ..UNLIMITED
+    });
+    assert_eq!(
+        read_clause(
+            &system,
+            &both.package.graph().temporal_clauses()[0],
+            std::slice::from_ref(&state),
+            false,
+            &mut meter,
+        )
+        .expect("accounting is a typed policy reading"),
+        ClauseReading::Incomplete {
+            counter: "work_units",
+            value: budget
+        }
+    );
+}
+
+/// Closing an unmet eventual policy rejects the candidate; quantifying the
+/// same policy over an empty population holds vacuously.
+#[test]
+#[trace("FSpec-FR-803-AC-2", "FSpec-FR-803-AC-5")]
+fn source_policy_acceptance_requires_closed_truth_and_preserves_vacuity() {
+    use filament_exact::Meter;
+    use fsl_analyze::plan_source::SourcePlan;
+    use fsl_eval::simulation::model::{read_clause, ClauseReading};
+    use fsl_eval::simulation::TransitionSystem;
+
+    for empty in [false, true] {
+        let objects = if empty {
+            Vec::new()
+        } else {
+            vec![("c", json!({"value": {"integer": "0"}}))]
+        };
+        let world = source_policy_world(&objects);
+        let keys = if empty { vec![] } else { vec!["c"] };
+        let system = ModelSystem::new(world.subject(&keys, UNLIMITED).simulation)
+            .expect("the declared population is complete");
+        let state = system
+            .initial()
+            .into_iter()
+            .next()
+            .expect("one initial state");
+        let node = &world.package.graph().temporal_clauses()[0];
+        let mut rules = SourcePlan::new(
+            &world.package,
+            &world.package.graph().syntheses()[0],
+            &system,
+            vec![node],
+            UNLIMITED,
+        )
+        .expect("the source plan is checked");
+        let MonitorStep::Continue(monitor) = rules
+            .policy_start(0, &state)
+            .expect("the initial policy prefix reads")
+        else {
+            panic!("the initial prefix cannot refute eventual truth");
+        };
+        assert_eq!(
+            rules
+                .policy_accepts(0, &monitor, &state)
+                .expect("the closed policy reads"),
+            empty
+        );
+        assert_eq!(
+            read_clause(
+                &system,
+                node,
+                std::slice::from_ref(&state),
+                true,
+                &mut Meter::new(UNLIMITED),
+            )
+            .expect("the closed policy is readable"),
+            if empty {
+                ClauseReading::Holds
+            } else {
+                ClauseReading::Violated
+            }
+        );
+    }
+}

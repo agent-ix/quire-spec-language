@@ -14,6 +14,7 @@ mod package_run;
 pub mod plan;
 pub use package_run::PreparedPackageRun;
 pub mod plan_request;
+mod plan_synthesis;
 mod replay;
 mod requirements;
 mod settle;

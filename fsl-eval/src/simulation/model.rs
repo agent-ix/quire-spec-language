@@ -39,6 +39,7 @@ pub use operation_coverage::{
 };
 mod model_based_test;
 pub use model_based_test::{
+    ClauseReading, read_clause,
     ModelBasedCaseProvenance, ModelBasedCounterexample, ModelBasedCoverage,
     ModelBasedPartitionCoverage, ModelBasedProvenance, ModelBasedRunLimits,
     ModelBasedSizeBoundedRoot, ModelBasedTestCause, ModelBasedTestChecks, ModelBasedTestCounts,
@@ -901,6 +902,12 @@ impl<'a> ModelSystem<'a> {
             Some(model) => Self::over_model_of(request, &model, true),
             None => Self::new(request),
         }
+    }
+
+    /// The effective identity of the object type the declaration `key`
+    /// names, as the checked type environment knows it.
+    pub fn type_identity(&self, key: &DeclarationKey) -> Option<EffectiveId> {
+        self.model.type_identity(key)
     }
 
     /// [`Self::new`] over the one domain package `model` names, for a unit

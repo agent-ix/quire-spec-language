@@ -199,8 +199,11 @@ mod state_graph_claim;
 mod state_model;
 mod step_simulation;
 mod sum_case;
+mod plan_value;
 mod synthesis;
-pub use synthesis::{CheckedSynthesis, CheckedSynthesisClaim};
+pub use synthesis::{
+    CheckedPlan, CheckedSynthesis, CheckedSynthesisClaim, PlanOperation, PlanPopulation, PlanShape,
+};
 mod task_set;
 mod temporal_clause;
 mod terminal;
@@ -3202,7 +3205,16 @@ impl PackageDeclarations {
             .select_declared_ieee_profile(&signatures, has_ieee_literal)
             .map_err(|refusal| vec![refusal])?;
         let signatures = Signatures::new(signatures);
-        let checked_syntheses = synthesis::check_forms(&self.synthesis_forms, &scope, &signatures)?;
+        let plan_populations = NamedScope::of(&self.models, &scope, None);
+        let checked_syntheses = synthesis::check_forms(
+            &self.synthesis_forms,
+            &scope,
+            &signatures,
+            &plan_populations,
+            &self.source,
+            &self.source_owners,
+            &self.package_name,
+        )?;
         let mut seen_operations = std::collections::BTreeSet::new();
         for operation in &scope.dispatch_operations {
             if !seen_operations.insert((operation.receiver_type.clone(), operation.member.clone()))

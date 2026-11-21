@@ -14,12 +14,26 @@ use super::Binder;
 use super::{Binders, Lowering};
 use crate::check::refusal::CheckRefusal;
 
-impl Lowering<'_> {
+impl<'a> Lowering<'a> {
     /// Lower one typed value or plan synthesis into the checked package graph.
     pub(crate) fn synthesis_request(
         &mut self,
         index: usize,
-        checked: &CheckedSynthesis,
+        checked: &'a CheckedSynthesis,
+    ) -> Result<NodeKey, CheckRefusal> {
+        let scope = self.scope;
+        if let Some(plan) = checked.plan() {
+            self.scope = plan.scope();
+        }
+        let result = self.synthesis_request_in_scope(index, checked);
+        self.scope = scope;
+        result
+    }
+
+    fn synthesis_request_in_scope(
+        &mut self,
+        index: usize,
+        checked: &'a CheckedSynthesis,
     ) -> Result<NodeKey, CheckRefusal> {
         let form = &checked.form;
         let claim_at = synthesis_location(index, &form.name.name);
@@ -28,12 +42,23 @@ impl Lowering<'_> {
             other => self.type_node(other, &claim_at)?,
         };
         let domain = self.type_node(&checked.domain, &claim_at)?;
-        let candidate_type = if matches!(checked.grammar, ValueType::Reference(_)) {
-            &checked.grammar
-        } else {
-            &checked.domain
-        };
-        let candidate_type = self.type_node(candidate_type, &claim_at)?;
+        if let Some(plan) = checked.plan() {
+            let binding = &plan.shape().operation_enum;
+            self.enum_nodes_at(binding, claim_at.clone())?;
+            for member in &binding.members {
+                let key = self.enum_member_node(&claim_at, binding.declaration.key(), member)?;
+                self.record(
+                    key,
+                    crate::check::family::OccurrenceRole::Generated,
+                    claim_at.clone(),
+                );
+            }
+        }
+        let candidate_type = checked.plan().map_or_else(
+            || checked.domain.clone(),
+            |plan| ValueType::Composite(plan.shape().plan.clone()),
+        );
+        let candidate_type = self.type_node(&candidate_type, &claim_at)?;
         let candidate = self.parameter(&form.name.name, 0, candidate_type.clone(), &claim_at)?;
         let mut binders = Binders::new(
             &checked.slot_names,
@@ -77,7 +102,7 @@ impl Lowering<'_> {
                 return Err(super::temporal::stage_fault(
                     &claim_at,
                     "synthesis-objective-check",
-                ))
+                ));
             }
         };
         let declaration = super::qualified_name(&form.name.name, &claim_at)?;

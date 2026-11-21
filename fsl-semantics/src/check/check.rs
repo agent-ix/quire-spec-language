@@ -1553,6 +1553,49 @@ impl Scope {
             .find(|operation| operation.name() == name)
     }
 
+    /// This scope with a plan synthesis's plan value declared (FSpec
+    /// FR-800): its `composites` and the `operations` enum, whose cases a
+    /// qualified name `Alias::Op::case` reads. `None` when the type
+    /// environment does not admit the composites beside its own.
+    pub(crate) fn with_plan_types(
+        &self,
+        composites: Vec<filament_semantic_value::declaration::CompositeDeclaration>,
+        operations: EnumBinding,
+    ) -> Option<Self> {
+        let mut scope = self.clone();
+        scope.types = TypeEnvironment::new(
+            self.types.composites().cloned().chain(composites),
+            self.types.object_types().cloned(),
+        )
+        .ok()?
+        .with_units(self.types.units().clone());
+        let position = scope.enums.len();
+        for member in &operations.members {
+            scope.index.enum_member_index.record(member.clone());
+        }
+        let cases = scope
+            .index
+            .enum_members
+            .entry(operations.name.clone())
+            .or_default();
+        for (member, value) in operations.members.iter().enumerate() {
+            cases
+                .entry(value.case().to_owned())
+                .or_default()
+                .push((position, member));
+        }
+        let shape = operations.shape();
+        if !scope.index.enum_shapes.contains_key(&shape) {
+            let members = scope
+                .index
+                .enum_member_index
+                .filtered(shape.variants().cloned());
+            scope.index.enum_shapes.insert(shape, (position, members));
+        }
+        scope.enums.push(operations);
+        Some(scope)
+    }
+
     /// This scope with the object types the admitted models' `symmetric`
     /// populations cover (FR-150).
     pub(crate) fn with_symmetric_objects(
@@ -5656,10 +5699,14 @@ impl<'a> Typer<'a> {
             .ok_or_else(|| {
                 refuse(
                     location,
-                    CheckCause::UnknownField {
-                        owner: declaration.name().into(),
-                        field: field.into(),
-                        span: member_span,
+                    if key.package() == "filament.plan-value" {
+                        CheckCause::MissingName(field.into())
+                    } else {
+                        CheckCause::UnknownField {
+                            owner: declaration.name().into(),
+                            field: field.into(),
+                            span: member_span,
+                        }
                     },
                 )
             })?;

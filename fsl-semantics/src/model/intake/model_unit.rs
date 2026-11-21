@@ -1335,6 +1335,7 @@ fn read_scalar_alias(
             "identity": identity,
             "displayName": identity,
             "kind": {"module": package, "name": "value_type"},
+            "roles": [],
             "origin": source_origin(parsed, Span { start, end }),
             "extensions": [], "unknownPolicy": "reject", "scalar": scalar,
             "constraints": constraints,
