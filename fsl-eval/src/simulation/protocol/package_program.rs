@@ -53,13 +53,13 @@ pub struct PackageControl {
     pub role: Option<fsl_package::CheckedNodeId>,
     /// The FR-531 identity of the attempt's role node.
     pub role_key: Option<NodeKey>,
-    /// The attempt result binder node identity.
+    /// The step's result or message-payload binder node identity.
     pub binder: Option<fsl_package::CheckedNodeId>,
-    /// The FR-531 identity of the attempt result binder.
+    /// The FR-531 identity of the result or payload binder.
     pub binder_key: Option<NodeKey>,
-    /// The admitted value type of the attempt result binder.
+    /// The admitted value type of the result or payload binder.
     pub binder_type: Option<filament_exact::ValueType>,
-    /// The admitted channel selected by a send.
+    /// The admitted channel selected by a send or receive.
     pub(super) channel: Option<fsl_package::CheckedNodeId>,
     /// The admitted send selected by a receive's `of` member.
     pub(super) from: Option<ProtocolNodeId>,
