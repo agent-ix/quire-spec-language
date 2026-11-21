@@ -1887,37 +1887,6 @@ fn policy_less_decimal_root<'t>(types: &'t [Value], reference: &str) -> Option<&
     None
 }
 
-/// Whether the type `reference` of `tree` is a Decimal subject: a `decimal`
-/// scalar, a node carrying a policy, or an alias chain that reaches one or
-/// native Decimal.
-fn walks_to_decimal(tree: &Value, reference: &str) -> bool {
-    let Some(types) = tree.get("types").and_then(Value::as_array) else {
-        return false;
-    };
-    let mut current = reference;
-    for _ in 0..=types.len() {
-        let Some(node) = types
-            .iter()
-            .find(|node| node.get("identity").and_then(Value::as_str) == Some(current))
-        else {
-            return false;
-        };
-        if node.get("scalar").and_then(Value::as_str) == Some("decimal")
-            || node.get("decimal").is_some()
-        {
-            return true;
-        }
-        let Some(target) = node.get("target").and_then(Value::as_str) else {
-            return false;
-        };
-        if target == "ix://filament/native/Decimal" {
-            return true;
-        }
-        current = target;
-    }
-    false
-}
-
 /// Whether `reference` reaches native Decimal through a value type bound to it
 /// by `target`, with no policy on the way. Such a value type is an untyped
 /// native alias, not a Decimal walk that lacks its policy.
@@ -6746,110 +6715,25 @@ pub fn read_records(
 /// meaning and FCD origin. No origin is inferred from a key or another
 /// declaration, and no metadata enters a normalization preimage. Typed
 /// declaration refusals are retained on the package until normalization has
-/// charged all source records, as FR-154 requires.
+/// charged all source records, as FR-154 requires. A shared reader refusal
+/// ends intake before those declaration checks, retaining the reader's order.
 pub fn read_domain_package(
     selection: DomainPackageRef,
     document: &PackageDocument,
 ) -> Result<DomainPackage, Vec<ModelRefusal>> {
-    let mut intake_refusals = validate_with_semantic_ir(document)
-        .err()
-        .unwrap_or_default();
-    let semantic_refused_nodes: std::collections::BTreeSet<String> = intake_refusals
-        .iter()
-        .filter_map(refusal_node)
-        .map(str::to_owned)
-        .collect();
-    let unsupported_form_nodes: std::collections::BTreeSet<String> = intake_refusals
-        .iter()
-        .filter(|refusal| {
-            matches!(
-                refusal.cause,
-                ModelRefusalCause::UnsupportedDeclarationForm { .. }
-            )
-        })
-        .filter_map(refusal_node)
-        .map(str::to_owned)
-        .collect();
-    let shared_constraint_keywords: Vec<_> = intake_refusals.iter().filter_map(|refusal| {
-        let ModelRefusalCause::IntakeMalformedDeclaration { node, member, .. } = &refusal.cause else { return None };
-        let [crate::model::refusal::MemberSegment::Name(constraints), crate::model::refusal::MemberSegment::Index(index), crate::model::refusal::MemberSegment::Name(keyword)] = member.segments() else { return None };
-        (member.root() == MemberRoot::TypeDefinition && constraints == "constraints" && keyword == "keyword")
-            .then(|| (node.clone(), member.clone(), *index))
-    }).collect();
+    validate_with_semantic_ir(document)?;
+    let mut intake_refusals = Vec::new();
     let semantic = agent_ix_semantic_ir::rules::Document::read(&document.bundle);
-    let (records, reader_refusals) = read_nodes_partial(
-        &selection.identity,
-        &document.tree,
-        semantic.as_ref(),
-        intake_refusals.is_empty(),
-    );
+    let (records, reader_refusals) =
+        read_nodes_partial(&selection.identity, &document.tree, semantic.as_ref(), true);
     let mut reported = std::collections::BTreeSet::new();
     for refusal in reader_refusals {
-        // FR-056 keeps the shared reader's diagnostic when both readers
-        // identify the same constraint keyword. The shared reader owns the
-        // type; the local reader may name that constraint's own identity.
-        let shared_keyword = match &refusal.cause {
-            ModelRefusalCause::IntakeMalformedDeclaration { node, member, .. } => {
-                shared_constraint_keywords
-                    .iter()
-                    .any(|(owner, shared_member, index)| {
-                        member == shared_member
-                            && document
-                                .tree
-                                .get("types")
-                                .and_then(Value::as_array)
-                                .into_iter()
-                                .flatten()
-                                .any(|definition| {
-                                    definition.get("identity").and_then(Value::as_str)
-                                        == Some(owner.as_str())
-                                        && definition
-                                            .get("constraints")
-                                            .and_then(Value::as_array)
-                                            .and_then(|constraints| constraints.get(*index))
-                                            .and_then(|constraint| constraint.get("identity"))
-                                            .and_then(Value::as_str)
-                                            == Some(node.as_str())
-                                })
-                    })
-            }
-            _ => false,
-        };
-        if shared_keyword {
-            continue;
-        }
         // A node read once per path that reaches it (an alias chain over a
         // Decimal reaches it again) repeats one refusal.
         if let Some(node) = refusal_node(&refusal) {
             if !reported.insert((node.to_owned(), refusal.detail.clone())) {
                 continue;
             }
-        }
-        // The reader's own dangling `persists`/`members` entry repeats what the
-        // semantic-IR missing-name refusal already reports for that node.
-        let reader_node = match &refusal.cause {
-            ModelRefusalCause::UnknownMember { record, .. } => Some(record.node.as_str()),
-            _ => refusal_node(&refusal),
-        };
-        // An unsupported declaration form (FR-103-AC-3) is a distinct refusal
-        // the IR validator cannot express, so an IR refusal of another
-        // family at the same node does not subsume it.
-        let distinct_family = matches!(
-            refusal.cause,
-            ModelRefusalCause::UnsupportedDeclarationForm { .. }
-        ) && reader_node
-            .is_some_and(|node| !unsupported_form_nodes.contains(node));
-        // A constraint of a node the validator refused is that refusal's
-        // detail: the validator reports an unreadable bound at its owner.
-        let constraint_owner = reader_node
-            .and_then(|node| node.rsplit_once("/constraints/"))
-            .map(|(owner, _)| owner)
-            .filter(|owner| walks_to_decimal(&document.tree, owner));
-        if (!distinct_family
-            && reader_node.is_some_and(|node| semantic_refused_nodes.contains(node)))
-            || constraint_owner.is_some_and(|owner| semantic_refused_nodes.contains(owner))
-        {
-            continue;
         }
         intake_refusals.push(refusal);
     }
@@ -9262,6 +9146,17 @@ mod tests {
             refusals.len(),
             2,
             "both invalid types refuse, not only the first"
+        );
+        let domain_refusals = read_domain_package(
+            DomainPackageRef {
+                identity: "acme/orders".to_owned(),
+            },
+            &parse_document(document.as_bytes()),
+        )
+        .expect_err("a reader-refused document never enters FSL declaration intake");
+        assert_eq!(
+            domain_refusals, refusals,
+            "every shared diagnostic keeps its reader order at domain intake"
         );
         let nodes: std::collections::BTreeSet<&str> = refusals
             .iter()

@@ -4529,6 +4529,7 @@ fn a_clock_reference_native_pseudo_name_is_refused_at_the_field() {
 
 /// Native-target constraints preserve their keyword locus and catalog code.
 #[trace("TC-3084", "FR-1040-AC-8", "FSpec-FR-154-AC-51")]
+#[trace("TC-145", "FR-056-AC-2")]
 #[test]
 fn native_target_constraint_refusals_name_the_keyword() {
     let mut documents = Vec::new();
@@ -4597,8 +4598,8 @@ fn native_target_constraint_refusals_name_the_keyword() {
         );
     }
 
-    // A shared keyword diagnostic at index 1 must not hide a separate
-    // FSL-owned keyword diagnostic at index 0 on another value type.
+    // A shared-reader refusal ends the whole document's intake before the
+    // otherwise-invalid Integer alias reaches FSL's declaration checks.
     let mut combined = documents.remove(0);
     let watch = combined["types"]
         .as_array_mut()
@@ -4624,14 +4625,14 @@ fn native_target_constraint_refusals_name_the_keyword() {
     other["constraints"][0]["appliesTo"] = json!(package("Other"));
     combined["types"].as_array_mut().expect("types").push(other);
     let refusal = crate::model_operations::admit(&serde_json::to_vec(&combined).expect("JSON"))
-        .expect_err("both keyword sites refuse");
+        .expect_err("shared keyword refusal ends document intake");
     let fsl_semantics::model::intake::UnitIntakeCause::Refused(refusals) = &refusal.cause else {
         panic!("{refusal:?}")
     };
     assert_eq!(
         refusals.len(),
-        2,
-        "one shared site and one distinct FSL site: {refusal:?}"
+        1,
+        "the reader-refused document admits no FSL declaration checks: {refusal:?}"
     );
     let actual: Vec<_> = refusals
         .iter()
@@ -4650,20 +4651,12 @@ fn native_target_constraint_refusals_name_the_keyword() {
         .collect();
     assert_eq!(
         actual,
-        [
-            (
-                format!("{}/constraints/min", package("Other")),
-                "TypeDefinition.constraints[0].keyword"
-                    .parse()
-                    .expect("member path")
-            ),
-            (
-                package("Watch"),
-                "TypeDefinition.constraints[1].keyword"
-                    .parse()
-                    .expect("member path")
-            ),
-        ]
+        [(
+            package("Watch"),
+            "TypeDefinition.constraints[1].keyword"
+                .parse()
+                .expect("member path")
+        )]
     );
 }
 
