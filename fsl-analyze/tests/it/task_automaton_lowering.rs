@@ -229,7 +229,6 @@ fn whole(value: i64) -> (String, String) {
 
 #[trace("TC-3008", "FR-249-AC-7")]
 #[test]
-#[ignore = "QSL-2240: proved needs the FR-418 task-product certificate reader (not built)"]
 fn a_two_task_set_lowers_with_its_declared_periods_and_deadlines() {
     let declarations = format!("{PAIR}{}", sources("Pair", &["a", "b"]));
     let run = run(
@@ -307,7 +306,7 @@ fn run_bare() -> Value {
 
 #[trace("TC-3008", "FR-249-AC-8")]
 #[test]
-#[ignore = "QSL-2240: proved needs the FR-418 task-product certificate reader (not built)"]
+#[ignore = "FR-249-AC-8: set B region quotient exceeds max_check_work (100M) at 791 s release; pending arch ruling on abstraction/AC wording, QSL-2240"]
 fn the_zone_verdict_equals_the_response_time_verdict_on_task_set_b() {
     let items = json!([
         {"claim": "BFp"}, {"claim": "BFp", "backend": "en-6"},

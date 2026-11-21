@@ -33,7 +33,7 @@ use crate::zone_search::TIMED;
 /// A source of one guard-free state: each task is released by its own
 /// operation, which changes nothing, so the product's size is the
 /// scheduler's.
-fn world_for(set: &str, tasks: &[&str], declarations: &str) -> World {
+pub(crate) fn world_for(set: &str, tasks: &[&str], declarations: &str) -> World {
     let names: Vec<String> = tasks.iter().map(|task| format!("fire_{task}")).collect();
     let operations: Vec<(&str, &[&str])> = names
         .iter()
@@ -55,9 +55,9 @@ fn world_for(set: &str, tasks: &[&str], declarations: &str) -> World {
     )
 }
 
-type Certificate = ZoneCertificate<OccurrenceKey>;
+pub(crate) type Certificate = ZoneCertificate<OccurrenceKey>;
 
-fn claim_of<'a>(world: &'a World, name: &str) -> &'a fsl_semantics::check::CheckedScheduleClaim {
+pub(crate) fn claim_of<'a>(world: &'a World, name: &str) -> &'a fsl_semantics::check::CheckedScheduleClaim {
     world
         .package
         .graph()
@@ -86,14 +86,14 @@ fn hull(left: &Zone, right: &Zone) -> Zone {
     Zone::from_matrix(dim, cells).expect("matrix")
 }
 
-struct Built {
-    certificate: Certificate,
-    quotient: TaskProductQuotient,
+pub(crate) struct Built {
+    pub(crate) certificate: Certificate,
+    pub(crate) quotient: TaskProductQuotient,
     /// The certificate edge of each distinct (node, identity, node) triple.
     edges: BTreeMap<(usize, usize, usize), usize>,
 }
 
-fn build(world: &World, claim_name: &str) -> Built {
+pub(crate) fn build(world: &World, claim_name: &str) -> Built {
     let model = world.system();
     let timed = TimedSystem::new(&model, "M").expect("dense timed model");
     let product = TaskProductSystem::new(timed, claim_name).expect("checked task product");
@@ -306,7 +306,7 @@ fn admitted(built: &Built, node_of_vertex: &[usize]) -> DivergenceWitness {
     );
 }
 
-fn verdict(
+pub(crate) fn verdict(
     world: &World,
     claim_name: &str,
     certificate: &Certificate,
@@ -349,12 +349,12 @@ const SOLO: &str = "taskset S {\n\
      schedulable SFp on S under fixed_priority;\n\
      schedulable SEdf on S under edf;\n";
 
-fn solo() -> World {
+pub(crate) fn solo() -> World {
     world_for("S", &["a"], SOLO)
 }
 
 /// Two tasks declared `b` then `a` with equal deadlines and no priorities.
-fn tied() -> World {
+pub(crate) fn tied() -> World {
     world_for(
         "E",
         &["b", "a"],
@@ -404,7 +404,7 @@ fn edit(
     )
 }
 
-fn rejected(
+pub(crate) fn rejected(
     result: Result<ZoneCertificateVerdict, ZoneCertificateRefusal<OccurrenceKey>>,
 ) -> (CertificateRule, CertificateLocus) {
     match result {
@@ -415,7 +415,7 @@ fn rejected(
 
 /// A fixed-priority pair where `q`, released later with the earlier
 /// priority, preempts `p`: its service clock is bounded-subtracted.
-fn preempting() -> World {
+pub(crate) fn preempting() -> World {
     world_for(
         "Q",
         &["p", "q"],
@@ -1091,7 +1091,7 @@ fn missed_nodes(built: &Built) -> Vec<usize> {
 
 /// Two fixed-priority tasks at utilisation 2/3 + 2/3: the lower priority
 /// task misses its deadline.
-fn over_utilised() -> World {
+pub(crate) fn over_utilised() -> World {
     world_for(
         "O",
         &["p", "q"],

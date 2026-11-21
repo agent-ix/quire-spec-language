@@ -1170,7 +1170,7 @@ fn witness_cycle(certificate: &Certificate) -> Vec<&'static str> {
 
 /// A claim that holds over `body`'s model, with clocks `clocks` and
 /// operations `operations`.
-fn quiet(
+pub(crate) fn quiet(
     clocks: &[&str],
     operations: &[(&str, &[&str])],
     profile: &str,
