@@ -490,9 +490,10 @@ pub enum IncompleteCause {
     /// Wire cause `bounded-search-incomplete` with reason
     /// `unresolved-dynamics`; it always accompanies `task_search` evidence.
     UnresolvedDynamics,
-    /// FSpec FR-331: a closed task-product search with no accepted FR-418
-    /// certificate. Wire cause `bounded-search-incomplete` with reason
-    /// `certificate-unchecked`; it carries no `task_search` evidence.
+    /// FSpec FR-331: an exhaustive result closed without an accepted core
+    /// certificate, including an HP-1 relation or an FR-418 task product.
+    /// Wire cause `bounded-search-incomplete` with reason
+    /// `certificate-unchecked`; it carries no frontier evidence.
     CertificateUnchecked,
     /// FR-203: dyadic refinement exhausted its precision while the initial
     /// value still straddled the claim threshold.

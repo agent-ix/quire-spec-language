@@ -215,6 +215,19 @@ pub fn settle_hyper_check(
     let mut covers = None;
     let mut count = None;
     let row = match outcome {
+        HyperOutcome::HoldsReduced { reductions, .. }
+            if reductions
+                .iter()
+                .any(|reduction| matches!(reduction, crate::AppliedReduction::Symmetry { .. })) =>
+        {
+            Row::proof(
+                ProofBasis::Reduced {
+                    reductions: reductions.clone(),
+                },
+                Certification::Uncertified,
+                SettlementBasis::ClosedScope,
+            )
+        }
         HyperOutcome::Holds { certificates, .. }
         | HyperOutcome::HoldsReduced { certificates, .. } => {
             let request = certificate.ok_or(HyperSettleRefusal::CertificateRequestMissing)?;
@@ -261,11 +274,9 @@ pub fn settle_hyper_check(
         HyperOutcome::HoldsClosed { .. } => {
             Row::proved(ProofBasis::Exhaustive, SettlementBasis::ClosedScope)
         }
-        HyperOutcome::HoldsUnchecked { .. } => Row::proof(
-            ProofBasis::Exhaustive,
-            Certification::Uncertified,
-            SettlementBasis::ClosedScope,
-        ),
+        HyperOutcome::HoldsUnchecked { .. } => {
+            Row::incomplete(IncompleteCause::CertificateUnchecked, None)
+        }
         HyperOutcome::Reduction { cause, .. } => match cause {
             HyperReductionCause::NotPreserving { .. } => {
                 return Err(HyperSettleRefusal::ReductionFormNotRepresentable)
@@ -328,7 +339,13 @@ pub fn settle_hyper_check(
         }
     };
     Ok(HyperRecord {
-        certificates: if matches!(row.value, TerminalValue::Proved { .. }) {
+        certificates: if matches!(
+            row.value,
+            TerminalValue::Proved {
+                certification: Certification::Certified,
+                ..
+            }
+        ) {
             match outcome {
                 HyperOutcome::Holds { certificates, .. }
                 | HyperOutcome::HoldsReduced { certificates, .. } => certificates.clone(),

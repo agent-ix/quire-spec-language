@@ -562,6 +562,8 @@ impl<'r, 's> Product<'r, 's> {
                     meter,
                     cancel,
                     copy_swap,
+                    key_generators: Vec::new(),
+                    constraint: None,
                 })
                 .map(Self::Universal)
             }

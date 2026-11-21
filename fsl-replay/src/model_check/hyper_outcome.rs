@@ -85,7 +85,8 @@ pub enum HyperOutcome {
     },
     /// Every reachable state of the product reduced by the copy group, and by
     /// the selected key symmetry, was examined and no violation exists (V-1
-    /// under ADR-023 CS-5), with each binding's FR-163 certificate.
+    /// under ADR-023 CS-5). Copy-swap alone carries each binding's FR-163
+    /// certificate; a key symmetry has no core checker and stays uncertified.
     HoldsReduced {
         /// Each object binding's independently checkable reduced product.
         certificates: Vec<crate::ProductClosureCertificate>,
@@ -105,7 +106,7 @@ pub enum HyperOutcome {
     /// A step relation (FR-179) held on every tuple of the reachable transitions
     /// the run read. The tuple enumeration is exhaustive, but no FR-163 `Det`
     /// certificate stands behind it and no core checker accepts one, so FR-182
-    /// settles it `proved` without the core check (never `certified`).
+    /// settles it `incomplete` with `certificate-unchecked`.
     HoldsUnchecked {
         /// The run's counts.
         stats: RunStats,

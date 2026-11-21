@@ -249,7 +249,8 @@ fn analyze_hyper_outside_the_admitted_forms_is_a_typed_refusal() {
 /// FR-179 through `native-analyze/1`: a step relation over reachable
 /// transitions is checked by enumerating the tuples of its executions. Over
 /// the vault's `reset`, `h` is unchanged, so two resets from equal `h` agree
-/// on it and the relation settles `proved`; the two resets need not agree on
+/// on it, but without an accepted core certificate the relation settles
+/// `incomplete`; the two resets need not agree on
 /// `l`, so that relation settles `refuted` with a replayed step-tuple
 /// counterexample.
 #[trace("TC-1591", "FR-179")]
@@ -258,8 +259,8 @@ fn hyper_step_relation_through_analyze() {
     for (body, expected, exit) in [
         (
             "pre(x.self.h) = pre(y.self.h) implies x.self.h = y.self.h",
-            "proved",
-            0,
+            "incomplete",
+            22,
         ),
         ("x.self.l = y.self.l", "refuted", 10),
     ] {
@@ -278,15 +279,20 @@ fn hyper_step_relation_through_analyze() {
         ));
         assert_eq!(label(&run.item(0)), expected, "{}", run.document());
         assert_eq!(run.exit, exit, "{}", run.document());
-        // No FR-163 `Det` certificate stands behind a relation proof, so it
-        // is never labelled `certified` (FR-182).
-        if exit == 0 {
+        if exit == 22 {
             assert_eq!(
-                run.item(0)["record"]["certification"],
-                "uncertified",
+                run.item(0)["record"]["cause"]["kind"],
+                "bounded-search-incomplete",
                 "{}",
                 run.document()
             );
+            assert_eq!(
+                run.item(0)["record"]["cause"]["reason"],
+                "certificate-unchecked"
+            );
+            assert!(run.item(0)["record"]["certification"].is_null());
+            assert!(run.item(0)["certificate"].is_null());
+            assert!(run.item(0)["counterexample"].is_null());
         }
         if exit == 10 {
             assert_eq!(run.item(0)["counterexample"]["kind"], "step-tuple");
@@ -374,34 +380,70 @@ fn analyze_event_position_single_existential_is_proved_or_trapped() {
     }
 }
 
-/// A hyperproperty over an explicit finite trace set returns the typed
-/// unsupported result, never a verdict. This pins today's S3 refusal
-/// (FR-898, `HyperCause::FiniteDomain`); QSL-2239 / FR-898 will flip it when
-/// finite-trace-domain clauses are served, and this test then changes with it.
+/// A finite-domain clause uses the admitted trace-population route, rather
+/// than the model-product adapter or its former finite-domain refusal.
+#[trace("TC-2535", "FR-898-AC-3")]
 #[test]
-fn analyze_hyper_over_an_explicit_finite_trace_set_is_a_typed_unsupported_result() {
-    let declaration = "hyper Secret using inf over traces in V::Execution bounded 2 \
-        forall trace a exists trace b { true }";
-    let (unit, model, snapshots) =
-        request_files_over_starts(Vault::Secure, false, &STARTS, declaration);
+fn analyze_hyper_over_an_explicit_finite_trace_set_uses_its_population() {
+    use crate::analyze_cli_support::{counter_request_with, request_members};
+    let header = crate::counter::unit_text("").replace(
+        "model M = \"test/counter\";\n",
+        "profile ep = \"filament.temporal.event-position.false-extension/v1\";\n\
+         model M = \"test/counter\";\n",
+    );
+    let unit = format!(
+        "{header}{}\nrecord Obs {{ inp: Int[0, 3]; res: Int[0, 3]; }}\n\
+         hyper Secret using ep over t in Obs bounded 2 \
+         forall trace a forall trace b {{ a.res = b.res }}\n",
+        crate::counter::CONTRACT,
+    );
     let ws = Workspace::new("hyper-wire-finite-trace-set");
-    let run = analyze(&request_over(
-        &ws,
-        &unit,
-        &model,
-        &snapshots,
-        json!({"items": [{"claim": "Secret"}]}),
-    ));
+    let mut request = request_members(Some(json!([{
+        "claim": "Secret",
+        "traces": {"authority": "test", "identity": "population"}
+    }])));
+    request["documents"] = json!([
+        {"file": "start.json"},
+        {"file": "population.json", "identity": {"authority": "test", "identity": "population"}}
+    ]);
+    request["clocks"] = json!({
+        "t": {"kind": "event_position", "sequence_authority": "obs"}
+    });
+    let path = counter_request_with(&ws, "", request);
+    ws.write("program.fsl", unit.as_bytes());
+    ws.write(
+        "population.json",
+        json!({
+            "format": "filament.trace-population/1",
+            "record_type": "Obs",
+            "closure": "closed",
+            "traces": [{"identity": "a", "states": [{"inp": 0, "res": 1}]}]
+        })
+        .to_string()
+        .as_bytes(),
+    );
+    let run = analyze(&path);
     let document = run.document();
-    assert_ne!(run.exit, 0, "{document}");
-    assert_eq!(
-        document["diagnostics"][0]["code"], "unsupported_construct",
-        "{document}"
+    assert_eq!(run.exit, 0, "{document}");
+    assert_eq!(label(&run.item(0)), "proved", "{document}");
+    ws.write(
+        "population.json",
+        json!({
+            "format": "filament.trace-population/1",
+            "record_type": "Obs",
+            "closure": "closed",
+            "traces": [
+                {"identity": "a", "states": [{"inp": 0, "res": 1}]},
+                {"identity": "b", "states": [{"inp": 0, "res": 2}]}
+            ]
+        })
+        .to_string()
+        .as_bytes(),
     );
-    assert_eq!(
-        document["diagnostics"][0]["cause"], "expression-form",
-        "{document}"
-    );
+    let refuted = analyze(&path);
+    assert_eq!(refuted.exit, 10, "{}", refuted.document());
+    assert_eq!(label(&refuted.item(0)), "refuted");
+    assert_eq!(refuted.item(0)["replay"]["reproduced"], true);
 }
 
 /// FR-182: an event-position HP-5 run stopped by its state limit settles

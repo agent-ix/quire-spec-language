@@ -758,6 +758,11 @@ impl<'a> Run<'_, 'a> {
         &self,
         explored: &[Explored<'_, '_>],
     ) -> Result<Vec<fsl_replay::ProductClosureCertificate>, ModelCheckRefusal> {
+        // FR-174's key-symmetry proof is uncertified: FR-163's certificate
+        // reconstructs copy-swap products, not key orbits or their stabilisers.
+        if self.symmetric {
+            return Ok(Vec::new());
+        }
         let systems = self
             .slots
             .iter()

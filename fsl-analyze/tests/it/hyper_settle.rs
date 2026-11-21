@@ -859,7 +859,7 @@ fn an_empty_universe_settles_no_instance_and_a_missing_one_requires_a_bound() {
 }
 
 /// FR-182: a step-relation proof has no FR-163 `Det` certificate behind it, so
-/// it settles `proved` but never `certified`.
+/// it settles `incomplete` with no proof or counterexample.
 #[trace("TC-607", "FR-182")]
 #[test]
 fn a_step_relation_proof_is_never_certified_without_a_checked_certificate() {
@@ -877,12 +877,11 @@ fn a_step_relation_proof_is_never_certified_without_a_checked_certificate() {
     .expect("an unchecked holding outcome settles");
     assert_eq!(
         record.value,
-        TerminalValue::Proved {
-            basis: fsl_replay::ProofBasis::Exhaustive,
-            certification: fsl_replay::Certification::Uncertified,
-        }
+        TerminalValue::Incomplete(IncompleteCause::CertificateUnchecked)
     );
     assert!(record.certificates.is_empty());
+    assert!(record.counterexample.is_none());
+    assert_eq!(record.value.category(), Category::Incomplete);
 }
 
 /// FR-182: an undecided relation run settles inconclusive, never `failed`.
