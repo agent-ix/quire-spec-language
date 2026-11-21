@@ -21,7 +21,7 @@ use ix_trace_rs::trace;
 use serde_json::{json, Value};
 
 use crate::task_product_certificate::{
-    build, claim_of, over_utilised, preempting, rejected, solo, tied, verdict, Certificate,
+    claim_of, over_utilised, preempting, rejected, solo, tied, verdict, Certificate,
 };
 use crate::timed_world::World;
 
@@ -69,14 +69,17 @@ fn engine_graph(world: &World, claim: &str) -> (SymbolicGraph, Certificate) {
     (graph, certificate)
 }
 
+/// One vertex: key octets and its zone cells.
+type Vertex = (Vec<u8>, Cells);
+
 /// The sets compared: vertices as (key octets, zone), discrete edges and
 /// delay edges between such vertices.
 #[derive(Debug, Eq, PartialEq)]
 struct Shape {
-    vertices: BTreeSet<(Vec<u8>, Cells)>,
-    discrete: BTreeSet<((Vec<u8>, Cells), String, (Vec<u8>, Cells))>,
-    time: BTreeSet<((Vec<u8>, Cells), (Vec<u8>, Cells))>,
-    initials: BTreeSet<(Vec<u8>, Cells)>,
+    vertices: BTreeSet<Vertex>,
+    discrete: BTreeSet<(Vertex, String, Vertex)>,
+    time: BTreeSet<(Vertex, Vertex)>,
+    initials: BTreeSet<Vertex>,
     subtractions: BTreeSet<(String, String, String)>,
 }
 
@@ -186,7 +189,7 @@ fn set(name: &str) -> World {
 /// FR-418: the engine's closed quotient (its own DBM and region walk) equals
 /// the quotient the checker recomputes, vertex for vertex, edge for edge, so
 /// a bug in one that the certificates of one side alone would hide shows.
-#[trace("TC-371", "FR-418-AC-19")]
+#[trace("TC-371")]
 #[test]
 fn the_engine_quotient_equals_the_checker_quotient() {
     for (name, claim) in SETS {
@@ -248,65 +251,74 @@ fn tampered(
     verdict(world, claim, &read, CertificateCheckLimits::default())
 }
 
-/// FR-418-AC-11/AC-19: an emitted certificate edited on the wire is
-/// rejected: a member, a node, an edge or a zone.
+/// The rule `QFp`'s certificate is rejected with after `change` edits its
+/// wire.
+fn rule_after(change: impl FnOnce(&mut Value)) -> CertificateRule {
+    rejected(tampered(&preempting(), "QFp", change)).0
+}
+
+/// An emitted certificate edited on the wire is rejected with the checker's
+/// own rule: a changed member (FR-418-AC-11), a dropped edge, a retargeted
+/// edge, squeezed zones, and (FR-418-AC-19) an extra node and an extra edge.
 #[trace("TC-371", "FR-418-AC-19")]
 #[test]
 fn a_tampered_emitted_certificate_is_rejected() {
-    let world = preempting();
     // `max_jobs` of the first task one too many.
-    let result = tampered(&world, "QFp", |wire| {
-        let jobs = wire["task_product"]["queue_bounds"][0]["max_jobs"]
-            .as_u64()
-            .expect("a count");
-        wire["task_product"]["queue_bounds"][0]["max_jobs"] = json!(jobs + 1);
-    });
     assert_eq!(
-        rejected(result).0,
+        rule_after(|wire| {
+            let jobs = wire["task_product"]["queue_bounds"][0]["max_jobs"]
+                .as_u64()
+                .expect("a count");
+            wire["task_product"]["queue_bounds"][0]["max_jobs"] = json!(jobs + 1);
+        }),
         CertificateRule::Malformed,
-        "a changed member is malformed"
     );
-    // The last edge dropped: the node's successor is missing.
-    let result = tampered(&world, "QFp", |wire| {
-        wire["edges"].as_array_mut().expect("edges").pop();
-    });
-    assert!(matches!(
-        rejected(result).0,
-        CertificateRule::SuccessorMissing | CertificateRule::Malformed
-    ));
-    // An edge retargeted to the first node.
-    let result = tampered(&world, "QFp", |wire| {
-        let edges = wire["edges"].as_array_mut().expect("edges");
-        let last = edges.len() - 1;
-        let target = edges[last]["target"].as_u64().expect("a node");
-        edges[last]["target"] = json!(if target == 0 { 1 } else { 0 });
-    });
-    assert_ne!(
-        result.expect("the check runs"),
-        ZoneCertificateVerdict::Accepted
+    // The last edge dropped.
+    assert_eq!(
+        rule_after(|wire| {
+            wire["edges"].as_array_mut().expect("edges").pop();
+        }),
+        CertificateRule::SuccessorMissing,
     );
-    // Every node squeezed to a point no longer covers the closure.
-    let result = tampered(&world, "QFp", |wire| {
-        for node in wire["nodes"].as_array_mut().expect("nodes") {
-            for row in node["zone"].as_array_mut().expect("a zone") {
-                for entry in row.as_array_mut().expect("a row") {
-                    if entry != "infinity" {
-                        entry["bound"] = json!("0");
-                        entry["strict"] = json!(false);
+    // Every node squeezed to a point.
+    assert_eq!(
+        rule_after(|wire| {
+            for node in wire["nodes"].as_array_mut().expect("nodes") {
+                for row in node["zone"].as_array_mut().expect("a zone") {
+                    for entry in row.as_array_mut().expect("a row") {
+                        if entry != "infinity" {
+                            entry["bound"] = json!("0");
+                            entry["strict"] = json!(false);
+                        }
                     }
                 }
             }
-        }
-    });
-    assert_ne!(
-        result.expect("the check runs"),
-        ZoneCertificateVerdict::Accepted
+        }),
+        CertificateRule::SuccessorMissing,
+    );
+    // A node nothing reaches.
+    assert_eq!(
+        rule_after(|wire| {
+            let nodes = wire["nodes"].as_array_mut().expect("nodes");
+            let copy = nodes[0].clone();
+            nodes.push(copy);
+        }),
+        CertificateRule::UnreachedNode,
+    );
+    // An edge the recomputation does not produce.
+    assert_eq!(
+        rule_after(|wire| {
+            let edges = wire["edges"].as_array_mut().expect("edges");
+            let copy = edges[0].clone();
+            edges.push(copy);
+        }),
+        CertificateRule::ExtraEdge,
     );
 }
 
 /// FR-418: the engine does not state a proof for an over-utilised set: a
 /// deadline miss is reachable in its quotient, so no certificate is built.
-#[trace("TC-371", "FR-418-AC-2")]
+#[trace("TC-371")]
 #[test]
 fn no_certificate_is_built_for_a_reachable_miss() {
     let world = over_utilised();
@@ -314,14 +326,17 @@ fn no_certificate_is_built_for_a_reachable_miss() {
     let timed = TimedSystem::new(&model, "M").expect("dense timed model");
     let product = TaskProductSystem::new(timed, "OFp").expect("checked task product");
     let automaton = TaskAutomaton::new(&product);
-    let graph =
-        explore_task_symbolic(&automaton, 100_000_000, &Cancel::new()).expect("the product closes");
-    let occurrence = claim_of(&world, "OFp").occurrence().expect("an occurrence");
-    assert!(task_product_certificate(&automaton, &graph, occurrence).is_err());
+    // The pass stops at the first reachable miss, so the whole quotient is
+    // never explored and the concrete search refutes promptly.
+    assert!(matches!(
+        explore_task_symbolic(&automaton, 100_000_000, &Cancel::new()),
+        Err(SymbolicStop::Missed)
+    ));
 }
 
-/// FR-418-AC-20: the engine's pass obeys the work limit and the cancel.
-#[trace("TC-371", "FR-418-AC-20")]
+/// The engine's pass obeys its work limit and the cancel (the analyze-level
+/// FR-418-AC-20 test is `a_small_max_check_work_settles_limit_reached`).
+#[trace("TC-371")]
 #[test]
 fn the_symbolic_pass_stops_at_its_work_limit_and_on_cancel() {
     let world = preempting();
@@ -339,5 +354,28 @@ fn the_symbolic_pass_stops_at_its_work_limit_and_on_cancel() {
         explore_task_symbolic(&automaton, 100_000_000, &cancel),
         Err(SymbolicStop::Cancelled(_))
     ));
-    let _ = build;
+}
+
+/// A receiver reference whose `object_type` is `null` is not an effective-id
+/// object (the spine's `read_effective` refuses a null root), so the wire is
+/// not read.
+#[trace("TC-371")]
+#[test]
+fn a_null_receiver_object_type_is_not_read() {
+    let world = preempting();
+    let (_, certificate) = engine_graph(&world, "QFp");
+    let mut wire = certificate.to_wire(json!({})).expect("a wire");
+    let edge = wire["edges"]
+        .as_array_mut()
+        .expect("edges")
+        .iter_mut()
+        .find(|edge| edge["transition"]["source_transition"]["receiver"].is_object())
+        .expect("an edge with a source receiver");
+    edge["transition"]["source_transition"]["receiver"]["object_type"] = Value::Null;
+    let refusal = ZoneCertificate::<OccurrenceKey>::from_wire(&wire, certificate.obligation)
+        .expect_err("a null object type is refused");
+    assert!(
+        format!("{refusal:?}").contains("object_type"),
+        "the refusal names the member: {refusal:?}"
+    );
 }

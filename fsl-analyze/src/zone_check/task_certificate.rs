@@ -317,13 +317,22 @@ fn witness(
         let (root, _) = path_to(&parent, vertex);
         node_of_vertex[root]
     };
-    if let Some(idle) = (0..count).find(|&v| seen[v] && graph.time.contains(&(v, v))) {
+    // The wire carries a witness as one edge list, read back canonically
+    // (`canonical`): only a witness that reads back unchanged is written.
+    let mut ends = vec![(0usize, 0usize); edge_of.len()];
+    for (&(from, _, to), &index) in edge_of {
+        ends[index] = (from, to);
+    }
+    for idle in (0..count).filter(|&v| seen[v] && graph.time.contains(&(v, v))) {
         let (_, path) = path_to(&parent, idle);
-        return Some(DivergenceWitness {
+        let candidate = DivergenceWitness {
             start: start_node(idle),
             path,
             target: DivergentTarget::Quiescent(node_of_vertex[idle]),
-        });
+        };
+        if canonical(&candidate.path, candidate.start, &ends).as_ref() == Some(&candidate) {
+            return Some(candidate);
+        }
     }
     // A discrete edge with a lower-bound guard, closed by a walk back to its
     // source over any moves.
@@ -361,16 +370,132 @@ fn witness(
         )];
         let mut cycle = vec![own];
         cycle.extend(labels);
+        let (cycle, effects) = erase_loops(&cycle, &effects, &ends);
         let refs: Vec<_> = effects.iter().map(|&e| &graph.effects[e]).collect();
         if !advances(&refs) {
             continue;
         }
         let (_, path) = path_to(&parent, step.from);
-        return Some(DivergenceWitness {
+        let candidate = DivergenceWitness {
             start: start_node(step.from),
+            target: DivergentTarget::Cycle(cycle.clone()),
             path,
-            target: DivergentTarget::Cycle(cycle),
-        });
+        };
+        let mut flat = candidate.path.clone();
+        flat.extend(&cycle);
+        if canonical(&flat, candidate.start, &ends).as_ref() == Some(&candidate) {
+            return Some(candidate);
+        }
     }
     None
+}
+
+/// The reading of a wire edge list `flat` from `start`, as
+/// `ZoneCertificate::from_wire` decodes it: the smallest closed suffix is the
+/// cycle and the rest the path; with none, the path ends at a quiescent node.
+/// `ends` is each certificate edge's `(from, to)`.
+fn canonical(flat: &[usize], start: usize, ends: &[(usize, usize)]) -> Option<DivergenceWitness> {
+    let Some(&last) = flat.last() else {
+        return Some(DivergenceWitness {
+            start,
+            path: Vec::new(),
+            target: DivergentTarget::Quiescent(start),
+        });
+    };
+    let end = ends.get(last)?.1;
+    Some(
+        match (0..flat.len()).rev().find(|&k| ends[flat[k]].0 == end) {
+            Some(k) => DivergenceWitness {
+                start,
+                path: flat[..k].to_vec(),
+                target: DivergentTarget::Cycle(flat[k..].to_vec()),
+            },
+            None => DivergenceWitness {
+                start,
+                path: flat.to_vec(),
+                target: DivergentTarget::Quiescent(end),
+            },
+        },
+    )
+}
+
+/// The closed walk `cycle` (with the effect of each edge) from its first
+/// edge's source, with every loop that does not contain its first edge
+/// removed, so no node but the start is visited twice and the wire's canonical
+/// reading returns the cycle itself.
+fn erase_loops(
+    cycle: &[usize],
+    effects: &[usize],
+    ends: &[(usize, usize)],
+) -> (Vec<usize>, Vec<usize>) {
+    let start = ends[cycle[0]].0;
+    let mut kept: Vec<(usize, usize)> = Vec::new();
+    for (&edge, &effect) in cycle.iter().zip(effects) {
+        let to = ends[edge].1;
+        kept.push((edge, effect));
+        if to == start {
+            break;
+        }
+        // A node left before: drop the loop that returned to it.
+        if let Some(at) = kept.iter().position(|&(earlier, _)| ends[earlier].0 == to) {
+            kept.truncate(at);
+        }
+    }
+    kept.into_iter().unzip()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{canonical, erase_loops};
+    use fsl_replay::{DivergenceWitness, DivergentTarget};
+
+    /// Edges 0: A->B, 1: B->A, 2: A->C, 3: C->A, 4: B->B (nodes A=0, B=1, C=2).
+    const ENDS: [(usize, usize); 5] = [(0, 1), (1, 0), (0, 2), (2, 0), (1, 1)];
+
+    /// A closed walk that returns to its start node mid-way would be read
+    /// back from the wire as a shorter cycle with a longer path; the producer
+    /// writes the first return instead, which reads back unchanged.
+    #[test]
+    fn a_cycle_that_revisits_its_start_is_cut_at_the_first_return() {
+        let cycle = [0, 1, 2, 3];
+        let effects = [10, 11, 12, 13];
+        // Read back as written, the long walk is a different witness.
+        let long = canonical(&cycle, 0, &ENDS).expect("a reading");
+        assert_eq!(
+            long,
+            DivergenceWitness {
+                start: 0,
+                path: vec![0, 1],
+                target: DivergentTarget::Cycle(vec![2, 3]),
+            }
+        );
+        let (cut, kept) = erase_loops(&cycle, &effects, &ENDS);
+        assert_eq!(
+            (cut.as_slice(), kept.as_slice()),
+            (&[0, 1][..], &[10, 11][..])
+        );
+        let again = canonical(&cut, 0, &ENDS).expect("a reading");
+        assert_eq!(again.target, DivergentTarget::Cycle(cut));
+        assert!(again.path.is_empty());
+    }
+
+    /// A loop that does not contain the first edge is removed.
+    #[test]
+    fn an_inner_loop_is_erased() {
+        let (cut, kept) = erase_loops(&[0, 4, 1], &[5, 6, 7], &ENDS);
+        assert_eq!(
+            (cut.as_slice(), kept.as_slice()),
+            (&[0, 1][..], &[5, 7][..])
+        );
+    }
+
+    /// A path whose end node an earlier edge leaves reads back as a cycle, so
+    /// a quiescent witness there is not written.
+    #[test]
+    fn a_quiescent_path_through_its_end_node_reads_back_as_a_cycle() {
+        let read = canonical(&[0, 1], 0, &ENDS).expect("a reading");
+        assert_eq!(read.target, DivergentTarget::Cycle(vec![0, 1]));
+        let read = canonical(&[0], 0, &ENDS).expect("a reading");
+        assert_eq!(read.target, DivergentTarget::Quiescent(1));
+    }
 }

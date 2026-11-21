@@ -77,7 +77,10 @@ impl TaskProductShapeRefusal {
 #[error("the task-product value has no wire spelling")]
 pub struct TaskProductWireError;
 
-pub(crate) fn refuse<T>(pointer: &str, reason: TaskProductShapeReason) -> Result<T, TaskProductShapeRefusal> {
+pub(crate) fn refuse<T>(
+    pointer: &str,
+    reason: TaskProductShapeReason,
+) -> Result<T, TaskProductShapeRefusal> {
     Err(TaskProductShapeRefusal {
         pointer: pointer.to_owned(),
         reason,
@@ -116,7 +119,10 @@ pub(crate) fn member<'v>(map: &'v Map<String, Value>, name: &str) -> &'v Value {
     map.get(name).unwrap_or(&Value::Null)
 }
 
-pub(crate) fn array<'v>(value: &'v Value, pointer: &str) -> Result<&'v [Value], TaskProductShapeRefusal> {
+pub(crate) fn array<'v>(
+    value: &'v Value,
+    pointer: &str,
+) -> Result<&'v [Value], TaskProductShapeRefusal> {
     value
         .as_array()
         .map(Vec::as_slice)
@@ -333,22 +339,14 @@ fn member_str<'v>(value: &'v Value, name: &str) -> Option<&'v str> {
     value.get(name).and_then(Value::as_str)
 }
 
-/// An effective type id: `{owner_effective_type: null | <effective id>,
-/// original: {package, node}}`, as `effective_form` writes it.
+/// An effective type id as `effective_form` writes it (its reader is the
+/// spine's `read_effective`; a `null` root is refused).
 fn effective_id(value: &Value, pointer: &str) -> Result<(), TaskProductShapeRefusal> {
-    let mut current = value;
-    let mut at = pointer.to_owned();
-    while !current.is_null() {
-        let map = object(current, &at, &["owner_effective_type", "original"], &[])?;
-        let original = member(map, "original");
-        let original_at = child(&at, "original");
-        let inner = object(original, &original_at, &["package", "node"], &[])?;
-        text(member(inner, "package"), &child(&original_at, "package"))?;
-        text(member(inner, "node"), &child(&original_at, "node"))?;
-        current = member(map, "owner_effective_type");
-        at = child(&at, "owner_effective_type");
+    if crate::spine::is_effective_form(value) {
+        Ok(())
+    } else {
+        refuse(pointer, TaskProductShapeReason::WrongKind)
     }
-    Ok(())
 }
 
 /// A checked-package `NodeId`: `{ordinal, package, path}`.
@@ -474,7 +472,9 @@ pub(crate) fn source_transition(
         .or_else(|_| refuse(pointer, TaskProductShapeReason::NotCanonical))
 }
 
-pub(crate) fn source_transition_wire(transition: &ModelTransition) -> Result<Value, TaskProductWireError> {
+pub(crate) fn source_transition_wire(
+    transition: &ModelTransition,
+) -> Result<Value, TaskProductWireError> {
     crate::task_source_transition_wire(transition).map_err(|_| TaskProductWireError)
 }
 

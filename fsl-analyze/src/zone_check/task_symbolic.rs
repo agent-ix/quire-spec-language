@@ -140,6 +140,11 @@ pub enum SymbolicStop {
     /// The lowering cannot certify the set, or an allocation past a task's
     /// slot bound or a subtraction outside its guarded range is reachable.
     Uncertified,
+    /// A deadline miss is reachable, so no certificate states a proof: the
+    /// pass stops at the first one and leaves the verdict to the concrete
+    /// search. (A miss FR-418 would allow as a time-locked `locked` node is
+    /// stopped the same way: a completeness loss only.)
+    Missed,
     /// The lowering refused for another reason.
     Refused(TaskAutomatonRefusal),
     /// The engine broke an invariant of its own.
@@ -581,10 +586,18 @@ impl<'t, 's, 'a, 'c> Explorer<'t, 's, 'a, 'c> {
         Ok((key, data))
     }
 
-    fn vertex(&mut self, location: &TaskLocation, key: &StateKey, zone: Dbm) -> (usize, bool) {
+    fn vertex(
+        &mut self,
+        location: &TaskLocation,
+        key: &StateKey,
+        zone: Dbm,
+    ) -> Done<(usize, bool)> {
         let print = (key.clone(), fingerprint(&zone));
         if let Some(&found) = self.index.get(&print) {
-            return (found, false);
+            return Ok((found, false));
+        }
+        if location.control().missed {
+            return Err(Failure::Stop(SymbolicStop::Missed));
         }
         let id = self.graph.vertices.len();
         self.graph.vertices.push(SymbolicVertex {
@@ -594,7 +607,7 @@ impl<'t, 's, 'a, 'c> Explorer<'t, 's, 'a, 'c> {
         });
         self.locations.push(location.clone());
         self.index.insert(print, id);
-        (id, true)
+        Ok((id, true))
     }
 
     fn identity(&mut self, wanted: SymbolicIdentity) -> usize {
@@ -641,7 +654,7 @@ impl<'t, 's, 'a, 'c> Explorer<'t, 's, 'a, 'c> {
             }
             let mut vertices = Vec::new();
             for region in self.regions(&zone)? {
-                let (id, new) = self.vertex(&location, &key, region);
+                let (id, new) = self.vertex(&location, &key, region)?;
                 vertices.push(id);
                 if new {
                     queue.push_back(id);
@@ -704,7 +717,7 @@ impl<'t, 's, 'a, 'c> Explorer<'t, 's, 'a, 'c> {
                 self.pin_dead(&mut post, &target.info)?;
                 self.constrain(&mut post, &target.info.invariant)?;
                 for region in self.regions(&post)? {
-                    let (to, new) = self.vertex(&edge.target, &target_key, region);
+                    let (to, new) = self.vertex(&edge.target, &target_key, region)?;
                     if new {
                         queue.push_back(to);
                     }
@@ -842,7 +855,7 @@ impl<'t, 's, 'a, 'c> Explorer<'t, 's, 'a, 'c> {
                 if &region == zone {
                     continue;
                 }
-                let (to, new) = self.vertex(location, key, region);
+                let (to, new) = self.vertex(location, key, region)?;
                 if new {
                     queue.push_back(to);
                 }

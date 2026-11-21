@@ -753,9 +753,9 @@ pub struct ItemDetail {
     /// A bounded task-product stop's FSpec FR-331 `task_search` frontier
     /// evidence, without its `identity`.
     pub task_search: Option<serde_json::Value>,
-    /// The FSpec FR-418 task-product certificate the symbolic pass wrote and
-    /// the checker read, with whether it accepted it.
-    pub task_certificate: Option<(serde_json::Value, bool)>,
+    /// The `task_product` part of the FSpec FR-418 certificate the checker
+    /// accepted, for a proved task-product item.
+    pub task_certificate: Option<serde_json::Value>,
 }
 
 /// FR-941: what a `finite-replay` item reports of a protocol claim beyond its
@@ -814,13 +814,14 @@ impl ItemDetail {
                 .and_then(|report| report.task_search.clone()),
             task_certificate: record.task_product.as_deref().and_then(|report| {
                 let proof = report.proof.as_ref()?;
-                let accepted = matches!(
+                matches!(
                     proof.verdict,
                     task_product_item::ProofVerdict::Checked(
                         fsl_replay::ZoneCertificateVerdict::Accepted
                     )
-                );
-                proof.certificate.clone().map(|wire| (wire, accepted))
+                )
+                .then_some(())?;
+                proof.certificate.as_ref()?.get("task_product").cloned()
             }),
         }
     }
@@ -2930,7 +2931,11 @@ fn settle(
                     report.temporal_counterexample.as_deref(),
                 )
                 .unwrap_or_else(|_| TerminalRecord::failed(index, backend.clone()))
-            } else if let Some(value) = report.proof.as_ref().and_then(|proof| proof_value(proof, &report.outcome)) {
+            } else if let Some(value) = report
+                .proof
+                .as_ref()
+                .and_then(|proof| proof_value(proof, &report.outcome))
+            {
                 TerminalRecord::of_model_settlement(
                     index,
                     backend.clone(),
@@ -4154,4 +4159,134 @@ fn proof_value(
         ProofVerdict::Fault if closed => TerminalValue::Failed,
         ProofVerdict::Stopped(_) | ProofVerdict::Fault | ProofVerdict::Uncertified => return None,
     })
+}
+
+#[cfg(test)]
+mod proof_value_tests {
+    use super::task_product_item::{ProofVerdict, TaskProof};
+    use super::{proof_value, TerminalValue};
+    use crate::zone_check::{TaskProductSearchOutcome, TaskProductSearchStop};
+    use filament_exact::CancelCause;
+    use fsl_replay::{
+        CertificateLocus, CertificateRejection, CertificateRule, IncompleteCause,
+        InconclusiveCause, ModelCheckLimit, ZoneCertificateVerdict,
+    };
+
+    fn proof(verdict: ProofVerdict) -> TaskProof {
+        TaskProof {
+            verdict,
+            certificate: None,
+        }
+    }
+
+    /// The concrete search's outcome: closed (`RegionClosureRequired`), or
+    /// stopped at its work limit.
+    fn outcome(closed: bool) -> TaskProductSearchOutcome {
+        TaskProductSearchOutcome::Stopped {
+            cause: if closed {
+                TaskProductSearchStop::RegionClosureRequired
+            } else {
+                TaskProductSearchStop::WorkLimit(5)
+            },
+            frontier: Vec::new(),
+            expanded: 0,
+            transitions: 0,
+        }
+    }
+
+    fn limit() -> IncompleteCause {
+        IncompleteCause::LimitReached {
+            limit: ModelCheckLimit::ZoneMaxCheckWork,
+            value: 7,
+        }
+    }
+
+    /// FR-418: `proved` only for an accepted certificate, whatever the
+    /// concrete search did.
+    #[test]
+    fn an_accepted_certificate_settles_proved() {
+        for closed in [true, false] {
+            assert!(matches!(
+                proof_value(
+                    &proof(ProofVerdict::Checked(ZoneCertificateVerdict::Accepted)),
+                    &outcome(closed)
+                ),
+                Some(TerminalValue::Proved { .. })
+            ));
+        }
+    }
+
+    /// A rejected certificate settles `inconclusive` with the checker's rule
+    /// and locus; the checker's own stop settles `incomplete` with its cause.
+    #[test]
+    fn a_rejection_and_a_checker_stop_settle_with_the_checkers_cause() {
+        let at = CertificateLocus::ZoneNode { node: 3 };
+        let rejected = ZoneCertificateVerdict::Rejected(CertificateRejection {
+            rule: CertificateRule::SuccessorMissing,
+            at: at.clone(),
+        });
+        for closed in [true, false] {
+            assert_eq!(
+                proof_value(
+                    &proof(ProofVerdict::Checked(rejected.clone())),
+                    &outcome(closed)
+                ),
+                Some(TerminalValue::Inconclusive(
+                    InconclusiveCause::CertificateRejected {
+                        rule: CertificateRule::SuccessorMissing,
+                        at: at.clone(),
+                    }
+                ))
+            );
+            assert_eq!(
+                proof_value(
+                    &proof(ProofVerdict::Checked(ZoneCertificateVerdict::Stopped(
+                        limit()
+                    ))),
+                    &outcome(closed)
+                ),
+                Some(TerminalValue::Incomplete(limit()))
+            );
+        }
+    }
+
+    /// The symbolic pass's own stop (a work limit or a cancel) and its fault
+    /// settle only once the concrete search has closed; before that the
+    /// concrete search's own result stands.
+    #[test]
+    fn a_pass_stop_or_fault_settles_only_when_the_search_closed() {
+        let cancelled = IncompleteCause::Cancelled {
+            source: CancelCause::Requested,
+        };
+        for stop in [limit(), cancelled] {
+            assert_eq!(
+                proof_value(&proof(ProofVerdict::Stopped(stop.clone())), &outcome(true)),
+                Some(TerminalValue::Incomplete(stop.clone()))
+            );
+            assert_eq!(
+                proof_value(&proof(ProofVerdict::Stopped(stop)), &outcome(false)),
+                None
+            );
+        }
+        assert_eq!(
+            proof_value(&proof(ProofVerdict::Fault), &outcome(true)),
+            Some(TerminalValue::Failed)
+        );
+        assert_eq!(
+            proof_value(&proof(ProofVerdict::Fault), &outcome(false)),
+            None
+        );
+    }
+
+    /// A set no certificate covers leaves the concrete search's result (the
+    /// closed gate settles `certificate-unchecked` elsewhere).
+    #[test]
+    fn an_uncertified_set_leaves_the_concrete_result() {
+        for closed in [true, false] {
+            assert_eq!(
+                proof_value(&proof(ProofVerdict::Uncertified), &outcome(closed)),
+                None
+            );
+        }
+    }
 }

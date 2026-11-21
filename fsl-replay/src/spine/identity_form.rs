@@ -155,6 +155,12 @@ pub(crate) fn read_effective(form: &Json, path: &Path) -> Result<EffectiveId, Re
     identity.ok_or(ReadStop::Fault("effective-id-has-an-original"))
 }
 
+/// Whether `form` spells an effective id: `effective_form`'s object, never
+/// its `null` of an empty chain.
+pub(crate) fn is_effective_form(form: &Json) -> bool {
+    !form.is_null() && read_effective(form, &Path::new()).is_ok()
+}
+
 /// A node id in the universe spelling, for a refusal that holds the node of
 /// a universe.
 pub fn node_key_form(node: &NodeKey) -> Json {

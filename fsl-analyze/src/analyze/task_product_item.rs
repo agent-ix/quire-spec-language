@@ -1,5 +1,23 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! EN-6's request adapter for release-backed schedulability claims (FR-249).
+//!
+//! A claim first goes to the symbolic pass (FR-418): the engine's own zone
+//! exploration writes the task-product certificate, the certificate is spelled
+//! as JSON and read back, and `check_zone_certificate` runs on what was read.
+//! `proved` is settled only for an accepted certificate. Anything else (an
+//! uncertifiable set, a reachable deadline miss, a stop or a fault) falls
+//! through to the concrete event search, which alone can refute.
+//!
+//! Decisions:
+//! - An accepted proof skips the concrete search, so it drops the run-time
+//!   cross-check between the shared S3 `TaskAutomaton` lowering and the
+//!   concrete FR-419 `TaskProductSystem`; the S3 sampled cross-check tests
+//!   are the guard for that agreement.
+//! - The pass stops at the first reachable miss and builds no certificate,
+//!   including a miss FR-418 would allow as a time-locked `locked` node: a
+//!   completeness loss only, the concrete search then decides.
+//! - `zone_check.max_check_work` (request `temporal.limits.max_check_work`)
+//!   bounds both the pass and the checker.
 
 use fsl_foundation::source::provenance::OccurrenceKey;
 use fsl_foundation::RequestIndex;
@@ -33,7 +51,7 @@ pub enum ProofVerdict {
 /// The bounded task-product result retained for FR-621 settlement.
 #[derive(Debug)]
 pub struct TaskProductReport {
-    /// The symbolic proof attempt, made once the concrete search closed.
+    /// The symbolic proof attempt, made before the concrete search.
     pub proof: Option<TaskProof>,
     /// EN-6's task-product search result.
     pub outcome: crate::zone_check::TaskProductSearchOutcome,
@@ -54,6 +72,7 @@ pub(super) fn item<'a>(
     binding: &'a super::SubjectBinding<'a>,
     limits: super::AnalyzeLimits,
     max_work: Option<std::num::NonZeroU64>,
+    max_check_work: Option<std::num::NonZeroU64>,
     claim: &'a OccurrenceKey,
     index: RequestIndex,
 ) -> Option<AnalyzeItem<'a>> {
@@ -103,15 +122,16 @@ pub(super) fn item<'a>(
                     Err(_) => return EngineReport::Refused(Refusal::Failed(BROKEN)),
                 };
             // The symbolic pass first: the concrete event search cannot close a
-            // sporadic or large set, but a proof the checker accepts needs
-            // no search. Anything else falls through to the concrete search,
-            // which alone can refute.
+            // sporadic or large set, but a proof the checker accepts needs no
+            // search. The pass stops at its first reachable miss, so a
+            // refutable set reaches the concrete search, which alone refutes.
             let proof = prove(
                 &product,
                 certificate_simulation,
                 &model,
                 checked_claim,
                 &claim,
+                max_check_work,
                 cancel,
             );
             let proved = matches!(
@@ -489,6 +509,7 @@ fn prove<'a>(
     model: &str,
     checked_claim: &fsl_semantics::check::CheckedScheduleClaim,
     claim: &OccurrenceKey,
+    max_check_work: Option<std::num::NonZeroU64>,
     cancel: &filament_exact::Cancel,
 ) -> TaskProof {
     use crate::zone_check::{SymbolicStop, TaskCertificateRefusal};
@@ -496,37 +517,40 @@ fn prove<'a>(
         verdict: ProofVerdict::Fault,
         certificate: None,
     };
-    let limits = fsl_replay::CertificateCheckLimits::default();
-    let automaton = fsl_eval::simulation::model::TaskAutomaton::new(product);
-    let graph = match crate::zone_check::explore_task_symbolic(
-        &automaton,
-        limits.max_check_work,
-        cancel,
-    ) {
-        Ok(graph) => graph,
-        Err(SymbolicStop::Uncertified) => {
-            return TaskProof {
-                verdict: ProofVerdict::Uncertified,
-                certificate: None,
-            }
-        }
-        Err(SymbolicStop::WorkLimit(value)) => {
-            return TaskProof {
-                verdict: ProofVerdict::Stopped(fsl_replay::IncompleteCause::LimitReached {
-                    limit: fsl_replay::ModelCheckLimit::ZoneMaxCheckWork,
-                    value,
-                }),
-                certificate: None,
-            }
-        }
-        Err(SymbolicStop::Cancelled(source)) => {
-            return TaskProof {
-                verdict: ProofVerdict::Stopped(fsl_replay::IncompleteCause::Cancelled { source }),
-                certificate: None,
-            }
-        }
-        Err(SymbolicStop::Refused(_) | SymbolicStop::Fault(_)) => return fault(),
+    let defaults = fsl_replay::CertificateCheckLimits::default();
+    let limits = fsl_replay::CertificateCheckLimits {
+        max_check_work: max_check_work.map_or(defaults.max_check_work, std::num::NonZeroU64::get),
+        ..defaults
     };
+    let automaton = fsl_eval::simulation::model::TaskAutomaton::new(product);
+    let graph =
+        match crate::zone_check::explore_task_symbolic(&automaton, limits.max_check_work, cancel) {
+            Ok(graph) => graph,
+            Err(SymbolicStop::Uncertified | SymbolicStop::Missed) => {
+                return TaskProof {
+                    verdict: ProofVerdict::Uncertified,
+                    certificate: None,
+                }
+            }
+            Err(SymbolicStop::WorkLimit(value)) => {
+                return TaskProof {
+                    verdict: ProofVerdict::Stopped(fsl_replay::IncompleteCause::LimitReached {
+                        limit: fsl_replay::ModelCheckLimit::ZoneMaxCheckWork,
+                        value,
+                    }),
+                    certificate: None,
+                }
+            }
+            Err(SymbolicStop::Cancelled(source)) => {
+                return TaskProof {
+                    verdict: ProofVerdict::Stopped(fsl_replay::IncompleteCause::Cancelled {
+                        source,
+                    }),
+                    certificate: None,
+                }
+            }
+            Err(SymbolicStop::Refused(_) | SymbolicStop::Fault(_)) => return fault(),
+        };
     let built = match crate::zone_check::task_product_certificate(&automaton, &graph, claim.clone())
     {
         Ok(built) => built,
@@ -548,14 +572,18 @@ fn prove<'a>(
     let Ok(wire) = built.to_wire(identity.clone()) else {
         return fault();
     };
-    let Ok((read, read_identity)) =
-        fsl_replay::ZoneCertificate::from_wire(&wire, claim.clone())
+    let Ok((read, read_identity)) = fsl_replay::ZoneCertificate::from_wire(&wire, claim.clone())
     else {
         return fault();
     };
     // Equal by wire spelling: a read transition equals its original only by
     // spelling (`same_source_transition`), never structurally.
-    if read_identity != identity || read.to_wire(read_identity.clone()).ok().as_ref() != Some(&wire) {
+    // The decoded witness (start, path and divergent target) is the one built:
+    // the wire carries no target, so a changed target would show only here.
+    if read_identity != identity
+        || read.admitted != built.admitted
+        || read.to_wire(read_identity.clone()).ok().as_ref() != Some(&wire)
+    {
         return fault();
     }
     let verdict = fsl_replay::check_zone_certificate(
