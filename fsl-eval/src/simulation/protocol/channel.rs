@@ -163,7 +163,10 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                 )?;
                 let supply = package
                     .supply_for_slot(slot, binders, Some(&observation))
-                    .map_err(|_| broken())?;
+                    .map_err(|failure| {
+                        eprintln!("RECEIVE-FIFO-DIAG key-supply node={node:?} {failure:?}");
+                        broken()
+                    })?;
                 match self
                     .evaluator
                     .evaluate_package_protocol_slot(
@@ -171,13 +174,16 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                         &supply,
                         &mut Meter::new(self.model.meter()),
                     )
-                    .map_err(|_| broken())?
-                {
+                    .map_err(|failure| {
+                        eprintln!("RECEIVE-FIFO-DIAG key-evaluate node={node:?} {failure:?}");
+                        broken()
+                    })? {
                     crate::value::ProtocolSlotEvaluation::Evaluated(evaluation, _) => {
                         evaluation.outcome
                     }
-                    crate::value::ProtocolSlotEvaluation::Unavailable { .. } => {
-                        return Err(broken())
+                    crate::value::ProtocolSlotEvaluation::Unavailable { binder, cause, .. } => {
+                        eprintln!("RECEIVE-FIFO-DIAG key-unavailable node={node:?} binder={binder:?} cause={cause:?}");
+                        return Err(broken());
                     }
                 }
             }
