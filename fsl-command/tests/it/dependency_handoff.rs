@@ -178,3 +178,90 @@ fn malformed_manifests_and_missing_indexed_witnesses_refuse_before_a_call() {
     let (exit, result) = run(directory.path(), json!({"directory": "handoff"}));
     assert_eq!(exit, 0, "unchanged positive control: {result}");
 }
+
+fn analyze(directory: &Path, request: Value, replay_input_bytes: u64) -> (u8, Value) {
+    let path = directory.join("analyze.json");
+    std::fs::write(
+        &path,
+        serde_json::to_vec(&json!({"format": "native-analyze/1", "request": request})).unwrap(),
+    )
+    .unwrap();
+    let limits = fsl_command::command::RunLimits {
+        replay_input_bytes,
+        ..Default::default()
+    };
+    match fsl_command::command::analyze_with_limits(
+        &path,
+        limits,
+        &crate::negotiation::Fr290,
+        &filament_exact::Cancel::new(),
+    ) {
+        Ok(result) => (result.exit_code, result.value.as_value().clone()),
+        Err(error) => (
+            error.category().exit_code(),
+            serde_json::from_slice(
+                &error
+                    .outcome_document(fsl_replay::Operation::Analyze)
+                    .to_bytes()
+                    .unwrap(),
+            )
+            .unwrap(),
+        ),
+    }
+}
+
+#[test]
+#[trace("FR-850-AC-12", "FR-850-AC-15", "TC-2410")]
+fn transitive_library_claim_analysis_and_replay_equal_source_after_source_deletion() {
+    let directory = tempfile::tempdir().unwrap();
+    let directory = directory.path();
+    let mut compile = prepare(directory, false);
+    std::fs::remove_dir_all(directory.join("handoff")).unwrap();
+    let unit = format!("{HEADER}\
+        profile paths = \"filament.temporal.infinite-trace/v1\";\n\
+        model M = \"test/counter\";\n\
+        import \"test/z\" as z;\n\
+        pre Space using v on M::Counter::inc {{ self.value < 3 }}\n\
+        post Inc using v on M::Counter::inc {{ self.value - pre(self.value) = 1 }}\n\
+        temporal Bounded using paths over (c: M::Counter) clock \"model-steps\" on origin {{ always holds(c.value <= 3) }}\n\
+        temporal LibraryBound using paths over (c: M::Counter) clock \"model-steps\" on origin {{ always holds(c.value <= z::answer() - 40) }}\n");
+    std::fs::write(directory.join("unit.native"), unit).unwrap();
+    std::fs::write(
+        directory.join("counter.json"),
+        include_bytes!("../fixtures/cli-contract/counter.semantic-ir.json"),
+    )
+    .unwrap();
+    let models = json!([{"format": "semantic-ir/2.0.0", "source": source("counter.json")}]);
+    compile["models"] = models.clone();
+    compile["handoff"]["package_name"] = source("unit.native")["identity"].clone();
+    let compile_path = directory.join("compile.json");
+    std::fs::write(
+        &compile_path,
+        serde_json::to_vec(&json!({"format": "native-compile/1", "request": compile})).unwrap(),
+    )
+    .unwrap();
+    fsl_command::command::compile(&compile_path).expect("the library-dependent Counter compiles");
+    std::fs::write(directory.join("start.json"), serde_json::to_vec(&json!({"format": "filament.state.snapshot/v1", "identity": {"authority": "contracts", "identity": "counter-start"}, "observation": "current", "model": {"identity": "test/counter"}, "anchor": {"kind": "initialization", "name": "counter-start"}, "populations": [{"population": "ix://test/counter/counters", "complete": true, "objects": [{"key": "counter", "type": "ix://test/counter/Counter", "fields": {"value": {"integer": "0"}}}]}]})).unwrap()).unwrap();
+    let source_request = json!({"program": {"source": source("unit.native")}, "libraries": compile["libraries"], "models": models, "documents": [{"file": "start.json"}], "items": [{"claim": "LibraryBound"}, {"claim": "Bounded"}]});
+    let (source_exit, source_result) = analyze(directory, source_request, 1 << 20);
+    assert_eq!(
+        source_result["items"][0]["record"]["result"], "refuted",
+        "{source_result}"
+    );
+    assert_eq!(
+        source_result["items"][1]["record"]["result"], "proved",
+        "{source_result}"
+    );
+    assert_eq!(
+        source_result["items"][0]["replay"]["reproduced"], true,
+        "{source_result}"
+    );
+    let package_request = json!({"package": {"directory": "handoff"}, "models": models, "documents": [{"file": "start.json"}], "items": [{"claim": "LibraryBound"}, {"claim": "Bounded"}]});
+    std::fs::remove_dir_all(directory.join("handoff/sources")).unwrap();
+    for file in ["unit.native", "a.native", "z.native"] {
+        std::fs::remove_file(directory.join(file)).unwrap();
+    }
+    let (exit, result) = analyze(directory, package_request, 1 << 20);
+    assert_eq!(exit, source_exit, "{result}");
+    assert_eq!(result["items"], source_result["items"], "{result}");
+}
