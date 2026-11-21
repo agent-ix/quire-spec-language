@@ -86,7 +86,7 @@ fn evaluate_row(
 ) -> Value {
     let graph = package.graph();
     let (effective, universe) = declared_type_universe_for(
-        graph.model_selections(),
+        graph.model_inputs(),
         packages,
         ModelNormalizationLimits::default(),
         &key(CLOCKS, "Call"),
@@ -96,7 +96,7 @@ fn evaluate_row(
     let receiver =
         ObjectReference::new(universe, effective, ObjectId::new(receiver).expect("an id"));
     let observed = StateModel::new(
-        graph.model_selections(),
+        graph.model_inputs(),
         graph.scope().types(),
         packages,
         ModelNormalizationLimits::default(),
@@ -209,7 +209,7 @@ fn a_refinement_count_reads_the_stored_clock_reference() {
     let package = CheckedPackage::link(checked.graph);
     let graph = package.graph();
     let (effective, universe) = declared_type_universe_for(
-        graph.model_selections(),
+        graph.model_inputs(),
         &checked.packages,
         ModelNormalizationLimits::default(),
         &key(CLOCKS, "Call"),

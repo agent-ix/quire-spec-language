@@ -358,66 +358,11 @@ fn clock_place_reference(
     place: &NodeKey,
     selectors: Vec<Value>,
 ) -> Result<ObjectReference, Halt> {
-    let place_text = fsl_foundation::node_wire::node_key_to_text(place)
-        .map_err(|_| invariant("clock-place-reference-key-encoding-failed"))?;
-    let owner_identity = clock_place_identity_component(owner.object().as_str().as_bytes());
-    let place_identity = clock_place_identity_component(place_text.as_bytes());
-    let mut identity = String::new();
-    identity.push_str("place/v1/");
-    identity.push_str(&owner_identity);
-    identity.push('/');
-    identity.push_str(&place_identity);
-    identity.push('/');
-    if selectors.is_empty() {
-        identity.push('-');
-    } else {
-        for (position, selector) in selectors.into_iter().enumerate() {
-            let Value::Integer(index) = selector else {
-                return Err(invariant("clock-place-reference-slot-index-expected"));
-            };
-            if position != 0 {
-                identity.push('.');
-            }
-            identity.push_str(&clock_place_slot_index(index)?);
-        }
+    if !fsl_semantics::model::clock_reference::is_clock_type(&clock_type) {
+        return Err(invariant("place-reference-result-type-expected"));
     }
-    let object =
-        ObjectId::new(identity).map_err(|_| invariant("clock-place-reference-identity-empty"))?;
-    Ok(ObjectReference::new(
-        owner.universe().clone(),
-        clock_type,
-        object,
-    ))
-}
-
-/// A checked slot is a concrete, non-negative sequence index; encode its
-/// decimal digits directly without consulting its display implementation.
-fn clock_place_slot_index(index: Integer) -> Result<String, Halt> {
-    let mut value = index
-        .to_u64()
-        .ok_or_else(|| invariant("clock-place-reference-slot-index-out-of-range"))?;
-    let mut digits = Vec::with_capacity(20);
-    loop {
-        digits.push(char::from(b'0' + (value % 10) as u8));
-        value /= 10;
-        if value == 0 {
-            break;
-        }
-    }
-    Ok(digits.into_iter().rev().collect())
-}
-
-/// FR-230 uses lowercase hex for identity components, including printable
-/// UTF-8 bytes that `render_identity` would leave unescaped.
-fn clock_place_identity_component(bytes: &[u8]) -> String {
-    const HEX: &[u8; 16] = b"0123456789abcdef";
-
-    let mut encoded = String::with_capacity(bytes.len().saturating_mul(2));
-    for byte in bytes {
-        encoded.push(char::from(HEX[usize::from(byte >> 4)]));
-        encoded.push(char::from(HEX[usize::from(byte & 0x0f)]));
-    }
-    encoded
+    fsl_semantics::model::clock_reference::encode(&owner, place, &selectors)
+        .map_err(|_| invariant("clock-place-reference-identity-invalid"))
 }
 
 /// The one target of a single-valued navigation end `[lower, upper]` (FR-364

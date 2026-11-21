@@ -1609,6 +1609,7 @@ impl<'v> RawItems<'v> {
 #[derive(Debug)]
 pub(crate) struct ModelView {
     pub(crate) view: EffectiveView,
+    pub(crate) clock_places: std::sync::Arc<super::clock_reference::DeclaredClockPlaces>,
     by_effective_id: BTreeMap<EffectiveId, DeclarationKey>,
     /// Whether the view is the unit's own source package (FR-569), whose
     /// declarations a snapshot names without an `ix://` scheme.
@@ -1625,6 +1626,7 @@ impl ModelView {
             .collect();
         Self {
             view,
+            clock_places: std::sync::Arc::default(),
             by_effective_id,
             source: false,
         }
@@ -1682,6 +1684,7 @@ impl ModelView {
 pub struct ModelSelections<'a> {
     selections: &'a [DomainPackageRef],
     sources: &'a [DomainPackage],
+    clock_models: &'a [crate::check::TimedModel],
 }
 
 impl<'a> ModelSelections<'a> {
@@ -1692,6 +1695,7 @@ impl<'a> ModelSelections<'a> {
         Self {
             selections,
             sources,
+            clock_models: &[],
         }
     }
 
@@ -1699,6 +1703,14 @@ impl<'a> ModelSelections<'a> {
     #[must_use]
     pub fn selections(&self) -> &'a [DomainPackageRef] {
         self.selections
+    }
+
+    /// Supply the checked graph's declared clock-place templates explicitly
+    /// for admission of stored clock references.
+    #[must_use]
+    pub fn with_clock_places(mut self, models: &'a [crate::check::TimedModel]) -> Self {
+        self.clock_models = models;
+        self
     }
 
     fn source(&self, identity: &str) -> Option<&'a DomainPackage> {
@@ -1774,6 +1786,12 @@ pub(crate) fn model_views<'a>(
             continue;
         }
         views.push(ModelView::source(normalize_view(source, limits)?));
+    }
+    let clock_places = std::sync::Arc::new(super::clock_reference::DeclaredClockPlaces::new(
+        model_selections.clock_models,
+    ));
+    for view in &mut views {
+        view.clock_places = clock_places.clone();
     }
     Ok(views)
 }
@@ -3198,12 +3216,14 @@ fn admit_invocation_documents(
         &pre_values.completeness,
         &pre_values.keys_by_population,
         &pre_values.extents,
+        &pre_values.clock_references,
     )?;
     document::check_population_closure(
         &post_snapshot.populations,
         &post_values.completeness,
         &post_values.keys_by_population,
         &post_values.extents,
+        &post_values.clock_references,
     )?;
     document::check_context_closure(&[&pre_values, &post_values])?;
 
@@ -3593,6 +3613,7 @@ fn admit_pre_call(
         &values.completeness,
         &values.keys_by_population,
         &values.extents,
+        &values.clock_references,
     )?;
     document::check_context_closure(&[&values])?;
 

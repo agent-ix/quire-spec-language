@@ -308,6 +308,7 @@ impl<'a> ModelCheckInput<'a> {
     /// re-normalizes: [`Self::model_selections`] and [`Self::source_packages`].
     pub fn model_inputs(&self) -> ModelSelections<'a> {
         ModelSelections::new(self.model_selections, self.source_packages)
+            .with_clock_places(self.timed_models)
     }
 
     /// The timed model of the model alias `model`.

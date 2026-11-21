@@ -183,7 +183,26 @@ pub(crate) fn observe_state(
         }
         listed.insert(population.node.clone(), references);
     }
-    let closure = ObjectClosure::new(types, objects, &[]).map_err(map_environment_refusal)?;
+    let references =
+        crate::model::clock_reference::references_in(objects.iter().flat_map(|(_, slots)| {
+            slots.iter().filter_map(|(_, slot)| match slot {
+                FieldValue::Present(value) => Some(value),
+                _ => None,
+            })
+        }));
+    let tolerated: Vec<_> = references
+        .into_iter()
+        .filter(|reference| {
+            objects.iter().any(|(owner, _)| {
+                views
+                    .iter()
+                    .any(|view| view.clock_places.contains(reference, owner, types))
+            })
+        })
+        .cloned()
+        .collect();
+    let closure =
+        ObjectClosure::new(types, objects, &tolerated).map_err(map_environment_refusal)?;
     let extents = admit_supplied_extents(
         types,
         model_facts(views, types)?,

@@ -9459,6 +9459,7 @@ impl CheckedGraph {
             &self.model_selections,
             &self.source_packages,
         )
+        .with_clock_places(&self.timed_models)
     }
 
     /// ADR-011 §2.4: the selection of each domain package this package was

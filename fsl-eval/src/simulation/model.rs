@@ -977,7 +977,12 @@ impl<'a> ModelSystem<'a> {
         let input = request.input;
         let types = input.types;
         let only = selections.selections();
-        let model = StateModel::new(selections, types, request.packages, request.normalization)?;
+        let model = StateModel::new(
+            selections.with_clock_places(input.timed_models),
+            types,
+            request.packages,
+            request.normalization,
+        )?;
         let populations = model.populations();
 
         let mut universes = BTreeMap::new();
