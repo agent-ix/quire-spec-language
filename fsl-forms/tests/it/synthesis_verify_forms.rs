@@ -222,7 +222,7 @@ fn a_step_sum_objective_builds_a_sum_over_the_plan_steps() {
         root.at(*summand).node(),
         ExprNode::Field { field, .. } if field == "index"
     ));
-    assert!(matches!(root.at(*right).node(), ExprNode::Integer(three) if *three == Integer::from(3)));
+    assert!(matches!(root.at(*right).node(), ExprNode::Integer(three) if *three == Integer::from(3_i64)));
     let text = format!("{HEADER}{STEP_SUM}\n");
     let span = spans.span(spans.root()).expect("the root is spanned");
     assert_eq!(

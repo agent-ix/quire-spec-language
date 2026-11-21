@@ -243,7 +243,7 @@ fn show(expression: ExprRef<'_>) -> String {
             result_type,
             binder,
             ..
-        } => format!("Sum[{result_type},{binder}]"),
+        } => format!("Sum[{},{binder}]", result_type.as_deref().unwrap_or("")),
         ExprNode::Population {
             form,
             binder,
