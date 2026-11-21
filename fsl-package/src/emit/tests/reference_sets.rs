@@ -3,7 +3,7 @@
 
 use super::*;
 
-#[trace("FSpec-FR-464-AC-3", "FR-902-AC-2", "TC-2542")]
+#[trace("FSpec-FR-464-AC-3")]
 #[test]
 fn attempt_contract_sets_are_structural_across_source_permutations() {
     let declarations = "\
