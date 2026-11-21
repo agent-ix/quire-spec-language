@@ -54,7 +54,9 @@ pub use entry::{
     read_result_entry, EntryCause, EntryOrigin, LimitFacts, ResultEntry, ResultEntryRefusal,
     TaskSearchEdge, TaskSearchEvidence, TaskSearchFrontier, TaskSearchNode,
 };
-pub use from_package::{subject_text, DeclarationRefusal};
+pub use from_package::{
+    composition_premises, subject_text, CompositionPremise, DeclarationRefusal,
+};
 pub use item::{read_premise_item, PremiseItem};
 pub use json::{Cause, Fault};
 pub use key::{

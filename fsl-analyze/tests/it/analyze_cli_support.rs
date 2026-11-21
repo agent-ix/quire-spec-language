@@ -68,14 +68,19 @@ impl Workspace {
 pub(crate) const HANDOFF: &str = "handoff";
 
 /// Compile the `models` and `program` of `request` (a `native-analyze/1`
-/// request object over files already in `ws`) into the FR-517 handoff
-/// directory [`HANDOFF`]; returns `request` with `package` selecting that
-/// directory in place of `program`, and the handoff's package bytes.
+/// request object over files already in `ws`, with the `libraries` its
+/// program imports) into the FR-517 handoff directory [`HANDOFF`]; returns
+/// `request` with `package` selecting that directory in place of `program`
+/// and `libraries`, and the handoff's package bytes.
 pub(crate) fn package_selection(ws: &Workspace, request: &Value) -> (Value, Vec<u8>) {
-    let compile = json!({"format": "native-compile/1", "request": {
+    let mut compiled = json!({
         "models": request["models"], "program": request["program"],
         "handoff": {"directory": HANDOFF, "package_name": "analyze-unit",
-            "native_join": {"work_units": 1_u64 << 40, "storage": 1_u64 << 24}}}});
+            "native_join": {"work_units": 1_u64 << 40, "storage": 1_u64 << 24}}});
+    if let Some(libraries) = request.get("libraries") {
+        compiled["libraries"] = libraries.clone();
+    }
+    let compile = json!({"format": "native-compile/1", "request": compiled});
     let compile_path = ws.write("compile.json", compile.to_string().as_bytes());
     let package = fsl_command::command::compile(&compile_path).expect("the program compiles");
     let written = std::fs::read(ws.path(&format!("{HANDOFF}/checked-package.json")))
@@ -86,6 +91,10 @@ pub(crate) fn package_selection(ws: &Workspace, request: &Value) -> (Value, Vec<
         .as_object_mut()
         .expect("a request object")
         .remove("program");
+    selected
+        .as_object_mut()
+        .expect("a request object")
+        .remove("libraries");
     selected["package"] = json!({"directory": HANDOFF});
     (selected, package)
 }

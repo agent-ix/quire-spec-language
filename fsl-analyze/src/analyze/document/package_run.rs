@@ -146,6 +146,10 @@ pub enum PendingFamily {
     /// name it does not carry ([`fsl_package::AnalysisView::unnamed_claims`]):
     /// the name may be that claim's, so it is not settled `unknown-claim`.
     UnnamedClaim,
+    /// The default items of a package that holds a component composition,
+    /// whose derived slots and component packages have no package form yet
+    /// (FSL FR-1044).
+    Composition,
     /// A temporal clause fact its package form does not read yet.
     ClauseFact(&'static str),
     /// A form of the package its model-check input does not read yet.
@@ -171,6 +175,7 @@ impl PendingFamily {
             Self::LoopTermination => "loop-termination",
             Self::Declaration => "declaration",
             Self::UnnamedClaim => "unnamed-claim",
+            Self::Composition => "composition",
             Self::ClauseFact(fact) => fact,
             Self::ModelForm(_) => "model-form",
             Self::ProbabilisticSourceModel => "probabilistic-source-model",
@@ -290,6 +295,19 @@ pub fn settle_package_run(
         engines,
         limits,
     } = run;
+    // FSL FR-1044: a package's component composition has no package form
+    // yet, so the default items of a package that holds one are refused
+    // whole rather than written without it.
+    if items.is_none() {
+        if let Some(node) = unnamed_composition(package) {
+            return Err(PackageRunError::Pending(PendingPackageFamily {
+                request_index: None,
+                note: None,
+                family: PendingFamily::Composition,
+                node: Some(node),
+            }));
+        }
+    }
     let defaults = items.is_none().then(|| default_selections(package));
     let items: &[ItemSelection] = items.or(defaults.as_deref()).unwrap_or_default();
     if let Some(refusal) =
@@ -459,6 +477,8 @@ pub fn settle_package_run(
         other => crate::claim_family::kind_family(other),
     };
     let Negotiation {
+        components: _,
+        gates: _,
         negotiated,
         unrouted_items,
         settled,
@@ -1714,7 +1734,12 @@ impl<'a> WorkInputs<'_, 'a> {
         let item = &negotiated.item;
         let temporal_kind = match &item.form {
             Some(ItemForm::Temporal(form)) => form.item_kind,
-            Some(ItemForm::FiniteHyper(_) | ItemForm::Probabilistic(_) | ItemForm::Hybrid(_))
+            Some(
+                ItemForm::FiniteHyper(_)
+                | ItemForm::Probabilistic(_)
+                | ItemForm::Hybrid(_)
+                | ItemForm::Composition(_),
+            )
             | None => ItemKind::Formula,
         };
         let family = (self.family)(temporal_kind, &item.claim);
@@ -1785,7 +1810,10 @@ impl<'a> WorkInputs<'_, 'a> {
                 let form = match &item.form {
                     Some(ItemForm::Temporal(form)) => form.clone(),
                     Some(
-                        ItemForm::FiniteHyper(_) | ItemForm::Probabilistic(_) | ItemForm::Hybrid(_),
+                        ItemForm::FiniteHyper(_)
+                        | ItemForm::Probabilistic(_)
+                        | ItemForm::Hybrid(_)
+                        | ItemForm::Composition(_),
                     )
                     | None => super::super::TemporalItem::default(),
                 };
@@ -1812,7 +1840,12 @@ impl<'a> WorkInputs<'_, 'a> {
                 Some(crate::protocol_analysis::manifest::BACKEND_ID)
             }
             Some(ItemForm::Temporal(_)) => Some(crate::model_check::manifest::BACKEND_ID),
-            Some(ItemForm::FiniteHyper(_) | ItemForm::Probabilistic(_) | ItemForm::Hybrid(_))
+            Some(
+                ItemForm::FiniteHyper(_)
+                | ItemForm::Probabilistic(_)
+                | ItemForm::Hybrid(_)
+                | ItemForm::Composition(_),
+            )
             | None => None,
         };
         if let (Some(expected), fsl_route::routing::Disposition::Supported(candidate)) =
@@ -1838,6 +1871,21 @@ impl<'a> WorkInputs<'_, 'a> {
             negotiated.diagnostic.clone(),
         )
     }
+}
+
+/// The node of the first component composition the package holds, which no
+/// name table row carries.
+fn unnamed_composition(view: &dyn AnalysisView) -> Option<CheckedNodeId> {
+    let unnamed = view.unnamed_claims();
+    view.package()
+        .resolved_graph()
+        .nodes
+        .iter()
+        .find(|node| {
+            unnamed.contains(&&node.node_id)
+                && crate::claim_family::is_component_composition(&node.semantic_form)
+        })
+        .map(|node| node.node_id.clone())
 }
 
 /// FR-620 "Subject, compilation and default items" over a package, as the

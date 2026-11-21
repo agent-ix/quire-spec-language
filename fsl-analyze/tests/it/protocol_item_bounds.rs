@@ -33,7 +33,7 @@ fn subject() -> Value {
         "roles": {"Buyer": binding, "Seller": binding}}})
 }
 
-fn realizability(mut temporal: Value) -> Value {
+pub(crate) fn realizability(mut temporal: Value) -> Value {
     temporal["subject"] = subject();
     json!({"claim": "Flow", "kind": "realizability", "assessed_root": root(),
         "premises": {"role_knowledge": [], "environment": []}, "temporal": temporal})
@@ -45,7 +45,7 @@ fn projection(mut temporal: Value) -> Value {
         "options": {"role": "Seller"}, "temporal": temporal})
 }
 
-fn run_items(name: &str, items: Vec<Value>) -> Run {
+pub(crate) fn run_items(name: &str, items: Vec<Value>) -> Run {
     let ws = Workspace::new(name);
     analyze(&litmus_request(
         &ws,

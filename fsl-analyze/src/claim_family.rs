@@ -27,6 +27,7 @@ enum Form {
     Refinement,
     ProbabilisticClaim,
     Schedulability,
+    ComponentComposition,
     /// A form no row selects by.
     Other,
 }
@@ -45,9 +46,15 @@ impl Form {
             "refinement" => Self::Refinement,
             "probabilistic_claim" => Self::ProbabilisticClaim,
             "schedulability" => Self::Schedulability,
+            "component_composition" => Self::ComponentComposition,
             _ => Self::Other,
         }
     }
+}
+
+/// Whether the `semantic_form` word names a component composition.
+pub(crate) fn is_component_composition(word: &str) -> bool {
+    Form::from_wire(word) == Form::ComponentComposition
 }
 
 /// The occurrence roles the reader selects by, decoded once at
@@ -148,7 +155,9 @@ fn node_family(graph: &CheckedGraph, claim: &OccurrenceKey) -> Option<Declaratio
         }
         (NodeTag::Claim, Form::ProbabilisticClaim, _) => Some(DeclarationFamily::Probabilistic),
         (NodeTag::Claim, Form::Schedulability, _) => Some(DeclarationFamily::RealTime),
-        (NodeTag::Protocol, _, _) => Some(DeclarationFamily::Protocol),
+        (NodeTag::Protocol, _, _) | (NodeTag::Correspondence, Form::ComponentComposition, _) => {
+            Some(DeclarationFamily::Protocol)
+        }
         _ => None,
     }
 }
@@ -173,9 +182,10 @@ pub(crate) fn boolean_expression(graph: &CheckedGraph, claim: &OccurrenceKey) ->
 }
 
 /// The `node_tag` and decoded `semantic_form` of the node `claim` names, or `None`
-/// for a node the package does not hold. A refinement and a task-set claim
-/// node are minted with the checked package (FSpec FR-375, FR-482) beside
-/// its semantic graph, so the graph's own records name them.
+/// for a node the package does not hold. A refinement, a task-set claim and a
+/// component composition node are minted with the checked package (FSpec
+/// FR-375, FR-482, FR-491) beside its semantic graph, which holds none of
+/// them until the package is emitted, so the graph's own records name them.
 fn node_form(graph: &CheckedGraph, claim: &OccurrenceKey) -> Option<(NodeTag, Form)> {
     let key = claim.node();
     if let Some(node) = graph.semantic_graph().node(key.clone()) {
@@ -190,12 +200,20 @@ fn node_form(graph: &CheckedGraph, claim: &OccurrenceKey) -> Option<(NodeTag, Fo
                 .is_ok_and(|emission| emission.identity == *key)
         })
         .then_some((NodeTag::Relation, Form::Refinement));
-    refinement.or_else(|| {
-        graph
-            .task_sets()
-            .claims()
-            .iter()
-            .any(|schedule| schedule.node_id() == Some(key))
-            .then_some((NodeTag::Claim, Form::Schedulability))
-    })
+    refinement
+        .or_else(|| {
+            graph
+                .task_sets()
+                .claims()
+                .iter()
+                .any(|schedule| schedule.node_id() == Some(key))
+                .then_some((NodeTag::Claim, Form::Schedulability))
+        })
+        .or_else(|| {
+            graph
+                .compositions()
+                .iter()
+                .any(|composition| composition.node() == key)
+                .then_some((NodeTag::Correspondence, Form::ComponentComposition))
+        })
 }

@@ -102,6 +102,7 @@ the kind FR-057's claim-form table gives where that table has the form:
 | Per-step and initial-state obligation of a model refinement (FR-146); refinement between two operation contracts or state models | `operation-contract` | `relation-claim` |
 | Replay of one finite execution against protocol semantics | `finite-replay` | `protocol` |
 | Refinement between two protocols | `refinement` | `protocol` |
+| Composition of component guarantees under the `protocol-refinement`, `refinement-transfer` or `interface` rule (FSpec FR-491), and FSpec FR-176's fixed point over an accepted cycle | `composition` | `protocol` |
 | Other protocol analysis claim | its `protocol`-family kind | `protocol` |
 | Probabilistic claim (FR-186) | `probabilistic-satisfaction` | `probabilistic` |
 | `schedulable` or `response` claim over a task set (FR-246) | `schedulability` | `real-time` |
@@ -128,6 +129,12 @@ package, by the rule FSpec FR-290 gives `negotiate_*`:
 - Every other item takes the family of the checked-package node its `claim`
   names, by that node's tag, `semantic_form` and occurrence role, through FSpec
   FR-290's node-to-family table.
+- A claim that names a `correspondence`/`component_composition` node takes the
+  family `protocol` when its rule is not `assume-guarantee`, and, under any
+  rule, `assume-guarantee` included, for the `fixed-point` `composition` item an
+  accepted cycle derives, as FSpec FR-290's rows state (FR-1044). The main item
+  of an `assume-guarantee` declaration is planner-local, derives no request
+  item, and so reads no family from the node.
 - A claim that names a node of no row of that table, or a node absent from the
   package, has no family. Every kind is inapplicable to it, and the refusal's
   payload has no `family` member.

@@ -135,6 +135,58 @@ impl PlannerDeclaration {
     }
 }
 
+/// One slot of a composition's derived slot list (FSpec FR-491 "Derived item
+/// and slots"): the checked slot and the slot key the planner and a request's
+/// `premises` member spell it with.
+#[derive(Clone, Debug)]
+pub struct CompositionPremise {
+    /// The slot as the checker derived it.
+    pub slot: CompositionSlot,
+    /// The slot's role and key.
+    pub derived: DerivedSlot,
+}
+
+/// Every slot the composition declared at `node` derives, in FSpec FR-491's
+/// order, under any rule: the keys a routed composition item's `premises`
+/// member holds, and the `fixed-point` slot's own item.
+///
+/// # Errors
+///
+/// [`DeclarationRefusal`] when `node` names no composition, or its item is
+/// refused.
+pub fn composition_premises(
+    package: &CheckedPackage,
+    node: &NodeKey,
+) -> Result<Vec<CompositionPremise>, DeclarationRefusal> {
+    let graph = package.graph();
+    let composition = graph
+        .compositions()
+        .iter()
+        .find(|composition| composition.node() == node)
+        .ok_or(DeclarationRefusal::NoDeclaration)?;
+    if let Some(refusal) = composition.item_refusal() {
+        return Err(DeclarationRefusal::ItemRefused {
+            code: refusal.code(),
+            cause: refusal.cause(),
+        });
+    }
+    let regions = Regions {
+        source: graph.source(),
+    };
+    let context = CompositionContext {
+        composition,
+        regions: &regions,
+    };
+    composition
+        .slots()
+        .into_iter()
+        .map(|slot| {
+            let derived = context.slot(&slot)?;
+            Ok(CompositionPremise { slot, derived })
+        })
+        .collect()
+}
+
 /// Turns S3 spans into regions of the package source.
 struct Regions<'a> {
     source: &'a fsl_foundation::source::provenance::RawSourceRef,

@@ -884,6 +884,40 @@ impl RequirementItem {
         item
     }
 
+    /// The `composition` item anchored at `occurrence`, the declaration's own
+    /// node, with the candidates the caller computed for it (FSpec FR-331
+    /// "Items", FR-348-AC-3). Its extent is unbounded with no domain: a
+    /// composition is decided over its premises, which the caller sends
+    /// beside the item. Every item carries a `result_bound` node and a
+    /// composition has no result type, so the declaration's own node fills it.
+    pub fn composition_clause(
+        index: RequestIndex,
+        occurrence: OccurrenceKey,
+        candidates: CandidateOutcome,
+    ) -> Self {
+        Self {
+            index,
+            result_bound: occurrence.node().clone(),
+            occurrence,
+            kind: Capability::Composition,
+            hybrid_dynamics: false,
+            task_product: false,
+            extent: ExtentClassification::Unbounded {
+                finite_bound_available: false,
+            },
+            unbounded: Vec::new(),
+            proof_bounds: Vec::new(),
+            subject_proof_bounds: Vec::new(),
+            model_subject: false,
+            conversion_context: None,
+            path_condition: Vec::new(),
+            candidates,
+            unsupported: None,
+            evidence: None,
+            options: BTreeMap::new(),
+        }
+    }
+
     /// This item at position `index` of the request it is sent in, every
     /// other member unchanged: an analyze item keeps its own request index
     /// when it is sent to a provider (FSpec FR-331 `request_index`, FR-635),

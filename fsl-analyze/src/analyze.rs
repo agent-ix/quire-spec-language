@@ -57,9 +57,9 @@ mod timed_item;
 pub(crate) use request::analyze_bound;
 
 pub use request::{
-    analyze, ClaimItem, ClaimRefusal, FiniteHyperItem, HybridItem, ItemForm, ItemOptions,
-    NegotiatedItem, ProbabilisticItem, ProbabilisticLimits, ProvisionRefusal, SourceProvision,
-    TemporalItem,
+    analyze, ClaimItem, ClaimRefusal, CompositionItem, FiniteHyperItem, HybridItem, ItemForm,
+    ItemOptions, NegotiatedItem, ProbabilisticItem, ProbabilisticLimits, ProvisionRefusal,
+    SourceProvision, TemporalItem,
 };
 
 use filament_exact::{Cancel, ObjectReference, ScalarLimits};

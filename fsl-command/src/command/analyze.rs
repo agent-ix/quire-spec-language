@@ -106,6 +106,69 @@ fn validate_activated_population(
     Ok(())
 }
 
+/// Whether `role` is one of FSpec FR-331's five `premises` roles a
+/// composition item names.
+fn is_premise_role(role: fsl_replay::planner::SlotRole) -> bool {
+    use fsl_replay::planner::SlotRole;
+    matches!(
+        role,
+        SlotRole::ComponentGuarantee
+            | SlotRole::Rely
+            | SlotRole::LivenessDependency
+            | SlotRole::Fairness
+            | SlotRole::Environment
+    )
+}
+
+/// FR-1044: a composition item's `premises` is an array of closed
+/// `{role, key}` objects whose `role` is one of FSpec FR-331's five, each
+/// `key` an object. Whether the list is the derived one is decided against
+/// the checked declaration, per item.
+fn validate_composition_premises(
+    position: usize,
+    premises: &serde_json::Value,
+) -> std::result::Result<(), (String, String)> {
+    let base = format!("/items/{position}/premises");
+    let Some(entries) = premises.as_array() else {
+        return Err((base, "premises must be an array".to_owned()));
+    };
+    for (entry_index, entry) in entries.iter().enumerate() {
+        let pointer = format!("{base}/{entry_index}");
+        let Some(entry) = entry.as_object() else {
+            return Err((pointer, "a premise must be an object".to_owned()));
+        };
+        if let Some(member) = entry
+            .keys()
+            .find(|member| !matches!(member.as_str(), "role" | "key"))
+        {
+            return Err((
+                format!("{pointer}/{}", pointer_token(member)),
+                format!("unknown premise member `{member}`"),
+            ));
+        }
+        match entry.get("role").and_then(serde_json::Value::as_str) {
+            Some(role)
+                if fsl_replay::planner::SlotRole::parse(role).is_some_and(is_premise_role) => {}
+            Some(role) => {
+                return Err((
+                    format!("{pointer}/role"),
+                    format!("`{role}` is not a premise role"),
+                ));
+            }
+            None => {
+                return Err((
+                    format!("{pointer}/role"),
+                    "role must be a string".to_owned(),
+                ))
+            }
+        }
+        if !entry.get("key").is_some_and(serde_json::Value::is_object) {
+            return Err((format!("{pointer}/key"), "key must be an object".to_owned()));
+        }
+    }
+    Ok(())
+}
+
 fn pointer_token(value: &str) -> String {
     value.replace('~', "~0").replace('/', "~1")
 }
@@ -1055,6 +1118,12 @@ fn read_run_members(
 /// `simulation` member to a simulation item alone.
 pub(super) fn validate_items(items: Option<&[ItemSelection]>) -> Result<()> {
     for (position, item) in items.unwrap_or_default().iter().enumerate() {
+        if item.kind.as_deref() == Some(fsl_semantics::check::Capability::Composition.to_wire()) {
+            if let Some(premises) = &item.premises {
+                validate_composition_premises(position, premises)
+                    .map_err(|(pointer, reason)| invalid(&pointer, reason))?;
+            }
+        }
         if item.recording.is_some()
             && item.kind.as_deref()
                 != Some(fsl_semantics::check::Capability::GlobalConformance.to_wire())
