@@ -3400,7 +3400,8 @@ fn undefined<S: SubjectSystem>(
         | UndefinedLocus::Invariant(_)
         | UndefinedLocus::Protocol(_)
         | UndefinedLocus::Mapping { .. }
-        | UndefinedLocus::ClaimPredicate(_) => None,
+        | UndefinedLocus::ClaimPredicate(_)
+        | UndefinedLocus::FractionValue => None,
     };
     if constraint.is_some_and(|name| !constraints.has_constraint(name)) {
         return Ok(disagrees(Category::Success));

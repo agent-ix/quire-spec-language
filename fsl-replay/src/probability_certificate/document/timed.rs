@@ -506,6 +506,7 @@ fn check_mean_time_values(
     }
     Ok(ExactProbabilityCertificateCheck::Accepted(
         ExactProbabilityAcceptance {
+            initial_values: None,
             value: initial.clone(),
             side: match bound {
                 Bound::AtLeast(_) => ProbabilityBoundSide::AtLeast,

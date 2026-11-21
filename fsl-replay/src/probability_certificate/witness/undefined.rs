@@ -30,6 +30,9 @@ pub fn replay_probabilistic_undefined(
 ) -> Result<ProbabilityWitnessReplay, ProbabilityWitnessError> {
     poll_cancel(cancel)?;
     let evidence = &witness.path;
+    if evidence.subsystem.is_some() {
+        return Err(ProbabilityWitnessError::Refused);
+    }
     if !system
         .source_package()
         .is_some_and(|own| std::ptr::eq(package, own))
@@ -38,6 +41,9 @@ pub fn replay_probabilistic_undefined(
         return Err(ProbabilityWitnessError::Refused);
     }
     let claim = bind_claim(package.graph().probabilistic_model().claims(), item, cancel)?;
+    if claim.bounded_measure() {
+        return super::measure::replay_undefined(system, claim, witness, limits, cancel);
+    }
     if !matches!(
         TimedSystem::new(system, &claim.subject.alias),
         Err(TimedSubjectRefusal::NoTimedModel { .. })
@@ -323,7 +329,9 @@ pub fn replay_probabilistic_undefined(
             &mut transition_count,
             cancel,
             step::ActionRefusal::UnsupportedDraw,
-            |post| Ok((key_of(system, reference, post, limits, cancel)? == expected).then_some(())),
+            |post, _, _, _| {
+                Ok((key_of(system, reference, post, limits, cancel)? == expected).then_some(()))
+            },
         )?;
         mass = bounded::arithmetic(
             filament_exact::RationalArithmetic::Multiply(&mass, &probability),

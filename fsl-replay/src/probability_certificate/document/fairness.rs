@@ -111,6 +111,25 @@ struct WireTarget<'a> {
 }
 
 pub(super) fn admit(claim: &CheckedProbabilisticClaim) -> Result<(), ProbabilityDocumentError> {
+    if matches!(
+        &claim.form,
+        ProbForm::Quantile { .. }
+            | ProbForm::MeanOfFraction { .. }
+            | ProbForm::Probability {
+                event: fsl_semantics::check::Event::Compare { .. },
+                ..
+            }
+    ) {
+        return if !claim.fairness.is_empty()
+            && matches!(claim.scheduler, ProbScheduler::Every)
+            && fsl_semantics::check::TemporalProfile::from_identity(claim.profile.identity())
+                == Some(fsl_semantics::check::TemporalProfile::EventPositionFalseExtension)
+        {
+            Ok(())
+        } else {
+            Err(ProbabilityDocumentError::Unsupported)
+        };
+    }
     let ProbForm::Probability {
         event:
             fsl_semantics::check::Event::Formula {

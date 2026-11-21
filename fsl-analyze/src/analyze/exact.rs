@@ -10,6 +10,7 @@
 
 mod candidate;
 mod long_run;
+mod measure;
 mod undefined;
 
 use filament_exact::{Cancel, ObjectReference, Rational};
@@ -90,7 +91,7 @@ pub(crate) enum ExactReport {
         /// The claim's one `over` instance, absent without `over`.
         binding: Option<ExactBinding>,
         /// The certificate the record carries.
-        evidence: Box<ExactProbabilityEvidence>,
+        evidence: Option<Box<ExactProbabilityEvidence>>,
     },
     /// A construction overflow or actual allocator refusal exhausted resources.
     ResourceExhausted,
@@ -168,7 +169,7 @@ impl ExactReport {
                 extremum,
                 binding,
             ) {
-                Some(record) => (record, Some(evidence)),
+                Some(record) => (record, evidence),
                 None => (TerminalRecord::failed_with(index, backend, BROKEN), None),
             },
             Self::ResourceExhausted => (
@@ -294,14 +295,7 @@ fn run_timed(
         } => bound,
         _ => return not_yet(),
     };
-    let document_limits = ProbabilityDocumentLimits {
-        bytes: limits.document.bytes,
-        storage_bytes: limits.document.storage_bytes,
-        states: limits.model.limits.max_states,
-        edges: limits.model.limits.max_transitions,
-        scalar_bits: limits.max_rational_bits,
-        accounting: meter,
-    };
+    let document_limits = ProbabilityDocumentLimits::for_exact(&limits, meter);
     let admitted = ModelSystem::new_with_cancel(simulation.clone(), cancel);
     if let Some(cause) = cancel.tripped() {
         return settled(&ExactProbBuildIssue::Cancelled(cause), subject);
@@ -633,14 +627,7 @@ fn run_timed_mean(
         expansion: simulation.expansion,
         meter: &meter,
     };
-    let document_limits = ProbabilityDocumentLimits {
-        bytes: limits.document.bytes,
-        storage_bytes: limits.document.storage_bytes,
-        states: limits.model.limits.max_states,
-        edges: limits.model.limits.max_transitions,
-        scalar_bits: limits.max_rational_bits,
-        accounting: meter,
-    };
+    let document_limits = ProbabilityDocumentLimits::for_exact(&limits, meter);
     let system = match ModelSystem::new_with_cancel(simulation.clone(), cancel) {
         Ok(system) => system,
         Err(failure) => return build_refusal(ProductRefusal::Admission(failure), subject),
@@ -836,6 +823,9 @@ fn run(
     tamper: Option<&dyn Fn(&mut ExactProbabilityCertificate)>,
     tamper_witness: Option<&dyn Fn(&mut ProbabilisticCounterexample)>,
 ) -> EngineReport {
+    if request.claim.bounded_measure() {
+        return measure::run(request, cancel, tamper, tamper_witness);
+    }
     if matches!(&request.claim.form, ProbForm::MeanTime { .. }) {
         return run_timed_mean(request, cancel, tamper);
     }
@@ -902,14 +892,7 @@ fn run(
     if !claim.fairness.is_empty() && !bounded_fair {
         return not_yet();
     }
-    let document_limits = ProbabilityDocumentLimits {
-        bytes: limits.document.bytes,
-        storage_bytes: limits.document.storage_bytes,
-        states: limits.model.limits.max_states,
-        edges: limits.model.limits.max_transitions,
-        scalar_bits: limits.max_rational_bits,
-        accounting: meter,
-    };
+    let document_limits = ProbabilityDocumentLimits::for_exact(&limits, meter);
     let reward_system = if expected_reward {
         let Ok(item) = fsl_replay::probabilistic_claim_identity(claim) else {
             return not_yet();
@@ -1292,7 +1275,15 @@ fn checked_report(
                     check,
                     extremum,
                     binding,
-                    evidence,
+                    evidence: Some(evidence),
+                }))
+            }
+            ExactProbabilityCertificateCheck::AcceptedVacuous(_) => {
+                EngineReport::Exact(Box::new(ExactReport::Proved {
+                    check,
+                    extremum: None,
+                    binding: None,
+                    evidence: None,
                 }))
             }
             ExactProbabilityCertificateCheck::Rejected(rejection) => {
@@ -1308,6 +1299,15 @@ fn checked_report(
                         EngineReport::Exact(Box::new(ExactReport::Rejected {
                             rule,
                             at: CertificateLocus::ProbabilityProductState(at.clone()),
+                        }))
+                    }
+                    ProbabilityCertificateLocus::ProductPart { key, part } => {
+                        EngineReport::Exact(Box::new(ExactReport::Rejected {
+                            rule,
+                            at: CertificateLocus::ProbabilityProductPart {
+                                key: key.clone(),
+                                part: *part,
+                            },
                         }))
                     }
                     ProbabilityCertificateLocus::Member(name) => {
@@ -1959,6 +1959,41 @@ fn replay_refutation(
         }
         Err(_) => return broken(),
     };
+    replay_produced_witness(
+        system,
+        claim,
+        product,
+        produced,
+        initial,
+        binding,
+        monitor,
+        limits,
+        cancel,
+        subject,
+        tamper,
+        producer_meter,
+        producer_storage,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn replay_produced_witness(
+    system: &ModelSystem<'_>,
+    claim: &fsl_semantics::check::CheckedProbabilisticClaim,
+    product: &ProbProduct,
+    produced: crate::exact_probabilistic::ProducedWitness,
+    initial: crate::exact_probabilistic::ProbStateId,
+    binding: Option<&ObjectReference>,
+    monitor: Option<&fsl_eval::automaton::QualifiedBoundedMonitor>,
+    limits: &crate::exact_probabilistic::ExactProbLimits,
+    cancel: &Cancel,
+    subject: SubjectLimits<'_>,
+    tamper: Option<&dyn Fn(&mut ProbabilisticCounterexample)>,
+    mut producer_meter: filament_exact::Meter,
+    mut producer_storage: u64,
+) -> EngineReport {
+    use crate::exact_probabilistic::ProductAction;
+    let measure = claim.bounded_measure();
     let Ok(item) = fsl_replay::probabilistic_claim_identity(claim) else {
         return not_yet();
     };
@@ -1981,34 +2016,7 @@ fn replay_refutation(
             )
         }
     };
-    let replay_choice = |choice: &ProductAction| -> Result<fsl_replay::ProductAction, ()> {
-        use crate::exact_probabilistic::ProductAction as AnalyzerAction;
-        Ok(match choice {
-            AnalyzerAction::Identity(identity) => fsl_replay::ProductAction::Identity(
-                fsl_replay::Schedule::of(system, identity).map_err(|_| ())?,
-            ),
-            AnalyzerAction::PostState(target) => {
-                let target = product
-                    .states
-                    .iter()
-                    .find(|state| *state == target.as_ref())
-                    .ok_or(())?;
-                fsl_replay::ProductAction::PostState(key_of(target).map_err(|_| ())?)
-            }
-            AnalyzerAction::TerminalStutter => fsl_replay::ProductAction::TerminalStutter,
-            AnalyzerAction::UnitDelay => fsl_replay::ProductAction::UnitDelay,
-            AnalyzerAction::EnterIdleDelay => fsl_replay::ProductAction::EnterIdleDelay,
-            AnalyzerAction::IdleDelay => fsl_replay::ProductAction::IdleDelay,
-            AnalyzerAction::IdleObserve => fsl_replay::ProductAction::IdleObserve,
-            AnalyzerAction::WorkloadResolve { identity, delay } => {
-                fsl_replay::ProductAction::WorkloadResolve {
-                    schedule: fsl_replay::Schedule::of(system, identity).map_err(|_| ())?,
-                    delay: *delay,
-                }
-            }
-            AnalyzerAction::FreeDelays(_) => return Err(()),
-        })
-    };
+    let replay_choice = |choice: &ProductAction| canonical_action(system, product, choice, &key_of);
     let Some(initial_state) = product.states.get(initial.index()) else {
         return broken();
     };
@@ -2046,15 +2054,51 @@ fn replay_refutation(
     scheduler.sort_by(|a, b| a.0.cmp(&b.0));
     let mut paths = Vec::new();
     let mut conversion_work = 0usize;
+    let mut residual_used = std::collections::BTreeSet::new();
     for path in produced.paths {
         let mut partials = vec![(first.clone(), Vec::new())];
-        for step in path.steps {
+        let mut produced_steps = path.steps.into_iter();
+        while let Some(mut step) = produced_steps.next() {
+            if measure
+                && product
+                    .states
+                    .get(step.to.index())
+                    .is_some_and(|state| state.pending.is_some())
+            {
+                let Some(resolved) = produced_steps.next() else {
+                    return broken();
+                };
+                if !matches!(step.action, ProductAction::Identity(_))
+                    || !matches!(resolved.action, ProductAction::PostState(_))
+                    || resolved.probability != Rational::from_integer(1_i64.into())
+                {
+                    return broken();
+                }
+                let Some(pending) = product.states.get(step.to.index()) else {
+                    return broken();
+                };
+                let pending = match key_of(pending) {
+                    Ok(key) => key,
+                    Err(error) => return document_failure(error, subject),
+                };
+                if let Err(issue) = witness_charge(
+                    &mut producer_meter,
+                    &mut producer_storage,
+                    pending.as_bytes().len(),
+                    limits,
+                    cancel,
+                ) {
+                    return settled(&issue, subject);
+                }
+                residual_used.insert(pending);
+                step.to = resolved.to;
+            }
             if cancel.poll() {
                 if let Some(cause) = cancel.tripped() {
                     return settled(&ExactProbBuildIssue::Cancelled(cause), subject);
                 }
             }
-            if matches!(&step.action, ProductAction::TerminalStutter) {
+            if !measure && matches!(&step.action, ProductAction::TerminalStutter) {
                 // Qualified replay derives false extension at an actual leaf;
                 // closure consumes no model step or draw.
                 continue;
@@ -2096,6 +2140,7 @@ fn replay_refutation(
                     if !matches!(
                         &choice,
                         fsl_replay::ProductAction::PostState(_)
+                            | fsl_replay::ProductAction::TerminalStutter
                             | fsl_replay::ProductAction::UnitDelay
                             | fsl_replay::ProductAction::EnterIdleDelay
                             | fsl_replay::ProductAction::IdleDelay
@@ -2232,7 +2277,7 @@ fn replay_refutation(
                 .map(|(_, steps)| ProbabilityWitnessPath { steps }),
         );
     }
-    if monitor.is_some() {
+    if monitor.is_some() || measure {
         // A finite-horizon policy only needs entries for represented choices.
         // The unbounded producer retains its continuation policy contract.
         let mut used = std::collections::BTreeSet::new();
@@ -2243,7 +2288,7 @@ fn replay_refutation(
                 key = &step.post_key;
             }
         }
-        scheduler.retain(|(key, _)| used.contains(key));
+        scheduler.retain(|(key, _)| used.contains(key) || residual_used.contains(key));
     }
     let mut witness = ProbabilisticCounterexample {
         item: item.clone(),
@@ -2252,6 +2297,7 @@ fn replay_refutation(
         initial_key,
         scheduler,
         paths,
+        subsystem: None,
     };
     if let Some(tamper) = tamper {
         tamper(&mut witness);
@@ -2262,10 +2308,20 @@ fn replay_refutation(
     match replay_probabilistic_witness(package, system, &item, &witness, limits, cancel) {
         Ok(ProbabilityWitnessReplay::Reproduced(token)) => {
             let scope = package.graph().scope();
+            let quantile_bound;
             let wire = fsl_replay::probabilistic_wire(
                 &witness,
                 match &claim.form {
-                    ProbForm::Reach { bound, .. } | ProbForm::Probability { bound, .. } => bound,
+                    ProbForm::Reach { bound, .. }
+                    | ProbForm::Probability { bound, .. }
+                    | ProbForm::MeanOfFraction { bound, .. } => bound,
+                    ProbForm::Quantile { q, threshold, .. } => {
+                        quantile_bound = match threshold {
+                            Bound::AtMost(_) => Bound::AtLeast(q.clone()),
+                            Bound::AtLeast(_) => Bound::AtMost(q.clone()),
+                        };
+                        &quantile_bound
+                    }
                     _ => return not_yet(),
                 },
                 scope.types(),
@@ -2279,6 +2335,13 @@ fn replay_refutation(
             EngineReport::Exact(Box::new(ExactReport::ReplayParity))
         }
         Err(ProbabilityWitnessError::Build(issue)) => settled(&issue, subject),
+        Err(ProbabilityWitnessError::CertificateRejected(rejection)) => checked_report(
+            Ok(ExactProbabilityCertificateCheck::Rejected(rejection)),
+            ExactProbabilityCertificate { values: Vec::new() },
+            None,
+            None,
+            subject,
+        ),
         Err(ProbabilityWitnessError::Refused) => {
             EngineReport::Exact(Box::new(ExactReport::ReplayRefused))
         }
@@ -2320,6 +2383,42 @@ fn replay_refutation(
     }
 }
 
+fn canonical_action(
+    system: &ModelSystem<'_>,
+    product: &ProbProduct,
+    choice: &crate::exact_probabilistic::ProductAction,
+    key_of: &impl Fn(
+        &crate::exact_probabilistic::ProbKey,
+    ) -> Result<ProbabilityProductKey, ProbabilityDocumentError>,
+) -> Result<fsl_replay::ProductAction, ()> {
+    use crate::exact_probabilistic::ProductAction as AnalyzerAction;
+    Ok(match choice {
+        AnalyzerAction::Identity(identity) => fsl_replay::ProductAction::Identity(
+            fsl_replay::Schedule::of(system, identity).map_err(|_| ())?,
+        ),
+        AnalyzerAction::PostState(target) => {
+            let target = product
+                .states
+                .iter()
+                .find(|state| *state == target.as_ref())
+                .ok_or(())?;
+            fsl_replay::ProductAction::PostState(key_of(target).map_err(|_| ())?)
+        }
+        AnalyzerAction::TerminalStutter => fsl_replay::ProductAction::TerminalStutter,
+        AnalyzerAction::UnitDelay => fsl_replay::ProductAction::UnitDelay,
+        AnalyzerAction::EnterIdleDelay => fsl_replay::ProductAction::EnterIdleDelay,
+        AnalyzerAction::IdleDelay => fsl_replay::ProductAction::IdleDelay,
+        AnalyzerAction::IdleObserve => fsl_replay::ProductAction::IdleObserve,
+        AnalyzerAction::WorkloadResolve { identity, delay } => {
+            fsl_replay::ProductAction::WorkloadResolve {
+                schedule: fsl_replay::Schedule::of(system, identity).map_err(|_| ())?,
+                delay: *delay,
+            }
+        }
+        AnalyzerAction::FreeDelays(_) => return Err(()),
+    })
+}
+
 /// Test seam altering produced typed evidence before independent replay.
 #[cfg(feature = "test-support")]
 pub fn exact_probabilistic_item_witness_tampered<'a>(
@@ -2340,7 +2439,7 @@ pub fn exact_probabilistic_item_witness_tampered<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fsl_replay::TerminalValue;
+    use fsl_replay::{ProbabilityCertificateRejection, TerminalValue};
     use ix_trace_rs::trace;
 
     #[trace("TC-1197", "FR-201-AC-6", "FR-203-AC-3")]
@@ -2367,5 +2466,50 @@ mod tests {
         );
         assert!(evidence.is_none());
         assert!(counterexample.is_none());
+    }
+    #[trace("FR-203-AC-11")]
+    #[test]
+    fn an_engine_proved_assertion_without_checker_acceptance_fails_invariant() {
+        let check = ExactProbabilityCertificateCheck::Rejected(ProbabilityCertificateRejection {
+            rule: ProbabilityCertificateRule::InequalityFails,
+            at: ProbabilityCertificateLocus::Member("values"),
+        });
+        let (terminal, evidence, counterexample) = ExactReport::Proved {
+            check,
+            extremum: None,
+            binding: None,
+            evidence: None,
+        }
+        .settle(RequestIndex::new(0), BackendId::new("en-5"));
+        assert_eq!(terminal.value(), &TerminalValue::Failed);
+        assert_eq!(terminal.diagnostic(), Some(BROKEN));
+        assert!(terminal.exact_certificate_document().is_none());
+        assert!(evidence.is_none() && counterexample.is_none());
+    }
+
+    #[trace("FR-203-AC-11")]
+    #[test]
+    fn an_inequality_rejection_settles_inconclusive_at_the_same_complete_key() {
+        let key = ProbabilityProductKey::for_model_state(
+            None,
+            include_bytes!(
+                "../../../tools/fsl-probability-check/tests/fixtures/link.model-key-0.json"
+            ),
+        )
+        .unwrap();
+        let (terminal, evidence, counterexample) = ExactReport::Rejected {
+            rule: CertificateRule::InequalityFails,
+            at: CertificateLocus::ProbabilityProductState(key.clone()),
+        }
+        .settle(RequestIndex::new(0), BackendId::new("en-5"));
+        assert_eq!(
+            terminal.value(),
+            &TerminalValue::Inconclusive(InconclusiveCause::CertificateRejected {
+                rule: CertificateRule::InequalityFails,
+                at: CertificateLocus::ProbabilityProductState(key),
+            })
+        );
+        assert!(terminal.exact_certificate_document().is_none());
+        assert!(evidence.is_none() && counterexample.is_none());
     }
 }

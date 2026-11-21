@@ -211,6 +211,8 @@ fn build_configured(
         workload,
         kind,
         plan,
+        measure_meter: filament_exact::Meter::new(system.meter_limits())
+            .with_cancel(cancel.clone()),
         reads,
         bindings,
         max_states: limits.limits.max_states,
@@ -257,7 +259,20 @@ fn plan_refusal(
             claim: claim.cloned(),
             member,
         },
-        PlanFault::Broken(invariant) => fault(invariant),
+        PlanFault::Measure(fsl_eval::probabilistic::MeasureError::Undefined(cause)) => {
+            ProductRefusal::PredicateRefused(
+                fsl_eval::simulation::model::ClauseOutcome::KernelUndefined(*cause),
+            )
+        }
+        PlanFault::Measure(fsl_eval::probabilistic::MeasureError::Accounting(error)) => {
+            ProductRefusal::PredicateRefused(
+                fsl_eval::simulation::model::ClauseOutcome::Incomplete(*error),
+            )
+        }
+        PlanFault::Broken(invariant)
+        | PlanFault::Measure(fsl_eval::probabilistic::MeasureError::Broken(invariant)) => {
+            fault(invariant)
+        }
     }
 }
 
@@ -398,6 +413,7 @@ struct Builder<'r, 'c, 'p, 'k> {
     workload: Option<&'r Workload>,
     kind: ProductKind,
     plan: Plan<'c>,
+    measure_meter: filament_exact::Meter,
     reads: Reads<'c>,
     /// Each `over` binding, with the reference its predicates are read for.
     bindings: Vec<(Option<ModelInstance>, Option<ObjectReference>)>,
@@ -455,7 +471,8 @@ impl Builder<'_, '_, '_, '_> {
                 let truths = match self.truths(&state, binding)? {
                     Ok(truths) => truths,
                     Err(hit) => {
-                        let (monitor, accumulator) = self.plan.initial_control()?;
+                        let (monitor, accumulator) =
+                            self.plan.initial_control(&mut self.measure_meter)?;
                         let key = ProbKey {
                             binding: self.bindings[binding].0.clone(),
                             model: hit.model.clone(),
@@ -467,7 +484,7 @@ impl Builder<'_, '_, '_, '_> {
                         return Err(self.undefined(None, None, None, at, key, hit));
                     }
                 };
-                let (monitor, accumulator) = self.plan.start(&truths)?;
+                let (monitor, accumulator) = self.plan.start(&truths, &mut self.measure_meter)?;
                 let key = self.key_of(&state, binding, monitor, accumulator, None)?;
                 let target = Target {
                     key,
@@ -803,7 +820,11 @@ impl Builder<'_, '_, '_, '_> {
         step: Option<&TraceStep>,
     ) -> Step<Target> {
         let binding = self.binding_of(at)?;
-        let truths = match self.truths(post, binding)? {
+        let truths = match if self.plan.reads_post(self.nodes[at].key.monitor) {
+            self.truths(post, binding)?
+        } else {
+            Ok(Vec::new())
+        } {
             Ok(truths) => truths,
             Err(hit) => {
                 let source = &self.nodes[at].key;
@@ -826,13 +847,39 @@ impl Builder<'_, '_, '_, '_> {
             }
         };
         let source = &self.nodes[at];
-        let (monitor, accumulator) = self.plan.step(
+        let advanced = self.plan.step(
             source.key.monitor,
             source.key.accumulator.as_ref(),
             &source.truths,
             &truths,
             rewards,
-        )?;
+            &mut self.measure_meter,
+        );
+        let (monitor, accumulator) = match advanced {
+            Ok(next) => next,
+            Err(PlanFault::Measure(fsl_eval::probabilistic::MeasureError::Undefined(cause))) => {
+                let cause = UndefinedCause::Kernel(*cause);
+                if self.key_policy.is_some() {
+                    return Err(Halt::UndefinedReading(cause));
+                }
+                let key = self.key_of(
+                    post,
+                    binding,
+                    source.key.monitor,
+                    source.key.accumulator.clone(),
+                    None,
+                )?;
+                let hit = Hit {
+                    read: UndefinedRead::FractionValue,
+                    cause,
+                    state_key: StateKey::from_canonical_bytes(key.model.clone()),
+                    model: key.model.clone(),
+                };
+                let resolved = step.is_none().then(|| key.clone());
+                return Err(self.undefined(Some(at), step, resolved, source.initial, key, hit));
+            }
+            Err(error) => return Err(error.into()),
+        };
         let key = self.key_of(post, binding, monitor, accumulator, None)?;
         Ok(Target {
             key,

@@ -18,7 +18,7 @@ over the base profile's product, probability and expected-reward bases
 alike, that settlement checks the pairing, and that the long-run form, which
 has no dyadic method, settles a typed incomplete result.
 
-Scope: FR-1042-AC-2 to FR-1042-AC-5, FR-1042-AC-7 to FR-1042-AC-11 and FR-203-AC-9.
+Scope: FR-1042-AC-2 to FR-1042-AC-5, FR-1042-AC-7 to FR-1042-AC-14 and FR-203-AC-9.
 
 ## Test Procedure
 
@@ -42,6 +42,12 @@ Scope: FR-1042-AC-2 to FR-1042-AC-5, FR-1042-AC-7 to FR-1042-AC-11 and FR-203-AC
    the level-0.4 `shifted` base and the reward chain; validate each result
    against the backend-provider schema.
 9. Settle FR-203-AC-9's three `ValueBounds` cases.
+10. Offer FR-1042-AC-12's terminal-stutter-only fraction bounds with no
+    policy rows and independently rederived remaining-horizon ranks.
+11. Offer FR-1042-AC-13's two-post-state-choice bounds without hints: upper
+    `1/2`, lower `1/2`, upper `1/8` and lower `7/8`.
+12. Offer FR-1042-AC-14's satisfying, nonsatisfying and nonexistent hints,
+    then omit them; include a case with several satisfying actions.
 
 Tag the tests `#[trace("TC-3151", "FR-1042-AC-n")]`.
 
@@ -50,8 +56,8 @@ Tag the tests `#[trace("TC-3151", "FR-1042-AC-n")]`.
 - Step 1: accepted; `InequalityFails` at `s` twice; `ThresholdMissed` at
   `s`; `Malformed` at `ranking`; `Malformed` at `kind`; `InequalityFails`
   at `f`.
-- Step 2: `proved` with both accepted; `RankBroken` at `s`; `Malformed` at
-  `policy`; the minimum `upper` accepted with `wait` and rejected
+- Step 2: `proved` with both accepted; `RankBroken` at `s`; the lower `7/16`, rank 1,
+  without policy accepted with independently selected `go`; the minimum `upper` accepted with `wait` and rejected
   `InequalityFails` with `go`; the fair pair accepted and `upper` `1/4`
   rejected `RankBroken` at `s`.
 - Step 3: `ValueBounds{25/32, 7/8}`; `RankBroken`; `InequalityFails` at
@@ -69,3 +75,13 @@ Tag the tests `#[trace("TC-3151", "FR-1042-AC-n")]`.
 - Step 9: `inconclusive` `CertificateRejected{InequalityFails, s}`; `failed`,
   `runtime_invariant`/`established-invariant-broken`; `proved`,
   `ValueBounds{7/16, 1, …}`.
+- Step 10: both accepted without fabricated policy identities; the checked
+  policy retains the existing terminal-stutter action.
+- Step 11: upper `1/2` accepted selecting `a`, lower `1/2` accepted selecting
+  `b`; upper `1/8` and lower `7/8` reject `InequalityFails` at the intermediate
+  state. No post-state wire operation is fabricated.
+- Step 12: a nonsatisfying or nonexistent hint rejects even if another
+  action satisfies; without a hint the first action satisfying inequality
+  and all rank/progress conditions is selected in canonical product-action
+  order. If no action satisfies the inequality reject `InequalityFails`;
+  if inequality candidates all fail progress/rank reject `RankBroken`.

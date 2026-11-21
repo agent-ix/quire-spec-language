@@ -85,6 +85,12 @@ impl<'a> Text<'a> {
             texts: std::cell::Cell::new(0),
         }
     }
+    pub(super) fn limits(&self) -> ProbabilityDocumentLimits {
+        self.limits
+    }
+    pub(super) fn cancel(&self) -> &'a Cancel {
+        self.cancel
+    }
     pub(super) fn take_stop(&self) -> Option<ProbabilityDocumentError> {
         self.stopped.borrow_mut().take()
     }
@@ -173,59 +179,28 @@ impl<'a> Text<'a> {
             .bytes
             .saturating_sub(writer.produced())
             .saturating_sub(2);
-        let text = integer
-            .try_to_decimal_string(usize::try_from(remaining).unwrap_or(usize::MAX))
-            .map_err(|error| match error {
-                filament_exact::IntegerDecimalError::ByteLimit { required, .. } => {
-                    Error::Limit(quire_canonical::LimitExceeded {
-                        kind: quire_canonical::LimitKind::CanonicalBytes,
-                        bound: self.limits.bytes,
-                        required: writer
-                            .produced()
-                            .saturating_add(required as u64)
-                            .saturating_add(2),
-                    })
-                }
-                filament_exact::IntegerDecimalError::Allocation { requested } => {
-                    Error::Allocation { requested }
-                }
-                filament_exact::IntegerDecimalError::OutputSizeOverflow => Error::Allocation {
-                    requested: usize::MAX,
-                },
-            })?;
         self.text_reserved();
-        writer.string(&text)
+        fsl_foundation::scalar_wire::integer(integer, remaining, None, writer).map_err(|error| {
+            match error {
+                Error::Limit(limit) => Error::Limit(quire_canonical::LimitExceeded {
+                    kind: limit.kind,
+                    bound: self.limits.bytes,
+                    required: writer
+                        .produced()
+                        .saturating_add(limit.required)
+                        .saturating_add(2),
+                }),
+                other => other,
+            }
+        })
     }
     pub(super) fn unit<S: Sink + ?Sized>(
         &self,
         unit: Option<&filament_exact::UnitId>,
         writer: &mut Writer<'_, S>,
     ) -> Result<(), Error> {
-        match unit {
-            None => writer.null()?,
-            Some(unit) => {
-                writer.begin_array()?;
-                if let Some(node) = unit.declared_key() {
-                    writer.string("declared")?;
-                    fsl_foundation::node_wire::encode_node_key(node, writer)?;
-                } else {
-                    writer.string("compound")?;
-                    writer.begin_array()?;
-                    for (node, exponent) in unit.compound_terms().unwrap_or_default() {
-                        self.poll()?;
-                        writer.begin_object()?;
-                        writer.name("unit")?;
-                        fsl_foundation::node_wire::encode_node_key(node, writer)?;
-                        writer.name("exponent")?;
-                        self.integer(exponent, writer)?;
-                        writer.end_object()?;
-                    }
-                    writer.end_array()?;
-                }
-                writer.end_array()?;
-            }
-        }
-        Ok(())
+        self.poll()?;
+        fsl_foundation::scalar_wire::unit(unit, writer, |value, writer| self.integer(value, writer))
     }
 }
 

@@ -117,18 +117,45 @@ fn value_bounds_certificates_are_accepted() {
 
 /// A finite-horizon quantile over every scheduler: its certificate is
 /// accepted by the checker.
-#[trace("TC-2065", "FR-201-AC-51")]
+#[trace("TC-2065", "FR-201-AC-51", "FR-1043-AC-6")]
 #[test]
-#[ignore = "QSL-2158: FR-1043 (finite-horizon quantile) not implemented yet; the claim is false as written (quantile 0.5 <= 3 on link: Pr(M<=3) = 13/27 < 1/2) and must change when implemented"]
 fn a_finite_horizon_quantile_certificate_is_accepted() {
     let source = likely(
         "ev",
         "every scheduler",
-        "quantile 0.5 of (steps from holds(true) until holds(m.delivered) within 4) <= 3",
+        "quantile 0.4 of (steps from holds(true) until holds(m.delivered) within 4) <= 3",
     );
-    accepted_then_rejected(
-        &certified(&source, ExactProbLimits::default()),
-        &["exact", "lower", "upper"],
+    let request = package_request(&source);
+    let doc = document(&request);
+    assert_eq!(doc["objective"]["payoff"], "shifted");
+    let initial = doc["ranking"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["rank"] == 4)
+        .expect("the initial remaining-horizon row");
+    let value = doc["values"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["state"] == initial["state"])
+        .unwrap();
+    assert_eq!(
+        value["value"],
+        json!({"numerator":"11","denominator":"135"})
+    );
+    accepted_then_rejected(&request, &["exact"]);
+    let false_source = source.replace("quantile 0.4", "quantile 0.5");
+    let (certificate, settlement) = request_with(
+        &false_source,
+        SNAPSHOT,
+        ExactProbLimits::default(),
+        domain().as_bytes(),
+    );
+    assert!(certificate.is_none());
+    assert!(
+        matches!(&settlement,fsl_analyze::analyze::Settlement::Terminal(record) if record.value()==&fsl_replay::TerminalValue::Refuted),
+        "{settlement:?}"
     );
 }
 

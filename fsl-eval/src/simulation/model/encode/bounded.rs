@@ -1007,6 +1007,49 @@ pub(crate) fn model_bytes(
     sink.finish_bytes()
 }
 
+pub(crate) fn pending_bytes(
+    scheduled: &super::super::ScheduledIdentity,
+    random: &[Value],
+    typing: Typing<'_>,
+    identity: IdentityLimits,
+    budget: &mut dyn ModelKeyBudget,
+    cancel: &Cancel,
+) -> Result<Vec<u8>, ModelKeyError> {
+    let scope = Scope {
+        budget: RefCell::new(budget),
+        cancel,
+        identity,
+        refused: RefCell::new(None),
+    };
+    scope
+        .work(u64::try_from(scheduled.operation.len()).map_err(|_| ModelKeyError::SizeOverflow)?)?;
+    scope.admit(scheduled.operation.len())?;
+    let operation = fsl_foundation::node_wire::node_key_from_text(&scheduled.operation)
+        .map_err(|_| ModelKeyError::Unsupported("scheduled operation node"))?;
+    let mut sink = Bounded::new(&scope);
+    ValueSink::begin_array(&mut sink, ArrayOrder::Retained)?;
+    StructuralSink::text(&mut sink, "drawn")?;
+    ValueSink::begin_array(&mut sink, ArrayOrder::Retained)?;
+    StructuralSink::node(&mut sink, &operation)?;
+    projection::project_reference(&mut sink, &scheduled.receiver)?;
+    ValueSink::begin_array(&mut sink, ArrayOrder::Retained)?;
+    for value in &scheduled.arguments {
+        scope.work(1)?;
+        projection::project_value(&mut sink, value, typing, None, false)?;
+    }
+    ValueSink::end_array(&mut sink)?;
+    ValueSink::end_array(&mut sink)?;
+    ValueSink::begin_array(&mut sink, ArrayOrder::Retained)?;
+    for value in random {
+        scope.work(1)?;
+        projection::project_value(&mut sink, value, typing, None, false)?;
+    }
+    ValueSink::end_array(&mut sink)?;
+    ValueSink::end_array(&mut sink)?;
+    scope.poll()?;
+    sink.finish_bytes()
+}
+
 #[cfg(test)]
 pub(super) fn value_for_test(value: &Value, typing: Typing<'_>) -> Result<Vec<u8>, ModelKeyError> {
     struct Admit;

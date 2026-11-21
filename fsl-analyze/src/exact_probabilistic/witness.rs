@@ -724,6 +724,74 @@ pub(crate) fn produce_witness_stopping(
     limits: &ExactProbLimits,
     control: &mut impl FnMut(WitnessWork<'_>) -> Result<(), WitnessError>,
 ) -> Result<Option<ProducedWitness>, WitnessError> {
+    produce_with_goal(
+        product,
+        policy,
+        scope,
+        initial,
+        accepting,
+        stopped,
+        WitnessGoal::Mass(past),
+        limits,
+        control,
+    )
+}
+
+enum WitnessGoal<'a> {
+    Mass(&'a Rational),
+    Quantile {
+        level: &'a Rational,
+        never: &'a [bool],
+        strict: bool,
+    },
+}
+
+/// Produce FR-202's V/N path set, classifying nonactivation separately.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn produce_quantile_witness(
+    product: &ProbProduct,
+    policy: &[Option<usize>],
+    scope: WitnessScope,
+    initial: ProbStateId,
+    accepting: &[bool],
+    never: &[bool],
+    level: &Rational,
+    strict: bool,
+    limits: &ExactProbLimits,
+    control: &mut impl FnMut(WitnessWork<'_>) -> Result<(), WitnessError>,
+) -> Result<Option<ProducedWitness>, WitnessError> {
+    if never.len() != product.states.len() {
+        return Err(WitnessError::InvalidState);
+    }
+    produce_with_goal(
+        product,
+        policy,
+        scope,
+        initial,
+        accepting,
+        None,
+        WitnessGoal::Quantile {
+            level,
+            never,
+            strict,
+        },
+        limits,
+        control,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn produce_with_goal(
+    product: &ProbProduct,
+    policy: &[Option<usize>],
+    scope: WitnessScope,
+    initial: ProbStateId,
+    accepting: &[bool],
+    stopped: Option<&[bool]>,
+    goal: WitnessGoal<'_>,
+    limits: &ExactProbLimits,
+    control: &mut impl FnMut(WitnessWork<'_>) -> Result<(), WitnessError>,
+) -> Result<Option<ProducedWitness>, WitnessError> {
     if accepting.len() != product.states.len() || initial.index() >= product.states.len() {
         return Err(WitnessError::InvalidState);
     }
@@ -760,6 +828,8 @@ pub(crate) fn produce_witness_stopping(
     let mut pushes = 1_usize;
     let mut paths: Vec<ProducedPath> = Vec::new();
     let mut sum = rational(0);
+    let mut never_mass = rational(0);
+    let mut violating_mass = rational(0);
     while let Some(partial) = frontier.pop() {
         control(WitnessWork::Visit)?;
         if accepts(partial.state) {
@@ -796,11 +866,42 @@ pub(crate) fn produce_witness_stopping(
             paths
                 .try_reserve_exact(1)
                 .map_err(|_| WitnessError::InvalidState)?;
+            let sufficient = match &goal {
+                WitnessGoal::Mass(past) => sum > **past,
+                WitnessGoal::Quantile {
+                    level,
+                    never,
+                    strict,
+                } => {
+                    if never.get(partial.state.index()).copied().unwrap_or(false) {
+                        never_mass = never_mass.add(&partial.probability);
+                    } else {
+                        violating_mass = violating_mass.add(&partial.probability);
+                    }
+                    let coefficient = if *strict {
+                        (*level).clone()
+                    } else {
+                        rational(1).sub(level)
+                    };
+                    let threshold = coefficient.mul(&rational(1).sub(&never_mass));
+                    for value in [&never_mass, &violating_mass, &threshold] {
+                        control(WitnessWork::Rational(value))?;
+                        if !rational_fits(value, limits.max_rational_bits) {
+                            return Err(rational_limit());
+                        }
+                    }
+                    if *strict {
+                        violating_mass > rational(0) && violating_mass >= threshold
+                    } else {
+                        violating_mass > threshold
+                    }
+                }
+            };
             paths.push(ProducedPath {
                 steps: partial.steps(&induced)?,
                 probability: partial.probability,
             });
-            if sum > *past {
+            if sufficient {
                 control(WitnessWork::Slots(slots(
                     induced
                         .values()

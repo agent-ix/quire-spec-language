@@ -32,6 +32,7 @@ mod node_identity;
 pub mod node_wire;
 pub mod reduction;
 pub mod request_index;
+pub mod scalar_wire;
 pub mod selection;
 pub mod serde_object;
 pub mod setting;

@@ -28,7 +28,8 @@ EN-5 SHALL refute a claim with a `ProbabilisticCounterexample` (ADR-028
 WS-1 to WS-4): the initial state and binding, the bound, the witness
 scheduler over every scheduler, and evidence that is either a prefix-free
 set of finite paths whose exact probabilities sum past the bound, or a
-`Lower` or `Upper` certificate on the chain the witness induces.
+certificate checked for its refutation role, including the finite-horizon
+mean certificates below.
 `fsl_replay::replay_probabilistic_witness`, a layer-6 facade entry beside
 `replay_model_trace`, SHALL re-execute that evidence through `ModelSystem`
 and settle the item `refuted` only when it agrees (WS-5).
@@ -93,6 +94,7 @@ refuses. This race-policy form cannot name IdleObserve or change a fixed
 workload weight. No guessed FSpec wire spelling is adopted by this semantic
 contract.
 
+Except for a mean-bound certificate's independently checked policy below,
 EN-5 SHALL form the WitnessScheduler from the optimizer's attaining policy on
 the evidence's states: each entry is the complete pre-choice ProductKey and the
 ProductAction the policy takes there, chosen by FR-198's witness policy rules
@@ -114,6 +116,65 @@ race gives that post-key and elapsed amount.
   under a `>= θ` bound or `Pr(E)` under `<= θ`, with value past the bound,
   or an `Upper` certificate on `Pr(E)` below `θ`. Long-run and
   expected-reward refutations SHALL use certificate evidence.
+- For `mean of F op θ` (expectation of a bounded fraction), EN-5 SHALL
+  emit FSpec FR-413 subsystem certificate evidence, with an `exact`
+  [FR-1043](FR-1043-certify-finite-horizon-measure-verdicts.md) document or
+  the refuting bound document of
+  [FR-1042](FR-1042-certify-value-bounds-with-lower-and-upper-certificates.md),
+  whose `base` is the same complete finite-horizon-measure objective a
+  proof of that claim would use, with payoff `fraction`. The checker SHALL
+  check its identity, objective/base, product coverage, payoff, extremum
+  and certificate conditions independently under those requirements.
+  Under a workload, an exact initial value `v < θ` refutes `>= θ`, and
+  `v > θ` refutes `<= θ`; an accepted `upper < θ` or `lower > θ`,
+  respectively, also suffices. Under every scheduler, `>= θ` SHALL be
+  refuted only by an exact minimum below `θ` or an `upper` certificate on
+  that minimum below `θ`; `<= θ` SHALL be refuted only by an exact maximum
+  above `θ` or a `lower` certificate on that maximum above `θ`. The bound
+  document SHALL use FR-1042's independently checked policy for that
+  extremum, synthesized in canonical full-product-action order where a hint
+  is absent and checked against the offered action where a hint is present. The
+  counterexample's scheduler SHALL agree with that selected policy; an exact
+  document's witness SHALL attain its deciding extremum.
+  EN-5 SHALL construct a mean-bound counterexample's scheduler from the
+  policy returned by its independent FR-1042 check, rather than retain an
+  optimizer policy that differs under a slack bound. Where an intended
+  witness choice has an existing representable policy-hint form, EN-5 MAY
+  offer that matching hint before checking; the witness SHALL still use
+  the checker's accepted action. For implicit terminal stutter or
+  post-state choices without such a form, EN-5 SHALL omit the hint and use
+  the independently synthesized action without inventing a wire operation.
+- When checking that mean certificate as refutation evidence, the checker
+  SHALL apply the strict refutation comparison above after the certificate
+  conditions, rather than FR-1042's proof claim-side kind and inclusive
+  threshold check. Missing the original claim's proof threshold SHALL NOT
+  reject an otherwise valid refuting document. A value or bound equal to
+  `θ` SHALL NOT refute. Replay SHALL settle `refuted` only with the opaque
+  accepted evidence returned by that independent check for the same
+  identity, base and deciding extremum. A numerical engine verdict, a
+  document not checked for this role, or a path set SHALL NOT establish a
+  mean refutation: a fraction expectation is not a violating probability
+  mass. The existing replay refusal, parity, bounded-resource and
+  cancellation rules continue to apply.
+- The mean-certificate checker SHALL reject a valid document that fails the
+  strict refutation comparison, including equality, with `ThresholdMissed`
+  at the initial product key. A `lower` for `>= θ` or `upper` for `<= θ`
+  SHALL be rejected `Malformed` at `kind`, even if its number lies on the
+  wrong side. Failed certificate conditions SHALL retain FR-201's typed
+  rule and locus. Each such rejection SHALL settle `inconclusive`,
+  `CertificateRejected{rule, at}`. A witness disagreeing with the checked
+  policy or failing to attain an exact extremum SHALL settle `inconclusive`,
+  `ReplayParity`, without accepted evidence. Identity and objective/base
+  mismatches SHALL retain FR-201's existing typed refusal.
+- For a fraction base, the checker SHALL enumerate the full stopped product
+  for `exact` and `upper` documents. A `lower` document MAY name a subset,
+  including one explored before a caller limit, under FR-1042's lower
+  conditions; the checker SHALL expand its named states and successors,
+  assigning each unnamed successor the fraction payoff's least value 0.
+  An independently accepted partial `lower > θ` SHALL refute `<= θ`,
+  including a maximum under every scheduler, without an upper counterpart.
+  The checker SHALL still enforce its own live limits and cancellation;
+  a stopped check SHALL return incomplete without accepted evidence.
 - For a quantile claim, replay SHALL classify each path as violating or
   not activated, sum their exact probabilities into `V` and `N`, and apply
   FSpec FR-413's two-mass rule: `quantile q of M <= c` refutes when
@@ -143,6 +204,25 @@ race gives that post-key and elapsed amount.
   `>= θ` bound, found before a limit stopped exploration (XV-5).
 
 ### Replay
+
+#### Checked-subject mean-certificate replay entry
+
+Layer 6 SHALL expose a checked-subject mean-certificate replay entry taking
+`CheckedPackage`, its admitted `ModelSystem`, the claim occurrence and
+binding, typed subsystem certificate evidence and witness scheduler,
+caller-configured limits and `&Cancel`. Native replay SHALL route
+mean/fraction subsystem evidence to this entry. The entry SHALL bind the
+claim from the checked package and independently check the original
+finite-horizon-measure product under the mean-refutation rules above,
+without recompilation or an engine-supplied product, payoff or threshold.
+It SHALL return opaque reproduced evidence binding the package, claim,
+binding, certificate, base and deciding extremum only after successful
+role checking, witness agreement and a final cancellation poll. EN-5 SHALL
+require that matching opaque outcome before settling `refuted`. Rejections,
+refusals, parity and incomplete outcomes SHALL follow the typed rules above
+without reproduced evidence. The wire facade SHALL dispatch mean subsystem
+evidence to the same checks after decoding and re-admission; the path-set
+entries' unsupported-subsystem restriction does not apply to this entry.
 
 #### Checked-subject path-set entry
 
@@ -188,10 +268,11 @@ settlement; exhaustion and cancellation SHALL remain `incomplete` without a
 token. Claim, package or binding mismatch SHALL refuse before acceptance.
 
 For the unbounded subset this entry SHALL report unsupported for cyclic subjects.
-Both subsets SHALL report unsupported for subsystem evidence,
+The checked-subject path-set subsets SHALL report unsupported for subsystem evidence,
 randomized schedulers, fairness, multiple initial states/instances, timed or
 other claim forms outside this slice. It SHALL NOT project them onto this
-slice. `Undefined` evidence has its own checked-subject entry
+slice. Mean subsystem evidence uses the separate checked-subject
+mean-certificate replay entry above. `Undefined` evidence has its own checked-subject entry
 ("Checked-subject undefined entry" below), for every form. This additional entry does not change the wire facade obligation, the
 broader replay rules, or any public JSON key or witness codec.
 
@@ -416,9 +497,13 @@ timed enumerator.
   bound. The first undefined evaluation at `where` with an equal cause
   SHALL settle `reproduced-with-evaluated-witness`; any other result
   SHALL settle `inconclusive`, `ReplayParity`.
-- For subsystem evidence it SHALL rebuild the induced chain over the
-  certificate's support by applying the witness scheduler, and run FR-201's
-  checker on it.
+- For subsystem evidence other than a mean certificate it SHALL rebuild
+  the induced chain over the certificate's support by applying the witness
+  scheduler, and run FR-201's checker on it. For a mean certificate it
+  SHALL check the original finite-horizon-measure base product, preserving
+  its workload, minimum or maximum optimization and the coverage rules
+  above; applying the witness scheduler SHALL NOT replace that base with
+  an induced-chain objective.
 - Digital replay SHALL distinguish UnitDelay in running, EnterIdleDelay
   from quiescent running, IdleDelay from idle-ready/idle-delayed and
   IdleObserve only from idle-delayed. It SHALL check their actual
@@ -459,22 +544,26 @@ timed enumerator.
 | FR-202-AC-5 | FR-196-AC-5's `Undefined` evidence (`drop` with `b = 0`, `UndefinedEvaluation{where: 1, cause: absent-key}`) replays `refuted`; the same evidence with `where` set to 0 settles `inconclusive`, `ReplayParity`. | Test (TC-641) |
 | FR-202-AC-9 | A checked-subject acyclic reachability fixture replays a target-first-hit path set of mass `2/3` against `AtMost 1/2` and a terminal-nonreach path set of mass `2/3` against `AtLeast 1/2`; each produces a token permitting only its matching EN-5 refuted record, with the accepted evidence retained. Repeating replay gives equal semantic outcomes. Neither replay needs an emitted package or analyzer graph types. | Test |
 | FR-202-AC-10 | In AC-9, altering the claim occurrence, package or binding refuses; altering an action, draw, post-state or full key cannot produce a token. Duplicate/prefix-overlapping paths, inconsistent scheduler choices, an earlier target on a first-hit path, and a live non-target leaf cannot reproduce a refutation. Mass equal to the relevant threshold yields replay parity. | Test |
-| FR-202-AC-11 | A pre-cancelled call, cancellation at the final acceptance poll, or exhaustion of each configured expansion/work/storage limit returns incomplete without a token or a refuted record. Unbounded cyclic, subsystem, randomized-policy, fairness, multiple-initial/instance and timed inputs report unsupported without a token. A caller cannot construct a reproduced token or settle EN-5 refuted from a bare engine result. | Test |
+| FR-202-AC-11 | A pre-cancelled call, cancellation at the final acceptance poll, or exhaustion of each configured expansion/work/storage limit returns incomplete without a token or a refuted record. For this path-set entry, unbounded cyclic, subsystem, randomized-policy, fairness, multiple-initial/instance and timed inputs report unsupported without a token. A caller cannot construct a reproduced token or settle EN-5 refuted from a bare engine result. | Test |
 | FR-202-AC-12 | A cyclic undelivered model has action slow delivering with probability 1/2 and otherwise returning undelivered, and fast delivering with probability 3/4 and otherwise returning undelivered. For origin eventually[0,2] holds(delivered), slow at both full choice keys refutes minimum AtLeast 4/5 with the two-failure path of mass 1/4 greater than 1/5; fast at both keys refutes maximum AtMost 9/10 with first-hit paths of masses 3/4 and 3/16, sum 15/16. Equal-weight resolved workload has per-step delivery 5/8: all two-failure action/draw cylinders sum to 9/64 and refute AtLeast 7/8; all first-hit cylinders sum to 55/64 and refute AtMost 4/5. Each produces only its matching token and refuted record retaining evidence; repeat replay gives equal semantic outcomes. | Test |
 | FR-202-AC-13 | AC-12 initial and one-failure states share model content but carry different complete formula keys with remaining contexts 2 and 1. Changing a supplied key to a model-only key, null/local-index monitor, another remaining horizon or binding prevents a token. Rebinding to a changed source package, horizon, threshold, claim occurrence, actual S3 over-parameter node or selected instance prevents reuse of the original token/evidence as an accepted refutation of that item. A checked source with two possible object values is restricted to one admitted over binding; replay uses that object's predicate and actual S3 node, never a fabricated binding node. | Test |
 | FR-202-AC-14 | At horizon 0, initially true P gives an empty accepting path of mass 1 refuting AtMost 1/2, while initially false P gives an empty rejecting path refuting AtLeast 1/2; opposite-verdict empty paths yield parity. At horizon 2, a terminal initially false P closes by false extension with mass 1 and no fabricated stutter step, refuting AtLeast 1/2. A live undecided prefix after one failure does not refute; after two failures horizon rejection does, even though another model action is enabled. An initial true P path extended by an operation cannot reproduce. | Test |
 | FR-202-AC-15 | In AC-12 a missing represented path cannot be counted, equal-threshold represented mass yields parity, and a changed action/draw/post-state, duplicated draw-cylinder, overlapping path or inconsistent choice at one full key cannot produce a token. First-hit masses under slow are only 3/4 and cannot refute AtMost 4/5. A policy may choose different enabled actions at the same model content with different remaining horizons; this is a consistent full-product policy. | Test |
-| FR-202-AC-16 | AC-12 replay with pre-cancellation, cancellation at its final acceptance poll, or each configured expansion/work/storage/arithmetic budget exhausted returns its typed incomplete cause with no truth, token or accepted evidence in a refuted record. A refused predicate preserves its typed refusal; FR-197 Bounds and PrecisionBudget, unsupported bounded until/reward/timed/fair inputs, subsystem evidence and nonreplayed exact results produce no bounded reproduced token. The native entry needs neither S4 emission nor FSpec FR-413 document transport. | Test |
+| FR-202-AC-16 | AC-12 replay with pre-cancellation, cancellation at its final acceptance poll, or each configured expansion/work/storage/arithmetic budget exhausted returns its typed incomplete cause with no truth, token or accepted evidence in a refuted record. A refused predicate preserves its typed refusal; FR-197 Bounds and PrecisionBudget, unsupported bounded until/reward/timed/fair inputs, subsystem evidence and nonreplayed exact results produce no bounded path-set reproduced token. The native entry needs neither S4 emission nor FSpec FR-413 document transport. | Test |
 | FR-202-AC-17 | Until fixture: initial A-and-not-B has actions a and b reaching B-and-not-A with probabilities 1/4 and 3/4, otherwise neither-A-nor-B followed by terminal B. At threshold 1/2, a's rejecting cylinder of mass 3/4 refutes minimum AtLeast, and b's accepting cylinder of mass 3/4 refutes maximum AtMost. Equal-weight resolved workload has accepting and rejecting mass 1/2 each: its rejecting cylinders refute AtLeast 3/5 and accepting cylinders refute AtMost 2/5. All four produce only their matching reproduced token and retain semantic evidence; repeat replay gives equal outcomes. The failure prefix stops before its later B; the B-and-not-A path accepts. | Test |
 | FR-202-AC-18 | Always fixture: initial nonterminal P has actions a and b reaching terminal P with probabilities 1/4 and 3/4, otherwise not-P followed by terminal P. At threshold 1/2, a's not-P cylinder of mass 3/4 refutes minimum AtLeast and b's terminal-P cylinder of mass 3/4 refutes maximum AtMost. Equal-weight resolved workload refutes AtLeast 3/5 with rejecting mass 1/2 and AtMost 2/5 with accepting mass 1/2. Later P cannot repair the not-P prefix; the initial live P alone cannot be accepted. | Test |
 | FR-202-AC-19 | With admitted threshold 1/2, empty paths of mass 1 refute AtMost for initial B-and-not-A until and initial terminal-P always; empty paths refute AtLeast for initial neither-A-nor-B until, terminal A-and-not-B until, and initial not-P always even with a later terminal P successor. Terminal A-and-not-B has until probability 0 and terminal P has always probability 1 without a fabricated stutter step. Source threshold endpoints remain refused; probabilities 0 and 1 are admitted. | Test |
 | FR-202-AC-20 | In AC-17/18, changed source/package, foreign claim occurrence or S3 binding refuses identity mismatch; a changed formula that changes the represented verdict, changed threshold to equality, changed actual action/draw/post-state/full key, fabricated binding node, missing binding component or a formula-monitor key prevents a token. Formula spelling alone need not fail if the actual bound claim has identical semantics and identity checks pass. A wrong-verdict path, live undecided prefix, path extended beyond first success/failure, duplicate cylinder or prefix overlap yields no reproduced token; insufficient/equal mass yields replay parity. | Test |
-| FR-202-AC-21 | AC-17/18 two evidence paths demanding different actions at one complete choice key fail policy consistency; a policy under a resolved workload fails replay. Distinct supported draws reaching the same post-state contribute their separate exact masses once, while repeating a draw cannot increase mass. A raw reachable cycle beyond initial B for until or initial not-P for always is unsupported despite immediate absorption; acyclic counterparts remain admitted. Fairness, timed/reward/nested/bounded forms, multiple initials/bindings, unresolved workload, subsystem and randomized-policy evidence remain unsupported in this subset. | Test |
+| FR-202-AC-21 | AC-17/18 two evidence paths demanding different actions at one complete choice key fail policy consistency; a policy under a resolved workload fails replay. Distinct supported draws reaching the same post-state contribute their separate exact masses once, while repeating a draw cannot increase mass. A raw reachable cycle beyond initial B for until or initial not-P for always is unsupported despite immediate absorption; acyclic counterparts remain admitted. Fairness, timed/reward/nested/bounded forms, multiple initials/bindings, unresolved workload, subsystem and randomized-policy evidence remain unsupported in this path-set subset. | Test |
 | FR-202-AC-22 | AC-17/18 pre-cancellation, cancellation at final acceptance, or exhaustion of each caller expansion/work/storage/arithmetic limit during original admission or replay preserves its typed incomplete outcome with no truth, token or accepted evidence in a refuted record. Refused predicates preserve refusal. Bounds, PrecisionBudget, certificate acceptance alone and unreplayed exact engine verdicts cannot settle refuted. Native replay needs no emitted package or witness wire codec and imports no analyzer graph types. | Test |
 | FR-202-AC-23 | Over FR-201-AC-56's `Health` chain (value `81/100`), `probability >= 0.9 [always[0,2] holds(ok)]` is refuted by the checked-subject bounded entry with the rejecting cylinders fault after one step (`1/10`) and fault after two steps (`9/100`), mass `19/100 > 1/10`; the cylinder that reaches the accepting decided key after position 2 (`81/100`) refutes `probability <= 0.8 [always[0,2] holds(ok)]`. The rejecting set without its second cylinder (mass `1/10`, equal to `1 − 0.9`) yields replay parity, and a cylinder naming a model-only key yields no reproduced token. | Test |
 | FR-202-AC-24 | The checked-subject undefined entry reproduces FR-202-AC-5's `Coin` evidence (`drop` with `b = 0`, `where` position 1, `absent-key`) for `probability >= T [ always[0,3] holds(c.v = 0) ]` at `T` 0.5 and 0.01 alike, with no emitted package; for `probability >= 0.5 [ always[0,3] holds(c.v = 1) ]`, whose monitor rejects at position 0, a forged undefined path to position 1 settles `ReplayParity` without a token. | Test (TC-3153) |
 | FR-202-AC-25 | `Coin` with a further operation `keep` that never deletes, under every scheduler: AC-24's claim is refuted by the undefined path `drop` with `b = 0` and the scheduler entry `drop` at the initial key, although a scheduler that always takes `keep` keeps `c.v` defined; the same path with the entry `keep` at that key refuses `invalid_runtime_input`/`invalid-value`. | Test (TC-3153) |
 | FR-202-AC-26 | Under the infinite-trace profile `probability >= 0.5 [ eventually holds(c.v = 1) ]` over `Coin` is reproduced by the checked-subject undefined entry with the path `drop` with `b = 0`, `where` position 1 and a pre-read key whose monitor and accumulator are null. Under `Even` the path `drop` with `b = 1` (which returns to the initial complete key) then `drop` with `b = 0`, probability `1/4`, `where` position 2, also replays; under every scheduler over the `keep` variant that path settles `ReplayParity`, because its key repeats. Pre-cancellation, cancellation at the final poll and exhaustion of each expansion, work or storage limit return `incomplete` with no token. | Test (TC-3153) |
+| FR-202-AC-27 | Through the checked-subject mean-certificate replay entry, FR-1043-AC-5's workload mean `5/12` refutes `>= 1/2` using subsystem evidence containing the independently accepted `exact` `fraction` certificate; the same document checks in its refutation role despite missing the proof threshold. An unchecked document, an unreplayed engine value or a path set yields no accepted mean-refutation evidence. | Test |
+| FR-202-AC-28 | FR-1043-AC-8's minimum `11/48` with an accepted `upper` bound `1/4` refutes every-scheduler `>= 1/2`; its maximum `5/12` with an accepted `lower` bound `2/5` refutes every-scheduler `<= 1/3`. A valid `lower` minimum document with initial bound `1/5` at `>= 1/2`, and a valid `upper` maximum document with initial bound `1/2` at `<= 1/3`, each reject `Malformed` at `kind` and settle `inconclusive`, `CertificateRejected`; their conditions hold but their refutation roles are wrong. | Test |
+| FR-202-AC-29 | AC-27's exact `5/12` at `>= 5/12` or `<= 5/12`, and a valid workload `upper` bound `1/2` at `>= 1/2`, each reject `ThresholdMissed` at the initial key and settle `inconclusive`, `CertificateRejected`. Changing identity or base payoff/optimization retains the typed refusal; invalid certificate values settle `inconclusive`, `CertificateRejected{InequalityFails, at}`; a disagreeing witness policy settles `inconclusive`, `ReplayParity`; cancellation or a caller limit preserves its typed incomplete result without accepted evidence. | Test |
+| FR-202-AC-30 | A mean minimum refutation with a slack `upper < θ` for which both the optimizer's attaining action and a different canonical-first action satisfy every FR-1042 condition emits a witness matching the independently checked policy: with no hint it uses the canonical-first satisfying full-product action; with a representable valid hint it uses that hinted action. Both replay as refuted. An old optimizer witness disagreeing with the checked selection settles `inconclusive`, `ReplayParity`; implicit stutter or post-state selection uses the same rule without a fabricated policy identity. | Test |
 
 ## Dependencies
 

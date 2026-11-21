@@ -53,6 +53,7 @@ pub use fair::{
 pub use finite_horizon::{
     backward_induction, decide_bounded_event, Dyadic, FhError, FhObjective, FhResult,
 };
+pub(crate) use finite_horizon::{decide_measure_exact, QualifiedFhError};
 pub use fsl_replay::FreeDelayRow;
 pub use rows::free_delays_choice;
 pub use settle::settle_product_refusal;
@@ -66,7 +67,7 @@ pub use witness::{
     action_steps, entry_choice, policy_action, produce_witness, witness_scheduler, EntryChoice,
     ProducedPath, ProducedStep, ProducedWitness, WitnessError, WitnessScope,
 };
-pub(crate) use witness::{produce_witness_stopping, WitnessWork};
+pub(crate) use witness::{produce_quantile_witness, produce_witness_stopping, WitnessWork};
 
 pub(crate) fn timed_region_route(
     timed: &fsl_eval::simulation::model::TimedSystem<'_, '_>,
@@ -85,7 +86,7 @@ pub(crate) fn timed_certificate_scale(
 
 use filament_exact::{CancelCause, Rational, Value};
 use filament_semantic_value::catalog::InternalFault;
-use fsl_eval::automaton::{AutomatonError, StateId};
+use fsl_eval::automaton::AutomatonError;
 use fsl_eval::model_subject::{ModelInstance, ModelSubject};
 use fsl_eval::simulation::model::{ClauseOutcome, ScheduledIdentity};
 use fsl_eval::simulation::model::{NotMarkov, UndecidedSuccessor};
@@ -120,157 +121,10 @@ pub enum ProductKind {
     Mdp,
 }
 
-/// What a decided bounded-event monitor concluded.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum MonitorVerdict {
-    /// Every continuation satisfies the event.
-    Accept,
-    /// No continuation satisfies the event.
-    Reject,
-}
-
-/// The state of a bounded event's monitor after the position read.
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub enum FormulaState {
-    /// Undecided: the monitor's state, local to the product's monitor.
-    Running(StateId),
-    /// Decided and absorbing.
-    Decided(MonitorVerdict),
-}
-
-/// Where a bounded measure stands (FR-196 "Canonical probability product
-/// key", measure control).
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub enum MeasurePhase {
-    /// No position has satisfied `A` yet.
-    Inactive,
-    /// `A` held; `B` has not yet.
-    Active,
-    /// `B` ended an activated measure. Decided.
-    Complete,
-    /// The horizon ended an activated measure before `B`: the measure
-    /// exceeds every finite threshold. Decided.
-    Censored,
-    /// The horizon ended with `A` never held. Decided.
-    Unactivated,
-}
-
-/// The control a bounded event or measure adds to a model state.
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub enum MonitorState {
-    /// A bounded event's monitor.
-    Formula(FormulaState),
-    /// An `accumulate` or `steps` measure: the model positions still to be
-    /// read, `0..=h`, and its phase.
-    Measure {
-        /// The positions after this one that the window still reads.
-        remaining: u64,
-        /// Where the measure stands.
-        phase: MeasurePhase,
-    },
-    /// A fraction: the included positions whose contribution is still
-    /// unread, initially `h + 1`. It is complete, and decided, at 0.
-    Fraction {
-        /// The positions still to contribute.
-        remaining: u64,
-    },
-    /// A timed deadline event (FR-196 canonical key, FR-204): the event's
-    /// kind and phase. `D` and the exact elapsed clock are in the model
-    /// member of the key.
-    Deadline {
-        /// `eventually`, `always` or `until`.
-        kind: DeadlineKind,
-        /// Where the event stands.
-        phase: DeadlinePhase,
-    },
-}
-
-/// The shape of a timed deadline event (FR-204 "Admission").
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub enum DeadlineKind {
-    /// `eventually[0, D] holds(P)`.
-    Eventually,
-    /// `always[0, D] holds(P)`.
-    Always,
-    /// `holds(A) until[0, D] holds(B)`.
-    Until,
-}
-
-/// Where a timed deadline event stands.
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub enum DeadlinePhase {
-    /// Undecided.
-    Pending,
-    /// The event held at or before `D`. Decided and absorbing.
-    Accept,
-    /// A delay crossed `D` first, or `A` failed before `B`. Decided and
-    /// absorbing.
-    Reject,
-}
-
-impl MonitorState {
-    /// Whether the control is decided: nothing it reads can change it, so
-    /// the product does not expand the state.
-    pub fn is_decided(self) -> bool {
-        match self {
-            Self::Formula(state) => matches!(state, FormulaState::Decided(_)),
-            Self::Measure { phase, .. } => matches!(
-                phase,
-                MeasurePhase::Complete | MeasurePhase::Censored | MeasurePhase::Unactivated
-            ),
-            Self::Fraction { remaining } => remaining == 0,
-            Self::Deadline { phase, .. } => !matches!(phase, DeadlinePhase::Pending),
-        }
-    }
-}
-
-/// An accumulated `steps` or `accumulate` amount, normalized so that equal
-/// futures have equal keys (FR-196 "Canonical probability product key").
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub enum Amount {
-    /// The amount, at most the claim's threshold; equality to the threshold
-    /// is kept exact.
-    Exact(Rational),
-    /// Greater than the claim's threshold: every such amount is one value.
-    AboveBound,
-    /// The horizon ended the measure before its `B`: greater than every
-    /// finite threshold.
-    Censored,
-}
-
-/// The sums a bounded measure carries.
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub enum Accumulator {
-    /// `steps from A until B`.
-    Steps {
-        /// Whether `A` has held; false entails amount zero.
-        activated: bool,
-        /// The steps taken since `A`.
-        amount: Amount,
-    },
-    /// `accumulate R from A until B`.
-    Reward {
-        /// Whether `A` has held; false entails amount zero.
-        activated: bool,
-        /// The reward summed since `A`, in the reward's own unit.
-        amount: Amount,
-    },
-    /// An unweighted fraction.
-    CountFraction {
-        /// The included positions at which `P` held.
-        true_count: u64,
-        /// The included positions read.
-        position_count: u64,
-    },
-    /// A fraction weighted by a reward. Both sums stay exact: `(1, 2)` and
-    /// `(2, 4)` are different states.
-    WeightedFraction {
-        /// The weight of the positions at which `P` held.
-        true_sum: Rational,
-        /// The weight of the positions read.
-        total_sum: Rational,
-    },
-}
+pub use fsl_eval::probabilistic::{
+    Accumulator, Amount, DeadlineKind, DeadlinePhase, FormulaState, MeasurePhase, MonitorState,
+    MonitorVerdict,
+};
 
 /// A draw with several post-states, awaiting its resolution (SCH-2): the
 /// scheduled identity and the drawn vector.
@@ -635,6 +489,8 @@ impl ProbProduct {
 /// The predicate of a claim an undefined reading names.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum UndefinedRead {
+    /// The tentative value of a completed weighted fraction.
+    FractionValue,
     /// A `holds` atom of the claim's event.
     Atom(FormulaNodeId),
     /// A state predicate of the claim's measure or unbounded form.

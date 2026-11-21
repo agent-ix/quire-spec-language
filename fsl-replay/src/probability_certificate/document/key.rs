@@ -250,7 +250,7 @@ fn read<'a>(
 
 // This is only the owner-defined outer model envelope. Typed state content and
 // actual state membership are independently rederived from ModelSystem.
-fn model_form(node: NodeRef<'_>) -> bool {
+pub(super) fn model_form(node: NodeRef<'_>) -> bool {
     match node.node() {
         Node::Object(members) => {
             let fields = [

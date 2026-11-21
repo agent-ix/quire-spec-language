@@ -82,7 +82,8 @@ accepts both, so the reported interval is certified at both ends.
 
 - The objective SHALL have exactly `profile` and `base`. The document SHALL
   have exactly `identity`, `objective`, `kind` (`"lower"` or `"upper"`),
-  `values` and those of `ranking` and `policy` the table below requires, in
+  `values`, the `ranking` the table below requires, and optional `policy`
+  hints for its existential choices, in
   FR-201's strict canonical JSON, `Rational` and `Count` encodings with
   complete product keys as the base profile writes them. A dyadic value is
   an ordinary reduced `Rational` whose denominator is a power of two; no
@@ -94,13 +95,16 @@ accepts both, so the reported interval is certified at both ends.
   measure base whose payoff is `shifted`, so an unnamed state never raises
   the bound. A `lower` document may cover only the part of the product explored
   before a limit stopped exploration (FSpec FR-411 "Evidence on a partial
-  product"). `ranking` and `policy` rows SHALL cover exactly the states the
-  table names among the covered states.
-- A `policy` row SHALL be `{state, choice}` with `choice` FSpec FR-412's
-  `TransitionIdentity` of an enabled semantic action at that state (FR-187
-  operation, receiver and non-random arguments), one deterministic choice;
-  a randomized choice SHALL be rejected `Malformed` at `policy`, since a
-  deterministic memoryless policy attains every bound below.
+  product"). `ranking` rows SHALL cover exactly the states the table
+  names among the covered states; `policy` hints MAY omit any such state.
+- A present `policy` hint SHALL use the existing `{state, choice}` row and
+  an enabled action in the base profile's existing `TransitionIdentity`,
+  reset or randomized-choice vocabulary, only where that base admits the
+  form. It SHALL NOT invent an operation identity for an implicit terminal
+  stutter or a post-state choice. A nonexistent or disabled hinted action
+  SHALL reject `InequalityFails` at that state, even if another action
+  would satisfy the bound. Duplicate, extraneous or structurally malformed
+  rows SHALL retain FR-201's `Malformed` rejection and member locus.
 - Targets and accepting decided states SHALL carry 1, non-target terminals
   and rejecting decided states 0, the states of FR-1041's `U` 0, and a
   measure base's decided states their payoff (FR-1043), and a reward base's
@@ -117,11 +121,32 @@ successor of strictly smaller rank whose value is positive (FSpec FR-412
 | Base optimization | `lower` (`x` at most the value) | `upper` (`y` at least the value) |
 | --- | --- | --- |
 | workload | `x(s) <= Q(x, s)`; `ranking`; progress at each named non-target state with `x > 0` | `Q(y, s) <= y(s)` |
-| minimum | for every action `a`, `x(s) <= Q_a(x, s)` and progress under `a`; `ranking` | `policy` `σ`: `Q_σ(y, s) <= y(s)` |
-| maximum (with or without fairness) | `policy` `σ`: `x(s) <= Q_σ(x, s)` and progress under `σ`; `ranking` | for every action `a`, `Q_a(y, s) <= y(s)` |
-| expected reward, any optimization | `x(s) <= c(s) + Q(x, s)`, under every action for a minimum, under `policy` `σ` for a maximum; no `ranking` | `c(s) + Q(y, s) <= y(s)`, under every action for a maximum, under `policy` `σ` for a minimum; `ranking` for properness: a successor of positive probability and smaller rank under the workload, `σ`, or every action for a maximum |
-| fair minimum (FR-1041) | for every action `a`, `x(s) <= Q_a(x, s)`, `x = 0` on `U`; no `ranking` | `policy` `σ`: `Q_σ(y, s) <= y(s)` and progress under `σ` toward `U`, the targets and the states with `y = 1`; `ranking` |
+| minimum | for every action `a`, `x(s) <= Q_a(x, s)` and progress under `a`; `ranking` | selected action `σ`: `Q_σ(y, s) <= y(s)` |
+| maximum (with or without fairness) | selected action `σ`: `x(s) <= Q_σ(x, s)` and progress under `σ`; `ranking` | for every action `a`, `Q_a(y, s) <= y(s)` |
+| expected reward, any optimization | `x(s) <= c(s) + Q(x, s)`, under every action for a minimum, under selected action `σ` for a maximum; no `ranking` | `c(s) + Q(y, s) <= y(s)`, under every action for a maximum, under selected action `σ` for a minimum; `ranking` for properness: a successor of positive probability and smaller rank under the workload, `σ`, or every action for a maximum |
+| fair minimum (FR-1041) | for every action `a`, `x(s) <= Q_a(x, s)`, `x = 0` on `U`; no `ranking` | selected action `σ`: `Q_σ(y, s) <= y(s)` and progress under `σ` toward `U`, the targets and the states with `y = 1`; `ranking` |
 
+- For an `upper` on a minimum or a `lower` on a maximum, the checker
+  SHALL independently rebuild every enabled action at each undecided
+  covered state. A present hint SHALL select the action to check, and that
+  action SHALL satisfy every applicable per-state condition together: its
+  inequality and any progress, properness or rank condition required by
+  the base. A failing hint SHALL reject with the applicable
+  `InequalityFails` or `RankBroken` at that state even when another action
+  satisfies all conditions; the checker SHALL NOT replace the hint.
+- With no hint at that state, the checker SHALL accept the existential
+  choice if and only if some rebuilt action satisfies every such condition,
+  selecting and retaining the first satisfying action in canonical
+  full-product-action order in its independently checked policy. If no
+  action satisfies the inequality, it SHALL reject `InequalityFails` at
+  that state; if some satisfy the inequality but none meets the required
+  progress or rank conditions, it SHALL reject `RankBroken` there.
+  Terminal-stutter-only states and intermediate states with multiple
+  post-state choices SHALL use their existing semantic actions in this
+  search without a policy row or a new wire action/carrier. The checker
+  SHALL report the selected policy through its accepted check outcome;
+  this adds no certificate field. Universal-action conditions elsewhere
+  in the table SHALL still check every action.
 - Over a bounded base (FR-201's bounded subset, the bounded fair profile,
   FR-1043's measure product) the undecided product is acyclic and decided
   states are absorbing. There the inequalities alone bound the value by
@@ -201,7 +226,7 @@ successor of strictly smaller rank whose value is positive (FSpec FR-412
 |----|----------|--------------|
 | FR-1042-AC-1 | Over the cyclic `link` chain (from the undelivered state `s`, `1/3` each to `s`, delivered `g` and the stopped terminal `f`; value `1/2`) under `Even`, `probability >= rational(2,5) [eventually holds(m.delivered)]` with `max_rational_bits` 1 settles `proved`, `ValueBounds{lower, upper, …}` with `lower <= 1/2 <= upper`, and its `lower` and `upper` documents, `base.profile` `cyclic-dtmc-eventual/v1`, are each accepted by `fsl-probability-check` in a separate process and rejected with one value altered. | Test (TC-2065) |
 | FR-1042-AC-2 | Over AC-1's chain, offered documents: `lower` `s` `7/16`, rank 1, with counterpart `upper` `s` `9/16` is accepted for `>= rational(2,5)`; `lower` `5/8` and `upper` `7/16` are rejected `InequalityFails` at `s`; `lower` `7/16` for `>= rational(1,2)` is rejected `ThresholdMissed` at `s`; `lower` without `ranking` is rejected `Malformed` at `ranking`; an `upper` document offered as the claim side of that `AtLeast` proof is rejected `Malformed` at `kind`; `f` at `1/16` in the `upper` document is rejected `InequalityFails` at `f`. | Test (TC-3151) |
-| FR-1042-AC-3 | Over `W` (FR-1041-AC-1) with no fairness set, maximum `1/2`: for `probability <= rational(3,5)`, `upper` `s` `3/5` (both actions satisfy `Q_a(y) <= y`) with counterpart `lower` `s` `7/16`, policy `go`, rank 1, settles `proved`; `lower` `s` 1 with policy `wait` is rejected `RankBroken` at `s`; `lower` without `policy` is rejected `Malformed` at `policy`. For the minimum (0), `upper` `s` `1/4` with policy `wait` is accepted and with policy `go` rejected `InequalityFails` at `s`. | Test (TC-3151) |
+| FR-1042-AC-3 | Over `W` (FR-1041-AC-1) with no fairness set, maximum `1/2`: for `probability <= rational(3,5)`, `upper` `s` `3/5` (both actions satisfy `Q_a(y) <= y`) with counterpart `lower` `s` `7/16`, policy `go`, rank 1, settles `proved`; `lower` `s` 1 with policy `wait` is rejected `RankBroken` at `s`; the `lower` `s` `7/16`, rank 1, without `policy` is accepted with independently selected `go`, because `wait` fails progress while `go` satisfies inequality and rank. For the minimum (0), `upper` `s` `1/4` with policy `wait` is accepted and with policy `go` rejected `InequalityFails` at `s`. | Test (TC-3151) |
 | FR-1042-AC-4 | Over `W` under `fair strong go` (fair minimum `1/2`), `lower` `s` `2/5` with no ranking and counterpart `upper` `s` `3/5` with policy `go` and rank 1 prove `probability >= rational(2,5)`; `upper` `s` `1/4` with policy `wait` is rejected `RankBroken` at `s`. | Test (TC-3151) |
 | FR-1042-AC-5 | A `Health` chain whose `ok` state stays `ok` with `9/10` per step (otherwise a fault): `probability >= 0.75 [always[0,2] holds(ok)]` (exact `81/100`) is proved by `lower` values `25/32` and `7/8` at the undecided keys of remaining horizon 2 and 1, ranks 2 and 1, with counterpart `upper` `7/8` and `15/16`, settling `ValueBounds{25/32, 7/8}`; the `lower` rank 2 changed to 3 is rejected `RankBroken` at that key, and `upper` `13/16` at horizon 2 is rejected `InequalityFails` there (`(9/10)(15/16) = 27/32 > 13/16`). | Test (TC-3151) |
 | FR-1042-AC-6 | §15.1 with `max_rational_bits` 1,024 and `precision_bits` 64 (FR-197-AC-3, FR-203-AC-1) settles `proved`, `ValueBounds{…, BackwardInduction{64}}`, whose `lower` document (base `reachability/v1`, bounded `always`) ranks every undecided key by its remaining horizon and whose initial lower value is above `999/1000`; both documents are accepted by `fsl-probability-check` from the emitted package. | Test (TC-2066) |
@@ -210,6 +235,9 @@ successor of strictly smaller rank whose value is positive (FSpec FR-412
 | FR-1042-AC-10 | Over FR-1043-AC-2's `fast`/`slow` model at level 0.5 (shifted minimum `−1/16`), a `lower` document naming only the initial key at value 0 is rejected `InequalityFails` there: each unnamed successor counts as `−1/2`, so both actions give `−1/2`. | Test (TC-3151) |
 | FR-1042-AC-11 | A `lower` proof found before `max_states` stopped exploration settles `ValueBounds` with `exploration: Partial` and no counterpart: over AC-1's chain with `upper` 1, over FR-1043-AC-2's level-0.4 `shifted` base with `upper` `3/5`, and over AC-9's reward chain with `upper` `+∞`, written `"infinity"`; each result passes the backend-provider schema. A fully explored `lower` proof over a base whose interval's upper end is 1 settles `proved` only with its counterpart. | Test (TC-3151) |
 | FR-1042-AC-8 | Pre-cancellation, cancellation during either document's check, and exhaustion of each caller limit settle `incomplete` with the actual limit and no truth value; either document with another identity refuses before enumeration, and either with a changed `base` member refuses objective mismatch. | Test (TC-3151) |
+| FR-1042-AC-12 | For a bounded fraction mean over an initial terminal state with a false fraction predicate and window 2, the base's only continuation is terminal stutter and its value is 0. An `upper` minimum document with every value 0 and no policy rows, and a `lower` maximum document with every value 0, the rederived remaining-horizon ranks and no policy rows, are accepted. The checker retains the existing stutter action at each undecided key; no fabricated operation identity or new wire form is required. | Test |
+| FR-1042-AC-13 | At an intermediate state with two enabled post-state choices `a` and `b`, their successors reach event success with probability `1/4` and `3/4`, respectively. With correct successor values and ranks, a minimum `upper` initial bound `1/2` with no hint is accepted selecting `a`, and a maximum `lower` bound `1/2` with no hint is accepted selecting `b`. Initial bounds `1/8` for the upper and `7/8` for the lower reject `InequalityFails` there because no action satisfies. Post-state selection needs no fabricated TransitionIdentity row. | Test |
+| FR-1042-AC-14 | In AC-3, minimum `upper` `s` `1/4` with hint `go` rejects `InequalityFails` although `wait` satisfies, and the same document without that hint accepts selecting `wait`. A nonexistent hint rejects `InequalityFails` even when an enabled action satisfies. Maximum `lower` `s` 1 with hint `wait` rejects `RankBroken`; removing the hint does not accept it, since no action satisfies both inequality and progress. When several actions satisfy every condition, an omitted hint selects the first in canonical full-product-action order. | Test |
 
 ## Dependencies
 

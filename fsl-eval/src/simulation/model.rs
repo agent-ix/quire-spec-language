@@ -1377,6 +1377,22 @@ impl<'a> ModelSystem<'a> {
         )
     }
 
+    /// Canonical FR-196 drawn-state identity under cumulative caller admission.
+    /// The actual scheduled identity and drawn vector retain their typed values.
+    ///
+    /// # Errors
+    /// The identity owner's original denial, cancellation or encoding failure.
+    pub fn pending_key_bytes_with_budget(
+        &self,
+        scheduled: &ScheduledIdentity,
+        random: &[filament_exact::Value],
+        identity: IdentityLimits,
+        budget: &mut dyn ModelKeyBudget,
+        cancel: &filament_exact::Cancel,
+    ) -> Result<Vec<u8>, ModelKeyError> {
+        encode::bounded::pending_bytes(scheduled, random, self.typing(), identity, budget, cancel)
+    }
+
     /// The operation text a transition of `operation` carries (FR-181): the
     /// declaration identity text of the operation `name` that `declaring`
     /// declares, which [`ModelTransition::operation`] returns for each of its

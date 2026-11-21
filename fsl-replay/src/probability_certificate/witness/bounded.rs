@@ -133,7 +133,7 @@ pub(super) fn replay(
                 &mut transition_count,
                 cancel,
                 step::ActionRefusal::ExpansionRefused,
-                |post| {
+                |post, _, _, _| {
                     let next = monitor
                         .step(
                             control,
@@ -238,7 +238,7 @@ pub(super) fn replay(
     )))
 }
 
-fn admit_state(
+pub(super) fn admit_state(
     key: &ProbabilityProductKey,
     seen: &mut BTreeSet<ProbabilityProductKey>,
     storage: &mut u64,

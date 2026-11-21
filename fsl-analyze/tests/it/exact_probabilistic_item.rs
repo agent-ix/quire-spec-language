@@ -27,6 +27,7 @@ use std::sync::{Arc, OnceLock};
 use crate::prob_world::{self, World};
 
 mod certificate_boundary_cases;
+mod measure_profile;
 
 /// `Link` delivers within two attempts: the least delivery probability over
 /// every scheduler is 24/25 (send_b twice), the greatest 99/100.
@@ -601,7 +602,6 @@ fn a_rejected_check_builds_no_proved_record() {
 /// settles `refuted` after replay.
 #[trace("TC-638", "FR-203-AC-1")]
 #[test]
-#[ignore = "QSL-2158: FR-1043 (finite-horizon measure/quantile P95) not implemented yet"]
 fn p95_settles_proved_with_its_exact_value() {
     let claim = "probabilistic P95 using ev on M over (s: M::Server) under Steady on origin \
          { quantile 0.95 of (accumulate duration from holds(s.phase = 1) \
@@ -1297,6 +1297,7 @@ fn external_always_path_set_remains_unsupported() {
         initial_key: key,
         scheduler: Vec::new(),
         paths: vec![fsl_replay::ProbabilityWitnessPath { steps: Vec::new() }],
+        subsystem: None,
     };
     let limits = world
         .request("External", ModelCheckLimits::default())

@@ -584,11 +584,36 @@ pub enum ProbabilityCertificateRule {
     RankBroken,
 }
 
+/// The checked component of a conditional probability certificate.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ProbabilityCertificatePart {
+    /// The satisfied-and-activated numerator.
+    Numerator,
+    /// The activation denominator.
+    Denominator,
+}
+impl ProbabilityCertificatePart {
+    /// Canonical published part spelling.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Numerator => "numerator",
+            Self::Denominator => "denominator",
+        }
+    }
+}
+
 /// The locus of an exact-certificate rejection.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ProbabilityCertificateLocus {
     /// A full probabilistic product state key.
     ProductState(ProbabilityProductKey),
+    /// A full state key and its failing conditional-certificate component.
+    ProductPart {
+        /// Complete probabilistic product key.
+        key: ProbabilityProductKey,
+        /// The independently checked part.
+        part: ProbabilityCertificatePart,
+    },
     /// A malformed certificate member.
     Member(&'static str),
 }
@@ -614,10 +639,19 @@ pub enum ProbabilityCertificateLocus {
 /// ```
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ExactProbabilityAcceptance {
+    // Total admitted initial coverage. None retains the older single-root profiles;
+    // a None value in this list is independently proved nonactivation.
+    initial_values: Option<CheckedInitialValues>,
     value: Rational,
     side: ProbabilityBoundSide,
     certificate: ExactProbabilityCertificate,
     document: Option<Box<[u8]>>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct CheckedInitialValues {
+    values: Vec<(u32, Option<Rational>)>,
+    binding: Option<crate::ExactBinding>,
 }
 
 impl ExactProbabilityAcceptance {
@@ -629,12 +663,60 @@ impl ExactProbabilityAcceptance {
     pub fn certificate(&self) -> &ExactProbabilityCertificate {
         &self.certificate
     }
-    /// The independently checked initial value.
+    /// The independently checked initial value, or the least favourable
+    /// activating initial value for a conditional measure certificate.
     pub fn value(&self) -> &Rational {
         &self.value
     }
 
+    pub(crate) fn initial_values(&self) -> Option<&[(u32, Option<Rational>)]> {
+        self.initial_values
+            .as_ref()
+            .map(|coverage| coverage.values.as_slice())
+    }
+
+    pub(crate) fn initial_entries_match(&self, entries: &[crate::ExactEntry]) -> bool {
+        let Some(coverage) = &self.initial_values else {
+            return true;
+        };
+        let mut offered = entries.iter();
+        for (initial, value) in &coverage.values {
+            let Some(value) = value else {
+                continue;
+            };
+            let Some(entry) = offered.next() else {
+                return false;
+            };
+            if entry.initial != *initial
+                || entry.binding != coverage.binding
+                || entry.extremum.is_some()
+                || !matches!(&entry.value, crate::ExactOrBounds::Exact { value: offered } if offered.value() == value)
+            {
+                return false;
+            }
+        }
+        offered.next().is_none()
+    }
+
     /// The authored bound side checked against that value.
+    pub fn side(&self) -> ProbabilityBoundSide {
+        self.side
+    }
+}
+
+/// A value-free vacuous probability proof accepted by the independent checker.
+/// Its private document can only be obtained by proving activation unreachable.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProbabilityVacuityAcceptance {
+    document: Box<[u8]>,
+    side: ProbabilityBoundSide,
+}
+impl ProbabilityVacuityAcceptance {
+    /// The accepted Conditional::Vacuous document's canonical bytes.
+    pub fn document(&self) -> &[u8] {
+        &self.document
+    }
+    /// The authored claim direction, without an invented conditional value.
     pub fn side(&self) -> ProbabilityBoundSide {
         self.side
     }
@@ -646,6 +728,8 @@ pub enum ExactProbabilityCertificateCheck {
     /// Every value matches the independently evaluated graph and the initial
     /// value satisfies the claim bound.
     Accepted(ExactProbabilityAcceptance),
+    /// Activation is unreachable; this certified proof has no numeric value.
+    AcceptedVacuous(ProbabilityVacuityAcceptance),
     /// The certificate fails a checked condition.
     Rejected(ProbabilityCertificateRejection),
 }
@@ -1681,6 +1765,7 @@ fn check_exact_reachability(
     poll_cancel(cancel)?;
     Ok(ExactProbabilityCertificateCheck::Accepted(
         ExactProbabilityAcceptance {
+            initial_values: None,
             document: None,
             value: initial.clone(),
             certificate: certificate.clone(),
@@ -2032,6 +2117,53 @@ fn rational(value: i64) -> Rational {
 mod tests {
     use super::*;
     use ix_trace_rs::trace;
+
+    #[trace("FR-203-AC-12")]
+    #[test]
+    fn checked_mixed_initial_entries_reject_missing_duplicate_and_nonactivation_values() {
+        let value = Rational::new(Integer::from(3_i64), Integer::from(4_i64)).unwrap();
+        let accepted = ExactProbabilityAcceptance {
+            value: value.clone(),
+            side: ProbabilityBoundSide::AtMost,
+            certificate: ExactProbabilityCertificate { values: Vec::new() },
+            document: None,
+            initial_values: Some(CheckedInitialValues {
+                values: vec![(0, None), (1, Some(value.clone()))],
+                binding: None,
+            }),
+        };
+        let entry = crate::ExactEntry {
+            initial: 1,
+            binding: None,
+            value: crate::ExactOrBounds::Exact {
+                value: crate::ExactRational::new(value),
+            },
+            extremum: None,
+        };
+        assert!(accepted.initial_entries_match(std::slice::from_ref(&entry)));
+        assert!(!accepted.initial_entries_match(&[]));
+        assert!(!accepted.initial_entries_match(&[entry.clone(), entry.clone()]));
+        let mut nonactivating = entry;
+        nonactivating.initial = 0;
+        assert!(!accepted.initial_entries_match(&[nonactivating]));
+        let check = ExactProbabilityCertificateCheck::Accepted(accepted);
+        assert!(crate::TerminalRecord::proved_by_exact_certificate(
+            fsl_foundation::RequestIndex::new(0),
+            fsl_foundation::BackendId::new("en-5"),
+            &check,
+            None,
+            None
+        )
+        .is_some());
+        assert!(crate::TerminalRecord::proved_by_exact_certificate(
+            fsl_foundation::RequestIndex::new(0),
+            fsl_foundation::BackendId::new("en-5"),
+            &check,
+            Some(crate::Extremum::Min),
+            None
+        )
+        .is_none());
+    }
 
     fn key(value: u8) -> ProbabilityProductKey {
         ProbabilityProductKey(vec![value])
@@ -2429,6 +2561,7 @@ mod tests {
         assert_eq!(
             result,
             ExactProbabilityCertificateCheck::Accepted(ExactProbabilityAcceptance {
+                initial_values: None,
                 document: None,
                 value: Rational::new(Integer::from(4_i64), Integer::from(5_i64)).unwrap(),
                 side: ProbabilityBoundSide::AtLeast,

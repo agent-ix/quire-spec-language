@@ -13,6 +13,7 @@ use fsl_eval::simulation::model::{
 use fsl_package::CheckedPackage;
 
 mod bounded;
+mod measure;
 mod step;
 mod undefined;
 pub use undefined::{replay_probabilistic_undefined, ProbabilityUndefinedWitness};
@@ -56,6 +57,46 @@ pub struct ProbabilityWitnessPath {
     pub steps: Vec<ProbabilityWitnessStep>,
 }
 
+/// A bounded, canonical subsystem certificate carried as unchecked evidence.
+#[derive(Clone, Debug)]
+pub struct ProbabilitySubsystemCertificate {
+    bytes: Box<[u8]>,
+}
+impl ProbabilitySubsystemCertificate {
+    /// Admit canonical exact or bounded mean evidence without accepting its claim.
+    ///
+    /// # Errors
+    /// Closed document syntax, caller limits or cancellation.
+    pub fn from_bytes(
+        bytes: &[u8],
+        limits: ProbabilityDocumentLimits,
+        cancel: &Cancel,
+    ) -> Result<Self, ProbabilityDocumentError> {
+        super::document::measure::bounds::admit_subsystem(bytes, limits, cancel)?;
+        Ok(Self {
+            bytes: bytes.into(),
+        })
+    }
+    /// Encode a typed finite-horizon measure certificate without accepting it.
+    ///
+    /// # Errors
+    /// Strict certificate admission, caller limits or cancellation.
+    pub fn from_document(
+        document: &MeasureProbabilityDocument,
+        limits: ProbabilityDocumentLimits,
+        cancel: &Cancel,
+    ) -> Result<Self, ProbabilityDocumentError> {
+        Ok(Self {
+            bytes: write_measure_probability_certificate(document, limits, cancel)?
+                .into_boxed_slice(),
+        })
+    }
+    /// Canonical certificate bytes, independently checked again by native replay.
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+}
+
 /// Typed path-set evidence for one exact checked claim and binding.
 #[derive(Clone, Debug)]
 pub struct ProbabilisticCounterexample {
@@ -71,6 +112,8 @@ pub struct ProbabilisticCounterexample {
     pub scheduler: Vec<(ProbabilityProductKey, ProductAction)>,
     /// Prefix-free finite paths.
     pub paths: Vec<ProbabilityWitnessPath>,
+    /// A mean-refutation subsystem certificate; mutually exclusive with paths.
+    pub subsystem: Option<Box<ProbabilitySubsystemCertificate>>,
 }
 
 /// A refutation reproduced by the qualified core. No caller can construct it.
@@ -94,7 +137,8 @@ impl ReproducedProbabilityWitness {
     pub fn undefined(&self) -> Option<&ProbabilityUndefinedWitness> {
         self.undefined.as_deref()
     }
-    /// The exact independently recomputed path-set mass.
+    /// The independently recomputed path-set mass. A finite subsystem covers
+    /// the complete probability space and reports mass one.
     pub fn mass(&self) -> &Rational {
         &self.mass
     }
@@ -122,6 +166,8 @@ pub enum ProbabilityWitnessError {
     Graph(ExactProbabilityGraphError),
     /// The witness names an invalid semantic choice, state or claim binding.
     Refused,
+    /// The independent subsystem checker rejected a certificate condition.
+    CertificateRejected(ProbabilityCertificateRejection),
     /// A witness storage or arithmetic budget stopped replay.
     Limit {
         /// The exhausted caller limit.
@@ -228,6 +274,12 @@ fn replay_probabilistic_witness_impl(
             _ => ProbabilityWitnessError::Graph(error),
         },
     )?;
+    if witness.subsystem.is_some() {
+        return measure::replay_subsystem(system, claim, witness, limits, cancel);
+    }
+    if claim.bounded_measure() {
+        return measure::replay(system, claim, witness, limits, cancel);
+    }
     if matches!(claim.form, ProbForm::Probability { .. }) {
         return bounded::replay(system, claim, witness, limits, cancel);
     }

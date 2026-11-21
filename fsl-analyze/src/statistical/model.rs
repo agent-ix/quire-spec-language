@@ -439,7 +439,18 @@ fn plan_halt(fault: PlanFault) -> SampleHalt {
     match fault {
         PlanFault::Automaton(error) => automaton_halt(error),
         PlanFault::TimedFormShape { .. } => broken(),
-        PlanFault::Broken(_) => broken(),
+        PlanFault::Measure(fsl_eval::probabilistic::MeasureError::Undefined(cause)) => {
+            SampleHalt::PredicateRefused(
+                fsl_eval::simulation::model::ClauseOutcome::KernelUndefined(*cause),
+            )
+        }
+        PlanFault::Measure(fsl_eval::probabilistic::MeasureError::Accounting(error)) => {
+            SampleHalt::PredicateRefused(fsl_eval::simulation::model::ClauseOutcome::Incomplete(
+                *error,
+            ))
+        }
+        PlanFault::Broken(_)
+        | PlanFault::Measure(fsl_eval::probabilistic::MeasureError::Broken(_)) => broken(),
     }
 }
 

@@ -89,7 +89,11 @@ impl Schedule {
         let transition = system
             .scheduled_identity_key(identity)
             .map_err(|_| ProductActionError::Schedule)?;
-        let transition = read_document(&transition).ok_or(ProductActionError::Schedule)?;
+        Self::from_identity_bytes(&transition)
+    }
+
+    fn from_identity_bytes(bytes: &[u8]) -> Result<Self, ProductActionError> {
+        let transition = read_document(bytes).ok_or(ProductActionError::Schedule)?;
         let Node::Object(members) = transition.root().node() else {
             return Err(ProductActionError::Schedule);
         };
@@ -114,6 +118,82 @@ impl Schedule {
             .map_err(|_| ProductActionError::Schedule)?;
         let document = read_document(&bytes).ok_or(ProductActionError::Schedule)?;
         Ok(Self { bytes, document })
+    }
+
+    /// Decode an FR-181 transition through its canonical semantic-value owner.
+    ///
+    /// # Errors
+    /// A malformed transition identity or a refused canonical encoding.
+    pub fn read_transition(bytes: &[u8], limits: Limits) -> Result<Self, ProductActionError> {
+        #[derive(serde::Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Wire {
+            #[serde(rename = "type")]
+            kind: String,
+            operation: String,
+            receiver: Option<Box<serde_json::value::RawValue>>,
+            arguments: Vec<Box<serde_json::value::RawValue>>,
+        }
+        if u64::try_from(bytes.len()).unwrap_or(u64::MAX) > limits.max_bytes() {
+            return Err(ProductActionError::Schedule);
+        }
+        let wire: Wire = serde_json::from_slice(bytes).map_err(|_| ProductActionError::Schedule)?;
+        if wire.kind != "transition" {
+            return Err(ProductActionError::Schedule);
+        }
+        let transition = filament_semantic_value::model_transition::ModelTransition::new(
+            wire.operation,
+            wire.receiver.map(|value| value.get().to_owned()),
+            wire.arguments
+                .into_iter()
+                .map(|value| value.get().to_owned())
+                .collect(),
+            limits,
+        )
+        .map_err(|_| ProductActionError::Schedule)?;
+        let canonical = transition
+            .canonical_bytes(limits)
+            .map_err(|_| ProductActionError::Schedule)?;
+        if canonical != bytes {
+            return Err(ProductActionError::Schedule);
+        }
+        Self::from_identity_bytes(&canonical)
+    }
+
+    /// Return the existing FR-181 identity of this scheduled operation.
+    ///
+    /// # Errors
+    /// A malformed schedule or caller byte limit refusing its canonical fields.
+    pub fn transition_identity(
+        &self,
+        limits: Limits,
+    ) -> Result<filament_semantic_value::model_transition::ModelTransition, ProductActionError>
+    {
+        let Node::Array(parts) = self.document.root().node() else {
+            return Err(ProductActionError::Schedule);
+        };
+        let mut parts = parts;
+        let operation = parts.next().ok_or(ProductActionError::Schedule)?;
+        let receiver = parts.next().ok_or(ProductActionError::Schedule)?;
+        let arguments = parts.next().ok_or(ProductActionError::Schedule)?;
+        let text = |node: NodeRef<'_>| {
+            String::from_utf8(to_vec(&node, limits).map_err(|_| ProductActionError::Schedule)?)
+                .map_err(|_| ProductActionError::Schedule)
+        };
+        let Node::Array(arguments) = arguments.node() else {
+            return Err(ProductActionError::Schedule);
+        };
+        filament_semantic_value::model_transition::ModelTransition::new(
+            text(operation)?,
+            if matches!(receiver.node(), Node::Null) {
+                None
+            } else {
+                Some(text(receiver)?)
+            },
+            arguments.map(text).collect::<Result<Vec<_>, _>>()?,
+            limits,
+        )
+        .map_err(|_| ProductActionError::Schedule)
     }
 
     /// The complete JCS octets.

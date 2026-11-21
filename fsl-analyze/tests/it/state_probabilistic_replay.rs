@@ -212,6 +212,7 @@ fn empty(world: &World) -> ProbabilisticCounterexample {
         initial,
         scheduler: vec![],
         paths: vec![ProbabilityWitnessPath { steps: vec![] }],
+        subsystem: None,
     }
 }
 

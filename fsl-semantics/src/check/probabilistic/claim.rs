@@ -498,6 +498,19 @@ pub enum ClaimActivation {
 }
 
 impl CheckedProbabilisticClaim {
+    /// Whether the claim consumes the shared bounded measure/fraction control.
+    pub fn bounded_measure(&self) -> bool {
+        matches!(
+            &self.form,
+            ProbForm::Quantile { .. }
+                | ProbForm::MeanOfFraction { .. }
+                | ProbForm::Probability {
+                    event: Event::Compare { .. },
+                    ..
+                }
+        )
+    }
+
     /// The claim's producer-owned checked-package identity: the `claim`
     /// occurrence `[node, "claim", ordinal]` of its
     /// `claim`/`probabilistic_claim` node, whose `node` is the declaration's

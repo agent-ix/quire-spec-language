@@ -307,7 +307,7 @@ impl FailedStep {
                     "position": decimal(evaluation.site.position),
                     "state_key": base64::engine::general_purpose::URL_SAFE_NO_PAD
                         .encode(evaluation.site.state_key.as_bytes()),
-                    "locus": locus_kind(&evaluation.site.locus),
+                    "locus": locus_kind(&evaluation.site.locus)?,
                 },
                 "cause": undefined_cause_kind(&evaluation.cause),
             }),
@@ -349,8 +349,11 @@ fn transition_wire(transition: &ModelTransition) -> Result<serde_json::Value, St
 }
 
 /// The kind of expression an undefined evaluation names.
-fn locus_kind(locus: &UndefinedLocus) -> &'static str {
-    match locus {
+fn locus_kind(locus: &UndefinedLocus) -> Result<&'static str, String> {
+    Ok(match locus {
+        UndefinedLocus::FractionValue => {
+            return Err("fraction-value belongs to probabilistic evidence".to_owned())
+        }
         UndefinedLocus::Atom(_) => "atom",
         UndefinedLocus::Activation => "activation",
         UndefinedLocus::Capture(_) => "capture",
@@ -361,7 +364,7 @@ fn locus_kind(locus: &UndefinedLocus) -> &'static str {
         UndefinedLocus::Protocol(_) => "protocol",
         UndefinedLocus::Mapping(_) => "mapping",
         UndefinedLocus::ClaimPredicate(_) => "claim-predicate",
-    }
+    })
 }
 
 /// The kind of the undefined value's cause.

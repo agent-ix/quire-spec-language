@@ -3,7 +3,7 @@
 //! monitor for a bounded event, the accumulator of a bounded measure, and no
 //! control at all for an unbounded form (FR-196 "Behavior").
 
-use filament_exact::{Identifier, Integer, Rational, Value};
+use filament_exact::{Identifier, Rational, Value};
 use fsl_eval::automaton::{
     translate_body, Atom, AutomatonError, Letter, Monitor, PropertyAutomaton, StateId,
 };
@@ -16,8 +16,7 @@ use fsl_semantics::check::{
 use crate::model_check::false_extension::false_extension_rejects;
 
 use super::{
-    Accumulator, Amount, FormulaState, MeasurePhase, MonitorState, MonitorVerdict, PredicateRole,
-    UndefinedRead,
+    Accumulator, FormulaState, MonitorState, MonitorVerdict, PredicateRole, UndefinedRead,
 };
 
 /// Why a plan could not advance a state.
@@ -27,6 +26,8 @@ pub(crate) enum PlanFault {
     Automaton(AutomatonError),
     /// FR-204 does not admit this timed bounded measure shape.
     TimedFormShape { span: Span },
+    /// The shared measure owner rejected the supplied control.
+    Measure(fsl_eval::probabilistic::MeasureError),
     /// A broken invariant of the product.
     Broken(&'static str),
 }
@@ -57,22 +58,8 @@ pub(super) enum Plan<'c> {
     /// A bounded event: FR-126's deterministic monitor, reading one letter
     /// per position.
     Formula(Box<Monitor<PropertyAutomaton>>),
-    /// An `accumulate` or `steps` measure.
-    Measure {
-        /// The reward summed; none for `steps`, which sums 1 per step.
-        reward: Option<&'c Identifier>,
-        /// The comparison's threshold, above which an amount is one value.
-        threshold: Rational,
-        /// The window `h`.
-        within: u64,
-    },
-    /// A fraction of the first `h + 1` positions.
-    Fraction {
-        /// The window `h`.
-        window: u64,
-        /// The reward each position is weighted by, when written.
-        weight: Option<&'c Identifier>,
-    },
+    /// Shared measure/fraction control owned by the evaluator.
+    Bounded(fsl_eval::probabilistic::MeasurePlan<'c>),
     /// An unbounded form: no control, the predicates label the states.
     Labels,
 }
@@ -125,10 +112,10 @@ impl<'c> Plan<'c> {
                 ..
             } => Self::of_measure(measure, threshold(bound), claim.span)?,
             ProbForm::MeanOfFraction { fraction, .. } => (
-                Self::Fraction {
+                Self::Bounded(fsl_eval::probabilistic::MeasurePlan::Fraction {
                     window: fraction.window,
                     weight: reward_weight(fraction.weight.as_ref(), claim.span)?,
-                },
+                }),
                 vec![role(PredicateRole::Target, &fraction.predicate)],
             ),
             ProbForm::LongRunFraction { predicate, .. } => {
@@ -170,11 +157,11 @@ impl<'c> Plan<'c> {
                 within,
                 ..
             } => (
-                Self::Measure {
+                Self::Bounded(fsl_eval::probabilistic::MeasurePlan::Measure {
                     reward: Some(reward),
                     threshold: threshold.clone(),
                     within: *within,
-                },
+                }),
                 vec![
                     role(PredicateRole::From, from),
                     role(PredicateRole::Until, until),
@@ -186,11 +173,11 @@ impl<'c> Plan<'c> {
                 within,
                 ..
             } => (
-                Self::Measure {
+                Self::Bounded(fsl_eval::probabilistic::MeasurePlan::Measure {
                     reward: None,
                     threshold: threshold.clone(),
                     within: *within,
-                },
+                }),
                 vec![
                     role(PredicateRole::From, from),
                     role(PredicateRole::Until, until),
@@ -200,10 +187,10 @@ impl<'c> Plan<'c> {
                 return Err(PlanFault::TimedFormShape { span: *span });
             }
             BoundedMeasure::Fraction(fraction) => (
-                Self::Fraction {
+                Self::Bounded(fsl_eval::probabilistic::MeasurePlan::Fraction {
                     window: fraction.window,
                     weight: reward_weight(fraction.weight.as_ref(), span)?,
-                },
+                }),
                 vec![role(PredicateRole::Target, &fraction.predicate)],
             ),
         })
@@ -214,6 +201,7 @@ impl<'c> Plan<'c> {
     pub(super) fn start(
         &mut self,
         truths: &[bool],
+        meter: &mut filament_exact::Meter,
     ) -> Result<(Option<MonitorState>, Option<Accumulator>), PlanFault> {
         match self {
             Self::Formula(monitor) => {
@@ -221,44 +209,7 @@ impl<'c> Plan<'c> {
                 let state = read_letter(monitor, initial, truths)?;
                 Ok((Some(MonitorState::Formula(state)), None))
             }
-            Self::Measure {
-                reward,
-                threshold,
-                within,
-            } => {
-                let [from, until] = truths else {
-                    return Err(PlanFault::Broken("a-measure-reads-two-predicates"));
-                };
-                let phase = match (*from, *until) {
-                    (false, _) => Activation::Inactive,
-                    (true, false) => Activation::Active,
-                    (true, true) => Activation::Complete,
-                };
-                Ok(measure_state(
-                    reward.is_none(),
-                    *within,
-                    phase,
-                    &Amount::Exact(zero()),
-                    threshold,
-                ))
-            }
-            Self::Fraction { window, weight } => {
-                let remaining = window.saturating_add(1);
-                Ok((
-                    Some(MonitorState::Fraction { remaining }),
-                    Some(if weight.is_some() {
-                        Accumulator::WeightedFraction {
-                            true_sum: zero(),
-                            total_sum: zero(),
-                        }
-                    } else {
-                        Accumulator::CountFraction {
-                            true_count: 0,
-                            position_count: 0,
-                        }
-                    }),
-                ))
-            }
+            Self::Bounded(plan) => plan.start(truths, meter).map_err(PlanFault::Measure),
             Self::Labels => Ok((None, None)),
         }
     }
@@ -268,6 +219,7 @@ impl<'c> Plan<'c> {
     /// a letter or activating a measure.
     pub(super) fn initial_control(
         &mut self,
+        meter: &mut filament_exact::Meter,
     ) -> Result<(Option<MonitorState>, Option<Accumulator>), PlanFault> {
         match self {
             Self::Formula(monitor) => Ok((
@@ -276,34 +228,15 @@ impl<'c> Plan<'c> {
                 ))),
                 None,
             )),
-            Self::Measure {
-                reward,
-                threshold,
-                within,
-            } => Ok(measure_state(
-                reward.is_none(),
-                *within,
-                Activation::Inactive,
-                &Amount::Exact(zero()),
-                threshold,
-            )),
-            Self::Fraction { window, weight } => Ok((
-                Some(MonitorState::Fraction {
-                    remaining: window.saturating_add(1),
-                }),
-                Some(if weight.is_some() {
-                    Accumulator::WeightedFraction {
-                        true_sum: zero(),
-                        total_sum: zero(),
-                    }
-                } else {
-                    Accumulator::CountFraction {
-                        true_count: 0,
-                        position_count: 0,
-                    }
-                }),
-            )),
+            Self::Bounded(plan) => plan.initial_control(meter).map_err(PlanFault::Measure),
             Self::Labels => Ok((None, None)),
+        }
+    }
+
+    pub(super) fn reads_post(&self, control: Option<MonitorState>) -> bool {
+        match self {
+            Self::Bounded(plan) => plan.reads_post(control),
+            Self::Formula(_) | Self::Labels => true,
         }
     }
 
@@ -317,6 +250,7 @@ impl<'c> Plan<'c> {
         source: &[bool],
         post: &[bool],
         rewards: &[(Identifier, Value)],
+        meter: &mut filament_exact::Meter,
     ) -> Result<(Option<MonitorState>, Option<Accumulator>), PlanFault> {
         match (self, monitor, accumulator) {
             (Self::Formula(monitor), Some(MonitorState::Formula(state)), None) => {
@@ -326,106 +260,9 @@ impl<'c> Plan<'c> {
                 let state = read_letter(monitor, running, post)?;
                 Ok((Some(MonitorState::Formula(state)), None))
             }
-            (
-                Self::Measure {
-                    reward,
-                    threshold,
-                    within: _,
-                },
-                Some(MonitorState::Measure { remaining, phase }),
-                Some(held),
-            ) => {
-                let [from, until] = post else {
-                    return Err(PlanFault::Broken("a-measure-reads-two-predicates"));
-                };
-                let remaining = remaining
-                    .checked_sub(1)
-                    .ok_or(PlanFault::Broken("a-decided-state-is-not-stepped"))?;
-                let amount = match held {
-                    Accumulator::Steps { amount, .. } | Accumulator::Reward { amount, .. } => {
-                        amount
-                    }
-                    _ => return Err(PlanFault::Broken("a-measure-holds-an-amount")),
-                };
-                let (phase, amount) = match phase {
-                    MeasurePhase::Inactive => (
-                        match (*from, *until) {
-                            (false, _) => Activation::Inactive,
-                            (true, false) => Activation::Active,
-                            (true, true) => Activation::Complete,
-                        },
-                        amount.clone(),
-                    ),
-                    MeasurePhase::Active => {
-                        let step = match reward {
-                            Some(name) => magnitude(rewards, name)?,
-                            None => Rational::from_integer(Integer::one()),
-                        };
-                        (
-                            if *until {
-                                Activation::Complete
-                            } else {
-                                Activation::Active
-                            },
-                            add(amount, &step),
-                        )
-                    }
-                    _ => return Err(PlanFault::Broken("a-decided-state-is-not-stepped")),
-                };
-                Ok(measure_state(
-                    reward.is_none(),
-                    remaining,
-                    phase,
-                    &amount,
-                    threshold,
-                ))
-            }
-            (
-                Self::Fraction { weight, .. },
-                Some(MonitorState::Fraction { remaining }),
-                Some(held),
-            ) => {
-                let remaining = remaining
-                    .checked_sub(1)
-                    .ok_or(PlanFault::Broken("a-decided-state-is-not-stepped"))?;
-                let [holds] = source else {
-                    return Err(PlanFault::Broken("a-fraction-reads-one-predicate"));
-                };
-                let accumulator = match (held, weight) {
-                    (
-                        Accumulator::CountFraction {
-                            true_count,
-                            position_count,
-                        },
-                        None,
-                    ) => Accumulator::CountFraction {
-                        true_count: true_count + u64::from(*holds),
-                        position_count: position_count + 1,
-                    },
-                    (
-                        Accumulator::WeightedFraction {
-                            true_sum,
-                            total_sum,
-                        },
-                        Some(name),
-                    ) => {
-                        let weight = magnitude(rewards, name)?;
-                        Accumulator::WeightedFraction {
-                            true_sum: if *holds {
-                                true_sum.add(&weight)
-                            } else {
-                                true_sum.clone()
-                            },
-                            total_sum: total_sum.add(&weight),
-                        }
-                    }
-                    _ => return Err(PlanFault::Broken("a-fraction-holds-its-sums")),
-                };
-                Ok((
-                    Some(MonitorState::Fraction { remaining }),
-                    Some(accumulator),
-                ))
-            }
+            (Self::Bounded(plan), monitor, accumulator) => plan
+                .step(monitor, accumulator, source, post, rewards, meter)
+                .map_err(PlanFault::Measure),
             (Self::Labels, None, None) => Ok((None, None)),
             _ => Err(PlanFault::Broken("control-matches-plan")),
         }
@@ -445,7 +282,7 @@ impl<'c> Plan<'c> {
                 fsl_eval::automaton::BoundedState::Reject => MonitorVerdict::Reject,
                 fsl_eval::automaton::BoundedState::Open { .. }
                 | fsl_eval::automaton::BoundedState::Idle => {
-                    return Err(PlanFault::Broken("terminal-has-no-open-debt"))
+                    return Err(PlanFault::Broken("terminal-has-no-open-debt"));
                 }
             });
         }
@@ -468,18 +305,6 @@ fn threshold(bound: &Bound) -> &Rational {
     match bound {
         Bound::AtLeast(value) | Bound::AtMost(value) => value,
     }
-}
-
-fn zero() -> Rational {
-    Rational::from_integer(Integer::zero())
-}
-
-/// The phase of a measure before its horizon decides it.
-#[derive(Clone, Copy)]
-enum Activation {
-    Inactive,
-    Active,
-    Complete,
 }
 
 /// The monitor state after reading one letter: rejecting or settled states
@@ -518,66 +343,4 @@ pub(super) fn decided(
         }
     }
     Ok(FormulaState::Running(state))
-}
-
-/// The reward `name` of a step, as a magnitude in the reward's own unit.
-fn magnitude(rewards: &[(Identifier, Value)], name: &Identifier) -> Result<Rational, PlanFault> {
-    let (_, value) = rewards
-        .iter()
-        .find(|(reward, _)| reward == name)
-        .ok_or(PlanFault::Broken("a-step-carries-every-reward"))?;
-    match value {
-        Value::Integer(integer) => Ok(Rational::from_integer(integer.clone())),
-        Value::Quantity(quantity) => Ok(quantity.magnitude().clone()),
-        _ => Err(PlanFault::Broken("a-reward-is-an-integer-or-a-quantity")),
-    }
-}
-
-/// `amount` plus `step`; an amount above the threshold stays above it.
-fn add(amount: &Amount, step: &Rational) -> Amount {
-    match amount {
-        Amount::Exact(sum) => Amount::Exact(sum.add(step)),
-        other => other.clone(),
-    }
-}
-
-/// An exact amount above the threshold is the one value above it.
-fn normalized(amount: Amount, threshold: &Rational) -> Amount {
-    match amount {
-        Amount::Exact(value) if value > *threshold => Amount::AboveBound,
-        other => other,
-    }
-}
-
-/// The control and amounts of a measure at a position with `remaining`
-/// positions after it. Reaching the horizon decides it: an activated measure
-/// that has not ended is censored, one never activated is unactivated.
-fn measure_state(
-    steps: bool,
-    remaining: u64,
-    phase: Activation,
-    amount: &Amount,
-    threshold: &Rational,
-) -> (Option<MonitorState>, Option<Accumulator>) {
-    let activated = !matches!(phase, Activation::Inactive);
-    // An activated measure's amount, zero when it starts, can already be
-    // above a negative threshold.
-    let amount = if activated {
-        normalized(amount.clone(), threshold)
-    } else {
-        amount.clone()
-    };
-    let (phase, amount) = match (phase, remaining) {
-        (Activation::Inactive, 0) => (MeasurePhase::Unactivated, amount),
-        (Activation::Inactive, _) => (MeasurePhase::Inactive, amount),
-        (Activation::Active, 0) => (MeasurePhase::Censored, Amount::Censored),
-        (Activation::Active, _) => (MeasurePhase::Active, amount),
-        (Activation::Complete, _) => (MeasurePhase::Complete, amount),
-    };
-    let held = if steps {
-        Accumulator::Steps { activated, amount }
-    } else {
-        Accumulator::Reward { activated, amount }
-    };
-    (Some(MonitorState::Measure { remaining, phase }), Some(held))
 }

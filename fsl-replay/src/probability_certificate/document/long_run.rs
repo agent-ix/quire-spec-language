@@ -1353,6 +1353,7 @@ fn check_graph(
     poll(cx.cancel)?;
     Ok(ExactProbabilityCertificateCheck::Accepted(
         ExactProbabilityAcceptance {
+            initial_values: None,
             certificate: ExactProbabilityCertificate {
                 values: document.values.clone(),
             },

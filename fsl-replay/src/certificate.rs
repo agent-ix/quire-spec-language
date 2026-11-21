@@ -128,6 +128,13 @@ pub enum CertificateLocus {
     /// The complete probabilistic product identity at which a rule failed
     /// (FR-201), transported as base64url canonical octets.
     ProbabilityProductState(crate::ProbabilityProductKey),
+    /// A conditional probability certificate's complete key and failing part.
+    ProbabilityProductPart {
+        /// Complete probabilistic product identity.
+        key: crate::ProbabilityProductKey,
+        /// Independently checked conditional component.
+        part: crate::ProbabilityCertificatePart,
+    },
     /// The product state of a closure certificate at which a rule failed.
     ProductState(ProductStateRef),
     /// The query whose encoding or certificate shape failed.
@@ -193,6 +200,14 @@ impl Serialize for CertificateLocus {
                 let mut object = serializer.serialize_struct("CertificateLocus", 1)?;
                 let key = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(state.as_bytes());
                 object.serialize_field("product_key", &key)?;
+                object.end()
+            }
+            Self::ProbabilityProductPart { key, part } => {
+                use base64::Engine as _;
+                let mut object = serializer.serialize_struct("CertificateLocus", 2)?;
+                let key = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(key.as_bytes());
+                object.serialize_field("product_key", &key)?;
+                object.serialize_field("part", part.as_str())?;
                 object.end()
             }
             Self::ProductState(state) => state.serialize(serializer),

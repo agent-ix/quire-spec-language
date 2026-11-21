@@ -43,8 +43,18 @@ pub(super) fn run(
         cancel,
     ) {
         Ok(ProbabilityWitnessReplay::Reproduced(token)) => {
+            let quantile_bound;
             let bound = match &claim.form {
-                ProbForm::Reach { bound, .. } | ProbForm::Probability { bound, .. } => bound,
+                ProbForm::Reach { bound, .. }
+                | ProbForm::Probability { bound, .. }
+                | ProbForm::MeanOfFraction { bound, .. } => bound,
+                ProbForm::Quantile { q, threshold, .. } => {
+                    quantile_bound = match threshold {
+                        Bound::AtMost(_) => Bound::AtLeast(q.clone()),
+                        Bound::AtLeast(_) => Bound::AtMost(q.clone()),
+                    };
+                    &quantile_bound
+                }
                 _ => return not_yet(),
             };
             let scope = package.graph().scope();
@@ -69,7 +79,7 @@ pub(super) fn run(
     }
 }
 
-fn failure(
+pub(super) fn failure(
     error: ProbabilityWitnessError,
     subject: SubjectLimits<'_>,
     limits: &crate::exact_probabilistic::ExactProbLimits,
@@ -96,6 +106,13 @@ fn failure(
                 limit: ModelCheckLimit::ExactProbMaxTransitions,
                 value: u64::try_from(limits.model.limits.max_transitions).unwrap_or(u64::MAX),
             },
+            subject,
+        ),
+        ProbabilityWitnessError::CertificateRejected(rejection) => checked_report(
+            Ok(ExactProbabilityCertificateCheck::Rejected(rejection)),
+            ExactProbabilityCertificate { values: Vec::new() },
+            None,
+            None,
             subject,
         ),
         ProbabilityWitnessError::Refused => {
@@ -133,6 +150,32 @@ fn materialize_inner(
         .map_err(|_| ProbabilityWitnessError::Refused)?;
     let binding = claim_binding(system, claim)?;
     let reference = binding.as_ref().map(|binding| &binding.reference);
+    let measured = claim.bounded_measure();
+    let document_limits = ProbabilityDocumentLimits::for_exact(limits, system.meter_limits());
+    let mut measure_meter =
+        filament_exact::Meter::new(system.meter_limits()).with_cancel(cancel.clone());
+    let mut measure_storage = 0;
+    let reward = if measured {
+        let kind = match claim.form {
+            ProbForm::Quantile { .. } => fsl_replay::MeasurePayoffKind::Satisfied,
+            ProbForm::MeanOfFraction { .. } => fsl_replay::MeasurePayoffKind::Fraction,
+            _ => fsl_replay::MeasurePayoffKind::Event,
+        };
+        fsl_replay::measure_probability_objective(
+            system,
+            claim,
+            kind,
+            document_limits,
+            cancel,
+            &mut measure_meter,
+            &mut measure_storage,
+        )
+        .map_err(ProbabilityWitnessError::from)?
+        .1
+    } else {
+        None
+    };
+    let measure_scope = std::cell::RefCell::new((measure_meter, measure_storage));
     let monitor = match (&claim.form, monitor) {
         (
             ProbForm::Probability {
@@ -153,11 +196,17 @@ fn materialize_inner(
             )
         }
         (ProbForm::Reach { .. }, None) => None,
+        (_, None) if measured => None,
         _ => return Err(ProbabilityWitnessError::Refused),
     };
     let key = |state: &crate::exact_probabilistic::ProbKey| -> Result<ProbabilityProductKey, ProbabilityWitnessError> {
         match monitor.as_ref() {
             Some(monitor) => bounded_product_key(state, reference, monitor, limits.document, cancel).map_err(ProbabilityWitnessError::from),
+            None if measured => {
+                let mut scope=measure_scope.borrow_mut();
+                let (meter,storage)=&mut *scope;
+                fsl_replay::measure_probability_product_key(reference,&state.model,state.monitor.ok_or(ProbabilityWitnessError::Refused)?,state.accumulator.as_ref().ok_or(ProbabilityWitnessError::Refused)?,None,reward.as_ref(),document_limits,cancel,meter,storage).map_err(ProbabilityWitnessError::from)
+            },
             None => ProbabilityProductKey::for_model_state_with_limits(reference, &state.model, limits.document, cancel).map_err(ProbabilityWitnessError::from),
         }
     };
@@ -165,6 +214,7 @@ fn materialize_inner(
     let [initial] = initials.as_slice() else {
         return Err(ProbabilityWitnessError::Refused);
     };
+    let mut measure_source = None;
     let initial_key = if path.steps.is_empty() {
         match monitor.as_ref() {
             Some(monitor) => {
@@ -226,6 +276,56 @@ fn materialize_inner(
             .map_err(|_| ProbabilityWitnessError::Refused)?;
         ProbabilityProductKey::for_formula_state(reference, &raw, &control, limits.document, cancel)
             .map_err(ProbabilityWitnessError::from)?
+    } else if measured {
+        let mut scope = measure_scope.borrow_mut();
+        let (meter, storage) = &mut *scope;
+        let kind = match claim.form {
+            ProbForm::Quantile { .. } => fsl_replay::MeasurePayoffKind::Satisfied,
+            ProbForm::MeanOfFraction { .. } => fsl_replay::MeasurePayoffKind::Fraction,
+            _ => fsl_replay::MeasurePayoffKind::Event,
+        };
+        let (control, sums) = kind
+            .initial_control(
+                system,
+                claim,
+                false,
+                document_limits,
+                cancel,
+                meter,
+                storage,
+            )
+            .map_err(ProbabilityWitnessError::from)?;
+        measure_source = Some((
+            control.ok_or(ProbabilityWitnessError::Refused)?,
+            sums.clone().ok_or(ProbabilityWitnessError::Refused)?,
+        ));
+        let mut admission = fsl_replay::ProbabilityKeyAdmission::new(
+            meter,
+            storage,
+            document_limits.storage_bytes,
+            cancel,
+        );
+        let raw = system
+            .state_key_bytes_with_budget(
+                initial,
+                fsl_foundation::IdentityLimits::default(),
+                &mut admission,
+                cancel,
+            )
+            .map_err(|error| ProbabilityWitnessError::from(admission.refusal(error)))?;
+        fsl_replay::measure_probability_product_key(
+            reference,
+            &raw,
+            control.ok_or(ProbabilityWitnessError::Refused)?,
+            sums.as_ref().ok_or(ProbabilityWitnessError::Refused)?,
+            None,
+            reward.as_ref(),
+            document_limits,
+            cancel,
+            meter,
+            storage,
+        )
+        .map_err(ProbabilityWitnessError::from)?
     } else {
         let (raw, _) = system
             .state_key(initial)
@@ -244,7 +344,7 @@ fn materialize_inner(
                 ExactProbabilityGraphError::Cancelled(cause),
             ));
         }
-        let (Some(action), Some(draw)) = (&step.action, &step.draw) else {
+        let Some(action) = step.action.as_ref() else {
             return Err(ProbabilityWitnessError::Refused);
         };
         let choice = fsl_replay::ProductAction::Identity(
@@ -254,10 +354,16 @@ fn materialize_inner(
         if matches!(claim.scheduler, ProbScheduler::Every) {
             scheduler.insert(source_key.clone(), choice.clone());
             spelled.push((
-                system
-                    .state_key(&state)
-                    .map_err(|_| ProbabilityWitnessError::Refused)?
-                    .1,
+                if measured {
+                    fsl_eval::simulation::StateKey::from_canonical_bytes(
+                        source_key.as_bytes().to_vec(),
+                    )
+                } else {
+                    system
+                        .state_key(&state)
+                        .map_err(|_| ProbabilityWitnessError::Refused)?
+                        .1
+                },
                 action.clone(),
             ));
         }
@@ -273,7 +379,9 @@ fn materialize_inner(
                 continue;
             }
             for candidate_draw in candidate.draws {
-                if !fsl_eval::simulation::model::same_values(&candidate_draw.random, draw) {
+                if step.draw.as_ref().is_some_and(|draw| {
+                    !fsl_eval::simulation::model::same_values(&candidate_draw.random, draw)
+                }) {
                     continue;
                 }
                 for (transition, post) in candidate_draw.successors {
@@ -284,22 +392,84 @@ fn materialize_inner(
                         == step.target.model
                     {
                         if matched.is_some() {
-                            return Err(ProbabilityWitnessError::Refused);
+                            if step.draw.is_some() {
+                                return Err(ProbabilityWitnessError::Refused);
+                            }
+                            continue;
                         }
-                        matched = Some((transition, post));
+                        matched = Some((transition, post, candidate_draw.random.clone()));
                     }
                 }
             }
         }
-        let Some((transition, post)) = matched else {
+        let Some((transition, post, draw)) = matched else {
             return Err(ProbabilityWitnessError::Refused);
         };
         let post_key = key(&step.target)?;
+        if measured && step.resolved.is_some() && matches!(claim.scheduler, ProbScheduler::Every) {
+            let (control, sums) = measure_source
+                .as_ref()
+                .ok_or(ProbabilityWitnessError::Refused)?;
+            let mut scope = measure_scope.borrow_mut();
+            let (meter, storage) = &mut *scope;
+            let mut admission = fsl_replay::ProbabilityKeyAdmission::new(
+                meter,
+                storage,
+                document_limits.storage_bytes,
+                cancel,
+            );
+            let raw = system
+                .state_key_bytes_with_budget(
+                    &state,
+                    fsl_foundation::IdentityLimits::default(),
+                    &mut admission,
+                    cancel,
+                )
+                .map_err(|error| ProbabilityWitnessError::from(admission.refusal(error)))?;
+            let pending = system
+                .pending_key_bytes_with_budget(
+                    action,
+                    &draw,
+                    fsl_foundation::IdentityLimits::default(),
+                    &mut admission,
+                    cancel,
+                )
+                .map_err(|error| ProbabilityWitnessError::from(admission.refusal(error)))?;
+            drop(admission);
+            let pending = fsl_replay::measure_probability_product_key(
+                reference,
+                &raw,
+                *control,
+                sums,
+                Some(&pending),
+                reward.as_ref(),
+                document_limits,
+                cancel,
+                meter,
+                storage,
+            )
+            .map_err(ProbabilityWitnessError::from)?;
+            scheduler.insert(
+                pending,
+                fsl_replay::ProductAction::PostState(post_key.clone()),
+            );
+        }
+        if measured {
+            measure_source = Some((
+                step.target
+                    .monitor
+                    .ok_or(ProbabilityWitnessError::Refused)?,
+                step.target
+                    .accumulator
+                    .clone()
+                    .ok_or(ProbabilityWitnessError::Refused)?,
+            ));
+        }
         steps.push(ProbabilityWitnessStep {
             choice,
             action: Some(action.clone()),
             transition: Some(transition),
-            draw: Some(draw.clone()),
+            draw: Some(draw),
             post: post.clone(),
             post_key: post_key.clone(),
             elapsed: Rational::from_integer(0_i64.into()),
@@ -308,6 +478,7 @@ fn materialize_inner(
         state = post;
     }
     let locus = match path.read {
+        UndefinedRead::FractionValue => fsl_replay::UndefinedLocus::FractionValue,
         UndefinedRead::Atom(atom) => fsl_replay::UndefinedLocus::Atom(atom),
         UndefinedRead::Predicate(role) => fsl_replay::UndefinedLocus::ClaimPredicate(match role {
             PredicateRole::From => fsl_replay::ClaimPredicate::From,
@@ -329,6 +500,7 @@ fn materialize_inner(
                 initial_key,
                 scheduler: scheduler.into_iter().collect(),
                 paths: vec![ProbabilityWitnessPath { steps }],
+                subsystem: None,
             },
             evaluation: fsl_replay::UndefinedEvaluation {
                 site: fsl_replay::UndefinedSite {

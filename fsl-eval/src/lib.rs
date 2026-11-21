@@ -311,6 +311,7 @@ pub mod execution;
 pub mod fairness;
 pub mod hyper;
 pub mod model_subject;
+pub mod probabilistic;
 pub mod simulation;
 pub mod smt;
 pub mod temporal;

@@ -46,6 +46,8 @@ pub struct ModelStep<T = ModelTransition> {
 /// The expression an undefined evaluation names (FSpec FR-364 `where.locus`).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum UndefinedLocus {
+    /// The quotient of the claim's tentative completed fraction.
+    FractionValue,
     /// A `holds` atom of the authored clause.
     Atom(FormulaNodeId),
     /// The `when` condition of the authored clause's guarded `on each`

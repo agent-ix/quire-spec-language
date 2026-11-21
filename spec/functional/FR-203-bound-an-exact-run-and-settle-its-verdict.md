@@ -21,6 +21,10 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/filament-spec-language/FR-202
     type: depends_on
+  - target: ix://agent-ix/filament-specification/FR-331
+    type: depends_on
+  - target: ix://agent-ix/filament-specification/FR-412
+    type: depends_on
   - target: ix://agent-ix/filament-spec-language/FR-1042
     type: references
 ---
@@ -33,15 +37,19 @@ that the request sets, each with a published default (ADR-028 LM-1 to
 LM-3). Reaching one SHALL stop the run and name the budget, its value and
 the request setting that raises it. FSL SHALL settle every item routed to
 EN-5 as exactly one FR-331 terminal record with ADR-018's verdict kinds and
-the `ProofBasis` members `ExactValue` and `ValueBounds` (XV-1 to XV-7),
-never with ADR-024's `measured`.
+the numeric `ProofBasis` members `ExactValue` and `ValueBounds` (XV-1 to
+XV-7), or the existing value-free `Exhaustive` basis for certified
+conditional vacuity below, never with ADR-024's `measured`.
 
 ## Use case
 
 An operator's exact check of a large model stops at `max_states`. The result
 names `max_states`, its value and `exact_prob.max_states`; the operator raises
-it and reruns. A run that completes settles `proved` with `ExactValue` and
-the least favourable initial state, or `refuted` after its witness replays.
+it and reruns. A completed numeric proof settles `proved` with `ExactValue`
+and the least favourable initial state, or a refutation settles `refuted`
+after its witness replays. A conditional claim with no reachable activation
+settles a certified, value-free `Exhaustive` proof after its vacuity
+certificate is independently accepted.
 
 ## Inputs
 
@@ -66,7 +74,7 @@ pub enum ExactProbLimit { MaxStates, MaxTransitions, MaxAutomatonStates, MaxIter
 
 ```rust
 // ProofBasis gains:
-//   ExactValue { value: ExtRational, reductions: Vec<AppliedReduction> },
+//   ExactValue { value: Rational, reductions: Vec<AppliedReduction> },
 //   ValueBounds { lower: Rational, upper: ExtRational, method: BoundsMethod, reductions: Vec<AppliedReduction>, exploration: Exploration },
 // Exploration: Complete, or Partial for a lower proof found on a partial product (FR-1042), whose
 //   upper is the objective's least upper bound (+∞ for an expected reward) and which has no counterpart
@@ -77,6 +85,7 @@ pub enum BoundsMethod { BackwardInduction { precision_bits: u32 }, IntervalItera
 //   delay distribution only; FR-204). Zero-weight components (FR-199), strict
 //   constraints, form shapes, zero-delay cycles and time-locks (FR-204) settle
 //   verdicts.
+// ExactEntry belongs to numeric results only; certified conditional vacuity has no numeric entries.
 pub struct ExactEntry { pub initial: u32, pub binding: Option<Binding>, pub instance: Option<Binding>, pub value: ExactOrBounds, pub extremum: Option<Extremum> } // Extremum: Min or Max
 ```
 
@@ -103,11 +112,47 @@ pub struct ExactEntry { pub initial: u32, pub binding: Option<Binding>, pub inst
 
 ### Settlement
 
+- This conditional-vacuity settlement SHALL apply to every conditional
+  reading admitted by FR-201, including bounded quantiles under a workload
+  or every scheduler, with or without fairness. When complete exploration
+  of such a claim finds no activating state reachable, so its condition has probability 0, EN-5 SHALL settle
+  `proved`, `Certified`, with the existing `Exhaustive` basis only after
+  FR-201's independent checker accepts the same item's `Conditional`
+  certificate in `Vacuous` mode. The checker SHALL rederive absence of
+  reachable activation for every initial state and binding under the
+  claim's admission rules. Settlement SHALL require opaque acceptance of
+  that certificate bound to the checked package, subject, claim and
+  binding; an engine's vacuity assertion alone SHALL NOT authorize proof.
+- This vacuous proof SHALL carry its accepted FR-412 conditional
+  certificate (`kind` `conditional`, `conditional` exactly
+  `{"mode": "vacuous"}`, empty `values`, no conditional parts) as the
+  result's `certificate`. Its wire basis SHALL be `{"type": "exhaustive"}`.
+  It SHALL carry no `ExactValue`, `ValueBounds`, numerical result entries,
+  numeric value, bounds, counterpart or generic `evidence` member.
+  Settlement SHALL NOT fabricate 0, `0/0`, or any other numerical
+  placeholder for an undefined conditional value, or introduce a new basis.
+- For an `exhaustive` result, the only permitted certificate SHALL be that
+  conditional `vacuous` certificate; all other `exhaustive` results SHALL
+  carry neither `certificate` nor `evidence`. A `ratio`, `optimum`, `exact`
+  or other certificate SHALL NOT be accepted as the vacuity certificate.
+  An `exact-value` basis SHALL still require its valid `Rational` value;
+  omission, a scalar zero or a zero denominator SHALL refuse the result
+  under FR-331's result contract.
+- Partial exploration SHALL NOT establish vacuity. A cancelled or
+  limit-stopped build or check SHALL retain its existing typed incomplete
+  outcome, with no accepted vacuity evidence or proof record. A certificate
+  offered in `Vacuous` mode when activation is reachable SHALL be rejected
+  `InequalityFails` at FR-201's locus and settle `inconclusive`,
+  `CertificateRejected{rule, at}`. Other malformed certificates, identity
+  mismatches and refusals SHALL retain FR-201's existing typed rule and
+  locus; none SHALL produce vacuity acceptance.
+
 - The map from EN-5's outcome to `TerminalValue` SHALL be exhaustive, with
   no `_` arm:
 
 | Outcome | FR-331 value | FR-243 basis | `TerminalValue` | O-16 category |
 | --- | --- | --- | --- | --- |
+| Complete conditional exploration finds no reachable activation, `Conditional` `Vacuous` certificate independently accepted | `proved` | `closed-scope` | `Proved{basis: Exhaustive, certification: Certified}`, value-free, carrying only the permitted certificate | success |
 | Exact value on the claim's side, certificate accepted | `proved` | `closed-scope` | `Proved{basis: ExactValue{…}, certification: Certified}` | success |
 | Sound interval on the claim's side, its `lower` and `upper` documents accepted, or a `lower` proof found on a partial product with `exploration: Partial` and the objective's least upper bound, its one document accepted (FR-1042) | `proved` | `closed-scope` | `Proved{basis: ValueBounds{…}, certification: Certified}` | success |
 | `ValueBounds` whose claim-side document is accepted and whose counterpart is rejected (FR-1042) | `inconclusive` | `unsettled` | `Inconclusive(CertificateRejected{rule, at})` with the counterpart's rule and locus | inconclusive |
@@ -157,13 +202,34 @@ pub struct ExactEntry { pub initial: u32, pub binding: Option<Binding>, pub inst
   `Stopped(Limit{MaxAutomatonStates, value})`, so a `Translation` error is
   never a reached limit.
 
-- `TerminalValue::category` SHALL map both new `ProofBasis` members to
-  success, and proof accounting SHALL count them as proof.
+- `TerminalValue::category` SHALL map both numeric `ProofBasis` members and
+  the certified conditional-vacuity `Exhaustive` outcome to success, and
+  proof accounting SHALL count them as proof.
 - The record SHALL carry FR-242 truth and an FR-243 basis, and no `measured`
-  value. The basis SHALL state the least favourable (initial state, binding)
-  pair; the result SHALL keep one entry per pair with its value or interval
-  and, over every scheduler, whether it is a minimum or a maximum, and, with
-  a fairness set, the set.
+  value. For a numeric result, the basis SHALL state the least favourable
+  (initial state, binding) pair; the result SHALL keep one entry per
+  activating pair with its value or interval and, over every scheduler,
+  whether it is a minimum or a maximum, and, with a fairness set, the set.
+  For a conditional numeric result with at least one activating pair, the
+  independent certificate acceptance SHALL account for every admitted
+  (initial state, binding) pair, either by its checked numeric value or by
+  independently established unreachable activation under FR-201's per-key
+  rule. Settlement SHALL emit exactly one numeric entry for each activating
+  pair and omit every independently checked nonactivating pair, without
+  substituting 0, `0/0` or another numerical placeholder. Entries and the
+  least favourable pair SHALL retain their actual admitted initial-state
+  indices and bindings, including when the only activating index is not 0.
+  An entry for a nonactivating pair, a missing activating entry, a duplicate
+  entry or any mismatch between entries and accepted activating coverage
+  SHALL settle `failed`, diagnostic
+  `runtime_invariant`/`established-invariant-broken`, never `proved`.
+  Coverage SHALL remain part of the independently checked acceptance,
+  derived from the existing certificate values and admitted bindings;
+  it SHALL NOT add an external coverage member or change the certificate
+  wire shape. If no pair activates, settlement SHALL require the accepted
+  `Conditional` `Vacuous` certificate and value-free `Exhaustive` basis
+  above, without numerical entries. A certified conditional-vacuity proof
+  SHALL retain the same claim and subject identity through that acceptance.
 - The obligation identity SHALL bind the subject, the claim, its scheduler or
   `every`, its fairness set and its stated confidence parameters; the
   evidence kind SHALL enter the item's request, not the claim.
@@ -181,6 +247,9 @@ pub struct ExactEntry { pub initial: u32, pub binding: Option<Binding>, pub inst
 | FR-203-AC-7 | The build-result map is exhaustive over `ProductRefusal` and `ClauseOutcome` with no `_` arm. A build whose expansion stops at `max_candidates` 2 settles `incomplete`, `Incomplete(LimitReached{max_candidates, 2, expansion.max_candidates})`. A build whose `ProductRefusal`, asserted before settling, is `Expansion(stop)` naming `EvaluationMeter` (a subject whose successor expansion charges the meter before the claim reads any predicate, under an accounting bound `B` of `work_units` its first expansion exceeds) settles `Incomplete(LimitReached{work_units, B, accounting.work_units})`, naming the exhausted counter, `B` and the setting `accounting.<counter>` by FR-255 Behavior 9's rule (FSpec FR-461-AC-5); a build whose `ProductRefusal`, asserted before settling, is `PredicateRefused(Incomplete(i))` (the expansion fits under `B`, the predicate read's charge is the first one denied) settles the same way for `i`'s counter. A predicate refused `integer_out_of_domain`/`outside-domain` settles `failed` with that diagnostic; a constructed `PredicateRefused(NotBoolean)`, `PredicateRefused(KernelRefused(CheckedInvariant))` and `Translation` error each settle `failed`, `runtime_invariant`/`established-invariant-broken`; an `Admission` failure and a `RequiresBound` refusal return no terminal record. | Test (TC-1166) |
 | FR-203-AC-8 | The `proved` record of FR-203-AC-1 carries its `Exact` certificate in its item result, and those certificate bytes are accepted by `fsl-probability-check` in a later process; the `refuted` record of FR-203-AC-5 carries its witness, which replays. | Test (TC-2065) |
 | FR-203-AC-9 | A `ValueBounds` proof of FR-1042-AC-2's claim whose claim-side `lower` document `7/16` is accepted and whose counterpart `upper` `7/16` is rejected settles `inconclusive`, `CertificateRejected{InequalityFails, s}`; the same proof handed to settlement with no counterpart and no `exploration: Partial` settles `failed`, `runtime_invariant`/`established-invariant-broken`, category failed; with `exploration: Partial` and upper 1 it settles `proved`, `ValueBounds{7/16, 1, …}`. | Test (TC-3151) |
+| FR-203-AC-10 | The untimed claim `quantile 0.5 of (steps from holds(false) until holds(true) within 4) <= 2`, checked separately under a resolved workload and under every scheduler (with and without an admitted fairness set) has no activating state in the complete reachable product. Native checking independently accepts its `Conditional` `Vacuous` certificate and settlement returns `proved`, `closed-scope`, `Certified`, `Exhaustive`, category success, carrying that certificate with empty `values` and `conditional` exactly `{"mode": "vacuous"}`. The emitted result passes FR-331's contract with basis `{"type": "exhaustive"}` and no numeric value, numeric entries, bounds, counterpart or generic `evidence`; it contains neither `ExactValue` nor a fabricated 0 or `0/0`. | Test |
+| FR-203-AC-11 | Changing AC-10's activation predicate to `holds(true)` makes the offered vacuous certificate reject `InequalityFails` and settle `inconclusive`, `CertificateRejected`, without vacuity acceptance. Offering an otherwise well-shaped `exact`, `ratio` or `optimum` certificate on `exhaustive`, or generic `evidence` with or without its permitted vacuous certificate, refuses the FR-331 result contract. An `exact-value` basis missing its value, using scalar zero or denominator zero refuses; AC-1's ordinary exact result with a valid `Rational` value remains admitted. An engine-only assertion, partial exploration, cancellation before or during checking, or a caller limit reached before checking completes produces no accepted vacuity evidence or proved record; cancellation and limits retain their typed incomplete causes. | Test |
+| FR-203-AC-12 | `Retry` has `Msg.delivered`, terminal when delivered, and the resolved `Steady` workload whose `fast` step delivers with probability `1/2` and whose `slow` weight is 0. With request initial states ordered as index 0 `{delivered: true}` and index 1 `{delivered: false}`, the same admitted binding `m`, and `quantile 0.5 of (steps from holds(not m.delivered) until holds(m.delivered) within 4) <= 2`, the independent conditional certificate check accounts for both pairs: index 0 has unreachable activation with numerator and denominator 0, while index 1 activates immediately with numerator `3/4`, denominator 1 and ratio `3/4`. Settlement is certified `proved`, `ExactValue{3/4}`, with exactly one numeric entry for index 1 and the least favourable activating pair correctly naming index 1; index 0 is omitted without evaluating or emitting `0/0` or a scalar placeholder. Adding an entry for index 0, omitting index 1, duplicating its entry, or substituting index 0 for it settles `failed`, diagnostic `runtime_invariant`/`established-invariant-broken`, instead of proof. Both pairs remain accounted for by checked acceptance and the existing certificate values and binding derivation, without a new external coverage field. | Test |
 
 ## Dependencies
 
@@ -194,6 +263,13 @@ pub struct ExactEntry { pub initial: u32, pub binding: Option<Binding>, pub inst
 
 ## References
 
+- [FSpec FR-331: Backend provider envelope](ix://agent-ix/filament-specification/FR-331)
+  owns the value-free `exhaustive` result carrier and its sole permitted
+  conditional `vacuous` certificate exception, with `evidence` forbidden.
+  [FSpec FR-412: Probability certificate and its checker](ix://agent-ix/filament-specification/FR-412)
+  owns the conditional `vacuous` certificate and the independent
+  unreachable-activation check. The certified vacuity settlement above
+  depends on both contracts.
 - FSpec half, which owns `ExactProbLimits` and its setting names in the
   request, while FSL publishes the default values, and the result content
   onto FR-331 and FR-243: FSpec FR-411 (Linear STD-137).
