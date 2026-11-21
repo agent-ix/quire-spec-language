@@ -23,7 +23,7 @@ use ix_trace_rs::trace;
 use crate::timed_world::{document, world, World, DENSE};
 use crate::zone_replay::{fault, lock_resetting};
 use crate::zone_search::{
-    check, claim, deadlock, lock, proved, rpc, Certificate, Outcome, INFINITE, SUBJECT,
+    check, claim, deadlock, lock, proved, quiet, rpc, Certificate, Outcome, INFINITE, SUBJECT,
 };
 
 /// `NoLateReply` over `Rpc` with `T = 4 ms`, proved, with its certificate.
@@ -1010,5 +1010,77 @@ fn the_certificate_members_are_the_schema_fifty_one_names() {
             serde_json::to_value(CertificateLocus::CertificateMember(*member)).expect("a locus"),
             serde_json::json!({"member": member.as_str()})
         );
+    }
+}
+
+/// FR-418 (the ordinary checker's `advancing_cycle`): a guard `y > 0` after
+/// `y := 0` bounds no round away from zero, so a cycle of such guards is not
+/// a time-divergent witness. In phase 0 `x <= 1 ms` is never reset there, so
+/// the `ping` loop (`y > 0 ms`, reset `y`) can run for at most 1 ms in all:
+/// a Zeno loop. The `go`/`tock` cycle, whose `tock` needs `x >= 1 ms`, is
+/// the real divergence. Naming the `ping` loop as the witness is rejected
+/// `witness-fails`; the engine's own certificate is accepted.
+#[trace("TC-371")]
+#[test]
+fn a_strict_guard_at_the_reset_value_is_not_an_advancing_cycle() {
+    let world = quiet(
+        &["x", "y"],
+        &[
+            ("ping", &["y"]),
+            ("go", &["phase"]),
+            ("tock", &["phase", "x"]),
+        ],
+        "",
+        DENSE,
+        "pre Ping using v on M::Call::ping { self.phase = 0 and self.y > 0 ms }\n\
+         post Pinged using v on M::Call::ping { self.y = 0 ms }\n\
+         pre Go using v on M::Call::go { self.phase = 0 }\n\
+         post Gone using v on M::Call::go { self.phase = 1 }\n\
+         pre Tock using v on M::Call::tock { self.phase = 1 and self.x >= 1 ms }\n\
+         post Tocked using v on M::Call::tock { self.phase = 0 and self.x = 0 ms }\n\
+         time invariant Bounded when { true } { self.x <= 1 ms }\n",
+    );
+    let certificate = proved(claim(&world, ZoneCheckLimits::default(), &Cancel::new()));
+    assert_eq!(verdict(&world, &certificate), ZoneCertificateVerdict::Accepted);
+    let ping = certificate
+        .edges
+        .iter()
+        .position(|edge| {
+            edge.from == edge.to
+                && edge
+                    .transition
+                    .as_ref()
+                    .is_some_and(|step| step.operation().contains("Call/ping\""))
+        })
+        .expect("a ping self-loop");
+    // The witness starts at an initial node and reaches the loop by the
+    // shortest path over the certificate's edges.
+    let start = certificate.initials[0];
+    let goal = certificate.edges[ping].from;
+    let mut reach: std::collections::BTreeMap<usize, Vec<usize>> = std::collections::BTreeMap::new();
+    reach.insert(start, Vec::new());
+    let mut queue = std::collections::VecDeque::from([start]);
+    while let Some(node) = queue.pop_front() {
+        for (index, edge) in certificate.edges.iter().enumerate() {
+            if edge.from == node && !reach.contains_key(&edge.to) {
+                let mut path = reach[&node].clone();
+                path.push(index);
+                reach.insert(edge.to, path);
+                queue.push_back(edge.to);
+            }
+        }
+    }
+    let path = reach.remove(&goal).expect("the loop is reachable");
+    let mut zeno = certificate;
+    zeno.admitted = Some(fsl_replay::DivergenceWitness {
+        start,
+        path,
+        target: DivergentTarget::Cycle(vec![ping]),
+    });
+    match verdict(&world, &zeno) {
+        ZoneCertificateVerdict::Rejected(CertificateRejection { rule, .. }) => {
+            assert_eq!(rule, CertificateRule::WitnessFails);
+        }
+        other => panic!("a Zeno loop is not an admitted witness: {other:?}"),
     }
 }

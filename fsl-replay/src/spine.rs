@@ -232,6 +232,7 @@ pub use call::{
 pub(crate) use call::{run_compiled, CallSources};
 pub(crate) use call::{run_reading, run_reading_with_integer_division};
 pub use identity_form::{effective_form, node_key_form, universe_form};
+pub(crate) use identity_form::is_effective_form;
 pub use package_call::run_package;
 pub use run_value::ArgumentDefect;
 

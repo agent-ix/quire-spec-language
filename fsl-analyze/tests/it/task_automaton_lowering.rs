@@ -229,7 +229,6 @@ fn whole(value: i64) -> (String, String) {
 
 #[trace("TC-3008", "FR-249-AC-7")]
 #[test]
-#[ignore = "QSL-2240: proved needs the FR-418 task-product certificate reader (not built)"]
 fn a_two_task_set_lowers_with_its_declared_periods_and_deadlines() {
     let declarations = format!("{PAIR}{}", sources("Pair", &["a", "b"]));
     let run = run(
@@ -254,10 +253,12 @@ fn a_two_task_set_lowers_with_its_declared_periods_and_deadlines() {
         .iter()
         .map(|row| {
             (
+                row["taskset"].as_str().unwrap_or("-").to_owned(),
                 row["task"].as_str().unwrap_or("-").to_owned(),
                 row["arrival"].as_str().unwrap_or("-").to_owned(),
                 rational(&row["interarrival"]),
                 rational(&row["relative_deadline"]),
+                rational(&row["max_jitter"]),
                 rational(&row["work_lower"]),
                 rational(&row["work_upper"]),
                 row["max_jobs"].clone(),
@@ -268,25 +269,92 @@ fn a_two_task_set_lowers_with_its_declared_periods_and_deadlines() {
         read,
         vec![
             (
+                "Pair".to_owned(),
                 "a".to_owned(),
                 "periodic".to_owned(),
                 whole(4),
                 whole(3),
+                whole(0),
                 whole(1),
                 whole(1),
                 json!(2)
             ),
             (
+                "Pair".to_owned(),
                 "b".to_owned(),
                 "sporadic".to_owned(),
                 whole(6),
                 whole(5),
+                whole(0),
                 whole(2),
                 whole(2),
                 json!(2)
             ),
         ],
         "{item}"
+    );
+    // The lowered subject's task-timing rows are the same rows, in order.
+    let model_document =
+        crate::zone_search::rpc_document_with(&[("fire_a", &["phase"]), ("fire_b", &["phase"])]);
+    let body = format!(
+        "{}{PAIR}{}",
+        crate::timed_world::DENSE,
+        sources("Pair", &["a", "b"])
+    );
+    let world = crate::timed_world::world(&model_document, crate::zone_search::TIMED, &body);
+    let model = world.system();
+    let timed = TimedSystem::new(&model, "M").expect("dense timed model");
+    let product = TaskProductSystem::new(timed, "PairFp").expect("checked task product");
+    let plan = product.plan();
+    let lowered: Vec<_> = plan
+        .task_set
+        .tasks
+        .iter()
+        .zip(&plan.tasks)
+        .map(|(task, slots)| {
+            let (kind, interarrival) = match &task.arrival {
+                fsl_semantics::check::Arrival::Periodic { period } => ("periodic", period.clone()),
+                fsl_semantics::check::Arrival::Sporadic { min_interarrival } => {
+                    ("sporadic", min_interarrival.clone())
+                }
+            };
+            (
+                plan.task_set.name.clone(),
+                task.name.clone(),
+                kind,
+                interarrival,
+                task.deadline.clone(),
+                task.jitter.clone(),
+                task.fixed_work().cloned(),
+                slots.max_jobs,
+            )
+        })
+        .collect();
+    let exact = crate::zone_search::exact;
+    assert_eq!(
+        lowered,
+        vec![
+            (
+                "Pair".to_owned(),
+                "a".to_owned(),
+                "periodic",
+                exact(4, 1),
+                exact(3, 1),
+                exact(0, 1),
+                Some(exact(1, 1)),
+                2
+            ),
+            (
+                "Pair".to_owned(),
+                "b".to_owned(),
+                "sporadic",
+                exact(6, 1),
+                exact(5, 1),
+                exact(0, 1),
+                Some(exact(2, 1)),
+                2
+            ),
+        ]
     );
     // Without a release the claim is not release-backed: naming EN-6 leaves
     // no candidate.
@@ -307,7 +375,7 @@ fn run_bare() -> Value {
 
 #[trace("TC-3008", "FR-249-AC-8")]
 #[test]
-#[ignore = "QSL-2240: proved needs the FR-418 task-product certificate reader (not built)"]
+#[ignore = "FR-249-AC-8: set B region quotient exceeds max_check_work (100M) at 791 s release; pending arch ruling on abstraction/AC wording, QSL-2240"]
 fn the_zone_verdict_equals_the_response_time_verdict_on_task_set_b() {
     let items = json!([
         {"claim": "BFp"}, {"claim": "BFp", "backend": "en-6"},
@@ -838,7 +906,8 @@ fn planner_entry(record: &Value) -> Value {
 #[test]
 fn a_closed_search_without_a_certificate_settles_certificate_unchecked() {
     let declarations = format!(
-        "taskset Calm {{ task t periodic 10 ms deadline 10 ms bcet 1 ms wcet 1 ms priority 1 lo; }}\n\
+        "taskset Calm {{ task t periodic 10 ms deadline 10 ms bcet 1 ms wcet 1 ms priority 1 hi wcet_hi 1 ms; }}\n\
+         mode Calm hi on M::Call::fire_t;\n\
          schedulable CalmFp on Calm under fixed_priority;\n{}",
         sources("Calm", &["t"])
     );
@@ -863,4 +932,109 @@ fn a_closed_search_without_a_certificate_settles_certificate_unchecked() {
     )
     .unwrap_or_else(|refusal| panic!("the planner reader refused {refusal:?}: {item}"));
     assert!(read.task_search.is_none());
+}
+
+/// FR-418-AC-21: a dual-WCET set with a mode switch (equal budgets, so the
+/// product closes) has no certificate the checker can check: it settles
+/// `incomplete` / `certificate-unchecked`, never `proved`, with no
+/// certificate member.
+#[trace("TC-371", "FR-418-AC-21")]
+#[test]
+fn a_dual_wcet_mode_switch_set_settles_certificate_unchecked() {
+    let declarations = format!(
+        "taskset Calm {{ task t periodic 10 ms deadline 10 ms bcet 1 ms wcet 1 ms priority 1 hi wcet_hi 1 ms; }}\n\
+         mode Calm hi on M::Call::fire_t;\n\
+         schedulable CalmFp on Calm under fixed_priority;\n{}",
+        sources("Calm", &["t"])
+    );
+    let run = run(
+        "task-product-dual-wcet-mode",
+        &["t"],
+        &declarations,
+        json!([{"claim": "CalmFp", "backend": "en-6"}]),
+    );
+    let item = run.item(0);
+    assert_eq!(label(&item), "incomplete", "{item}");
+    assert_eq!(
+        item["record"]["cause"],
+        json!({"kind": "bounded-search-incomplete", "reason": "certificate-unchecked"}),
+        "{item}"
+    );
+    assert!(item.get("certificate").is_none(), "{item}");
+}
+
+/// FR-418: the fixed-work single task that the dual-WCET set above shares its
+/// shape with proves through an accepted certificate, and the item carries
+/// FR-621's `certificate` members with the `task_product` part beside them.
+#[trace("TC-371", "FR-418-AC-20")]
+#[test]
+fn a_fixed_work_single_task_set_proves_at_the_default_check_work() {
+    let declarations = format!(
+        "taskset Calm {{ task t periodic 10 ms deadline 10 ms bcet 1 ms wcet 1 ms priority 1 lo; }}\n\
+         schedulable CalmFp on Calm under fixed_priority;\n{}",
+        sources("Calm", &["t"])
+    );
+    let run = run(
+        "task-product-calm-proved",
+        &["t"],
+        &declarations,
+        json!([{"claim": "CalmFp", "backend": "en-6"}]),
+    );
+    let item = run.item(0);
+    assert_eq!(label(&item), "proved", "{item}");
+    let certificate = item["certificate"].as_object().expect("a certificate");
+    let mut members: Vec<_> = certificate.keys().map(String::as_str).collect();
+    members.sort_unstable();
+    assert_eq!(
+        members,
+        ["accepted", "checker", "identity", "task_product"],
+        "{item}"
+    );
+    assert_eq!(certificate["accepted"], true);
+}
+
+/// FR-418-AC-20: with `zone_check.max_check_work` below the work the check
+/// needs the item settles `incomplete` / `limit-reached` naming `max_check_work`
+/// and its setting, never `proved`.
+#[trace("TC-371", "FR-418-AC-20")]
+#[test]
+fn a_small_max_check_work_settles_limit_reached() {
+    let declarations = format!(
+        "taskset Calm {{ task t periodic 10 ms deadline 10 ms bcet 1 ms wcet 1 ms priority 1 lo; }}\n\
+         schedulable CalmFp on Calm under fixed_priority;\n{}",
+        sources("Calm", &["t"])
+    );
+    let run = run(
+        "task-product-check-work",
+        &["t"],
+        &declarations,
+        json!([{
+            "claim": "CalmFp",
+            "backend": "en-6",
+            "temporal": {"limits": {"max_check_work": 3}}
+        }]),
+    );
+    let item = run.item(0);
+    assert_eq!(label(&item), "incomplete", "{item}");
+    let cause = &item["record"]["cause"];
+    assert_eq!(cause["kind"], "limit-reached", "{item}");
+    assert_eq!(cause["limit"], "max_check_work", "{item}");
+    assert_eq!(cause["setting"], "zone_check.max_check_work", "{item}");
+    assert!(item.get("certificate").is_none(), "{item}");
+}
+
+/// FR-418: a concrete refutation bypasses the symbolic pass and carries its
+/// replayed counterexample.
+#[trace("TC-371")]
+#[test]
+fn a_refutable_set_refutes_before_the_symbolic_pass() {
+    let run = run(
+        "task-product-refutable-through-symbolic-pass",
+        &["command"],
+        &format!("{BAD_SET}{}", sources("Bad", &["command"])),
+        json!([{"claim": "BadFp", "backend": "en-6"}]),
+    );
+    let item = run.item(0);
+    assert_eq!(label(&item), "refuted", "{item}");
+    assert_eq!(item["replay"]["reproduced"], true, "{item}");
 }

@@ -176,6 +176,7 @@ mod task_automaton_crosscheck;
 mod task_automaton_lowering;
 mod task_product;
 mod task_product_certificate;
+mod task_product_producer;
 mod terminal_two_models;
 mod tied_item_resolution;
 mod time_lock_item;

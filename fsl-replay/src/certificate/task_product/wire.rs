@@ -77,19 +77,22 @@ impl TaskProductShapeRefusal {
 #[error("the task-product value has no wire spelling")]
 pub struct TaskProductWireError;
 
-fn refuse<T>(pointer: &str, reason: TaskProductShapeReason) -> Result<T, TaskProductShapeRefusal> {
+pub(crate) fn refuse<T>(
+    pointer: &str,
+    reason: TaskProductShapeReason,
+) -> Result<T, TaskProductShapeRefusal> {
     Err(TaskProductShapeRefusal {
         pointer: pointer.to_owned(),
         reason,
     })
 }
 
-fn child(pointer: &str, name: impl std::fmt::Display) -> String {
+pub(crate) fn child(pointer: &str, name: impl std::fmt::Display) -> String {
     format!("{pointer}/{name}")
 }
 
 /// An object whose members are exactly `required` plus any of `optional`.
-fn object<'v>(
+pub(crate) fn object<'v>(
     value: &'v Value,
     pointer: &str,
     required: &[&str],
@@ -111,12 +114,15 @@ fn object<'v>(
     Ok(map)
 }
 
-fn member<'v>(map: &'v Map<String, Value>, name: &str) -> &'v Value {
+pub(crate) fn member<'v>(map: &'v Map<String, Value>, name: &str) -> &'v Value {
     // Callers read only members `object` has proved present.
     map.get(name).unwrap_or(&Value::Null)
 }
 
-fn array<'v>(value: &'v Value, pointer: &str) -> Result<&'v [Value], TaskProductShapeRefusal> {
+pub(crate) fn array<'v>(
+    value: &'v Value,
+    pointer: &str,
+) -> Result<&'v [Value], TaskProductShapeRefusal> {
     value
         .as_array()
         .map(Vec::as_slice)
@@ -134,7 +140,7 @@ fn text(value: &Value, pointer: &str) -> Result<String, TaskProductShapeRefusal>
     }
 }
 
-fn count(value: &Value, pointer: &str) -> Result<u64, TaskProductShapeRefusal> {
+pub(crate) fn count(value: &Value, pointer: &str) -> Result<u64, TaskProductShapeRefusal> {
     match value.as_u64() {
         Some(count) if count <= MAX_COUNT => Ok(count),
         Some(_) => refuse(pointer, TaskProductShapeReason::NotCanonical),
@@ -156,7 +162,7 @@ fn positive_count(value: &Value, pointer: &str) -> Result<u64, TaskProductShapeR
     }
 }
 
-fn integer(value: &Value, pointer: &str) -> Result<Integer, TaskProductShapeRefusal> {
+pub(crate) fn integer(value: &Value, pointer: &str) -> Result<Integer, TaskProductShapeRefusal> {
     let Some(spelling) = value.as_str() else {
         return refuse(pointer, TaskProductShapeReason::WrongKind);
     };
@@ -319,9 +325,9 @@ fn typed_value(value: &Value, pointer: &str, depth: usize) -> Result<(), TaskPro
                 &[],
             )?;
             node_id(member(map, "universe"), &at("universe"))?;
-            node_id(member(map, "object_type"), &at("object_type"))?;
+            effective_id(member(map, "object_type"), &at("object_type"))?;
             match member_str(value, "identity") {
-                Some(_) => hex("identity", 0, true),
+                Some(_) => text(member(map, "identity"), &at("identity")).map(drop),
                 None => refuse(&at("identity"), TaskProductShapeReason::WrongKind),
             }
         }
@@ -331,6 +337,16 @@ fn typed_value(value: &Value, pointer: &str, depth: usize) -> Result<(), TaskPro
 
 fn member_str<'v>(value: &'v Value, name: &str) -> Option<&'v str> {
     value.get(name).and_then(Value::as_str)
+}
+
+/// An effective type id as `effective_form` writes it (its reader is the
+/// spine's `read_effective`; a `null` root is refused).
+fn effective_id(value: &Value, pointer: &str) -> Result<(), TaskProductShapeRefusal> {
+    if crate::spine::is_effective_form(value) {
+        Ok(())
+    } else {
+        refuse(pointer, TaskProductShapeReason::WrongKind)
+    }
 }
 
 /// A checked-package `NodeId`: `{ordinal, package, path}`.
@@ -419,7 +435,7 @@ fn action_name(action: TaskTransitionAction) -> &'static str {
 }
 
 /// A source transition identity `{type, operation, receiver, arguments}`.
-fn source_transition(
+pub(crate) fn source_transition(
     value: &Value,
     pointer: &str,
 ) -> Result<ModelTransition, TaskProductShapeRefusal> {
@@ -456,7 +472,9 @@ fn source_transition(
         .or_else(|_| refuse(pointer, TaskProductShapeReason::NotCanonical))
 }
 
-fn source_transition_wire(transition: &ModelTransition) -> Result<Value, TaskProductWireError> {
+pub(crate) fn source_transition_wire(
+    transition: &ModelTransition,
+) -> Result<Value, TaskProductWireError> {
     crate::task_source_transition_wire(transition).map_err(|_| TaskProductWireError)
 }
 
@@ -472,7 +490,7 @@ impl TaskTransitionTemplate {
         Self::read(value, "")
     }
 
-    fn read(value: &Value, pointer: &str) -> Result<Self, TaskProductShapeRefusal> {
+    pub(crate) fn read(value: &Value, pointer: &str) -> Result<Self, TaskProductShapeRefusal> {
         let map = object(
             value,
             pointer,

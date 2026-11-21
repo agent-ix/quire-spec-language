@@ -95,6 +95,8 @@ pub struct ItemOptions {
     pub max_cases: Option<std::num::NonZeroU64>,
     /// EN-6's work bound for release-backed task-product search (FR-415).
     pub max_task_product_work: Option<std::num::NonZeroU64>,
+    /// FR-418's checker work limit, `zone_check.max_check_work` (FR-461).
+    pub max_check_work: Option<std::num::NonZeroU64>,
     /// The provisioned document a `finite-replay` item replays.
     pub trace: Option<fsl_semantics::model::observation::DocumentRef>,
     /// The provisioned FR-739 finite trace population for a finite hyper item.
@@ -1277,6 +1279,7 @@ fn work<'a>(
                     binding,
                     *limits,
                     item.options.max_task_product_work,
+                    item.options.max_check_work,
                     &item.claim,
                     item.request_index,
                 )
