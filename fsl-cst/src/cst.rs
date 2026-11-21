@@ -314,6 +314,8 @@ productions! {
     #[doc = "`mode <identifier> when <block> ;`: one initial entry of a `hybrid` declaration."]
     InitialEntry,
     HybridMode, Equation, SynthesisDeclaration,
+    #[doc = "`<identifier> . steps . sum ( <identifier> => <expression> ) [+ <expression>]`: the per-step sum of a plan synthesis objective, the only position that admits `=>`."]
+    StepSumObjective,
     VerificationPlan, VerificationStep,
     #[doc = "`abstraction <identifier> using <identifier> { <binding>+ }`: a model-to-implementation abstraction relation."]
     AbstractionDeclaration,

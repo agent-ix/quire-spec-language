@@ -191,7 +191,8 @@ fn objective(
         }
         Item::Token(_) | Item::Node(_) => None,
     });
-    let expressions = nodes_of(children, Production::Expression);
+    let mut expressions = nodes_of(children, Production::Expression);
+    expressions.extend(nodes_of(children, Production::StepSumObjective));
     match (direction, expressions.as_slice()) {
         (None, []) => Ok(None),
         (Some((direction, direction_span)), [expression_node]) => {

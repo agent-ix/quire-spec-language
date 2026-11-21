@@ -856,6 +856,8 @@ enum Shape {
     },
     Count(DeclaredName, String),
     Sum(DeclaredName, String),
+    /// `Reach.steps.sum(s => e)`: the binder of the objective's step sum.
+    StepSum(String),
     /// A population-valued form: the form, its binder, the population and
     /// whether a `where` condition and a body are written.
     Population {
@@ -1181,8 +1183,18 @@ impl Shape {
             Self::Sum(result_type, binder) => {
                 arity(2)?;
                 ExprNode::Sum {
-                    result_type: result_type.name,
+                    result_type: Some(result_type.name),
                     result_type_span: result_type.span,
+                    binder,
+                    source: operands.next()?,
+                    summand: operands.next()?,
+                }
+            }
+            Self::StepSum(binder) => {
+                arity(2)?;
+                ExprNode::Sum {
+                    result_type: None,
+                    result_type_span: Span { start: 0, end: 0 },
                     binder,
                     source: operands.next()?,
                     summand: operands.next()?,
@@ -1388,6 +1400,7 @@ impl<'c> Mapping<'c> {
                 self.primary(task, &items)
             }
             Production::IndexedRead => self.indexed_read(task, &items),
+            Production::StepSumObjective => self.step_sum(task, &items),
             Production::CompleteUnit
             | Production::Header
             | Production::Profile
@@ -1611,6 +1624,70 @@ impl<'c> Mapping<'c> {
             | Production::AllocationDeclaration
             | Production::ExtensionDeclaration => Err(unexpected(node)),
         }
+    }
+
+    /// A plan objective's `Reach.steps.sum(s => e) [+ c]`: a sum over the
+    /// plan's `steps` field with no named result type, and the constant added
+    /// to it when written.
+    fn step_sum(&mut self, task: Task<'c>, items: &[Item<'c>]) -> Result<(), FormsRefusal> {
+        let node = task.node;
+        let tokens = items
+            .iter()
+            .filter_map(|item| match item {
+                Item::Token(token) => Some(*token),
+                Item::Node(_) => None,
+            })
+            .collect::<Vec<_>>();
+        let (Some(plan), Some(steps), Some(binder), Some(close)) = (
+            tokens.first(),
+            tokens.get(2),
+            tokens.get(6),
+            tokens.iter().find(|token| token.spelling() == b")"),
+        ) else {
+            return Err(unexpected(node));
+        };
+        let plus = tokens.iter().find(|token| token.spelling() == b"+");
+        let (term, constant) = match nodes_of(items, Production::Expression).as_slice() {
+            [term] => (*term, None),
+            [term, constant] => (*term, Some(*constant)),
+            _ => return Err(unexpected(node)),
+        };
+        let production = node.production();
+        let start = node.span().start;
+        let mut parent = task.parent;
+        if let (Some(constant), Some(plus)) = (constant, plus) {
+            let total = self.node(Shape::Binary(BinaryOperator::Add), production, node.span(), parent);
+            self.arena[total].operator_span = Some(plus.span());
+            self.queue(total, vec![constant]);
+            parent = Some(total);
+        }
+        let sum_span = Span {
+            start,
+            end: close.span().end,
+        };
+        let sum = self.node(
+            Shape::StepSum(text(binder, node)?),
+            production,
+            sum_span,
+            parent,
+        );
+        let source = self.node(
+            Shape::Field(text(steps, node)?, steps.span()),
+            production,
+            Span {
+                start,
+                end: steps.span().end,
+            },
+            Some(sum),
+        );
+        self.node(
+            Shape::Name(NameForm::new(text(plan, node)?, plan.span())),
+            production,
+            plan.span(),
+            Some(source),
+        );
+        self.queue(sum, vec![term]);
+        Ok(())
     }
 
     /// `postfix @ trace`: the member read, indexed by its trace variable.
@@ -2356,6 +2433,7 @@ impl<'c> Mapping<'c> {
             | Production::AlignSkip
             | Production::MatchBlock
             | Production::IndexedRead
+            | Production::StepSumObjective
             | Production::HyperExpression
             | Production::HyperImplication
             | Production::HyperDisjunction

@@ -307,7 +307,6 @@ fn equal_plan_requests_give_byte_identical_outcomes() {
 #[trace("TC-2862", "FR-1012-AC-3")]
 #[trace("FSpec-TC-1952", "FSpec-FR-802-AC-1")]
 #[trace("FSpec-TC-1955", "FSpec-FR-805-AC-3")]
-#[ignore = "lambda objective form lands in the follow-up grammar PR (QSL-1978)"]
 fn a_decimal_step_cost_is_exact_and_certified() {
     let (_, value) = plan(
         &plan_unit(

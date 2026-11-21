@@ -873,7 +873,6 @@ fn the_planner_keeps_plans_within_policy() {
 /// FSpec FR-650-AC-2: a per-step cost objective is minimized and certified.
 #[test]
 #[trace("FSpec-TC-1603", "FSpec-FR-650-AC-2")]
-#[ignore = "lambda objective form lands in the follow-up grammar PR (QSL-1978)"]
 fn the_planner_minimizes_a_per_step_cost_sum() {
     let value = reach("minimize Reach.steps.sum(s => 2)", json!([]));
     assert_eq!(value["synthesis"]["status"], "optimal", "{value}");

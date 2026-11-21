@@ -4,6 +4,7 @@
 //! plan length that is not a non-negative integer range, and refuses a read
 //! of a member the plan value does not have.
 
+use filament_exact::ValueType;
 use filament_semantic_value::checking::{CheckMode, CheckingLimits};
 use fsl_semantics::check::{CheckedSynthesis, PackageDeclarations};
 use fsl_semantics::model::accounting::ModelNormalizationLimits;
@@ -126,4 +127,50 @@ fn a_plan_declaration_refuses_what_the_plan_value_does_not_have() {
     let refusals =
         check("Int[0, 3]", "", "Reach.unknown = 0").expect_err("an unknown plan field is refused");
     assert!(refusals.contains("MissingName(\"unknown\")"), "{refusals}");
+}
+
+#[trace("FSpec-FR-802-AC-1", "FSpec-TC-1952")]
+#[test]
+fn a_step_sum_types_its_binder_as_the_step_record() {
+    let checked = check(
+        "Int[0, 3]",
+        "minimize Reach.steps.sum(s => s.index + s.after.total)",
+        "Reach.length >= 1",
+    )
+    .expect("`s` is the plan step record with `index` and `after`");
+    let objective = checked.objective().expect("the objective is checked");
+    assert_eq!(objective.root().value_type(), &ValueType::Integer);
+    let refusals = check(
+        "Int[0, 3]",
+        "minimize Reach.steps.sum(s => s.cost)",
+        "Reach.length >= 1",
+    )
+    .expect_err("the step record has no `cost`");
+    assert!(refusals.contains("cost"), "{refusals}");
+}
+
+#[trace("FSpec-FR-802-AC-1", "FSpec-TC-1952")]
+#[test]
+fn a_decimal_step_sum_totals_at_the_scale_of_its_terms() {
+    let checked = check("Int[0, 3]", "minimize Reach.steps.sum(s => 0.10)", "Reach.length >= 1")
+        .expect("a decimal literal term types as a decimal");
+    let objective = checked.objective().expect("the objective is checked");
+    let ValueType::Decimal(total) = objective.root().value_type() else {
+        panic!("the total is a decimal: {:?}", objective.root().value_type());
+    };
+    assert_eq!((total.min_scale(), total.max_scale()), (2, 2));
+}
+
+#[trace("FSpec-FR-802-AC-1", "FSpec-FR-194-AC-9", "FSpec-TC-1952")]
+#[test]
+fn a_step_sum_whose_term_is_not_numeric_is_ill_typed() {
+    for term in ["true", "s.operation", "s.after"] {
+        let refusals = check(
+            "Int[0, 3]",
+            &format!("minimize Reach.steps.sum(s => {term})"),
+            "Reach.length >= 1",
+        )
+        .expect_err(term);
+        assert!(refusals.contains("TypeMismatch"), "{term}: {refusals}");
+    }
 }

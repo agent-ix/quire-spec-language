@@ -213,7 +213,7 @@ vocabulary! {
     Method => "method", Domain => "domain", Depends => "depends", Bound => "bound",
     Body => "body", Abstraction => "abstraction",
     Possible => "possible", Unique => "unique", Path => "path",
-    Hash => "#", Arrow => "->", DotDot => "..", Caret => "^", Question => "?", Apostrophe => "'", AtSign => "@", Tilde => "~"
+    Hash => "#", Arrow => "->", FatArrow => "=>", DotDot => "..", Caret => "^", Question => "?", Apostrophe => "'", AtSign => "@", Tilde => "~"
 }
 
 impl Kind {

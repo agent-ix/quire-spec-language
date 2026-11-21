@@ -719,6 +719,53 @@ fn summand_of_family(total: &ValueType, summand: &ValueType) -> bool {
     }
 }
 
+/// Decimal digits of the coefficient bound of a step sum's total. A sum of
+/// any number of steps stays a member of its type; the evaluation meter's
+/// `decimal_digits` counter, not the type, bounds how large a total grows.
+const STEP_SUM_TOTAL_DIGITS: u64 = 4096;
+
+/// The type of the total of a plan objective's `Reach.steps.sum(s => e)`,
+/// given the summand's type: integers total as `Integer`; a rational total
+/// widens the numerator and denominator ranges, a decimal total the
+/// coefficient range at the summand's scales; a quantity totals in its unit
+/// and any other numeric family as itself. `None` for a summand that is not numeric.
+fn step_sum_total(summand: &ValueType) -> Option<ValueType> {
+    let wide = || {
+        let bound = Integer::power_of_ten(STEP_SUM_TOTAL_DIGITS);
+        IntegerInterval::new(bound.neg(), bound)
+    };
+    match summand {
+        ValueType::Integer | ValueType::Int(_) => Some(ValueType::Integer),
+        ValueType::Rational(_) => {
+            let denominator = IntegerInterval::new(
+                Integer::one(),
+                Integer::power_of_ten(STEP_SUM_TOTAL_DIGITS),
+            )
+            .ok()?;
+            RationalDomain::new(wide().ok()?, denominator)
+                .ok()
+                .map(ValueType::Rational)
+        }
+        ValueType::Decimal(domain) => {
+            let wide = wide().ok()?;
+            DecimalType::new(
+                wide.lower().clone(),
+                wide.upper().clone(),
+                u64::from(domain.min_scale()),
+                u64::from(domain.max_scale()),
+                domain.rounding(),
+            )
+            .ok()
+            .map(ValueType::Decimal)
+        }
+        ValueType::BoundedQuantity(bounded) => Some(ValueType::Quantity(bounded.unit().clone())),
+        ValueType::Float(_) | ValueType::Quantity(_) | ValueType::CarriedQuantity(_) => {
+            Some(summand.clone())
+        }
+        _ => None,
+    }
+}
+
 /// A counting or summing query.
 #[derive(Clone, Copy)]
 enum Tally {
@@ -732,7 +779,9 @@ enum Tally {
 struct TallyFrame<'e> {
     tally: Tally,
     value_type: ValueType,
-    type_argument: String,
+    /// The written result type; `None` for a step sum, whose total follows
+    /// its summand.
+    type_argument: Option<String>,
     binder: &'e str,
     body: ExprRef<'e>,
     location: Location,
@@ -2229,7 +2278,7 @@ impl<'a> Typer<'a> {
             } => {
                 return self.tally(
                     Tally::Count,
-                    (result_type, binder),
+                    (Some(result_type.as_str()), binder),
                     (expression.at(*source), expression.at(*predicate)),
                     location,
                     frames,
@@ -2244,7 +2293,7 @@ impl<'a> Typer<'a> {
             } => {
                 return self.tally(
                     Tally::Sum,
-                    (result_type, binder),
+                    (result_type.as_deref(), binder),
                     (expression.at(*source), expression.at(*summand)),
                     location,
                     frames,
@@ -2947,13 +2996,19 @@ impl<'a> Typer<'a> {
     fn tally<'e, 'r>(
         &mut self,
         tally: Tally,
-        (result_type, binder): (&str, &'e str),
+        (result_type, binder): (Option<&str>, &'e str),
         (source, body): (ExprRef<'e>, ExprRef<'e>),
         location: Location,
         frames: &mut Vec<Frame<'e, 'r>>,
     ) -> Result<Step<'e, 'r>, CheckRefusal> {
-        let value_type = self.type_named(result_type, &location)?;
-        let admitted = match tally {
+        // A sum with no written result type is a plan objective's
+        // `Reach.steps.sum(s => e)`: its total is formed from the summand
+        // once the summand is typed ([`step_sum_total`]).
+        let value_type = match result_type {
+            Some(name) => self.type_named(name, &location)?,
+            None => ValueType::Integer,
+        };
+        let admitted = result_type.is_none() || match tally {
             Tally::Count => is_integer(&value_type),
             // FR-145: a `sum` totals any numeric family a
             // `filament.op.collection.sum` identity exists for.
@@ -2982,7 +3037,7 @@ impl<'a> Typer<'a> {
         frames.push(Frame::Tally(Box::new(TallyFrame {
             tally,
             value_type,
-            type_argument: result_type.to_owned(),
+            type_argument: result_type.map(str::to_owned),
             binder,
             body,
             location,
@@ -4213,7 +4268,14 @@ impl<'a> Typer<'a> {
                     Tally::Count => {
                         Goal::Expect(frame.body, Expected::Checked(boolean()), body_location)
                     }
-                    Tally::Sum => Goal::Infer(frame.body, None, body_location),
+                    Tally::Sum => {
+                        let hint = if frame.type_argument.is_none() {
+                            self.step_term_hint(frame.body).map(Cow::Owned)
+                        } else {
+                            None
+                        };
+                        Goal::Infer(frame.body, hint, body_location)
+                    }
                 };
                 frame.source = Some((typed, slot));
                 frames.push(Frame::Tally(frame));
@@ -4227,12 +4289,21 @@ impl<'a> Typer<'a> {
                     Tally::Sum => Visit::Sum,
                 };
                 let TallyFrame {
-                    value_type,
+                    mut value_type,
                     type_argument,
                     location,
                     binder,
                     ..
                 } = *frame;
+                if type_argument.is_none() {
+                    value_type = step_sum_total(&body.value_type)
+                        .ok_or_else(|| mismatch(&body.location))?;
+                    if matches!(value_type, ValueType::Float(_))
+                        && self.scope.ieee_profile.is_none()
+                    {
+                        return Err(refuse(&location, CheckCause::IeeeProfileNotAdmitted));
+                    }
+                }
                 if matches!(visit, Visit::Sum) && !summand_of_family(&value_type, &body.value_type)
                 {
                     return Err(mismatch(&body.location));
@@ -4249,10 +4320,56 @@ impl<'a> Typer<'a> {
                         value_type,
                         &location,
                     )
-                    .with_type_argument(self.type_argument_alias(&type_argument)),
+                    .with_type_argument(
+                        type_argument
+                            .as_deref()
+                            .and_then(|written| self.type_argument_alias(written)),
+                    ),
                 ))
             }
         }
+    }
+
+    /// The expected type that lets the decimal literals of a step sum's
+    /// summand type themselves: every one of them, at the finest scale any
+    /// of them is written in, is a member. `None` when the summand writes no
+    /// decimal literal.
+    fn step_term_hint(&self, summand: ExprRef<'_>) -> Option<ValueType> {
+        let limit = self.scope.decimal_literal_limits.scale;
+        let mut literals = Vec::new();
+        let mut pending = vec![summand];
+        while let Some(expression) = pending.pop() {
+            if let ExprNode::DecimalValue {
+                coefficient, scale, ..
+            } = expression.node()
+            {
+                if u64::from(*scale) <= limit {
+                    literals.push((coefficient, *scale));
+                }
+            }
+            pending.extend(expression.children());
+        }
+        let scale = literals.iter().map(|(_, scale)| *scale).max()?;
+        let mut lower = Integer::zero();
+        let mut upper = Integer::zero();
+        for (coefficient, written) in literals {
+            let aligned = coefficient.mul(&Integer::power_of_ten(u64::from(scale - written)));
+            if aligned < lower {
+                lower = aligned.clone();
+            }
+            if aligned > upper {
+                upper = aligned;
+            }
+        }
+        let domain = DecimalType::new(
+            lower,
+            upper,
+            u64::from(scale),
+            u64::from(scale),
+            RoundingMode::Exact,
+        )
+        .ok()?;
+        Some(ValueType::Decimal(domain))
     }
 
     /// The population a refinement row names `name`, when this pass reads
