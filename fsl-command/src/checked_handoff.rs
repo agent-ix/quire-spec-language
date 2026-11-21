@@ -51,6 +51,8 @@ mod selection;
 mod tree;
 
 use std::path::Path;
+use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use filament_contract_model::{
     read_checked_package, CheckedPackageDispatchResult, CheckedPackageEvidence,
@@ -71,6 +73,31 @@ pub const INVENTORY_FORMAT: &str = "filament.checked-handoff.inventory/1";
 
 /// The format of `mutations/manifest.json`.
 pub const MUTATIONS_FORMAT: &str = "filament.checked-handoff.mutations/1";
+
+const DEPENDENCIES_FORMAT: &str = "filament.checked-handoff.dependencies/1";
+
+#[derive(serde::Serialize)]
+struct DependencyManifest<'a> {
+    format: &'static str,
+    dependencies: Vec<DependencyRow<'a>>,
+}
+
+#[derive(serde::Serialize)]
+struct DependencyRow<'a> {
+    identity: &'a str,
+    directory: String,
+}
+
+fn json_file(value: &impl serde::Serialize, what: &'static str) -> Result<Vec<u8>, Error> {
+    let mut bytes = serde_json::to_vec_pretty(value).map_err(|source| Error::Encode { what, source })?;
+    bytes.push(b'\n');
+    Ok(bytes)
+}
+
+struct DependencyArtifact {
+    emission: fsl_package::Emission,
+    package: Arc<CheckedPackageV2>,
+}
 
 /// Which adverse corpus the writer adds (FR-518).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -376,7 +403,7 @@ fn write_compiled(
     command_source_file: Option<&str>,
 ) -> Result<(), Error> {
     let bytes = compiled.emitted.package().bytes().to_vec();
-    let evidence = read_evidence(&compiled)?;
+    let (evidence, dependencies) = acquire_evidence(&compiled)?;
     let package = admit(environment.read(&bytes, READ_LIMITS, &evidence))?;
     let selection = Selection::derive(&compiled, &request.emit, &bytes, command_source_file)?;
     environment
@@ -390,6 +417,19 @@ fn write_compiled(
     files.insert("selection.json", selection.to_bytes()?)?;
     files.insert("inventory.json", inventory_file(&compiled, &bytes)?)?;
     let mut budget = request.native_join.budget();
+    let manifest = DependencyManifest {
+        format: DEPENDENCIES_FORMAT,
+        dependencies: dependencies.keys().enumerate().map(|(index, identity)| {
+            DependencyRow { identity, directory: format!("dependencies/{index}") }
+        }).collect(),
+    };
+    files.insert("dependencies.json", json_file(&manifest, "dependencies.json")?)?;
+    for (index, (_, dependency)) in dependencies.iter().enumerate() {
+        let directory = format!("dependencies/{index}");
+        files.insert(&format!("{directory}/checked-package.json"), dependency.emission.package().bytes().to_vec())?;
+        files.insert(&format!("{directory}/identities.json"), emission_identity_file(&dependency.emission, &dependency.package, &mut budget, request.native_join)?)?;
+        files.insert(&format!("{directory}/equality.json"), emission_equality_file(&dependency.emission, &dependency.package, &mut budget, request.native_join)?)?;
+    }
     files.insert(
         "identities.json",
         identity_file(&compiled, &package, &mut budget, request.native_join)?,
@@ -571,10 +611,17 @@ fn identity_file(
     budget: &mut filament_contract_model::NativeJoinBudget,
     limits: fsl_package::NativeJoinLimits,
 ) -> Result<Vec<u8>, Error> {
+    emission_identity_file(compiled.emitted.emission(), package, budget, limits)
+}
+
+fn emission_identity_file(
+    emission: &fsl_package::Emission,
+    package: &CheckedPackageV2,
+    budget: &mut filament_contract_model::NativeJoinBudget,
+    limits: fsl_package::NativeJoinLimits,
+) -> Result<Vec<u8>, Error> {
     let unnameable = |what: String| Error::Unnameable { what };
-    compiled
-        .emitted
-        .emission()
+    emission
         .identity_rows(package, budget)
         .map_err(|refused| match refused {
             fsl_package::IdentityFileRefusal::Rows(rows) => match limits.refusal(rows, budget) {
@@ -600,20 +647,22 @@ fn identity_file(
 /// equality application, in the order the emitter holds them.
 fn equality_file(
     compiled: &Compiled,
-    request: &CheckedHandoffRequest,
+    _request: &CheckedHandoffRequest,
     package: &filament_contract_model::CheckedPackageV2,
     budget: &mut filament_contract_model::NativeJoinBudget,
     limits: fsl_package::NativeJoinLimits,
 ) -> Result<Vec<u8>, Error> {
+    emission_equality_file(compiled.emitted.emission(), package, budget, limits)
+}
+
+fn emission_equality_file(
+    emission: &fsl_package::Emission,
+    package: &CheckedPackageV2,
+    budget: &mut filament_contract_model::NativeJoinBudget,
+    limits: fsl_package::NativeJoinLimits,
+) -> Result<Vec<u8>, Error> {
     let unnameable = |what: String| Error::Unnameable { what };
-    let selections =
-        emit_checked_v2::clock_selections(&compiled.checked, &request.emit.temporal_selections)?;
-    fsl_package::emit_checked_with_temporal_selections(
-        compiled.checked.package(),
-        &selections,
-        compiled.emit,
-    )
-    .map_err(|refusal| unnameable(format!("equality witness: {refusal}")))?
+    emission
     .equality_witness(package, budget)
     .map_err(|error| match limits.refusal(error, budget) {
         Some(denial) => Error::NativeJoinExhausted(Box::new(denial)),
@@ -655,6 +704,10 @@ pub fn evidence(request: &CheckedHandoffRequest) -> Result<CheckedPackageEvidenc
 /// The compiler's evidence, the domain package documents the writer holds,
 /// and the admitted package of every library the unit imports.
 fn read_evidence(compiled: &Compiled) -> Result<CheckedPackageEvidence, Error> {
+    acquire_evidence(compiled).map(|(evidence, _)| evidence)
+}
+
+fn acquire_evidence(compiled: &Compiled) -> Result<(CheckedPackageEvidence, BTreeMap<String, DependencyArtifact>), Error> {
     let documents =
         fsl_semantics::model::intake::package_input(compiled.models.iter().map(Vec::as_slice))
             .map_err(|refused| Error::Unnameable {
@@ -662,13 +715,43 @@ fn read_evidence(compiled: &Compiled) -> Result<CheckedPackageEvidence, Error> {
             })?;
     let mut evidence = compiled.emitted.evidence().clone();
     supply_documents(&mut evidence, &documents, "the unit")?;
-    admit_dependencies(
-        compiled.checked.package(),
-        &mut evidence,
-        &documents,
-        compiled.emit,
-    )?;
-    Ok(evidence)
+    let root = compiled.checked.package();
+    let mut held = BTreeMap::new();
+    let mut pending = vec![root];
+    while let Some(package) = pending.pop() {
+        for (identity, dependency) in package.dependencies() {
+            if held.insert(identity.as_str().to_owned(), dependency.as_ref()).is_none() {
+                pending.push(dependency);
+            }
+        }
+    }
+    let mut artifacts: BTreeMap<String, DependencyArtifact> = BTreeMap::new();
+    let mut pending: Vec<_> = root.direct_dependency_selections().rev().map(|(identity, _)| (identity.as_str().to_owned(), false)).collect();
+    while let Some((identity, expanded)) = pending.pop() {
+        if artifacts.contains_key(&identity) { continue; }
+        let dependency = held.get(&identity).ok_or_else(|| Error::Dependency { identity: identity.clone(), detail: "selected dependency was not retained".to_owned() })?;
+        if !expanded {
+            pending.push((identity.clone(), true));
+            pending.extend(dependency.direct_dependency_selections().rev().map(|(child, _)| (child.as_str().to_owned(), false)));
+            continue;
+        }
+        let emission = fsl_package::emit_checked(dependency, compiled.emit).map_err(|refused| Error::Dependency { identity: identity.clone(), detail: refused.to_string() })?;
+        let mut own = emission.evidence().clone();
+        supply_documents(&mut own, &documents, &identity)?;
+        insert_direct_dependencies(dependency, &artifacts, &mut own)?;
+        let package = Arc::from(admit(read_checked_package(emission.package().bytes(), READ_LIMITS, &own))?);
+        artifacts.insert(identity, DependencyArtifact { emission, package });
+    }
+    insert_direct_dependencies(root, &artifacts, &mut evidence)?;
+    Ok((evidence, artifacts))
+}
+
+fn insert_direct_dependencies(package: &fsl_package::CheckedPackage, artifacts: &BTreeMap<String, DependencyArtifact>, evidence: &mut CheckedPackageEvidence) -> Result<(), Error> {
+    for (identity, _) in package.direct_dependency_selections() {
+        let artifact = artifacts.get(identity.as_str()).ok_or_else(|| Error::Dependency { identity: identity.as_str().to_owned(), detail: "selected dependency was not admitted".to_owned() })?;
+        evidence.insert_dependency_package(identity.as_str(), Arc::clone(&artifact.package)).map_err(|conflict| Error::Dependency { identity: identity.as_str().to_owned(), detail: format!("{conflict:?}") })?;
+    }
+    Ok(())
 }
 
 fn supply_documents(
@@ -687,31 +770,3 @@ fn supply_documents(
     Ok(())
 }
 
-/// Admit each library of `package`'s closure and supply it to `evidence`.
-fn admit_dependencies(
-    package: &fsl_package::CheckedPackage,
-    evidence: &mut CheckedPackageEvidence,
-    documents: &fsl_semantics::model::intake::PackageInput,
-    emit: fsl_package::EmitLimits,
-) -> Result<(), Error> {
-    for (identity, dependency) in package.dependencies() {
-        let failed = |detail: String| Error::Dependency {
-            identity: identity.as_str().to_owned(),
-            detail,
-        };
-        let emission = fsl_package::emit_checked(dependency, emit)
-            .map_err(|refusal| failed(refusal.to_string()))?;
-        let mut own = emission.evidence().clone();
-        supply_documents(&mut own, documents, identity.as_str())?;
-        admit_dependencies(dependency, &mut own, documents, emit)?;
-        let CheckedPackageDispatchResult::AdmittedV2(admitted) =
-            read_checked_package(emission.package().bytes(), READ_LIMITS, &own)
-        else {
-            return Err(failed("the reader did not admit it".to_owned()));
-        };
-        evidence
-            .insert_dependency_package(identity.as_str(), admitted)
-            .map_err(|conflict| failed(format!("{conflict:?}")))?;
-    }
-    Ok(())
-}

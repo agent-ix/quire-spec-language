@@ -368,7 +368,7 @@ const TEST_PACKAGE_NAME: &str = "pkg";
 #[cfg(feature = "std")]
 mod package_admission;
 #[cfg(feature = "std")]
-pub use package_admission::{admit_checked_package, PackageAdmissionRefusal};
+pub use package_admission::{admit_checked_package, admit_checked_package_with_dependencies, PackageAdmissionRefusal};
 #[cfg(feature = "std")]
 mod native_join_failure;
 #[cfg(feature = "std")]

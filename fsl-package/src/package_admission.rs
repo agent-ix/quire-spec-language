@@ -5,6 +5,7 @@
 //! with no fallback to source compilation.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
 use filament_contract_model::{
     read_checked_package, CheckedPackageDispatchResult, CheckedPackageEvidence,
@@ -44,6 +45,20 @@ pub fn admit_checked_package(
     documents: &BTreeMap<String, Vec<u8>>,
     limits: V2ReadLimits,
 ) -> Result<CheckedPackageV2, PackageAdmissionRefusal> {
+    admit_checked_package_with_dependencies(bytes, documents, &BTreeMap::new(), limits)
+}
+
+/// Admit a package with authenticated direct library artifacts. The strict
+/// reader verifies the supplied identities and retains their shared closure.
+///
+/// # Errors
+/// Returns the original strict reader refusal or a conflicting evidence refusal.
+pub fn admit_checked_package_with_dependencies(
+    bytes: &[u8],
+    documents: &BTreeMap<String, Vec<u8>>,
+    dependencies: &BTreeMap<String, Arc<CheckedPackageV2>>,
+    limits: V2ReadLimits,
+) -> Result<CheckedPackageV2, PackageAdmissionRefusal> {
     let mut evidence = CheckedPackageEvidence::new();
     // The one feature FSL emits and so the one it reads: a package that
     // requires another is refused by the reader.
@@ -60,6 +75,14 @@ pub fn admit_checked_package(
                 identity: Some(identity.clone()),
             });
         }
+    }
+    for (identity, dependency) in dependencies {
+        evidence.insert_dependency_package(identity.as_str(), Arc::clone(dependency)).map_err(|_| PackageAdmissionRefusal {
+            code: Code::InvalidPackage,
+            cause: Some("conflicting-definition".to_owned()),
+            pointer: None,
+            identity: Some(identity.clone()),
+        })?;
     }
     match read_checked_package(bytes, limits.for_ir(), &evidence) {
         CheckedPackageDispatchResult::AdmittedV2(package) => Ok(*package),
