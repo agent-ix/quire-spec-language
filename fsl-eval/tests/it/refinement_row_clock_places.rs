@@ -208,7 +208,7 @@ fn a_refinement_count_reads_the_stored_clock_reference() {
     });
     let package = CheckedPackage::link(checked.graph);
     let graph = package.graph();
-    let (_, universe) = declared_type_universe_for(
+    let (effective, universe) = declared_type_universe_for(
         graph.model_selections(),
         &checked.packages,
         ModelNormalizationLimits::default(),
@@ -216,28 +216,36 @@ fn a_refinement_count_reads_the_stored_clock_reference() {
     )
     .expect("universe")
     .expect("Call");
-    let clock_type = filament_exact::EffectiveId::new(
-        None,
-        filament_exact::OriginalDeclarationKey::new("filament/native", "Clock"),
-    );
-    let placeholder = Value::Reference(ObjectReference::new(
-        universe,
-        clock_type,
-        ObjectId::new("unselected").expect("id"),
-    ));
+    let [refinement] = graph.refinements() else {
+        panic!("one refinement")
+    };
+    let [queue, _] = refinement.objects() else {
+        panic!("Queue and Cell")
+    };
+    let place_id = |owner: &str| {
+        let owner = ObjectReference::new(
+            universe.clone(),
+            effective.clone(),
+            ObjectId::new(owner).expect("id"),
+        );
+        let mut meter = Meter::new(UNLIMITED);
+        // This row only reads its owner binder, so it needs no data snapshot.
+        let evaluation = evaluate_refinement_row(
+            &package,
+            &queue.fields[2].expression,
+            &fsl_semantics::model::object_environment::ObjectEnvironment::default(),
+            vec![Value::Reference(owner)],
+            &mut meter,
+        )
+        .expect("ref(self.x) evaluates");
+        match evaluation.outcome {
+            FamilyOutcome::Evaluated(Outcome::Completed(value)) => value,
+            other => panic!("place id completes: {other:?}"),
+        }
+    };
+    let c1 = place_id("c1");
+    let c2 = place_id("c2");
     let mut state = state();
-    for call in state
-        .populations
-        .get_mut(&key(CLOCKS, "calls"))
-        .expect("calls")
-        .values_mut()
-    {
-        call.fields
-            .insert(key(CLOCKS, "Call/r"), placeholder.clone());
-    }
-    let chosen = 2;
-    let c1 = evaluate_row(&package, &checked.packages, chosen, "c1", &state);
-    let c2 = evaluate_row(&package, &checked.packages, chosen, "c2", &state);
     assert_ne!(c1, c2, "the owner distinguishes clock place ids");
     let set_reference = |state: &mut ModelState, reference: Value| {
         for call in state
