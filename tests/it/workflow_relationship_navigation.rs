@@ -266,26 +266,52 @@ fn assert_value(function: &str, input_key: &str, expected: Value) {
     assert_eq!(document["outcome"]["value"], expected, "{document}");
 }
 
+fn reference(type_identity: &str, object_identity: &str) -> Value {
+    json!({"reference": {
+        "universe": {
+            "package": PACKAGE,
+            "path": ["model", "object_type", type_identity],
+            "ordinal": 0
+        },
+        "type": {
+            "owner_effective_type": null,
+            "original": {"package": PACKAGE, "node": type_identity}
+        },
+        "object_identity": object_identity
+    }})
+}
+
 #[test]
 #[trace("FR-363-AC-1", "FR-364-AC-7")]
 fn source_relationship_members_return_concrete_workflow_references() {
-    let reference = |key| json!({"reference": {"population": RECORDS, "key": key}});
     assert_value(
         "shipments",
         "o1",
-        json!({"set": [reference("s1"), reference("s2")]}),
+        json!({"set": [reference(SHIPMENT, "s1"), reference(SHIPMENT, "s2")]}),
     );
-    assert_value("shipments", "o2", json!({"set": [reference("s3")]}));
-    assert_value("paymentAttempts", "o1", reference("p1"));
-    assert_value("paymentAttempts", "o2", reference("p2"));
-    assert_value("refunds", "o1", json!({"present": reference("r1")}));
-    assert_value("refunds", "o2", json!({"present": reference("r2")}));
-    assert_value("provider", "o1", json!({"present": reference("provider0")}));
-    assert_value("provider", "o2", json!({"present": reference("provider0")}));
+    assert_value(
+        "shipments",
+        "o2",
+        json!({"set": [reference(SHIPMENT, "s3")]}),
+    );
+    assert_value("paymentAttempts", "o1", reference(PAYMENT_ATTEMPT, "p1"));
+    assert_value("paymentAttempts", "o2", reference(PAYMENT_ATTEMPT, "p2"));
+    assert_value("refunds", "o1", json!({"present": reference(REFUND, "r1")}));
+    assert_value("refunds", "o2", json!({"present": reference(REFUND, "r2")}));
+    assert_value(
+        "provider",
+        "o1",
+        json!({"present": reference(PROVIDER, "provider0")}),
+    );
+    assert_value(
+        "provider",
+        "o2",
+        json!({"present": reference(PROVIDER, "provider0")}),
+    );
     assert_value(
         "providerOrders",
         "provider0",
-        json!({"set": [reference("o1"), reference("o2")]}),
+        json!({"set": [reference(ORDER, "o1"), reference(ORDER, "o2")]}),
     );
 }
 
