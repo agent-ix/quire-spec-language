@@ -2923,6 +2923,31 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
         )>,
         ExpansionStop,
     > {
+        let binders = self
+            .program
+            .package_binders
+            .iter()
+            .zip(frame)
+            .filter_map(|(binder, value)| binder.as_ref().map(|binder| (binder, value)));
+        self.package_supplied_binders(binders, observation, slot)
+    }
+
+    /// Admit values from either a live protocol frame or a FIFO key's own
+    /// payload binder through the same reference-population provenance.
+    fn package_supplied_binders<'b>(
+        &self,
+        binders: impl IntoIterator<Item = (&'b fsl_package::CheckedNodeId, Option<Value>)>,
+        observation: &filament_semantic_value::admission::ObservationAdmission<
+            fsl_package::AdmittedProtocolObservation<'_>,
+        >,
+        slot: &crate::value::ProtocolSlot,
+    ) -> Result<
+        Vec<(
+            fsl_package::CheckedNodeId,
+            crate::value::ProtocolSuppliedValue,
+        )>,
+        ExpansionStop,
+    > {
         let filament_semantic_value::admission::ObservationAdmission::Admitted(observation) =
             observation
         else {
@@ -2935,62 +2960,55 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
             .map_err(|_| broken())?
             .into_iter()
             .collect();
-        self.program
-            .package_binders
-            .iter()
-            .zip(frame)
+        binders
+            .into_iter()
             .filter(|(binder, _)| {
-                binder
-                    .as_ref()
-                    .and_then(|binder| self.evaluator.package_node_key(binder))
+                self.evaluator
+                    .package_node_key(binder)
                     .is_some_and(|key| required.contains(&key))
             })
-            .filter_map(|(binder, value)| {
-                binder.as_ref().map(|binder| {
-                    let mut references = Vec::new();
-                    let value = match value {
-                        Some(value) => {
-                            for (path, reference) in crate::value::reference_occurrences(
-                                &value,
-                                subject.model.simulation.input.types,
-                            )
-                            .map_err(|_| broken())?
-                            {
-                                let environment = observation.environment();
-                                let population = if binder == &package.over {
-                                    fsl_semantics::model::key::population_node_key(
-                                        &subject.over.population,
-                                    )
-                                    .map_err(|_| broken())?
-                                } else {
-                                    environment
-                                        .population_completeness()
-                                        .keys()
-                                        .find(|population| {
-                                            environment
-                                                .population_members(population)
-                                                .is_some_and(|members| members.contains(&reference))
-                                        })
-                                        .and_then(|population| {
-                                            environment.population_node(population)
-                                        })
-                                        .cloned()
-                                        .ok_or_else(broken)?
-                                };
-                                references.push(crate::value::ProtocolReferenceOccurrence {
-                                    path,
-                                    population,
-                                });
-                            }
-                            crate::value::SuppliedValue::Value(value)
+            .map(|(binder, value)| {
+                let mut references = Vec::new();
+                let value = match value {
+                    Some(value) => {
+                        for (path, reference) in crate::value::reference_occurrences(
+                            &value,
+                            subject.model.simulation.input.types,
+                        )
+                        .map_err(|_| broken())?
+                        {
+                            let environment = observation.environment();
+                            let population = if binder == &package.over {
+                                fsl_semantics::model::key::population_node_key(
+                                    &subject.over.population,
+                                )
+                                .map_err(|_| broken())?
+                            } else {
+                                environment
+                                    .population_completeness()
+                                    .keys()
+                                    .find(|population| {
+                                        environment
+                                            .population_members(population)
+                                            .is_some_and(|members| members.contains(&reference))
+                                    })
+                                    .and_then(|population| environment.population_node(population))
+                                    .cloned()
+                                    .ok_or_else(broken)?
+                            };
+                            references.push(crate::value::ProtocolReferenceOccurrence {
+                                path,
+                                population,
+                            });
                         }
-                        None => crate::value::SuppliedValue::Unavailable(BROKEN),
-                    };
-                    Ok((
-                        binder.clone(),
-                        crate::value::ProtocolSuppliedValue { value, references },
-                    ))
-                })
+                        crate::value::SuppliedValue::Value(value)
+                    }
+                    None => crate::value::SuppliedValue::Unavailable(BROKEN),
+                };
+                Ok((
+                    binder.clone(),
+                    crate::value::ProtocolSuppliedValue { value, references },
+                ))
             })
             .collect()
     }

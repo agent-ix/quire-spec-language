@@ -56,6 +56,289 @@ fn package_run(ws: &Workspace, request_path: &std::path::Path) -> Run {
     analyze(&package_request(ws, request_path).0)
 }
 
+fn receive_fifo_request(
+    ws: &Workspace,
+    key: &str,
+    capacity: u64,
+    overflow: &str,
+    delivery: &str,
+    controls: &str,
+    finish: &str,
+) -> std::path::PathBuf {
+    let body = format!(
+        "protocol Flow using pp over (k: M::Cell) on origin {{
+            role Planning on M::Cell;
+            role Machining on M::Cell;
+            channel Release from Planning to Machining carries M::Attempt
+                ordering fifo by (m: M::Attempt) {{ {key} }}
+                delivery {delivery} capacity {capacity} overflow {overflow};
+            run sequence Main {{ {controls} }}
+            finish Over as (closing: Boolean) {{ {finish} }};
+        }}"
+    );
+    let unit = crate::fill::unit_text_with(crate::fill::PROTOCOL_PROFILE, &body);
+    let mut model: Value =
+        serde_json::from_slice(&crate::fill::document()).expect("the Fill model is JSON");
+    model["types"]
+        .as_array_mut()
+        .expect("model types")
+        .retain(|node| {
+            matches!(
+                node["identity"].as_str(),
+                Some(
+                    "ix://test/fill/Level"
+                        | "ix://test/fill/Cell"
+                        | "ix://test/fill/Idle"
+                        | "ix://test/fill/Attempt"
+                )
+            )
+        });
+    let payload = model["types"]
+        .as_array_mut()
+        .expect("model types")
+        .iter_mut()
+        .find(|node| node["identity"] == "ix://test/fill/Attempt")
+        .expect("the finite payload record");
+    payload["fields"][0]["typeRef"] = json!("ix://test/fill/Level");
+    let field = payload["fields"][0].clone();
+    for (name, value_type) in [
+        ("ok", "ix://filament/native/Boolean"),
+        ("target", "ix://test/fill/Cell"),
+    ] {
+        let mut member = field.clone();
+        let identity = format!("ix://test/fill/Attempt/{name}");
+        member["identity"] = json!(identity);
+        member["name"] = json!(name);
+        member["typeRef"] = json!(value_type);
+        member["origin"] = json!({"generated": {
+            "generatorIdentity": identity, "generatorVersion": "1.0.0",
+            "inputIdentities": [identity]
+        }});
+        payload["fields"]
+            .as_array_mut()
+            .expect("payload fields")
+            .push(member);
+    }
+    model["constructs"]
+        .as_array_mut()
+        .expect("model constructs")
+        .retain(|construct| {
+            matches!(
+                construct["kind"]["name"].as_str(),
+                Some("value_type" | "object_type" | "population" | "record_value_type")
+            )
+        });
+    let model = serde_json::to_vec(&model).expect("the FIFO model serializes");
+    let mut documents = crate::fill::Documents::new();
+    documents.start("s0", &[("c", 0)]);
+    let snapshots: Vec<Vec<u8>> = documents.snapshots.values().cloned().collect();
+    crate::analyze_cli_support::request_over(
+        ws,
+        &unit,
+        &model,
+        &snapshots,
+        json!({
+            "items": [{"claim": "Flow", "kind": "temporal-satisfaction", "temporal": {
+                "item_kind": "deadlock-freedom", "subject": {"protocol": {
+                    "protocol": "Flow",
+                    "over": {"reference": {"population": "ix://test/fill/cells", "key": "c"}},
+                    "roles": {
+                        "Planning": {"type": "model-binding", "selection": "test/fill"},
+                        "Machining": {"type": "model-binding", "selection": "test/fill"}
+                    }
+                }}
+            }}]
+        }),
+    )
+}
+
+fn receive_fifo_send(name: &str, binder: &str, n: u64) -> String {
+    format!(
+        "send {name} via Release as ({binder}: M::Attempt) {{
+            {binder}.n = {n} and {binder}.ok and {binder}.target = k
+        }};"
+    )
+}
+
+fn receive_fifo_receive(name: &str, send: &str, binder: &str, constraint: &str) -> String {
+    format!("receive {name} via Release of {send} as ({binder}: M::Attempt) {{ {constraint} }};")
+}
+
+/// The FIFO example's receive evaluates both scalar and reference-valued keys.
+#[trace("TC-2958", "FR-940-AC-6", "FR-383-AC-4", "FR-383-AC-7", "FR-390")]
+#[test]
+fn package_receive_fifo_runs_the_complete_example_body() {
+    for (name, key, delivery, finish, expected) in [
+        (
+            "reference",
+            "m.target",
+            "at-least-once",
+            "closing",
+            "proved",
+        ),
+        ("scalar", "m.n", "exactly-once-premise", "false", "refuted"),
+    ] {
+        let ws = Workspace::new(&format!("package-receive-fifo-complete-{name}"));
+        let controls = receive_fifo_send("Released", "order", 0)
+            + &receive_fifo_receive("Received", "Released", "got", "got.ok");
+        let path = receive_fifo_request(&ws, key, 4, "block", delivery, &controls, finish);
+        let item = channel_send_parity(&ws, &path, expected);
+        if expected == "refuted" {
+            let prefix = item["counterexample"]["prefix"]
+                .as_array()
+                .expect("a deadlock prefix");
+            let received = prefix
+                .iter()
+                .find(|step| step["transition"]["step"] == "receive")
+                .expect("the payload was received before the false finish");
+            assert_eq!(received["transition"]["node"], "Main/Received", "{item}");
+            let sent = prefix
+                .iter()
+                .find(|step| step["transition"]["step"] == "send")
+                .expect("the payload's send");
+            assert_eq!(
+                received["transition"]["delivery"]["message"], sent["transition"]["message"],
+                "{item}"
+            );
+            let fields = sent["send_record"]["payload"]["fields"]
+                .as_array()
+                .expect("payload fields");
+            let ok = fields
+                .iter()
+                .find(|field| field["name"] == "ok")
+                .expect("the ok field");
+            assert_eq!(ok["value"]["value"], true, "{item}");
+        } else {
+            let states = item["exploration"]["states"]
+                .as_str()
+                .expect("state count")
+                .parse::<u64>()
+                .expect("a natural count");
+            assert!(states > 3, "send, receive and finish were explored: {item}");
+        }
+    }
+}
+
+/// A receive of the second send waits only behind another send with the same key.
+#[trace("TC-2958", "FR-940-AC-6", "FR-206-AC-4", "FR-211-AC-5")]
+#[test]
+fn package_receive_fifo_preserves_key_partition_and_head_blocking() {
+    for (name, second_key, expected) in [("same", 0, "refuted"), ("different", 1, "proved")] {
+        let ws = Workspace::new(&format!("package-receive-fifo-head-{name}"));
+        let controls = receive_fifo_send("First", "first", 0)
+            + &receive_fifo_send("Second", "second", second_key)
+            + &receive_fifo_receive("Received", "Second", "got", "got.ok");
+        let path = receive_fifo_request(
+            &ws,
+            "m.n",
+            2,
+            "block",
+            "exactly-once-premise",
+            &controls,
+            "closing",
+        );
+        let item = channel_send_parity(&ws, &path, expected);
+        if expected == "refuted" {
+            let blocked = item["counterexample"]["blocked"]
+                .as_array()
+                .expect("blocked receive");
+            assert_eq!(blocked.len(), 1, "{item}");
+            assert_eq!(blocked[0]["rest"]["node"], "Main/Received", "{item}");
+            assert_eq!(blocked[0]["cause"]["type"], "head-blocked", "{item}");
+            assert_eq!(blocked[0]["cause"]["channel"], "Flow::Release", "{item}");
+        }
+    }
+}
+
+/// Constraint, empty-queue and displaced evidence retain their own wait causes.
+#[trace("TC-2958", "FR-940-AC-6", "FR-206-AC-7", "FR-211-AC-5")]
+#[test]
+fn package_receive_fifo_preserves_receive_wait_causes() {
+    for cause in ["constraint", "empty-queue", "displaced"] {
+        let ws = Workspace::new(&format!("package-receive-fifo-cause-{cause}"));
+        let mut controls = receive_fifo_send("Released", "order", 0);
+        let (capacity, overflow) = match cause {
+            "constraint" => {
+                controls += &receive_fifo_receive("Received", "Released", "got", "not got.ok");
+                (2, "block")
+            }
+            "empty-queue" => {
+                controls += &receive_fifo_receive("Received", "Released", "got", "got.ok");
+                controls += &receive_fifo_receive("Again", "Released", "again", "again.ok");
+                (2, "block")
+            }
+            "displaced" => {
+                controls += &receive_fifo_send("Other", "other", 1);
+                controls += &receive_fifo_receive("Received", "Released", "got", "got.ok");
+                (1, "loss head")
+            }
+            _ => unreachable!("the listed wait causes"),
+        };
+        let path = receive_fifo_request(
+            &ws,
+            "true",
+            capacity,
+            overflow,
+            "exactly-once-premise",
+            &controls,
+            "closing",
+        );
+        let item = channel_send_parity(&ws, &path, "refuted");
+        let blocked = item["counterexample"]["blocked"]
+            .as_array()
+            .expect("blocked receive");
+        assert_eq!(blocked.len(), 1, "{item}");
+        assert_eq!(blocked[0]["cause"]["type"], cause, "{item}");
+        let rest = if cause == "empty-queue" {
+            "Main/Again"
+        } else {
+            "Main/Received"
+        };
+        assert_eq!(blocked[0]["rest"]["node"], rest, "{item}");
+    }
+}
+
+/// Refused replay of a blocked FIFO receive retains the typed limit code and cause.
+#[trace("TC-2958", "FR-940-AC-22", "FR-206-AC-4")]
+#[test]
+fn package_receive_fifo_preserves_replay_refusal_code_and_cause() {
+    let ws = Workspace::new("package-receive-fifo-replay-bound");
+    let controls = receive_fifo_send("First", "first", 0)
+        + &receive_fifo_send("Second", "second", 0)
+        + &receive_fifo_receive("Received", "Second", "got", "got.ok");
+    let path = receive_fifo_request(
+        &ws,
+        "m.n",
+        2,
+        "block",
+        "exactly-once-premise",
+        &controls,
+        "closing",
+    );
+    let (package_path, bytes) = package_request(&ws, &path);
+    let below = u64::try_from(bytes.len() / 2).expect("the package length");
+    let source = crate::analyze_cli_support::analyze_under_replay_bytes(&path, below);
+    assert!(
+        source.item(0).get("record").is_some(),
+        "{}",
+        source.document()
+    );
+    assert_eq!(
+        label(&source.item(0)),
+        "inconclusive",
+        "{}",
+        source.document()
+    );
+    let cause = &source.item(0)["record"]["cause"];
+    assert_eq!(cause["kind"], "replay-refused", "{}", source.document());
+    assert_eq!(cause["code"], "stage_limit_exceeded");
+    assert_eq!(cause["cause"], "input-bytes-exceeded");
+    std::fs::remove_file(ws.path("program.fsl")).expect("remove source before package replay");
+    let package = crate::analyze_cli_support::analyze_under_replay_bytes(&package_path, below);
+    assert_eq!(package.item(0), source.item(0), "{}", package.document());
+    assert_eq!(package.exit, source.exit);
+}
+
 fn channel_send_request(
     ws: &Workspace,
     capacity: u64,

@@ -25,7 +25,7 @@ use super::identity::{
     SendOutcome, SendRecord, StepKind, ThreadPath, WaitCause,
 };
 use super::memory::MemoryModel;
-use super::program::{Channel, Cursor, Message};
+use super::program::{Channel, ChannelKey, Cursor, Message};
 use super::steps::{jcs, Gathered, Reader};
 use super::{
     broken, undetermined, Bound, Entry, FifoKey, Instance, ProtocolRefusal, ProtocolState,
@@ -132,24 +132,57 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
             .channels
             .get(channel)
             .ok_or_else(|| ProtocolRefusal::fault("a-message-names-a-channel"))?
-            .key;
-        let Some(body) = key else {
+            .key
+            .as_ref();
+        let Some(key) = key else {
             return Ok(Ok(QueueKey {
                 channel,
                 fifo: None,
             }));
         };
-        let observation = self.model.observation_of(observed)?;
-        let evaluation = self
-            .evaluator
-            .evaluate_protocol_slot(
-                body,
-                vec![Some(payload.clone())],
-                &observation.environment,
-                &mut Meter::new(self.model.meter()),
-            )
-            .map_err(|_| broken())?;
-        if let FamilyOutcome::Evaluated(Outcome::Completed(value)) = &evaluation.outcome {
+        let outcome = match key {
+            ChannelKey::Source(body) => {
+                let observation = self.model.observation_of(observed)?;
+                self.evaluator
+                    .evaluate_protocol_slot(
+                        body,
+                        vec![Some(payload.clone())],
+                        &observation.environment,
+                        &mut Meter::new(self.model.meter()),
+                    )
+                    .map_err(|_| broken())?
+                    .outcome
+            }
+            ChannelKey::Package { binder, slot } => {
+                let package = self.package_program.as_ref().ok_or_else(broken)?;
+                let observation = self.package_observation(observed)?;
+                let binders = self.package_supplied_binders(
+                    [(binder, Some(payload.clone()))],
+                    &observation,
+                    slot,
+                )?;
+                let supply = package
+                    .supply_for_slot(slot, binders, Some(&observation))
+                    .map_err(|_| broken())?;
+                match self
+                    .evaluator
+                    .evaluate_package_protocol_slot(
+                        slot,
+                        &supply,
+                        &mut Meter::new(self.model.meter()),
+                    )
+                    .map_err(|_| broken())?
+                {
+                    crate::value::ProtocolSlotEvaluation::Evaluated(evaluation, _) => {
+                        evaluation.outcome
+                    }
+                    crate::value::ProtocolSlotEvaluation::Unavailable { .. } => {
+                        return Err(broken())
+                    }
+                }
+            }
+        };
+        if let FamilyOutcome::Evaluated(Outcome::Completed(value)) = &outcome {
             let enc = value_enc(value, self.model.typing());
             return Ok(Ok(QueueKey {
                 channel,
@@ -159,7 +192,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                 }),
             }));
         }
-        match verdict(&evaluation.outcome) {
+        match verdict(&outcome) {
             Verdict::Undecided(outcome) => Ok(Err(undetermined(self.program.text(node)?, outcome))),
             Verdict::True | Verdict::False => Err(broken()),
         }
