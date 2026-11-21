@@ -132,7 +132,13 @@ pub fn check_single_existential(
         max_candidates: request.subject.simulation.expansion.max_candidates,
     };
     let no_initial = request.subject.simulation.initial.is_empty();
-    let system = ModelSystem::new(request.subject.simulation.clone())
+    let Some(alias) = clause.aliases().first() else {
+        return Err(HyperRefusal::NotSingleExistential {
+            form: clause.form().cloned(),
+        }
+        .into());
+    };
+    let system = ModelSystem::for_alias(request.subject.simulation.clone(), alias.as_str())
         .map_err(|failure| ModelCheckRefusal::Admission(Box::new(failure)))?;
     check_model_bounds(&system, BOUND_POSITIONS).map_err(not_simulated)?;
     let bindings = instances(clause, std::slice::from_ref(&system), &|_| Ok(0))?;

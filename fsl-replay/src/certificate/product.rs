@@ -121,6 +121,8 @@ pub struct ProductClosureRequest<'a> {
     /// The clause being proved.
     pub clause: &'a CheckedHyperClause,
     /// One source model subject per distinct alias, in clause alias order.
+    /// A unit that selects several models carries, per alias, the snapshot
+    /// provision reduced to that alias's model.
     pub subjects: &'a [ModelSubject<'a>],
     /// Atom and match accounting limits.
     pub meter: ScalarLimits,
@@ -161,19 +163,33 @@ fn rejected(rule: CertificateRule, key: ProductStateKey) -> TemporalCertificateC
     })
 }
 
+/// The system of each alias over its own model (FR-173 "Event-position form"),
+/// as the engine built it: a subject whose simulation selects several models
+/// carries the snapshot provision reduced to that alias's model.
+///
+/// # Errors
+///
+/// A subject that does not admit.
+pub(crate) fn alias_systems<'a>(
+    request: &ProductClosureRequest<'a>,
+) -> Result<Vec<ModelSystem<'a>>, ProductClosureRefusal> {
+    request
+        .subjects
+        .iter()
+        .zip(request.clause.aliases())
+        .map(|(subject, alias)| {
+            ModelSystem::for_alias(subject.simulation.clone(), alias.as_str())
+                .map_err(|_| ProductClosureRefusal::Input("model-subject"))
+        })
+        .collect()
+}
+
 /// Require one certificate for every admitted parameter binding, in order.
 pub(crate) fn complete_scope(
     request: &ProductClosureRequest<'_>,
     certificates: &[ProductClosureCertificate],
 ) -> Result<(), ProductClosureRefusal> {
-    let systems = request
-        .subjects
-        .iter()
-        .map(|subject| {
-            ModelSystem::new(subject.simulation.clone())
-                .map_err(|_| ProductClosureRefusal::Input("model-subject"))
-        })
-        .collect::<Result<Vec<_>, _>>()?;
+    let systems = alias_systems(request)?;
     let mut domains = Vec::new();
     for parameter in request.clause.parameters() {
         let slot = request
@@ -266,14 +282,7 @@ fn check(
     {
         return Err(ProductClosureRefusal::Input("clause-or-subjects"));
     }
-    let systems = request
-        .subjects
-        .iter()
-        .map(|subject| {
-            ModelSystem::new(subject.simulation.clone())
-                .map_err(|_| ProductClosureRefusal::Input("model-subject"))
-        })
-        .collect::<Result<Vec<_>, _>>()?;
+    let systems = alias_systems(request)?;
     let slot = |alias: &str| {
         request
             .clause

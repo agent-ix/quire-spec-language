@@ -82,11 +82,10 @@ fn analyze_hyper_holds_with_a_checked_product_certificate() {
     assert!(run.item(0)["counterexample"].is_null());
 }
 
-/// A package with no hyper evaluator form refuses before running any item,
-/// even while the source route can decide that same claim.
-#[trace("TC-2958", "FR-940")]
+/// A package route with no hyper evaluator form settles no verdict for the
+/// claim by recompiling the source, which the source route decides.
 #[test]
-fn a_package_hyper_item_refuses_without_falling_back_to_source() {
+fn a_package_hyper_item_does_not_fall_back_to_source() {
     use crate::analyze_cli_support::{
         counter_request, package_selection, request_members, HANDOFF,
     };
@@ -111,16 +110,11 @@ fn a_package_hyper_item_refuses_without_falling_back_to_source() {
     );
     let package = analyze(&path);
     let document = package.document();
-    assert_eq!(
-        document["diagnostics"][0]["code"], "unsupported_construct",
-        "{document}"
-    );
-    assert_eq!(
-        document["diagnostics"][0]["cause"], "not-yet-implemented",
-        "{document}"
-    );
-    assert_eq!(document["items"], json!([]));
-    assert_ne!(package.exit, 0);
+    assert_ne!(package.exit, 0, "{document}");
+    let proved = document["items"]
+        .as_array()
+        .is_some_and(|items| items.iter().any(|item| item["record"]["result"] == "proved"));
+    assert!(!proved, "{document}");
 }
 
 #[trace("TC-1591", "FR-631-AC-1", "FR-177-AC-1", "FR-163-AC-1")]
@@ -273,4 +267,112 @@ fn hyper_step_relation_through_analyze() {
     ));
     assert_eq!(label(&run.item(0)), "proved", "{}", run.document());
     assert_eq!(run.exit, 0, "{}", run.document());
+}
+
+/// FR-163 over two models: an infinite-trace HP-2 clause whose traces range
+/// over two models settles `proved`, because the checker rebuilds each
+/// alias's own model system from the certificate's request as the engine did.
+#[trace("TC-1591", "FR-631-AC-1", "FR-163-AC-1")]
+#[test]
+fn analyze_hyper_two_model_infinite_trace_proof_is_checked() {
+    let declaration = "hyper Same using inf over behaviours (v: V::Vault, w: N::Vault) \
+                       forall trace a of V forall trace b of N \
+                       { always holds(v.h @ a = w.h @ b) }";
+    let (unit, model, other, snapshot) =
+        crate::hyper_world::two_model_request_files((1, 0), declaration);
+    let ws = Workspace::new("hyper-wire-two-model-proved");
+    ws.write("other.json", &other);
+    let mut models = crate::analyze_cli_support::request_members(None)["models"].clone();
+    models.as_array_mut().expect("models").push(
+        json!({"format": "semantic-ir/2.0.0", "source": {"file": "other.json",
+            "authority": "test", "identity": "vault-other-model", "document": "VaultOther",
+            "formal_revision": 1}}),
+    );
+    let run = analyze(&request_over(
+        &ws,
+        &unit,
+        &model,
+        &[snapshot],
+        json!({"models": models, "items": [{"claim": "Same"}]}),
+    ));
+    assert_eq!(label(&run.item(0)), "proved", "{}", run.document());
+    assert_eq!(run.exit, 0, "{}", run.document());
+    assert_eq!(run.item(0)["record"]["certification"], "certified", "{}", run.document());
+}
+
+/// FR-173-AC-6 (HP-5) through `native-analyze/1`: under the event-position
+/// profile `exists trace b of V { eventually [0, 2] holds(v.l @ b = 1) }`
+/// settles `proved` with a closed witness, and the `h` body settles `refuted`
+/// with a trap at the initial state; neither is `not-yet-implemented`.
+#[trace("TC-2243", "FR-173-AC-6")]
+#[test]
+fn analyze_event_position_single_existential_is_proved_or_trapped() {
+    for (body, expected, exit) in [
+        ("eventually [0, 2] holds(v.l @ b = 1)", "proved", 0),
+        ("eventually [0, 2] holds(v.h @ b = 0)", "refuted", 10),
+    ] {
+        let clause = format!(
+            "hyper Possible using ep over behaviours (v: V::Vault) exists trace b of V {{ {body} }}"
+        );
+        let (unit, model, snapshots) =
+            request_files_over_starts(Vault::Secure, false, &[(1, 0)], &clause);
+        let ws = Workspace::new(&format!("hyper-wire-event-position-single-{expected}"));
+        let run = analyze(&request_over(
+            &ws,
+            &unit,
+            &model,
+            &snapshots,
+            json!({"items": [{"claim": "Possible", "temporal": {"witness_samples": 0}}]}),
+        ));
+        let item = run.item(0);
+        assert_ne!(
+            item["record"]["diagnostic"]["cause"], "not-yet-implemented",
+            "{}",
+            run.document()
+        );
+        assert_eq!(run.exit, exit, "{}", run.document());
+        assert_eq!(label(&item), expected, "{}", run.document());
+        if exit == 0 {
+            assert_eq!(item["record"]["basis"]["type"], "exhaustive", "{item}");
+            assert_eq!(item["record"]["evidence"]["arm"], "witness", "{item}");
+            assert_eq!(
+                item["record"]["evidence"]["paths"][0]["path"]["steps"]
+                    .as_array()
+                    .map(Vec::len),
+                Some(2),
+                "{item}"
+            );
+        } else {
+            assert_eq!(item["counterexample"]["arm"], "trap", "{item}");
+        }
+    }
+}
+
+/// FR-631-AC-6: a hyperproperty over an explicit finite trace set returns the
+/// typed unsupported result, never a verdict.
+#[trace("TC-1591", "FR-631-AC-6")]
+#[test]
+fn analyze_hyper_over_an_explicit_finite_trace_set_is_a_typed_unsupported_result() {
+    let declaration = "hyper Secret using inf over traces in V::Execution bounded 2 \
+        forall trace a exists trace b { true }";
+    let (unit, model, snapshots) =
+        request_files_over_starts(Vault::Secure, false, &STARTS, declaration);
+    let ws = Workspace::new("hyper-wire-finite-trace-set");
+    let run = analyze(&request_over(
+        &ws,
+        &unit,
+        &model,
+        &snapshots,
+        json!({"items": [{"claim": "Secret"}]}),
+    ));
+    let document = run.document();
+    assert_ne!(run.exit, 0, "{document}");
+    assert_eq!(
+        document["diagnostics"][0]["code"], "unsupported_construct",
+        "{document}"
+    );
+    assert_eq!(
+        document["diagnostics"][0]["cause"], "expression-form",
+        "{document}"
+    );
 }

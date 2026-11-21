@@ -95,15 +95,13 @@ pub(super) fn hyper_item<'a>(
                     Err(_) => return EngineReport::Refused(Refusal::Failed(BROKEN)),
                 };
                 let matcher = CheckedStepMatch::new(package, clause);
-                // An event-position HP-5 clause is decided over closed finite traces
-                // (FR-173), which the lasso-and-product settlement below does not
-                // replay; it keeps its own route.
+                // An HP-5 clause is decided by its own engine: lasso-and-product
+                // closure, or closed finite executions under the event-position
+                // profile (FR-173).
                 if matches!(
                     clause.form(),
                     Some(fsl_semantics::check::HyperForm::SingleExistential)
-                ) && clause.profile()
-                    != fsl_semantics::check::TemporalProfile::EventPositionFalseExtension
-                {
+                ) {
                     let Some(system) = owned.first() else {
                         return EngineReport::Refused(Refusal::Failed(BROKEN));
                     };
@@ -138,12 +136,18 @@ pub(super) fn hyper_item<'a>(
                     Ok(outcome) => outcome,
                     Err(refusal) => return EngineReport::Refused(model_refusal(&refusal)),
                 };
-                let subjects = clause
-                    .aliases()
-                    .iter()
-                    .map(|_| ModelSubject {
-                        simulation: simulation.clone(),
-                        proof_bounds: form.proof_bounds.clone(),
+                // The certificate is checked over each alias's own model, as the
+                // engine built it.
+                let subjects = (0..clause.aliases().len())
+                    .map(|slot| {
+                        let mut simulation = simulation.clone();
+                        if let Some(provision) = provisions.get(slot).and_then(Option::as_ref) {
+                            simulation.snapshots = provision;
+                        }
+                        ModelSubject {
+                            simulation,
+                            proof_bounds: form.proof_bounds.clone(),
+                        }
                     })
                     .collect::<Vec<_>>();
                 let certificate = fsl_replay::ProductClosureRequest {
