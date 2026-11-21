@@ -2,6 +2,7 @@
 //! External consumers of the non-core request-file owner.
 
 mod check_imports;
+mod dependency_handoff;
 mod check_source_identity;
 mod cli_contract;
 mod compile_limits;
