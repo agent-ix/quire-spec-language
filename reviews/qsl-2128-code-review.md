@@ -88,3 +88,24 @@ The new tests fail on the old code. In a throwaway worktree, b845664df0 was run 
 | FND-001 | fixed | `alias_systems` (product.rs:173-186) rebuilds every alias through `ModelSystem::for_alias`, and both `complete_scope` and `check` use it. `hyper_route` hands the checker per-alias subjects with that alias's snapshot provision. `check_single_existential` and `settle_existential` use `for_alias` on the first alias. The new `analyze_hyper_two_model_infinite_trace_proof_is_checked` settles `proved`/`certified`, and it fails on b845664df0 with `inconclusive`, so it can fail |
 | FND-002 | fixed | The gate is gone: every HP-5 clause goes to `single()`, and event-position clauses settle through `settle_closed`, which reruns `closed_executions` and `judge_closed_tuple` and checks each witness path step by step. Both FR-173-AC-6 bodies pass through analyze (`proved` with a 2-step closed witness; `refuted` with a trap), and the test fails on the old code with `not-yet-implemented`. The `Input("HP-5-closed-witness")` arm is now unreachable: event-position returns to `settle_closed` before the match, and only `decide_closed` (event-position only) produces `ClosedWitnessed`. Loose ends are recorded as FND-006 |
 | FND-003 | fixed | The reorder and reflow churn is reverted. `cargo fmt --check` gives 569 hunks against origin/main 23e65543a3's 559. The difference is about 11 hunks in the PR's own new lines (hyper_route.rs, existential_settle.rs, hyper_wire.rs, hyper_world.rs and others) plus one hunk analyze.rs no longer has. No hunk only reorders untouched code |
+
+## New findings (disposition pass 2)
+
+Checked at 76286373c9; fix commit 76286373c9 on top of the rebased 320a21349e. Focused filters: 201 passed, 7 failed, 4 ignored; the 7 failures are the same Nonzero baseline. The fsl-replay product, existential and hyper_settle filters pass.
+
+The new tests fail on the pre-fix code (320a21349e plus the head's hyper_wire.rs, in a throwaway worktree):
+- `hyper_step_relation_through_analyze` fails with `certification` `certified`;
+- `a_stopped_event_position_search_names_the_limit_it_reached` fails with `limit_reached` null.
+The two new hyper_settle tests name `HyperOutcome::HoldsUnchecked`, which does not exist before the fix.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-007 | medium | An EN-1 HP-1 (step-relation) proof now settles `proved` `Uncertified` with no certificate, and no FR-182 row allows that. V-1 reaches `proved` only with an `Accepted` FR-163 certificate, and V-3's `Uncertified` is defined only for `k`-induction. FR-163-AC-1 (the `Det` certificate is `Accepted`) and FR-163-AC-6 (an HP-1 certificate rejects `ViolatingMember`) require an HP-1 certificate and checker, which `check_product_closure` does not build (its `Product::build` refuses every form other than HP-2/3/5/6 with `Input("form")`). The label is honest, but the settlement is outside the spec. Either build the HP-1 certificate, or amend FR-182 with an uncertified EN-1 HP-1 row and file a ticket for it | fsl-analyze/src/analyze/hyper_route.rs:420; fsl-replay/src/model_check/hyper_settle.rs:264-268 |
+
+## Dispositions (round 2)
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-004 | fixed | No relation proof is labelled `certified` any more: `ModelRelationOutcome::Holds` maps to the new `HyperOutcome::HoldsUnchecked`, which settles `Row::proof(Exhaustive, Uncertified, ClosedScope)` with `certificates` empty. The analyze test asserts `uncertified` and fails on the pre-fix code. Whether `proved`+`Uncertified` is allowed for EN-1 HP-1 at all is recorded as FND-007 |
+| FND-005 | fixed | `ModelRelationOutcome::Undecided` (an expansion stop or an undetermined body) now maps to `HyperOutcome::Undecided{UndecidedSuccessor}`, which settles `inconclusive` (FR-182 V-6). The `relation_item` arm itself has no analyze-level test, only the settle-level `an_undecided_relation_run_settles_inconclusive_not_failed`. The arm is a one-line constructor, so that gap is low risk |
+| FND-006 | fixed | `settle_closed` now maps an `Executions{limit}` stop to `incomplete` naming `MaxStates` with its value, `Cancelled` to `Cancelled{source}`, and an expansion stop to `inconclusive` `UndecidedSuccessor`. `settle_existential` sends only `ClosedWitnessed`/`Trapped` to `settle_closed`, so `NoInitialState` and `NoDecision` now take the shared arms: `inconclusive` `NoInitialState`, and `stopped_run` with `decide_closed`'s reached limit. The `HP-5-closed-outcome` refusal is now unreachable. `a_stopped_event_position_search_names_the_limit_it_reached` fails on the pre-fix code. The cancelled, expansion-stop and no-initial-state paths have no test (low residual) |
