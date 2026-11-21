@@ -127,19 +127,16 @@ fn checker_shape(world: &World, claim: &str, scale: &filament_exact::Integer) ->
     let timed = TimedSystem::new(&model, "M").expect("dense timed model");
     let product = TaskProductSystem::new(timed, claim).expect("checked task product");
     let automaton = TaskAutomaton::new(&product);
-    let quotient =
-        fsl_replay::explore_task_product(&automaton, scale, 100_000_000, &Cancel::new())
-            .expect("the checker's quotient");
+    let quotient = fsl_replay::explore_task_product(&automaton, scale, 100_000_000, &Cancel::new())
+        .expect("the checker's quotient");
     let at = |index: usize| {
         let vertex = &quotient.vertices[index];
         (vertex.key.as_bytes().to_vec(), zone_cells(&vertex.zone))
     };
     let identity = |index: usize| match &quotient.identities[index] {
-        QuotientIdentity::Source(transition) => {
-            fsl_replay::task_source_transition_wire(transition)
-                .expect("a spelling")
-                .to_string()
-        }
+        QuotientIdentity::Source(transition) => fsl_replay::task_source_transition_wire(transition)
+            .expect("a spelling")
+            .to_string(),
         QuotientIdentity::Template(template) => template.to_wire().expect("a spelling").to_string(),
     };
     Shape {
@@ -214,17 +211,20 @@ fn the_engine_certificate_is_accepted_by_the_checker_from_its_json() {
         let world = set(name);
         let (_, certificate) = engine_graph(&world, claim);
         assert_eq!(
-            verdict(&world, claim, &certificate, CertificateCheckLimits::default())
-                .expect("the check runs"),
+            verdict(
+                &world,
+                claim,
+                &certificate,
+                CertificateCheckLimits::default()
+            )
+            .expect("the check runs"),
             ZoneCertificateVerdict::Accepted,
             "{claim}"
         );
         let wire = certificate.to_wire(json!({})).expect("a wire");
-        let (read, _) = ZoneCertificate::<OccurrenceKey>::from_wire(
-            &wire,
-            certificate.obligation.clone(),
-        )
-        .expect("the wire reads");
+        let (read, _) =
+            ZoneCertificate::<OccurrenceKey>::from_wire(&wire, certificate.obligation.clone())
+                .expect("the wire reads");
         assert_eq!(read.to_wire(json!({})).expect("a wire"), wire, "{claim}");
         assert_eq!(
             verdict(&world, claim, &read, CertificateCheckLimits::default())
@@ -314,8 +314,8 @@ fn no_certificate_is_built_for_a_reachable_miss() {
     let timed = TimedSystem::new(&model, "M").expect("dense timed model");
     let product = TaskProductSystem::new(timed, "OFp").expect("checked task product");
     let automaton = TaskAutomaton::new(&product);
-    let graph = explore_task_symbolic(&automaton, 100_000_000, &Cancel::new())
-        .expect("the product closes");
+    let graph =
+        explore_task_symbolic(&automaton, 100_000_000, &Cancel::new()).expect("the product closes");
     let occurrence = claim_of(&world, "OFp").occurrence().expect("an occurrence");
     assert!(task_product_certificate(&automaton, &graph, occurrence).is_err());
 }

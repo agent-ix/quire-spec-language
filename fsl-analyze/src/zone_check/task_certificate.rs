@@ -116,9 +116,11 @@ fn member(
     let name = |index: usize| clocks[index - 1].name.clone();
     let mut diagonals = Vec::new();
     for diagonal in automaton.diagonals() {
-        let value = diagonal.constant.mul(&filament_exact::Rational::from_integer(
-            Integer::from_big(graph.scale.clone()),
-        ));
+        let value = diagonal
+            .constant
+            .mul(&filament_exact::Rational::from_integer(Integer::from_big(
+                graph.scale.clone(),
+            )));
         diagonals.push(TaskDiagonalConstraint {
             left: name(diagonal.left),
             operator: if diagonal.strict {
@@ -191,7 +193,11 @@ pub fn task_product_certificate(
     let mut edge_of = BTreeMap::new();
     let mut list: Vec<CertEdge> = Vec::new();
     for step in &graph.discrete {
-        let triple = (node_of_vertex[step.from], step.identity, node_of_vertex[step.to]);
+        let triple = (
+            node_of_vertex[step.from],
+            step.identity,
+            node_of_vertex[step.to],
+        );
         edge_of.entry(triple).or_insert_with(|| {
             let mut edge = CertEdge {
                 from: triple.0,
@@ -263,7 +269,11 @@ fn witness(
     let count = graph.vertices.len();
     let mut out: Vec<Vec<Move>> = vec![Vec::new(); count];
     for step in &graph.discrete {
-        let triple = (node_of_vertex[step.from], step.identity, node_of_vertex[step.to]);
+        let triple = (
+            node_of_vertex[step.from],
+            step.identity,
+            node_of_vertex[step.to],
+        );
         out[step.from].push((step.to, Some(edge_of[&triple]), Some(step.effect)));
     }
     for &(from, to) in &graph.time {

@@ -286,7 +286,7 @@ struct Explorer<'t, 's, 'a, 'c> {
     diagonals: Vec<Diagonal>,
     data: BTreeMap<StateKey, std::rc::Rc<LocationData>>,
     locations: Vec<TaskLocation>,
-    index: BTreeMap<(StateKey, Vec<Option<(BigInt, bool)>>), usize>,
+    index: BTreeMap<(StateKey, Fingerprint), usize>,
     graph: SymbolicGraph,
 }
 
@@ -296,7 +296,10 @@ struct LocationData {
     overflows: Vec<fsl_eval::simulation::model::Overflow>,
 }
 
-fn fingerprint(zone: &Dbm) -> Vec<Option<(BigInt, bool)>> {
+/// A zone's bounds, row by row, `None` for infinity.
+type Fingerprint = Vec<Option<(BigInt, bool)>>;
+
+fn fingerprint(zone: &Dbm) -> Fingerprint {
     let dim = zone.dim();
     let mut cells = Vec::with_capacity(dim * dim);
     for i in 0..dim {
@@ -399,18 +402,19 @@ impl<'t, 's, 'a, 'c> Explorer<'t, 's, 'a, 'c> {
         if zone.is_empty() {
             return Ok(out);
         }
-        self.walk_clock(1, Dbm::universe(self.dim), zone.clone(), &mut Vec::new(), &mut out)?;
+        self.walk_clock(
+            1,
+            Dbm::universe(self.dim),
+            zone.clone(),
+            &mut Vec::new(),
+            &mut out,
+        )?;
         Ok(out)
     }
 
     /// Narrows a region and its part of the zone by `cuts`; `None` when the
     /// part is empty. One unit of work per call.
-    fn narrow(
-        &self,
-        region: &Dbm,
-        meet: &Dbm,
-        cuts: &[Cut],
-    ) -> Done<Option<(Dbm, Dbm)>> {
+    fn narrow(&self, region: &Dbm, meet: &Dbm, cuts: &[Cut]) -> Done<Option<(Dbm, Dbm)>> {
         self.spend()?;
         let (mut region, mut meet) = (region.clone(), meet.clone());
         for cut in cuts {
@@ -449,10 +453,7 @@ impl<'t, 's, 'a, 'c> Explorer<'t, 's, 'a, 'c> {
             ceiling.clone()
         };
         loop {
-            let whole = [
-                (clock, 0, k.clone(), false),
-                (0, clock, -k.clone(), false),
-            ];
+            let whole = [(clock, 0, k.clone(), false), (0, clock, -k.clone(), false)];
             if let Some((r, m)) = self.narrow(&region, &meet, &whole)? {
                 places.push(Place::Whole);
                 self.walk_clock(clock + 1, r, m, places, out)?;
@@ -468,7 +469,10 @@ impl<'t, 's, 'a, 'c> Explorer<'t, 's, 'a, 'c> {
                 return Ok(());
             }
             let upper = &k + BigInt::one();
-            let open = [(0, clock, -k.clone(), true), (clock, 0, upper.clone(), true)];
+            let open = [
+                (0, clock, -k.clone(), true),
+                (clock, 0, upper.clone(), true),
+            ];
             if let Some((r, m)) = self.narrow(&region, &meet, &open)? {
                 places.push(Place::Open(k.clone()));
                 self.walk_clock(clock + 1, r, m, places, out)?;
@@ -529,19 +533,18 @@ impl<'t, 's, 'a, 'c> Explorer<'t, 's, 'a, 'c> {
         Ok(())
     }
 
-    fn walk_diagonals(
-        &self,
-        index: usize,
-        region: Dbm,
-        meet: Dbm,
-        out: &mut Vec<Dbm>,
-    ) -> Done<()> {
+    fn walk_diagonals(&self, index: usize, region: Dbm, meet: Dbm, out: &mut Vec<Dbm>) -> Done<()> {
         let Some(diagonal) = self.diagonals.get(index) else {
             out.push(region);
             return Ok(());
         };
         let truths: [Vec<Cut>; 2] = [
-            vec![(diagonal.left, diagonal.right, diagonal.value.clone(), diagonal.strict)],
+            vec![(
+                diagonal.left,
+                diagonal.right,
+                diagonal.value.clone(),
+                diagonal.strict,
+            )],
             vec![(
                 diagonal.right,
                 diagonal.left,
@@ -557,10 +560,7 @@ impl<'t, 's, 'a, 'c> Explorer<'t, 's, 'a, 'c> {
         Ok(())
     }
 
-    fn location(
-        &mut self,
-        location: &TaskLocation,
-    ) -> Done<(StateKey, std::rc::Rc<LocationData>)> {
+    fn location(&mut self, location: &TaskLocation) -> Done<(StateKey, std::rc::Rc<LocationData>)> {
         let key = product_key(location).ok_or(Failure::Stop(SymbolicStop::Fault("key")))?;
         if let Some(found) = self.data.get(&key) {
             return Ok((key, std::rc::Rc::clone(found)));

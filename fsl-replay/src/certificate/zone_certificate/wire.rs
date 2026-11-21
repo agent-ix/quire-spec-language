@@ -60,10 +60,15 @@ fn zone_wire(zone: &Zone) -> Result<Value, ZoneCertificateWireError> {
     for i in 0..dim {
         let mut row = Vec::with_capacity(dim);
         for j in 0..dim {
-            row.push(match zone.bound(i, j).map_err(|_| ZoneCertificateWireError::Unspelled)? {
-                Some((bound, strict)) => json!({"bound": bound.to_string(), "strict": strict}),
-                None => json!("infinity"),
-            });
+            row.push(
+                match zone
+                    .bound(i, j)
+                    .map_err(|_| ZoneCertificateWireError::Unspelled)?
+                {
+                    Some((bound, strict)) => json!({"bound": bound.to_string(), "strict": strict}),
+                    None => json!("infinity"),
+                },
+            );
         }
         rows.push(Value::Array(row));
     }
@@ -94,8 +99,7 @@ fn read_zone(value: &Value, pointer: &str) -> Result<Zone, TaskProductShapeRefus
             cells.push(Some((bound, strict)));
         }
     }
-    Zone::from_matrix(dim, cells)
-        .or_else(|_| refuse(pointer, TaskProductShapeReason::NotCanonical))
+    Zone::from_matrix(dim, cells).or_else(|_| refuse(pointer, TaskProductShapeReason::NotCanonical))
 }
 
 fn state_wire(key: &StateKey) -> Value {
@@ -162,9 +166,8 @@ impl<O> ZoneCertificate<O> {
                 return Err(Unsupported("edges"));
             }
             let transition = match (&edge.transition, &edge.task_transition) {
-                (Some(source), None) => {
-                    source_transition_wire(source).map_err(|_| ZoneCertificateWireError::Unspelled)?
-                }
+                (Some(source), None) => source_transition_wire(source)
+                    .map_err(|_| ZoneCertificateWireError::Unspelled)?,
                 (None, Some(template)) => template
                     .to_wire()
                     .map_err(|_| ZoneCertificateWireError::Unspelled)?,
@@ -180,7 +183,10 @@ impl<O> ZoneCertificate<O> {
                 DivergentTarget::Cycle(cycle) => path.extend(cycle),
                 DivergentTarget::Terminal(_) => return Err(Unsupported("admitted")),
             }
-            map.insert("admitted".to_owned(), json!({"edges": path, "start": witness.start}));
+            map.insert(
+                "admitted".to_owned(),
+                json!({"edges": path, "start": witness.start}),
+            );
         }
         map.insert("bounds".to_owned(), json!([]));
         map.insert("edges".to_owned(), Value::Array(edges));
@@ -191,7 +197,9 @@ impl<O> ZoneCertificate<O> {
         if let Some(member) = &self.task_product {
             map.insert(
                 "task_product".to_owned(),
-                member.to_wire().map_err(|_| ZoneCertificateWireError::Unspelled)?,
+                member
+                    .to_wire()
+                    .map_err(|_| ZoneCertificateWireError::Unspelled)?,
             );
         }
         Ok(Value::Object(map))
@@ -214,7 +222,7 @@ impl<O> ZoneCertificate<O> {
             &["admitted", "task_product"],
         )?;
         let scale = integer(member(map, "scale"), "/scale")?;
-        if array(member(map, "bounds"), "/bounds")?.len() != 0 {
+        if !array(member(map, "bounds"), "/bounds")?.is_empty() {
             return Err(ZoneCertificateWireError::Unsupported("bounds"));
         }
         let mut nodes = Vec::new();
@@ -245,11 +253,14 @@ impl<O> ZoneCertificate<O> {
             let at = child("/edges", index);
             let edge = object(edge, &at, &["node", "transition", "target"], &[])?;
             let transition = member(edge, "transition");
-            let template = transition.get("type").and_then(Value::as_str)
-                == Some("task-transition-template");
+            let template =
+                transition.get("type").and_then(Value::as_str) == Some("task-transition-template");
             let at_transition = child(&at, "transition");
             let (source, task) = if template {
-                (None, Some(TaskTransitionTemplate::read(transition, &at_transition)?))
+                (
+                    None,
+                    Some(TaskTransitionTemplate::read(transition, &at_transition)?),
+                )
             } else {
                 (Some(source_transition(transition, &at_transition)?), None)
             };
@@ -310,8 +321,8 @@ fn read_witness(
     edges: &[CertEdge],
 ) -> Result<DivergenceWitness, TaskProductShapeRefusal> {
     let map = object(value, "/admitted", &["start", "edges"], &[])?;
-    let start = usize::try_from(count(member(map, "start"), "/admitted/start")?)
-        .unwrap_or(usize::MAX);
+    let start =
+        usize::try_from(count(member(map, "start"), "/admitted/start")?).unwrap_or(usize::MAX);
     let path: Vec<usize> = array(member(map, "edges"), "/admitted/edges")?
         .iter()
         .enumerate()
@@ -328,8 +339,10 @@ fn read_witness(
             target: DivergentTarget::Quiescent(start),
         });
     };
-    let (Some(end), true) = (edges.get(last).map(|edge| edge.to), path.iter().all(|&e| e < edges.len()))
-    else {
+    let (Some(end), true) = (
+        edges.get(last).map(|edge| edge.to),
+        path.iter().all(|&e| e < edges.len()),
+    ) else {
         return Ok(DivergenceWitness {
             start,
             path,
