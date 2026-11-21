@@ -151,11 +151,9 @@ fn the_refinement_row_place_forms_evaluate_to_the_place_ids() {
     assert_eq!(evaluate(USED, "c2"), one);
 }
 
-/// A stored clock reference is ordinary data: the population count reads the
-/// stored place id, and changing that field changes which place is selected.
-#[trace("TC-3084", "FR-1040-AC-3", "FR-1040-AC-8")]
-#[test]
-fn a_refinement_count_reads_the_stored_clock_reference() {
+/// The TC-3084 clock fixture with a stored reference and a row that returns
+/// an actual evaluated place id for snapshot admission tests.
+fn clock_reference_fixture(wrappers: bool) -> crate::ring_queue::Checked {
     use crate::ring_queue::{self, QUEUE};
     use serde_json::{json, Value as Json};
 
@@ -183,11 +181,25 @@ fn a_refinement_count_reads_the_stored_clock_reference() {
             .as_array_mut()
             .expect("fields")
             .push(ring_queue::single(domain, owner, field, &reference));
+        if wrappers && domain == CLOCKS {
+            let mut maybe = ring_queue::single(domain, owner, "maybe", &reference);
+            maybe["presence"] = json!("optional");
+            let mut refs = ring_queue::single(domain, owner, "refs", &reference);
+            refs["multiplicity"] =
+                json!({"lower": 0, "upper": 3, "ordered": true, "unique": false});
+            let mut peer =
+                ring_queue::single(domain, owner, "peer", &ring_queue::node(domain, owner));
+            peer["presence"] = json!("optional");
+            ty["fields"]
+                .as_array_mut()
+                .expect("fields")
+                .extend([maybe, refs, peer]);
+        }
         serde_json::to_vec(&document).expect("JSON")
     };
     let queue = with_reference(ring_queue::queue_spec(), QUEUE, "Queue", "chosen");
     let calls = with_reference(ring_queue::clock_calls(), CLOCKS, "Call", "r");
-    let checked = ring_queue::check_models(
+    ring_queue::check_models(
         &queue,
         ("C", CLOCKS, &calls),
         true,
@@ -205,7 +217,15 @@ fn a_refinement_count_reads_the_stored_clock_reference() {
                 .map(|found| &found.refusal)
                 .collect::<Vec<_>>()
         )
-    });
+    })
+}
+
+/// A stored clock reference is ordinary data: the population count reads the
+/// stored place id, and changing that field changes which place is selected.
+#[trace("TC-3084", "FR-1040-AC-3", "FR-1040-AC-8")]
+#[test]
+fn a_refinement_count_reads_the_stored_clock_reference() {
+    let checked = clock_reference_fixture(false);
     let package = CheckedPackage::link(checked.graph);
     let graph = package.graph();
     let (effective, universe) = declared_type_universe_for(
@@ -275,4 +295,160 @@ fn a_refinement_count_reads_the_stored_clock_reference() {
         evaluate_row(&package, &checked.packages, BUSY, "c1", &state),
         Value::Boolean(true)
     );
+}
+
+/// Run the actual `chosen = ref(self.x)` row with its owner binder alone.
+fn generated_place(
+    package: &CheckedPackage,
+    packages: &fsl_semantics::model::intake::PackageInput,
+    owner: &str,
+) -> ObjectReference {
+    let graph = package.graph();
+    let (effective, universe) = declared_type_universe_for(
+        graph.model_inputs(),
+        packages,
+        ModelNormalizationLimits::default(),
+        &key(CLOCKS, "Call"),
+    )
+    .expect("universe")
+    .expect("Call");
+    let owner = ObjectReference::new(universe, effective, ObjectId::new(owner).expect("id"));
+    let [refinement] = graph.refinements() else {
+        panic!("one refinement")
+    };
+    let [queue, _] = refinement.objects() else {
+        panic!("Queue and Cell")
+    };
+    let mut meter = Meter::new(UNLIMITED);
+    let evaluation = evaluate_refinement_row(
+        package,
+        &queue.fields[2].expression,
+        &fsl_semantics::model::object_environment::ObjectEnvironment::default(),
+        vec![Value::Reference(owner)],
+        &mut meter,
+    )
+    .expect("place row evaluates");
+    match evaluation.outcome {
+        FamilyOutcome::Evaluated(Outcome::Completed(Value::Reference(reference))) => reference,
+        other => panic!("place row returns a reference: {other:?}"),
+    }
+}
+
+/// The existing raw reference form names a place in a population's owner
+/// context, including optional and sequence data fields.
+fn clock_snapshot(reference: &ObjectReference) -> (DocumentRef, Vec<u8>) {
+    use serde_json::json;
+    let identity = DocumentRef {
+        authority: "test".to_owned(),
+        identity: "clock-snapshot".to_owned(),
+    };
+    let r = json!({"reference": {"population": crate::ring_queue::node(CLOCKS, "calls"), "key": reference.object().as_str()}});
+    let bytes = serde_json::to_vec(&json!({
+        "format": "filament.state.snapshot/v1", "identity": {"authority": identity.authority, "identity": identity.identity},
+        "observation": "current", "model": {"identity": CLOCKS},
+        "anchor": {"kind": "initialization", "name": "start"},
+        "populations": [{"population": crate::ring_queue::node(CLOCKS, "calls"), "complete": true,
+            "objects": [{"key": "c1", "type": crate::ring_queue::node(CLOCKS, "Call"), "fields": {
+                "n": {"integer": "1"}, "d": {"integer": "0"}, "r": r,
+                "maybe": {"present": r}, "refs": {"sequence": [r]}, "peer": {"absent": true},
+            }}]}],
+    })).expect("JSON");
+    (identity, bytes)
+}
+
+/// Only a declared place instance is admitted as clock-reference data;
+/// its owner is not resolved as an object of type Clock.
+#[trace("TC-464", "FR-106-AC-72", "TC-3084", "FR-1040-AC-8")]
+#[test]
+fn clock_reference_snapshot_accepts_a_declared_place() {
+    let checked = clock_reference_fixture(true);
+    let package = CheckedPackage::link(checked.graph);
+    let reference = generated_place(&package, &checked.packages, "c1");
+    let (identity, bytes) = clock_snapshot(&reference);
+    let graph = package.graph();
+    let model = StateModel::new(
+        graph.model_inputs(),
+        graph.scope().types(),
+        &checked.packages,
+        ModelNormalizationLimits::default(),
+    )
+    .expect("model");
+    let (state, _) = model
+        .admit_initial(
+            &BTreeMap::from([(identity.clone(), bytes)]),
+            &identity,
+            fsl_semantics::model::observation::ObservationLimits::default(),
+        )
+        .expect("declared clock place admits");
+    let call = &state.populations[&key(CLOCKS, "calls")]["c1"];
+    assert_eq!(
+        call.fields[&key(CLOCKS, "Call/r")],
+        Value::Reference(reference)
+    );
+    assert!(call.fields.contains_key(&key(CLOCKS, "Call/maybe")));
+    assert!(call.fields.contains_key(&key(CLOCKS, "Call/refs")));
+    model
+        .observation(&state, identity)
+        .expect("stored references remain data on readback");
+}
+
+/// A well-formed place id of another owner instance, and an ordinary
+/// dangling object reference, both retain the dangling-reference boundary.
+#[trace("TC-464", "FR-106-AC-73")]
+#[test]
+fn clock_reference_snapshot_refuses_an_undeclared_place() {
+    use serde_json::{json, Value as Json};
+    let checked = clock_reference_fixture(true);
+    let package = CheckedPackage::link(checked.graph);
+    let graph = package.graph();
+    let model = StateModel::new(
+        graph.model_inputs(),
+        graph.scope().types(),
+        &checked.packages,
+        ModelNormalizationLimits::default(),
+    )
+    .expect("model");
+    let valid = generated_place(&package, &checked.packages, "c1");
+    let missing_owner = generated_place(&package, &checked.packages, "c2");
+    let owner = model
+        .object_reference(&key(CLOCKS, "Call"), "c1")
+        .expect("owner");
+    let undeclared_template = fsl_semantics::model::clock_reference::encode(
+        &owner,
+        graph.timed_models()[0].model_node(),
+        &[],
+    )
+    .expect("well-formed identity of a non-place node");
+    let (identity, bytes) = clock_snapshot(&valid);
+    for missing in [missing_owner, undeclared_template] {
+        for field in ["r", "maybe", "refs", "peer"] {
+            let mut document: Json = serde_json::from_slice(&bytes).expect("JSON");
+            let reference = json!({"reference": {"population": crate::ring_queue::node(CLOCKS, "calls"),
+            "key": if field == "peer" { "ghost" } else { missing.object().as_str() }}});
+            document["populations"][0]["objects"][0]["fields"][field] = match field {
+                "maybe" => json!({"present": reference}),
+                "refs" => json!({"sequence": [reference]}),
+                _ => reference,
+            };
+            let failure = model
+                .admit_initial(
+                    &BTreeMap::from([(
+                        identity.clone(),
+                        serde_json::to_vec(&document).expect("JSON"),
+                    )]),
+                    &identity,
+                    fsl_semantics::model::observation::ObservationLimits::default(),
+                )
+                .expect_err("undeclared place/object refuses");
+            let fsl_semantics::model::observation::AdmissionFailure::Refused(record) = failure
+            else {
+                panic!("{field}: {failure:?}")
+            };
+            assert_eq!(
+                record.catalog.code(),
+                fsl_foundation::diagnostic::Code::DanglingReference.as_str(),
+                "{field}: {record:?}"
+            );
+        }
+    }
 }

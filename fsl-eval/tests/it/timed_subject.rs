@@ -898,6 +898,117 @@ fn a_timed_post_state_key_changes_with_its_clock_value_alone() {
     assert_eq!(posts[1].clocks().values(), [exact(3, 1)]);
 }
 
+/// Point writes only the data reference, keeps both clock valuations, and
+/// stores its place id in the discrete state key.
+#[trace("TC-3084", "FR-1040-AC-8")]
+#[test]
+fn pointing_a_clock_reference_writes_data_without_resetting_a_clock() {
+    use filament_exact::Value;
+    let mut document: Json = serde_json::from_slice(&clocked_document(true, &["y"])).expect("JSON");
+    let mut reference = wire_type(
+        &ident("ClockRef"),
+        "unused",
+        json!({"target": "ix://filament/native/Clock"}),
+    );
+    reference["kind"] = json!("reference");
+    document["types"]
+        .as_array_mut()
+        .expect("types")
+        .push(reference);
+    document["types"][1]["fields"]
+        .as_array_mut()
+        .expect("fields")
+        .push(wire_field("r", &ident("ClockRef")));
+    document["types"][1]["operations"]
+        .as_array_mut()
+        .expect("operations")
+        .push(operation("point", &["r"]));
+    let mut world = world_holding(
+        serde_json::to_vec(&document).expect("JSON"),
+        "",
+        &rpc_unit(
+            3,
+            "post Point using v on M::Call::point { self.r = ref(self.x) }",
+        ),
+        json!({}),
+    );
+    let graph = world.package.graph();
+    let model = fsl_semantics::model::state::StateModel::new(
+        graph.model_inputs(),
+        graph.scope().types(),
+        &world.packages,
+        ModelNormalizationLimits::default(),
+    )
+    .expect("model");
+    let owner = model
+        .object_reference(
+            &DeclarationKey {
+                package: PACKAGE.to_owned(),
+                node: ident("Call"),
+            },
+            "c",
+        )
+        .expect("owner");
+    let timed = graph.timed_model("M").expect("timed model");
+    let place = |name: &str| {
+        timed
+            .clocks()
+            .iter()
+            .zip(timed.place_nodes())
+            .find(|(clock, _)| clock.name() == name)
+            .expect("place")
+            .1
+    };
+    let x = fsl_semantics::model::clock_reference::encode(&owner, place("x"), &[]).expect("x id");
+    let y = fsl_semantics::model::clock_reference::encode(&owner, place("y"), &[]).expect("y id");
+    let mut snapshot: Json =
+        serde_json::from_slice(world.snapshots.get(&world.initial).expect("snapshot"))
+            .expect("JSON");
+    snapshot["populations"][0]["objects"][0]["fields"]["r"] =
+        json!({"reference": {"population": ident("calls"), "key": y.object().as_str()}});
+    world.snapshots.insert(
+        world.initial.clone(),
+        serde_json::to_vec(&snapshot).expect("JSON"),
+    );
+    let system = system(&world);
+    let timed = TimedSystem::new(&system, "M").expect("timed system");
+    let [initial] = &timed.initial()[..] else {
+        panic!("one initial state")
+    };
+    let mut behaviour = TimedBehaviour::new(initial.clone());
+    let point = transition(&timed, &behaviour, "point");
+    behaviour
+        .advance(&timed, &exact(2, 1), &point)
+        .expect("point after a delay");
+    let post = behaviour.last().state();
+    let r = DeclarationKey {
+        package: PACKAGE.to_owned(),
+        node: ident("Call/r"),
+    };
+    let calls = DeclarationKey {
+        package: PACKAGE.to_owned(),
+        node: ident("calls"),
+    };
+    assert_eq!(
+        post.discrete().state().populations[&calls]["c"].fields[&r],
+        Value::Reference(x)
+    );
+    assert_eq!(
+        post.clocks().values(),
+        [exact(2, 1), exact(2, 1)],
+        "point resets neither clock"
+    );
+    let delayed = timed
+        .delay(post, &exact(1, 1))
+        .expect("decided")
+        .expect("a delay");
+    assert_ne!(delayed.clocks().values(), post.clocks().values());
+    assert_eq!(
+        system.state_key(post.discrete()).expect("key"),
+        system.state_key(delayed.discrete()).expect("delayed key")
+    );
+}
+
 /// Part of FR-231-AC-2 (TC-686): with `urgent when { self.phase = 1 }`, no
 /// positive delay is admissible after `send`; the `Replied` state is
 /// quiescent and the waiting one is not. The idle-tail reading is the next

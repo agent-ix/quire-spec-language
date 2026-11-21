@@ -1667,7 +1667,7 @@ fn read_object(
                 let mut lower = 1u64;
                 let mut upper = Some(1u64);
                 let mut ordered = false;
-                let mut unique = true;
+                let mut unique = type_name != "Clock";
                 if tokens.get(index).is_some_and(|token| token.text == "[") {
                     let (field_lower, field_upper, field_ordered, field_unique, next) =
                         read_multiplicity(tokens, index)?;

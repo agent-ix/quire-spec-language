@@ -6868,7 +6868,10 @@ pub fn read_domain_package(
                             )
                         }
                         Some(kind)
-                            if matches!(kind.as_str(), Some("option" | "sequence" | "map")) =>
+                            if matches!(
+                                kind.as_str(),
+                                Some("option" | "sequence" | "map" | "reference")
+                            ) =>
                         {
                             None
                         }

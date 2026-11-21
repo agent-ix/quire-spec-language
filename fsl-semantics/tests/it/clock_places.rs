@@ -4400,7 +4400,7 @@ fn clock_reference_targets_and_wrappers_preserve_data_types() {
             serde_json::from_slice(&clock_reference_document(&package("Watch"))).expect("JSON");
         let mut watch = wire_type(
             &package("Watch"),
-            "clock_value_type",
+            "native_target_value_type",
             json!({"target": "ix://filament/native/Clock"}),
         );
         if !value {
@@ -4412,9 +4412,9 @@ fn clock_reference_targets_and_wrappers_preserve_data_types() {
                 .as_array_mut()
                 .expect("constructs")
                 .push(wire_construct(
-                    "clock_value_type",
+                    "native_target_value_type",
                     meaning::VALUE_TYPE,
-                    json!({}),
+                    json!({"target": "required"}),
                 ));
         }
         let mut optional = field("optional", &package("ClockRef"));
@@ -4505,14 +4505,14 @@ fn native_target_constraint_refusals_name_the_keyword() {
                 "generatorIdentity": watch, "generatorVersion": "1.0.0", "inputIdentities": [watch],
             }},
         });
-        document["types"].as_array_mut().expect("types").push(wire_type(&watch, "clock_value_type", json!({"target": format!("ix://filament/native/{native}"), "constraints": [constraint]})));
+        document["types"].as_array_mut().expect("types").push(wire_type(&watch, "native_target_value_type", json!({"target": format!("ix://filament/native/{native}"), "constraints": [constraint]})));
         document["constructs"]
             .as_array_mut()
             .expect("constructs")
             .push(wire_construct(
-                "clock_value_type",
+                "native_target_value_type",
                 meaning::VALUE_TYPE,
-                json!({}),
+                json!({"target": "required"}),
             ));
         let refusal = crate::model_operations::admit(&serde_json::to_vec(&document).expect("JSON"))
             .expect_err("invalid keyword");
@@ -4569,7 +4569,23 @@ fn a_model_unit_emits_a_clock_reference_definition() {
         .find(|field| field["name"] == "r")
         .expect("r");
     assert_eq!(r["typeRef"], "ix://acme/rpc/Reference_Call_r");
-    crate::model_operations::admit(compiled.bytes()).expect("canonical output admits");
+    let packages =
+        fsl_semantics::model::intake::package_input([compiled.bytes()]).expect("package input");
+    let selection = "language \"ix:native\" edition \"1-draft\"; model Rpc = \"acme/rpc\";";
+    let parsed = fsl_cst::parse(
+        fsl_foundation::SourceIdentity::new("test", "rpc-selection"),
+        "select.fsl",
+        selection.as_bytes(),
+        fsl_cst::Limits::default(),
+    )
+    .expect("selection parses");
+    let unit = fsl_forms::build_unit(&parsed).expect("selection builds");
+    fsl_semantics::model::intake::admit_unit(
+        &unit.selections().models,
+        &packages,
+        fsl_semantics::model::accounting::ModelNormalizationLimits::default(),
+    )
+    .expect("canonical output admits");
 }
 
 /// FR-1040-AC-6: a call to a clock-reading function over a population
@@ -4944,7 +4960,7 @@ fn a_value_type_bound_to_clock_by_target_types_a_clock_place() {
         let constraint = json!({
             "identity": format!("{watch}/constraints/max"),
             "keyword": "max",
-            "operands": {"value": 5},
+            "operands": {"value": "5/1"},
             "appliesTo": watch.clone(),
             "diagnosticCode": "clock.max",
             "origin": {"generated": {
@@ -4956,7 +4972,7 @@ fn a_value_type_bound_to_clock_by_target_types_a_clock_place() {
         let types = document["types"].as_array_mut().expect("types");
         types.push(wire_type(
             &watch,
-            "clock_value_type",
+            "native_target_value_type",
             json!({"target": "ix://filament/native/Clock", "constraints": [constraint]}),
         ));
         types[1]["fields"]
@@ -4967,9 +4983,9 @@ fn a_value_type_bound_to_clock_by_target_types_a_clock_place() {
             .as_array_mut()
             .expect("constructs")
             .push(wire_construct(
-                "clock_value_type",
+                "native_target_value_type",
                 meaning::VALUE_TYPE,
-                json!({}),
+                json!({"target": "required"}),
             ));
     });
     let graph = check(&document, &format!("{UNITS}{DENSE}"))
