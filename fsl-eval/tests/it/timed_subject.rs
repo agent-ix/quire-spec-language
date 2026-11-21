@@ -989,10 +989,13 @@ fn pointing_a_clock_reference_writes_data_without_resetting_a_clock() {
         package: PACKAGE.to_owned(),
         node: ident("calls"),
     };
-    assert_eq!(
-        post.discrete().state().populations[&calls]["c"].fields[&r],
-        Value::Reference(x)
-    );
+    let Value::Reference(stored) = &post.discrete().state().populations[&calls]["c"].fields[&r]
+    else {
+        panic!("point stores a reference")
+    };
+    assert_eq!(stored.universe(), x.universe());
+    assert_eq!(stored.object_type(), x.object_type());
+    assert_eq!(stored.object(), x.object());
     assert_eq!(
         post.clocks().values(),
         [exact(2, 1), exact(2, 1)],

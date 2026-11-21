@@ -227,74 +227,42 @@ fn clock_reference_fixture(wrappers: bool) -> crate::ring_queue::Checked {
 fn a_refinement_count_reads_the_stored_clock_reference() {
     let checked = clock_reference_fixture(false);
     let package = CheckedPackage::link(checked.graph);
-    let graph = package.graph();
-    let (effective, universe) = declared_type_universe_for(
-        graph.model_inputs(),
-        &checked.packages,
-        ModelNormalizationLimits::default(),
-        &key(CLOCKS, "Call"),
-    )
-    .expect("universe")
-    .expect("Call");
-    let [refinement] = graph.refinements() else {
-        panic!("one refinement")
-    };
-    let [queue, _] = refinement.objects() else {
-        panic!("Queue and Cell")
-    };
-    let place_id = |owner: &str| {
-        let owner = ObjectReference::new(
-            universe.clone(),
-            effective.clone(),
-            ObjectId::new(owner).expect("id"),
-        );
-        let mut meter = Meter::new(UNLIMITED);
-        // This row only reads its owner binder, so it needs no data snapshot.
-        let evaluation = evaluate_refinement_row(
-            &package,
-            &queue.fields[2].expression,
-            &fsl_semantics::model::object_environment::ObjectEnvironment::default(),
-            vec![Value::Reference(owner)],
-            &mut meter,
-        )
-        .expect("ref(self.x) evaluates");
-        match evaluation.outcome {
-            FamilyOutcome::Evaluated(Outcome::Completed(value)) => value,
-            other => panic!("place id completes: {other:?}"),
-        }
-    };
-    let c1 = place_id("c1");
-    let c2 = place_id("c2");
+    let c1 = generated_place(&package, &checked.packages, "c1");
+    let c2 = generated_place(&package, &checked.packages, "c2");
     let mut state = state();
-    assert_ne!(c1, c2, "the owner distinguishes clock place ids");
-    let set_reference = |state: &mut ModelState, reference: Value| {
+    assert_eq!(c1.universe(), c2.universe());
+    assert_eq!(c1.object_type(), c2.object_type());
+    assert_ne!(
+        c1.object(),
+        c2.object(),
+        "the owner distinguishes clock place ids"
+    );
+    let set_reference = |state: &mut ModelState, reference: ObjectReference| {
         for call in state
             .populations
             .get_mut(&key(CLOCKS, "calls"))
             .expect("calls")
             .values_mut()
         {
-            call.fields.insert(key(CLOCKS, "Call/r"), reference.clone());
+            call.fields
+                .insert(key(CLOCKS, "Call/r"), Value::Reference(reference.clone()));
         }
     };
-    set_reference(&mut state, c1);
-    assert_eq!(
-        evaluate_row(&package, &checked.packages, USED, "c2", &state),
-        Value::Integer(Integer::from(1_i64))
-    );
-    assert_eq!(
-        evaluate_row(&package, &checked.packages, BUSY, "c2", &state),
-        Value::Boolean(false)
-    );
-    set_reference(&mut state, c2);
-    assert_eq!(
-        evaluate_row(&package, &checked.packages, USED, "c1", &state),
-        Value::Integer(Integer::from(1_i64))
-    );
-    assert_eq!(
-        evaluate_row(&package, &checked.packages, BUSY, "c1", &state),
-        Value::Boolean(true)
-    );
+    for (reference, receiver, expected_busy) in [(c1, "c2", false), (c2, "c1", true)] {
+        set_reference(&mut state, reference);
+        let Value::Integer(count) =
+            evaluate_row(&package, &checked.packages, USED, receiver, &state)
+        else {
+            panic!("count row must return Integer")
+        };
+        assert_eq!(count, Integer::from(1_i64));
+        let Value::Boolean(busy) =
+            evaluate_row(&package, &checked.packages, BUSY, receiver, &state)
+        else {
+            panic!("busy row must return Boolean")
+        };
+        assert_eq!(busy, expected_busy);
+    }
 }
 
 /// Run the actual `chosen = ref(self.x)` row with its owner binder alone.
@@ -381,12 +349,32 @@ fn clock_reference_snapshot_accepts_a_declared_place() {
         )
         .expect("declared clock place admits");
     let call = &state.populations[&key(CLOCKS, "calls")]["c1"];
-    assert_eq!(
-        call.fields[&key(CLOCKS, "Call/r")],
-        Value::Reference(reference)
+    let assert_reference = |value: &Value| {
+        let Value::Reference(stored) = value else {
+            panic!("stored value must be Reference")
+        };
+        assert_eq!(stored.universe(), reference.universe());
+        assert_eq!(stored.object_type(), reference.object_type());
+        assert_eq!(stored.object(), reference.object());
+    };
+    assert_reference(&call.fields[&key(CLOCKS, "Call/r")]);
+    // Optional fields retain presence by membership in StateObject.fields.
+    assert_reference(
+        call.fields
+            .get(&key(CLOCKS, "Call/maybe"))
+            .expect("optional field is present"),
     );
-    assert!(call.fields.contains_key(&key(CLOCKS, "Call/maybe")));
-    assert!(call.fields.contains_key(&key(CLOCKS, "Call/refs")));
+    let Value::Collection(refs) = &call.fields[&key(CLOCKS, "Call/refs")] else {
+        panic!("refs must be a sequence")
+    };
+    assert_eq!(
+        refs.collection_type().kind(),
+        filament_exact::CollectionKind::Sequence
+    );
+    let [element] = refs.elements() else {
+        panic!("one reference in sequence order")
+    };
+    assert_reference(element);
     model
         .observation(&state, identity)
         .expect("stored references remain data on readback");
