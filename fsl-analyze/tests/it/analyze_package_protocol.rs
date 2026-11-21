@@ -65,41 +65,13 @@ fn receive_fifo_request(
     controls: &str,
     finish: &str,
 ) -> std::path::PathBuf {
-    let body = format!(
-        "protocol Flow using pp over (k: M::Cell) on origin {{
-            role Planning on M::Cell;
-            role Machining on M::Cell;
-            channel Release from Planning to Machining carries M::Attempt
-                ordering fifo by (m: M::Attempt) {{ {key} }}
-                delivery {delivery} capacity {capacity} overflow {overflow};
-            run sequence Main {{ {controls} }}
-            finish Over as (closing: Boolean) {{ {finish} }};
-        }}"
-    );
-    let unit = crate::fill::unit_text_with(crate::fill::PROTOCOL_PROFILE, &body);
-    let mut model: Value =
-        serde_json::from_slice(&crate::fill::document()).expect("the Fill model is JSON");
-    model["types"]
-        .as_array_mut()
-        .expect("model types")
-        .retain(|node| {
-            matches!(
-                node["identity"].as_str(),
-                Some(
-                    "ix://test/fill/Level"
-                        | "ix://test/fill/Cell"
-                        | "ix://test/fill/Idle"
-                        | "ix://test/fill/Attempt"
-                )
-            )
-        });
+    let mut model = finite_channel_model();
     let payload = model["types"]
         .as_array_mut()
         .expect("model types")
         .iter_mut()
         .find(|node| node["identity"] == "ix://test/fill/Attempt")
         .expect("the finite payload record");
-    payload["fields"][0]["typeRef"] = json!("ix://test/fill/Level");
     let field = payload["fields"][0].clone();
     for (name, value_type) in [
         ("ok", "ix://filament/native/Boolean"),
@@ -119,45 +91,17 @@ fn receive_fifo_request(
             .expect("payload fields")
             .push(member);
     }
-    model["constructs"]
-        .as_array_mut()
-        .expect("model constructs")
-        .retain(|construct| {
-            matches!(
-                construct["kind"]["name"].as_str(),
-                Some("value_type" | "object_type" | "population" | "record_value_type")
-            )
-        });
-    let model = serde_json::to_vec(&model).expect("the FIFO model serializes");
-    let mut documents = crate::fill::Documents::new();
-    documents.start("s0", &[("c", 0)]);
-    let snapshots: Vec<Vec<u8>> = documents.snapshots.values().cloned().collect();
-    crate::analyze_cli_support::request_over(
-        ws,
-        &unit,
-        &model,
-        &snapshots,
-        json!({
-            "items": [{"claim": "Flow", "kind": "temporal-satisfaction", "temporal": {
-                "item_kind": "deadlock-freedom", "subject": {"protocol": {
-                    "protocol": "Flow",
-                    "over": {"reference": {"population": "ix://test/fill/cells", "key": "c"}},
-                    "roles": {
-                        "Planning": {"type": "model-binding", "selection": "test/fill"},
-                        "Machining": {"type": "model-binding", "selection": "test/fill"}
-                    }
-                }}
-            }}]
-        }),
-    )
+    let ordering = format!(
+        "ordering fifo by (m: M::Attempt) {{ {key} }}
+                delivery {delivery} capacity {capacity} overflow {overflow}"
+    );
+    channel_request(ws, model, &ordering, controls, finish)
 }
 
 fn receive_fifo_send(name: &str, binder: &str, n: u64) -> String {
-    format!(
-        "send {name} via Release as ({binder}: M::Attempt) {{
-            {binder}.n = {n} and {binder}.ok and {binder}.target = k
-        }};"
-    )
+    let body =
+        format!("\n            {binder}.n = {n} and {binder}.ok and {binder}.target = k\n        ");
+    channel_send_body(name, binder, &body)
 }
 
 fn receive_fifo_receive(name: &str, send: &str, binder: &str, constraint: &str) -> String {
@@ -388,25 +332,7 @@ fn package_receive_fifo_related_premises_refuse_before_execution() {
     }
 }
 
-fn channel_send_request(
-    ws: &Workspace,
-    capacity: u64,
-    overflow: &str,
-    delivery: &str,
-    sends: &str,
-    finish: &str,
-) -> std::path::PathBuf {
-    let body = format!(
-        "protocol Flow using pp over (k: M::Cell) on origin {{
-            role Planning on M::Cell;
-            role Machining on M::Cell;
-            channel Release from Planning to Machining carries M::Attempt
-                ordering unordered delivery {delivery} capacity {capacity} overflow {overflow};
-            run sequence Main {{ {sends} }}
-            finish Over as (closing: Boolean) {{ {finish} }};
-        }}"
-    );
-    let unit = crate::fill::unit_text_with(crate::fill::PROTOCOL_PROFILE, &body);
+fn finite_channel_model() -> Value {
     let mut model: Value =
         serde_json::from_slice(&crate::fill::document()).expect("the Fill model is JSON");
     // The record's field ranges over Level so the three sent payloads can
@@ -441,6 +367,27 @@ fn channel_send_request(
                 Some("value_type" | "object_type" | "population" | "record_value_type")
             )
         });
+    model
+}
+
+fn channel_request(
+    ws: &Workspace,
+    model: Value,
+    ordering: &str,
+    controls: &str,
+    finish: &str,
+) -> std::path::PathBuf {
+    let body = format!(
+        "protocol Flow using pp over (k: M::Cell) on origin {{
+            role Planning on M::Cell;
+            role Machining on M::Cell;
+            channel Release from Planning to Machining carries M::Attempt
+                {ordering};
+            run sequence Main {{ {controls} }}
+            finish Over as (closing: Boolean) {{ {finish} }};
+        }}"
+    );
+    let unit = crate::fill::unit_text_with(crate::fill::PROTOCOL_PROFILE, &body);
     let model = serde_json::to_vec(&model).expect("the channel model serializes");
     let mut documents = crate::fill::Documents::new();
     documents.start("s0", &[("c", 0)]);
@@ -462,8 +409,25 @@ fn channel_send_request(
     )
 }
 
+fn channel_send_request(
+    ws: &Workspace,
+    capacity: u64,
+    overflow: &str,
+    delivery: &str,
+    sends: &str,
+    finish: &str,
+) -> std::path::PathBuf {
+    let ordering =
+        format!("ordering unordered delivery {delivery} capacity {capacity} overflow {overflow}");
+    channel_request(ws, finite_channel_model(), &ordering, sends, finish)
+}
+
+fn channel_send_body(name: &str, binder: &str, body: &str) -> String {
+    format!("send {name} via Release as ({binder}: M::Attempt) {{{body}}};")
+}
+
 fn channel_send(name: &str, binder: &str, constraint: &str) -> String {
-    format!("send {name} via Release as ({binder}: M::Attempt) {{ {constraint} }};")
+    channel_send_body(name, binder, &format!(" {constraint} "))
 }
 
 fn channel_send_parity(ws: &Workspace, path: &std::path::Path, expected: &str) -> Value {
