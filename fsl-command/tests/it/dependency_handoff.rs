@@ -557,3 +557,63 @@ fn closure_cycles_keep_the_first_recorded_back_edge_and_manifest_order_is_canoni
         "{result}"
     );
 }
+
+#[test]
+#[trace("FR-850-AC-15", "TC-2410")]
+fn closure_expansion_shares_the_sixty_four_selected_file_limit_with_runtime_inputs() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut imports = String::new();
+    let mut libraries = Vec::new();
+    for index in 0..20 {
+        let identity = format!("test/lib{index:02}");
+        let file = format!("lib{index:02}.native");
+        imports.push_str(&format!("import \"{identity}\" as l{index:02};\n"));
+        std::fs::write(
+            directory.path().join(&file),
+            format!("{HEADER}function answer using v(): Integer pure {{ {index} }}\n"),
+        )
+        .unwrap();
+        libraries.push(json!({"identity": identity, "source": source(&file)}));
+    }
+    std::fs::write(
+        directory.path().join("unit.native"),
+        format!("{HEADER}{imports}function answer using v(): Integer pure {{ l00::answer() }}\n"),
+    )
+    .unwrap();
+    let request = json!({"program": {"source": source("unit.native")}, "models": [], "libraries": libraries, "handoff": {"directory": "handoff", "package_name": "root", "native_join": {"work_units": 1_u64 << 40, "storage": 1_u64 << 26}}});
+    let path = directory.path().join("compile.json");
+    std::fs::write(
+        &path,
+        serde_json::to_vec(&json!({"format": "native-compile/1", "request": request})).unwrap(),
+    )
+    .unwrap();
+    fsl_command::command::compile(&path).expect("twenty unique libraries fit the source intake");
+    let artifacts = tree(&directory.path().join("handoff"));
+    assert_eq!(
+        artifacts
+            .keys()
+            .filter(|path| !path.starts_with("sources")
+                && !matches!(path.to_str(), Some("selection.json" | "inventory.json")))
+            .count(),
+        64
+    );
+    let (exit, result) = run(directory.path(), json!({"directory": "handoff"}));
+    assert_eq!(
+        exit, 0,
+        "exactly 64 selected artifact files complete: {result}"
+    );
+    // A runtime selection consumes the same shared file allowance. Its
+    // content is deliberately absent: the file-count refusal precedes opening it.
+    let request = json!({"package": {"directory": "handoff"}, "models": [], "documents": [{"file": "not-opened.json"}], "items": []});
+    let (exit, result) = analyze(directory.path(), request, 1 << 20);
+    assert_eq!(exit, 22, "a 65th selected file stops intake: {result}");
+    assert_eq!(result["category"], "incomplete", "{result}");
+    assert_eq!(
+        result["diagnostics"][0]["code"], "resource_exhausted",
+        "{result}"
+    );
+    assert!(
+        result.to_string().contains("selected files limit 64"),
+        "{result}"
+    );
+}
