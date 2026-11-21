@@ -4533,11 +4533,16 @@ fn a_clock_reference_native_pseudo_name_is_refused_at_the_field() {
 fn native_target_constraint_refusals_name_the_keyword() {
     for (native, keyword) in [("Clock", "maxLength"), ("Integer", "min")] {
         let watch = package("Watch");
+        let operand = if keyword == "maxLength" {
+            json!(5)
+        } else {
+            json!("5")
+        };
         let mut document: Value =
             serde_json::from_slice(&rpc_document_with(&["x"], false)).expect("JSON");
         let constraint = json!({
             "identity": format!("{watch}/constraints/{keyword}"), "keyword": keyword,
-            "operands": {"value": "5"}, "appliesTo": watch,
+            "operands": {"value": operand}, "appliesTo": watch,
             "diagnosticCode": "watch.bound", "origin": {"generated": {
                 "generatorIdentity": watch, "generatorVersion": "1.0.0", "inputIdentities": [watch],
             }},
