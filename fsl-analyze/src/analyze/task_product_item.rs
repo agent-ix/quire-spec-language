@@ -7,10 +7,34 @@ use fsl_route::Mode;
 use fsl_semantics::check::{Capability, DeclarationFamily, ScheduleClaim};
 
 use super::{AnalyzeItem, EngineReport, Refusal};
+/// What the symbolic pass and the checker made of a closed task-product search.
+#[derive(Debug)]
+pub struct TaskProof {
+    /// How the proof attempt ended.
+    pub verdict: ProofVerdict,
+    /// The certificate wire the checker read, when one was built.
+    pub certificate: Option<serde_json::Value>,
+}
+
+/// How a task-product proof attempt ended.
+#[derive(Debug)]
+pub enum ProofVerdict {
+    /// FR-418's checker returned this verdict for the certificate.
+    Checked(fsl_replay::ZoneCertificateVerdict),
+    /// The set is outside `closed-finite-product/v1`, or a miss or an
+    /// overflow is reachable: no certificate states a proof.
+    Uncertified,
+    /// A limit or a cancel stopped the pass.
+    Stopped(fsl_replay::IncompleteCause),
+    /// The engine or the checker could not run: a tool fault, never a verdict.
+    Fault,
+}
 
 /// The bounded task-product result retained for FR-621 settlement.
 #[derive(Debug)]
 pub struct TaskProductReport {
+    /// The symbolic proof attempt, made once the concrete search closed.
+    pub proof: Option<TaskProof>,
     /// EN-6's task-product search result.
     pub outcome: crate::zone_check::TaskProductSearchOutcome,
     /// FR-364 counterexample wire, populated only after the task trace replays.
@@ -54,6 +78,7 @@ pub(super) fn item<'a>(
     }
     let model = model.to_owned();
     let claim_name = checked_claim.name.clone();
+    let checked_claim: &'a fsl_semantics::check::CheckedScheduleClaim = checked_claim;
     let claim = claim.clone();
     Some(AnalyzeItem::new(
         index,
@@ -63,6 +88,7 @@ pub(super) fn item<'a>(
         crate::zone_check::manifest::BACKEND_ID,
         move |cancel| {
             let simulation = super::request::simulation(&analysis.model, binding, &limits);
+            let certificate_simulation = simulation.clone();
             let system = match fsl_eval::simulation::model::ModelSystem::new(simulation) {
                 Ok(system) => system,
                 Err(_) => return EngineReport::Refused(Refusal::Failed(BROKEN)),
@@ -76,15 +102,40 @@ pub(super) fn item<'a>(
                     Ok(product) => product,
                     Err(_) => return EngineReport::Refused(Refusal::Failed(BROKEN)),
                 };
-            let outcome = match crate::zone_check::check_task_product_with_cancel(
+            // The symbolic pass first: the concrete event search cannot close a
+            // sporadic or large set, but a proof the checker accepts needs
+            // no search. Anything else falls through to the concrete search,
+            // which alone can refute.
+            let proof = prove(
                 &product,
-                crate::zone_check::TaskProductSearchLimits {
-                    max_work: max_work.map_or(DEFAULT_MAX_WORK, std::num::NonZeroU64::get),
-                },
+                certificate_simulation,
+                &model,
+                checked_claim,
+                &claim,
                 cancel,
-            ) {
-                Ok(outcome) => outcome,
-                Err(_) => return EngineReport::Refused(Refusal::Failed(BROKEN)),
+            );
+            let proved = matches!(
+                proof.verdict,
+                ProofVerdict::Checked(fsl_replay::ZoneCertificateVerdict::Accepted)
+            );
+            let outcome = if proved {
+                crate::zone_check::TaskProductSearchOutcome::Stopped {
+                    cause: crate::zone_check::TaskProductSearchStop::RegionClosureRequired,
+                    frontier: Vec::new(),
+                    expanded: 0,
+                    transitions: 0,
+                }
+            } else {
+                match crate::zone_check::check_task_product_with_cancel(
+                    &product,
+                    crate::zone_check::TaskProductSearchLimits {
+                        max_work: max_work.map_or(DEFAULT_MAX_WORK, std::num::NonZeroU64::get),
+                    },
+                    cancel,
+                ) {
+                    Ok(outcome) => outcome,
+                    Err(_) => return EngineReport::Refused(Refusal::Failed(BROKEN)),
+                }
             };
             if let crate::zone_check::TaskProductSearchOutcome::Stopped {
                 cause: crate::zone_check::TaskProductSearchStop::Cancelled(source),
@@ -126,6 +177,7 @@ pub(super) fn item<'a>(
                 counterexample,
                 task_search,
                 temporal_counterexample,
+                proof: Some(proof),
             }))
         },
     ))
@@ -423,4 +475,109 @@ fn clock_values(
         }
     }
     clocks
+}
+
+/// The symbolic pass, then FR-418's checker, for a search that closed.
+///
+/// The engine explores its own refined-region quotient and writes the
+/// certificate; the certificate is then spelled as FR-418 JSON, read back,
+/// and the checker runs on what it read, so `proved` rests on the bytes
+/// emitted and never on the producer's in-memory value.
+fn prove<'a>(
+    product: &fsl_eval::simulation::model::TaskProductSystem<'_, '_>,
+    simulation: fsl_eval::simulation::model::ModelSimulationRequest<'a>,
+    model: &str,
+    checked_claim: &fsl_semantics::check::CheckedScheduleClaim,
+    claim: &OccurrenceKey,
+    cancel: &filament_exact::Cancel,
+) -> TaskProof {
+    use crate::zone_check::{SymbolicStop, TaskCertificateRefusal};
+    let fault = || TaskProof {
+        verdict: ProofVerdict::Fault,
+        certificate: None,
+    };
+    let limits = fsl_replay::CertificateCheckLimits::default();
+    let automaton = fsl_eval::simulation::model::TaskAutomaton::new(product);
+    let graph = match crate::zone_check::explore_task_symbolic(
+        &automaton,
+        limits.max_check_work,
+        cancel,
+    ) {
+        Ok(graph) => graph,
+        Err(SymbolicStop::Uncertified) => {
+            return TaskProof {
+                verdict: ProofVerdict::Uncertified,
+                certificate: None,
+            }
+        }
+        Err(SymbolicStop::WorkLimit(value)) => {
+            return TaskProof {
+                verdict: ProofVerdict::Stopped(fsl_replay::IncompleteCause::LimitReached {
+                    limit: fsl_replay::ModelCheckLimit::ZoneMaxCheckWork,
+                    value,
+                }),
+                certificate: None,
+            }
+        }
+        Err(SymbolicStop::Cancelled(source)) => {
+            return TaskProof {
+                verdict: ProofVerdict::Stopped(fsl_replay::IncompleteCause::Cancelled { source }),
+                certificate: None,
+            }
+        }
+        Err(SymbolicStop::Refused(_) | SymbolicStop::Fault(_)) => return fault(),
+    };
+    let built = match crate::zone_check::task_product_certificate(&automaton, &graph, claim.clone())
+    {
+        Ok(built) => built,
+        Err(
+            TaskCertificateRefusal::Missed
+            | TaskCertificateRefusal::NoDivergence
+            | TaskCertificateRefusal::NoMember,
+        ) => {
+            return TaskProof {
+                verdict: ProofVerdict::Uncertified,
+                certificate: None,
+            }
+        }
+        Err(TaskCertificateRefusal::Shape) => return fault(),
+    };
+    let Ok(identity) = fsl_replay::certificate_identity_wire(claim, model) else {
+        return fault();
+    };
+    let Ok(wire) = built.to_wire(identity.clone()) else {
+        return fault();
+    };
+    let Ok((read, read_identity)) =
+        fsl_replay::ZoneCertificate::from_wire(&wire, claim.clone())
+    else {
+        return fault();
+    };
+    // Equal by wire spelling: a read transition equals its original only by
+    // spelling (`same_source_transition`), never structurally.
+    if read_identity != identity || read.to_wire(read_identity.clone()).ok().as_ref() != Some(&wire) {
+        return fault();
+    }
+    let verdict = fsl_replay::check_zone_certificate(
+        fsl_replay::ZoneCertificateRequest {
+            simulation,
+            model,
+            max_clocks: fsl_eval::simulation::model::DEFAULT_MAX_CLOCKS,
+            item: fsl_replay::CertifiedItem::Schedulability {
+                claim: checked_claim,
+            },
+        },
+        claim,
+        |obligation: &OccurrenceKey| fsl_replay::CertificateItem::Schedulability(obligation),
+        &read,
+        limits,
+        cancel,
+    );
+    TaskProof {
+        verdict: match verdict {
+            Ok(verdict) => ProofVerdict::Checked(verdict),
+            Err(_) => ProofVerdict::Fault,
+        },
+        certificate: Some(wire),
+    }
 }

@@ -4241,6 +4241,21 @@ fn item_document(written: Value, members: ItemMembers) -> Value {
     let task_search_identity = identity.clone();
     if let Some(certificate) = certificate {
         item.insert("certificate".to_owned(), certificate);
+    } else if let (Some((wire, accepted)), Some(_)) = (
+        detail.as_ref().and_then(|detail| detail.task_certificate.clone()),
+        identity.clone(),
+    ) {
+        // FSpec FR-418: the task-product certificate the symbolic pass wrote
+        // and the checker read, spelled whole, beside the checker's verdict.
+        let mut certificate = wire;
+        if let Some(members) = certificate.as_object_mut() {
+            members.insert(
+                "checker".to_owned(),
+                fsl_replay::CertificateChecker::Zone.as_str().into(),
+            );
+            members.insert("accepted".to_owned(), accepted.into());
+        }
+        item.insert("certificate".to_owned(), certificate);
     } else if let (Some(recorded), Some(identity)) = (
         detail
             .as_ref()
