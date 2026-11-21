@@ -46,7 +46,7 @@ use filament_exact::{
 };
 use filament_exact::{
     compare_keys, form, form_grouped, retain_composite, CollectionValue, CompositeValue,
-    FieldValue, ObjectId, ObjectReference, OptionValue, Quantity, UnionValue, Value, ValueType,
+    FieldValue, ObjectReference, OptionValue, Quantity, UnionValue, Value, ValueType,
 };
 use filament_exact::{
     evaluate_boolean, evaluate_integer_arithmetic, evaluate_rational_arithmetic, order_numbers,
@@ -5751,6 +5751,7 @@ mod tests {
     use super::*;
     use filament_checked::key::DeclarationKey;
     use filament_checked::node::CheckedLiteral;
+    use filament_exact::ObjectId;
     use filament_semantic_value::catalog::Category;
     use filament_semantic_value::checking::{CheckMode, CheckingLimits};
     use filament_semantic_value::object_closure::ObjectClosure;
