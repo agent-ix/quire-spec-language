@@ -19,6 +19,7 @@
 
 use std::collections::BTreeMap;
 
+use filament_checked::node::NodeKind;
 use filament_exact::{Identifier, NodeKey, ValueType};
 use filament_semantic_value::location::ExpressionLocation as Location;
 use ix_trace_rs::string_edge;
@@ -393,15 +394,18 @@ impl Lowering<'_> {
         let claim = at(Site::Claim);
         let boolean = self.type_node(&ValueType::Boolean, &claim)?;
 
-        // The atom slots: one `<p>@<t>` parameter node per slot, at its own
-        // index as its level.
-        let mut scope: Vec<Binder> = Vec::with_capacity(clause.atom_slots().len());
-        for (level, slot) in clause.atom_slots().iter().enumerate() {
-            let site = at(Site::Slot(level));
-            let object = clause
-                .parameter_objects()
-                .get(slot.parameter)
-                .ok_or_else(|| stage_fault(&site, "slot-parameter-has-an-object"))?;
+        // The atom slots the formula reaches: one `<p>@<t>` parameter node
+        // per name, at levels `0..n` in ascending byte order of the name
+        // (FSpec FR-402 "Wrapper slot scope"). A binder a leaf of the
+        // wrapper introduces then takes level `n`.
+        let reached = reached_slots(clause);
+        let mut named = Vec::with_capacity(reached.len());
+        for slot_index in reached {
+            let site = at(Site::Slot(slot_index));
+            let slot = clause
+                .atom_slots()
+                .get(slot_index)
+                .ok_or_else(|| stage_fault(&site, "slot-is-an-atom-slot"))?;
             let parameter = clause
                 .parameters()
                 .get(slot.parameter)
@@ -411,12 +415,21 @@ impl Lowering<'_> {
                 .get(slot.trace)
                 .ok_or_else(|| stage_fault(&site, "slot-has-a-trace"))?;
             let name = format!("slot_s{}_s{}", esc(&parameter.name), esc(&trace.variable));
+            named.push((name, slot_index, slot.parameter, site));
+        }
+        named.sort_by(|left, right| left.0.cmp(&right.0));
+        let mut scope: Vec<Binder> = Vec::with_capacity(named.len());
+        for (level, (name, slot_index, parameter_index, site)) in named.into_iter().enumerate() {
+            let object = clause
+                .parameter_objects()
+                .get(parameter_index)
+                .ok_or_else(|| stage_fault(&site, "slot-parameter-has-an-object"))?;
             let semantic_type =
                 self.binder_type(&ValueType::Reference(object.clone()), None, &site)?;
             let node = self.parameter(&name, level, semantic_type.clone(), &site)?;
             self.record(semantic_type.clone(), OccurrenceRole::Type, site);
             scope.push(Binder {
-                slot: level,
+                slot: slot_index,
                 parameter: node.into(),
                 semantic_type: semantic_type.into(),
             });
@@ -835,4 +848,21 @@ mod tests {
             "slot_sa__b_sc"
         );
     }
+}
+
+/// The atom slots the clause's formula reaches, in slot order: every slot a
+/// `holds` atom's condition reads (FSpec FR-402 "Wrapper slot scope").
+fn reached_slots(clause: &CheckedHyperClause) -> Vec<usize> {
+    let count = clause.atom_slots().len();
+    let mut reached = vec![false; count];
+    for condition in clause.atom_conditions().values() {
+        for node in condition.root().descendants() {
+            if let NodeKind::Local(slot) = node.kind() {
+                if let Some(held) = reached.get_mut(*slot) {
+                    *held = true;
+                }
+            }
+        }
+    }
+    (0..count).filter(|slot| reached[*slot]).collect()
 }

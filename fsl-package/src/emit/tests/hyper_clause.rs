@@ -1555,3 +1555,57 @@ fn a_postcondition_beside_a_fair_temporal_claim_is_admitted() {
          always (holds(c.versionNumber = 0) implies eventually holds(c.versionNumber = 2)) }\n";
     admit(&compile(&unit(INFINITE, declarations)));
 }
+
+/// FR-322-AC-511 "Hyper clause source unit": a hyper clause's `claim_names`
+/// row names the clause's own source unit, the one its `declaration_region`
+/// is under; every other row names none, and the hyper clause's
+/// `temporal_bindings` rows carry none. The I2 read then locks the unit.
+#[trace("TC-1266", "FR-322-AC-511")]
+#[test]
+fn only_a_hyper_name_row_carries_the_clauses_source_unit() {
+    let declarations = format!(
+        "post VersionUnchanged using v on Config::ConfigVersion::attemptUpdate {{ \
+         self.versionNumber = pre(self.versionNumber) }}\n{}",
+        non_interference()
+    );
+    let compiled = compile(&unit(INFINITE, &declarations));
+    let rows = compiled.wire["claim_names"].as_array().expect("rows");
+    let hyper_id = &hyper_node(&compiled.wire)["node_id"];
+    assert_eq!(rows.len(), 2, "{rows:?}");
+    for row in rows {
+        if row["declaration"] == *hyper_id {
+            assert_eq!(row["source_unit"], row["declaration_region"]["source"]);
+            assert!(row["source_unit"]["identity"].is_string(), "{row}");
+        } else {
+            assert!(row.get("source_unit").is_none(), "{row}");
+        }
+    }
+    let bindings = compiled.wire["temporal_bindings"].as_array();
+    assert!(bindings
+        .into_iter()
+        .flatten()
+        .all(|row| row.get("source_unit").is_none()));
+    admit(&compiled);
+}
+
+/// FR-402-AC-14, AC-15: the body wrapper's slots are one node per name at
+/// levels `0..n` in ascending byte order of the name, and its `over` is the
+/// first, wherever the formula first reads them.
+#[trace("TC-1266", "FR-402-AC-14", "FR-402-AC-15")]
+#[test]
+fn wrapper_slots_take_levels_in_byte_name_order_with_over_first() {
+    let declarations = "hyper SavesPower using t over behaviours \
+         (d: S::ConfigVersion, e: N::ConfigVersion) forall trace s of S forall trace n of N \
+         match { s.step.ConfigVersion::step.i = n.step.ConfigVersion::step.i } \
+         { always holds(e.versionNumber @ n >= d.versionNumber @ s) }";
+    let built = build(INFINITE, &["S", "N"], declarations);
+    let wire = &built.wire;
+    let wrapper = node_via(wire, binding(&hyper_node(wire)["body"], "body"));
+    let over = node_via(wire, &wrapper["body"]["arguments"][0]);
+    assert_eq!(text(binding(&over["body"], "name")), "slot_sd_ss");
+    assert_eq!(binding(&over["body"], "level")["value"], "0");
+    let slots = slots(wire);
+    let other = slots.get("slot_se_sn").expect("the slot e@n");
+    assert_eq!(binding(&other["body"], "level")["value"], "1");
+    admitted(&built);
+}

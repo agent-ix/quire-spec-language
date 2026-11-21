@@ -8918,8 +8918,21 @@ fn claim_name_rows(
                    name: &str,
                    span: fsl_foundation::Span|
      -> Result<(), EmitRefusal> {
+        let declaration_region = declaration_region(source_map, &declaration, &occurrence, span)?;
+        // FSpec FR-322 "Hyper clause source unit": a `hyperproperty` row names
+        // the locked source unit that declares the clause; no other row does.
+        let source_unit = nodes
+            .iter()
+            .find(|node| node.node_id == declaration)
+            .filter(|node| {
+                CheckedNodeTag::from_wire(&node.node_tag)
+                    .and_then(|tag| CheckedNodeKind::decode(tag, &node.semantic_form))
+                    == Some(CheckedNodeKind::Claim(filament_contract_model::ClaimForm::Hyperproperty))
+            })
+            .map(|_| declaration_region.source.clone());
         rows.push(filament_contract_model::ClaimNameRow {
-            declaration_region: declaration_region(source_map, &declaration, &occurrence, span)?,
+            declaration_region,
+            source_unit,
             declaration,
             occurrence,
             name: name.into(),
