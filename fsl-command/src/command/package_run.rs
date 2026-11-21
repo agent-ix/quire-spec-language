@@ -628,7 +628,7 @@ pub(super) fn admit_files(
         Selected::File(file) => file.clone(),
         Selected::Directory(handoff) => format!("{handoff}/{PACKAGE_FILE}"),
     };
-    if !directory.join(&package_path).is_file() {
+    if matches!(&handoff, Selected::File(_)) && !directory.join(&package_path).is_file() {
         return Err(invalid(
             "package",
             format!("no checked package is at {package_path}"),

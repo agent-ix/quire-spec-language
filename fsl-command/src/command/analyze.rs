@@ -715,13 +715,6 @@ fn admit_package<'d>(
             "the request names no handoff directory there",
         ));
     }
-    if !directory.join(&handoff).join(PACKAGE_FILE).is_file() {
-        return Err(witness_refusal(
-            PACKAGE_FILE,
-            "missing-file",
-            "the handoff directory holds no checked package",
-        ));
-    }
     let bytes = super::handoff::read_file(&mut intake, &handoff, PACKAGE_FILE, false)?;
     if request
         .models

@@ -131,3 +131,50 @@ fn diamond_closure_shares_one_artifact_and_missing_transitive_supply_refuses() {
     );
     assert!(result.to_string().contains("test/shared"), "{result}");
 }
+
+#[test]
+#[trace("FR-850-AC-13", "FR-850-AC-14", "TC-2410")]
+fn malformed_manifests_and_missing_indexed_witnesses_refuse_before_a_call() {
+    let directory = tempfile::tempdir().unwrap();
+    prepare(directory.path(), false);
+    let handoff = directory.path().join("handoff");
+    let manifest_file = handoff.join("dependencies.json");
+    let original = std::fs::read(&manifest_file).unwrap();
+    for (raw, cause, pointer) in [
+        ("not json", "malformed-file", ""),
+        ("{\"format\":7,\"dependencies\":[]}", "malformed-file", "/format"),
+        ("{\"format\":\"filament.checked-handoff.dependencies/2\",\"dependencies\":[]}", "unknown-format", "/format"),
+        ("{\"format\":\"filament.checked-handoff.dependencies/1\",\"format\":\"filament.checked-handoff.dependencies/1\",\"dependencies\":[]}", "malformed-file", "/format"),
+        ("{\"format\":\"filament.checked-handoff.dependencies/1\",\"dependencies\":[{\"identity\":\"test/a\",\"directory\":\"../escape\"}]}", "invalid-value", "/dependencies/0/directory"),
+    ] {
+        std::fs::write(&manifest_file, raw).unwrap();
+        let (exit, result) = run(directory.path(), json!({"directory": "handoff"}));
+        assert_eq!(exit, 20, "{raw}: {result}");
+        assert_eq!(result["stage"], "request", "{result}");
+        assert_eq!(result["code"], "invalid_package", "{result}");
+        assert_eq!(result["cause"], cause, "{result}");
+        assert_eq!(result["details"]["path"], pointer, "{result}");
+        assert!(result.to_string().contains("dependencies.json"), "{result}");
+    }
+    std::fs::write(&manifest_file, original).unwrap();
+    for file in [
+        "dependencies.json",
+        "dependencies/0/checked-package.json",
+        "dependencies/0/identities.json",
+        "dependencies/0/equality.json",
+        "dependencies/1/identities.json",
+        "dependencies/1/equality.json",
+    ] {
+        let path = handoff.join(file);
+        let bytes = std::fs::read(&path).unwrap();
+        std::fs::remove_file(&path).unwrap();
+        let (exit, result) = run(directory.path(), json!({"directory": "handoff"}));
+        assert_eq!(exit, 20, "{file}: {result}");
+        assert_eq!(result["code"], "invalid_package", "{result}");
+        assert_eq!(result["cause"], "missing-file", "{result}");
+        assert!(result.to_string().contains(file), "{result}");
+        std::fs::write(path, bytes).unwrap();
+    }
+    let (exit, result) = run(directory.path(), json!({"directory": "handoff"}));
+    assert_eq!(exit, 0, "unchanged positive control: {result}");
+}

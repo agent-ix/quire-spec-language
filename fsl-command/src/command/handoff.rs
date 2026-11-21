@@ -281,7 +281,7 @@ pub(super) fn admit(
     let mut budget = limits
         .native_join_limits()
         .budget()
-        .with_read_storage_limit(limits.storage);
+        .with_read_storage_limit(u64::MAX);
     while !pending.is_empty() {
         let Some(identity) = ready.pop_first() else {
             return Err(refusal(
@@ -389,11 +389,10 @@ pub(super) fn admit(
     }
     let identity_bytes = read_file(intake, directory, "identities.json", false)?;
     let identities = identities(&identity_bytes, &package, &mut budget, "identities.json")?;
-    let equality_bytes = if intake
-        .directory
-        .join(directory)
-        .join("equality.json")
-        .exists()
+    let equality_bytes = if std::fs::symlink_metadata(
+        intake.directory.join(directory).join("equality.json"),
+    )
+    .is_ok()
     {
         Some(read_file(intake, directory, "equality.json", true)?)
     } else if package

@@ -1531,11 +1531,10 @@ impl RunError {
                 );
                 // FR-940-AC-12: a claim-name collision carries the row's path.
                 let diagnostic = match pointer {
-                    Some(pointer) if self.cause.code() == Code::AmbiguousDeclaration => diagnostic
-                        .with_details(Some(serde_json::Map::from_iter([(
-                            "path".to_owned(),
-                            serde_json::Value::String(pointer.clone()),
-                        )]))),
+                    Some(pointer) => diagnostic.with_details(Some(serde_json::Map::from_iter([(
+                        "path".to_owned(),
+                        serde_json::Value::String(pointer.clone()),
+                    )]))),
                     _ => diagnostic,
                 };
                 OutcomeDocument::new(operation, None, self.category())
