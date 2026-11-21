@@ -225,8 +225,8 @@ fn package_receive_fifo_runs_the_complete_example_body() {
 fn package_receive_fifo_preserves_key_partition_and_head_blocking() {
     for (name, second_key, expected) in [("same", 0, "refuted"), ("different", 1, "proved")] {
         let ws = Workspace::new(&format!("package-receive-fifo-head-{name}"));
-        let controls = receive_fifo_send("First", "first", 0)
-            + &receive_fifo_send("Second", "second", second_key)
+        let controls = receive_fifo_send("First", "sentOne", 0)
+            + &receive_fifo_send("Second", "sentTwo", second_key)
             + &receive_fifo_receive("Received", "Second", "got", "got.ok");
         let path = receive_fifo_request(
             &ws,
@@ -303,8 +303,8 @@ fn package_receive_fifo_preserves_receive_wait_causes() {
 #[test]
 fn package_receive_fifo_preserves_replay_refusal_code_and_cause() {
     let ws = Workspace::new("package-receive-fifo-replay-bound");
-    let controls = receive_fifo_send("First", "first", 0)
-        + &receive_fifo_send("Second", "second", 0)
+    let controls = receive_fifo_send("First", "sentOne", 0)
+        + &receive_fifo_send("Second", "sentTwo", 0)
         + &receive_fifo_receive("Received", "Second", "got", "got.ok");
     let path = receive_fifo_request(
         &ws,
@@ -337,6 +337,55 @@ fn package_receive_fifo_preserves_replay_refusal_code_and_cause() {
     let package = crate::analyze_cli_support::analyze_under_replay_bytes(&package_path, below);
     assert_eq!(package.item(0), source.item(0), "{}", package.document());
     assert_eq!(package.exit, source.exit);
+}
+
+/// Correlated receives retain a named refusal until package correlations execute.
+#[trace("TC-2958", "FR-940", "FR-731-AC-1")]
+#[test]
+fn package_receive_fifo_related_premises_refuse_before_execution() {
+    for (related, expected) in [(false, "refuted"), (true, "proved")] {
+        let ws = Workspace::new(&format!("package-receive-fifo-related-{related}"));
+        let controls = receive_fifo_send("Released", "order", 0)
+            + "receive Correlated via Release of Released as (got: M::Attempt) related by Owns (k, got.target) { got.ok };";
+        let path = receive_fifo_request(
+            &ws,
+            "m.target",
+            1,
+            "block",
+            "exactly-once-premise",
+            &controls,
+            "closing",
+        );
+        channel_related_premise(&ws, related);
+        let source = analyze(&path);
+        assert!(
+            source.item(0).get("record").is_some(),
+            "{}",
+            source.document()
+        );
+        assert_eq!(label(&source.item(0)), expected, "{}", source.document());
+        let (package_path, _) = package_request(&ws, &path);
+        std::fs::remove_file(ws.path("program.fsl"))
+            .expect("remove source before package correlation refusal");
+        let package = analyze(&package_path);
+        let item = package.item(0);
+        assert_eq!(package.exit, 21, "{}", package.document());
+        assert_eq!(item["category"], "unsupported", "{}", package.document());
+        let diagnostic = &item["record"]["diagnostic"];
+        assert_eq!(diagnostic["code"], "unsupported_construct", "{item}");
+        assert_eq!(diagnostic["cause"], "not-yet-implemented", "{item}");
+        assert_eq!(diagnostic["detail"]["fact"], "correlation", "{item}");
+        assert_eq!(
+            diagnostic["detail"]["node"]["path"]
+                .as_array()
+                .expect("the refused admitted node's path")
+                .last(),
+            Some(&json!("Correlated")),
+            "{item}"
+        );
+        assert!(item.get("exploration").is_none(), "{item}");
+        assert!(item.get("counterexample").is_none(), "{item}");
+    }
 }
 
 fn channel_send_request(
@@ -667,6 +716,39 @@ fn package_channel_send_parallel_combinations_refuse_before_execution() {
     }
 }
 
+fn channel_related_premise(ws: &Workspace, related: bool) {
+    let unit = std::fs::read_to_string(ws.path("program.fsl")).expect("the source unit");
+    std::fs::write(
+        ws.path("program.fsl"),
+        unit.replace(
+            "channel Release",
+            "relationship Owns = M::owns; channel Release",
+        ),
+    )
+    .expect("select the relationship premise");
+    let mut model: Value =
+        serde_json::from_slice(&std::fs::read(ws.path("model.json")).expect("model document"))
+            .expect("model JSON");
+    crate::related_by::add_owns_relationship(&mut model);
+    std::fs::write(ws.path("model.json"), model.to_string()).expect("write the related model");
+    let mut snapshot: Value = serde_json::from_slice(
+        &std::fs::read(ws.path("snapshot-0.json")).expect("the initial snapshot"),
+    )
+    .expect("snapshot JSON");
+    let object = json!({"population": "ix://test/fill/cells", "key": "c"});
+    let instances = if related {
+        vec![json!({"source": object, "target": object})]
+    } else {
+        Vec::new()
+    };
+    snapshot["relationships"] = json!([{
+        "relationship": "ix://test/fill/relationship/owns", "complete": true,
+        "instances": instances
+    }]);
+    std::fs::write(ws.path("snapshot-0.json"), snapshot.to_string())
+        .expect("write the relationship instances");
+}
+
 /// A nonempty admitted correlation group is named and refused before package execution.
 #[trace("TC-2958", "FR-940", "FR-731-AC-1")]
 #[test]
@@ -681,36 +763,7 @@ fn package_channel_send_related_premises_refuse_before_execution() {
             "send Correlated via Release as (sent: M::Attempt) related by Owns (k, k) { sent.n = 0 };",
             "closing",
         );
-        let unit = std::fs::read_to_string(ws.path("program.fsl")).expect("the source unit");
-        std::fs::write(
-            ws.path("program.fsl"),
-            unit.replace(
-                "channel Release",
-                "relationship Owns = M::owns; channel Release",
-            ),
-        )
-        .expect("select the relationship premise");
-        let mut model: Value =
-            serde_json::from_slice(&std::fs::read(ws.path("model.json")).expect("model document"))
-                .expect("model JSON");
-        crate::related_by::add_owns_relationship(&mut model);
-        std::fs::write(ws.path("model.json"), model.to_string()).expect("write the related model");
-        let mut snapshot: Value = serde_json::from_slice(
-            &std::fs::read(ws.path("snapshot-0.json")).expect("the initial snapshot"),
-        )
-        .expect("snapshot JSON");
-        let object = json!({"population": "ix://test/fill/cells", "key": "c"});
-        let instances = if related {
-            vec![json!({"source": object, "target": object})]
-        } else {
-            Vec::new()
-        };
-        snapshot["relationships"] = json!([{
-            "relationship": "ix://test/fill/relationship/owns", "complete": true,
-            "instances": instances
-        }]);
-        std::fs::write(ws.path("snapshot-0.json"), snapshot.to_string())
-            .expect("write the relationship instances");
+        channel_related_premise(&ws, related);
         let source = analyze(&path);
         assert!(
             source.item(0).get("record").is_some(),
