@@ -5,7 +5,7 @@ use fsl_cst::{CompleteCause, CompleteCode, Limits, Production};
 use fsl_foundation::{SourceIdentity, Span};
 use ix_trace_rs::trace;
 
-const PREFIX: &str = "language \"ix:native\" edition \"1-draft\";\nprofile p = \"filament.value.complete/v1\";\n// durée\n";
+pub(super) const PREFIX: &str = "language \"ix:native\" edition \"1-draft\";\nprofile p = \"filament.value.complete/v1\";\n// durée\n";
 
 pub(super) fn accepts(declaration: &str, production: Production) {
     let text = format!("{PREFIX}{declaration}");
