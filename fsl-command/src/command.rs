@@ -1529,7 +1529,7 @@ impl RunError {
                     None,
                     self.outcome_message(),
                 );
-                // FR-940-AC-12: a claim-name collision carries the row's path.
+                // Manifest and strict-reader refusals retain their original pointer.
                 let diagnostic = match pointer {
                     Some(pointer) => diagnostic.with_details(Some(serde_json::Map::from_iter([(
                         "path".to_owned(),

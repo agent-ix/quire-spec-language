@@ -755,7 +755,19 @@ fn every_raw_manifest_member_refusal_keeps_its_exact_pointer_before_analysis() {
             (format!("{{{format},\"dependencies\":[{{\"identity\":7,\"directory\":\"dependencies/0\"}}]}}"), "/dependencies/0/identity"),
             (format!("{{{format},\"dependencies\":[{{\"identity\":\"test/a\",\"directory\":7}}]}}"), "/dependencies/0/directory"),
         ];
-    for (bytes, pointer) in cases {
+    let unknown_format = String::from_utf8(original.clone()).unwrap().replace(
+        "filament.checked-handoff.dependencies/1",
+        "filament.checked-handoff.dependencies/2",
+    );
+    for (bytes, pointer, cause) in cases
+        .into_iter()
+        .map(|(bytes, pointer)| (bytes, pointer, "malformed-file"))
+        .chain(std::iter::once((
+            unknown_format,
+            "/format",
+            "unknown-format",
+        )))
+    {
         std::fs::write(&manifest, &bytes).unwrap();
         let request = json!({"package": {"directory": "handoff"}, "models": [], "items": [{"claim": "Missing"}]});
         let (exit, outcome) = analyze(directory.path(), request, 1 << 20);
@@ -765,7 +777,7 @@ fn every_raw_manifest_member_refusal_keeps_its_exact_pointer_before_analysis() {
         assert_eq!(outcome["items"], json!([]), "{outcome}");
         let diagnostic = &outcome["diagnostics"][0];
         assert_eq!(diagnostic["code"], "invalid_package", "{bytes}: {outcome}");
-        assert_eq!(diagnostic["cause"], "malformed-file", "{bytes}: {outcome}");
+        assert_eq!(diagnostic["cause"], cause, "{bytes}: {outcome}");
         assert_eq!(diagnostic["details"]["path"], pointer, "{bytes}: {outcome}");
         assert!(
             diagnostic["message"]
