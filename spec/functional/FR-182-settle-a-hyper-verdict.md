@@ -27,6 +27,10 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/filament-spec-language/FR-315
     type: depends_on
+  - target: ix://agent-ix/filament-spec-language/FR-163
+    type: depends_on
+  - target: ix://agent-ix/filament-specification/FR-331
+    type: references
 ---
 # FR-182: Settle a hyper or step-relation verdict and its causes
 
@@ -44,6 +48,10 @@ through FR-169's `settle_existential` (FR-181), not through
 settles only after the product-closure certificate checker (FR-163)
 accepts its certificate, and a proof whose method has no certificate
 checker settles `proved` labelled `Uncertified` (ADR-023 HV-1, HX-7).
+When an exhaustive HP-1 result is closed and its certificate is absent or
+has not been checked in the core, settlement SHALL return `incomplete`
+with `IncompleteCause::CertificateUnchecked`, never `proved` labelled
+`Uncertified`.
 
 ## Use case
 
@@ -164,6 +172,7 @@ FR-243 basis, O-16 category and method.
 | V-6 | `Undecided(MatchUndetermined)`, `Undecided(VacuousMatch)`, `UndecidedSuccessor`, `NoInitialState`, `NoInstance` (an item with zero instances, FR-125), `ReductionNotPreserving` (wire cause `reduction-not-preserving`); `Holds` whose certificate check is `Rejected` (`CertificateRejected{rule, at}`, ADR-018 PC-2); SMT `InductionNotClosed{depth}`; SMT `Unknown{depth}` (`InductionNotClosed{depth}`); SMT `EncodingRefused` with `match-conjunct` (`MatchUndetermined`); SMT `k`-inductive for HP-2 with a non-empty `μ_U` and no `Accepted` `MatchWitnessCheck` for the outcome's instance (`VacuousMatch`); `Violated` or SMT `Violated` whose replay settles `inconclusive` (`ReplayParity`, wire cause `replay-parity`) or refuses (`ReplayRefused`) | `inconclusive` | `unsettled` | `Inconclusive(cause)` | inconclusive |
 | V-7 | `Stopped(ResourceExhausted, limit)`, including `MaxWitnessSet` and `MaxRelationTuples` (FR-184); SMT `LimitStopped{limit}` | `failed`, execution `resource-incomplete` | `unavailable` | `Incomplete(LimitReached{limit, value, setting})` (ADR-018 V-7, FR-127) | incomplete |
 | V-7 | `Stopped(Cancelled, None)`; SMT `Cancelled{source}` | `failed`, execution `resource-incomplete` | `unavailable` | `Incomplete(Cancelled{source})`, written `cancelled{source}` (FR-127) | incomplete |
+| V-7 | HP-1 `Holds{Exhaustive}` with a closed reachable graph and no core certificate check performed | `failed`, execution `resource-incomplete` | `unavailable` | `Incomplete(CertificateUnchecked)`, written `bounded-search-incomplete{reason: certificate-unchecked}` (FSpec FR-331) | incomplete |
 | — | SMT `BackendFault` | `failed` | `unavailable` | `Failed` | failed (ADR-013 O-16 internal failure) |
 | — | SMT `EncodingRefused` carrying `SmtEncodingRefusal::Fault`, or `HyperProductIdentity::of(item)` returning `Fault` (FR-315 "Internal faults") | `failed` | `unavailable` | `Failed` | failed (ADR-013 O-16 internal failure) |
 | V-7 | SMT `TimedOut` | `failed`, execution `resource-incomplete` | `unavailable` | `Incomplete(TimedOut)`, written `timed-out` (FSpec FR-331) | incomplete |
@@ -201,6 +210,17 @@ FR-243 basis, O-16 category and method.
   `proved`.
 - A certificate check that a limit stopped SHALL settle V-7 naming the
   limit.
+- When an HP-1 exhaustive result is closed and no core certificate check
+  has been performed, settlement SHALL return
+  `Incomplete(CertificateUnchecked)` with FSpec FR-331's existing
+  `bounded-search-incomplete{reason: certificate-unchecked}` cause, no
+  `task_search` evidence and no frontier. An absent certificate counts as
+  unchecked. A rejected certificate still settles V-6 `CertificateRejected`,
+  and a check stopped by a limit still settles V-7 naming that limit.
+  FR-163's HP-1 certificate handoff and check remain required for a
+  `proved`, `Certified` result; an unchecked result does not discharge
+  that requirement. This row does not alter FR-174's key-symmetry
+  `Reduced`, `Uncertified` result.
 - A verdict SHALL hold for exactly its subjects; the obligation identity
   binds them as FR-172 states.
 - When `settle_hyper_smt` reads an outcome, it SHALL first, ahead of
@@ -350,6 +370,7 @@ FR-243 basis, O-16 category and method.
 | FR-182-AC-14 | Over ADR-023 §8's secure vault, `settle_hyper_smt` for the `NonInterference` item at instance `v`, each outcome carrying that item's identity, settles: `LimitStopped{limit: ReachedLimit{limit: SmtMaxSolverSteps, value: 1000}, method: KInduction}` as `failed`, execution `resource-incomplete`, `Incomplete(LimitReached{limit: max_solver_steps, value: 1000, setting: smt.max_solver_steps})`; `LimitStopped{limit: ReachedLimit{limit: SmtMaxSolverTime, value: 5}, method: SmtUnrolling}` as `Incomplete(LimitReached{max_solver_time, 5, smt.max_solver_time})`, never `TimedOut`; neither is ever `InductionNotClosed` or `LimitNotApplicable`. A `LimitStopped` whose `ReachedLimit` names `SmtMaxConstants` writes no record and refuses `LimitNotApplicable`. FR-315-AC-40's `EncodingRefused` with `too-large` for `constants` under `encoding.max_constants` 7 settles `Incomplete(LimitReached{max_constants, 7, smt_encoding.max_constants})`, not `unsupported`. | Test (TC-1250) |
 | FR-182-AC-15 | Given an HP-4 `Other` form and no engine outcome, `settle_hyper_form` returns `Some(Unsupported(unsupported-requested-capability))`; it does not require, synthesize or consume an engine outcome. | Test (TC-607) |
 | FR-182-AC-16 | A crate whose only FSL dependency is `fsl-replay` names `fsl_replay::HyperSmtResult`, `HyperSmtOutcome` and `settle_hyper_smt` from its `replay` module, calls `settle_hyper_smt` with an outcome built from the `HyperQuery` and `HyperProductIdentity` of FR-315-AC-14, and compiles. This is the settle half of the facade check; the encoder and identity half is FR-315-AC-14. | Test (TC-607) |
+| FR-182-AC-17 | FR-179-AC-1's HP-1 `Det` result, after all 64 tuples evaluate true and every subject's reachable graph closes, with no certificate supplied or with a certificate on which no core check ran, settles `Incomplete(CertificateUnchecked)`, category incomplete, with cause `{"type": "bounded-search-incomplete", "reason": "certificate-unchecked"}`, no `task_search` evidence and no frontier; it never settles `Proved`, `Certified` or `Uncertified`. The same result with FR-163's HP-1 certificate accepted settles V-1 `proved`, `Exhaustive`, `Certified`; with the certificate rejected it settles V-6 `CertificateRejected`, and with the check stopped by `max_certificate_edges` it settles V-7 naming that limit, its configured value and setting rather than `CertificateUnchecked`. | Test |
 | FR-182-AC-8 | FR-177-AC-5's outcome settles `refuted`, `decisive-counterexample`, cause `UndefinedEvaluation` naming `a` and `b`, after its replay; FR-177-AC-6's and FR-178-AC-6's outcomes settle `inconclusive`, `MatchUndetermined`. | Test (TC-607) |
 | FR-182-AC-9 | ADR-023 §1's `NonInterference` over an empty `Vault` universe settles `inconclusive`, `NoInstance`, basis `unsettled`, before any state is explored, never `Proved` or `Refuted`; ADR-023 §1's `SavesPower` `(d: S::Device, e: N::Device)` with one empty universe and the other non-empty settles the same way, so the product is read over both parameters; the same clause over a population with no universe is `RequiresBound`, not `NoInstance`. | Test (TC-607) |
 | FR-182-AC-13 | **RETIRED (staleness check withdrawn).** The certificate `package_id` check is deleted. | Test (TC-1198), retired |
@@ -372,3 +393,4 @@ FR-243 basis, O-16 category and method.
 ## References
 
 - ADR-023. FSpec half: FSpec FR-399 (Linear STD-136; ADR-023 QS-5).
+- [FSpec FR-331's exhaustive closed-result cause clarification](https://github.com/agent-ix/filament-specification/pull/788).
