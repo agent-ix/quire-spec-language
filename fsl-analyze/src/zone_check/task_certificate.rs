@@ -390,6 +390,24 @@ fn witness(
     None
 }
 
+/// The wire `built` writes and the certificate the checker reads from it, or
+/// `None` when the reading is not `built`: a different identity, `admitted`
+/// witness (start, path and divergent target: the wire carries no target, so
+/// a changed one shows only in the decoded value) or respelling. Transitions
+/// are equal by wire spelling, never structurally.
+pub fn read_back_unchanged(
+    built: &ZoneCertificate<OccurrenceKey>,
+    identity: serde_json::Value,
+    claim: &OccurrenceKey,
+) -> Option<(serde_json::Value, ZoneCertificate<OccurrenceKey>)> {
+    let wire = built.to_wire(identity.clone()).ok()?;
+    let (read, read_identity) = ZoneCertificate::from_wire(&wire, claim.clone()).ok()?;
+    (read_identity == identity
+        && read.admitted == built.admitted
+        && read.to_wire(read_identity).ok().as_ref() == Some(&wire))
+    .then_some((wire, read))
+}
+
 /// The reading of a wire edge list `flat` from `start`, as
 /// `ZoneCertificate::from_wire` decodes it: the smallest closed suffix is the
 /// cycle and the rest the path; with none, the path ends at a quiescent node.

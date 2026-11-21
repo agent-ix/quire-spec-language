@@ -1,18 +1,23 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! EN-6's request adapter for release-backed schedulability claims (FR-249).
 //!
-//! A claim first goes to the symbolic pass (FR-418): the engine's own zone
+//! A claim first runs the concrete event search, which alone can refute and is
+//! bounded by `max_task_product_work`. When it neither refutes nor is
+//! cancelled, the symbolic pass (FR-418) runs: the engine's own zone
 //! exploration writes the task-product certificate, the certificate is spelled
 //! as JSON and read back, and `check_zone_certificate` runs on what was read.
 //! `proved` is settled only for an accepted certificate. Anything else (an
-//! uncertifiable set, a reachable deadline miss, a stop or a fault) falls
-//! through to the concrete event search, which alone can refute.
+//! uncertifiable set, a reachable deadline miss, a stop or a fault) leaves the
+//! concrete search's own outcome to settle.
 //!
 //! Decisions:
-//! - An accepted proof skips the concrete search, so it drops the run-time
+//! - The concrete search runs first because the symbolic quotient of a large
+//!   refutable set can exhaust its work budget before reaching a miss, while
+//!   the concrete search refutes within its own small bound.
+//! - An accepted proof overrides a bounded concrete stop. The run-time
 //!   cross-check between the shared S3 `TaskAutomaton` lowering and the
-//!   concrete FR-419 `TaskProductSystem`; the S3 sampled cross-check tests
-//!   are the guard for that agreement.
+//!   concrete FR-419 `TaskProductSystem` is only the concrete search not
+//!   refuting; the S3 sampled cross-check tests are the guard for agreement.
 //! - The pass stops at the first reachable miss and builds no certificate,
 //!   including a miss FR-418 would allow as a time-locked `locked` node: a
 //!   completeness loss only, the concrete search then decides.
@@ -51,7 +56,8 @@ pub enum ProofVerdict {
 /// The bounded task-product result retained for FR-621 settlement.
 #[derive(Debug)]
 pub struct TaskProductReport {
-    /// The symbolic proof attempt, made before the concrete search.
+    /// The symbolic proof attempt, made if the concrete search did not refute
+    /// and was not cancelled.
     pub proof: Option<TaskProof>,
     /// EN-6's task-product search result.
     pub outcome: crate::zone_check::TaskProductSearchOutcome,
@@ -121,42 +127,52 @@ pub(super) fn item<'a>(
                     Ok(product) => product,
                     Err(_) => return EngineReport::Refused(Refusal::Failed(BROKEN)),
                 };
-            // The symbolic pass first: the concrete event search cannot close a
-            // sporadic or large set, but a proof the checker accepts needs no
-            // search. The pass stops at its first reachable miss, so a
-            // refutable set reaches the concrete search, which alone refutes.
-            let proof = prove(
+            // The concrete search first: `max_task_product_work` bounds it and
+            // only it refutes, so a refutable set never waits on the symbolic
+            // pass's far larger quotient. The pass runs only for a search that
+            // neither refuted nor was cancelled, and an accepted proof settles
+            // the item `proved` over whatever bounded stop the search ended on.
+            let mut outcome = match crate::zone_check::check_task_product_with_cancel(
                 &product,
-                certificate_simulation,
-                &model,
-                checked_claim,
-                &claim,
-                max_check_work,
+                crate::zone_check::TaskProductSearchLimits {
+                    max_work: max_work.map_or(DEFAULT_MAX_WORK, std::num::NonZeroU64::get),
+                },
                 cancel,
-            );
-            let proved = matches!(
+            ) {
+                Ok(outcome) => outcome,
+                Err(_) => return EngineReport::Refused(Refusal::Failed(BROKEN)),
+            };
+            let proof = match &outcome {
+                crate::zone_check::TaskProductSearchOutcome::Refuted(_)
+                | crate::zone_check::TaskProductSearchOutcome::Stopped {
+                    cause: crate::zone_check::TaskProductSearchStop::Cancelled(_),
+                    ..
+                } => TaskProof {
+                    verdict: ProofVerdict::Uncertified,
+                    certificate: None,
+                },
+                crate::zone_check::TaskProductSearchOutcome::Stopped { .. } => prove(
+                    &product,
+                    certificate_simulation,
+                    &model,
+                    checked_claim,
+                    &claim,
+                    max_check_work,
+                    cancel,
+                ),
+            };
+            if matches!(
                 proof.verdict,
                 ProofVerdict::Checked(fsl_replay::ZoneCertificateVerdict::Accepted)
-            );
-            let outcome = if proved {
-                crate::zone_check::TaskProductSearchOutcome::Stopped {
+            ) {
+                // The proof decides, so no bounded-search frontier is reported.
+                outcome = crate::zone_check::TaskProductSearchOutcome::Stopped {
                     cause: crate::zone_check::TaskProductSearchStop::RegionClosureRequired,
                     frontier: Vec::new(),
                     expanded: 0,
                     transitions: 0,
-                }
-            } else {
-                match crate::zone_check::check_task_product_with_cancel(
-                    &product,
-                    crate::zone_check::TaskProductSearchLimits {
-                        max_work: max_work.map_or(DEFAULT_MAX_WORK, std::num::NonZeroU64::get),
-                    },
-                    cancel,
-                ) {
-                    Ok(outcome) => outcome,
-                    Err(_) => return EngineReport::Refused(Refusal::Failed(BROKEN)),
-                }
-            };
+                };
+            }
             if let crate::zone_check::TaskProductSearchOutcome::Stopped {
                 cause: crate::zone_check::TaskProductSearchStop::Cancelled(source),
                 ..
@@ -569,23 +585,9 @@ fn prove<'a>(
     let Ok(identity) = fsl_replay::certificate_identity_wire(claim, model) else {
         return fault();
     };
-    let Ok(wire) = built.to_wire(identity.clone()) else {
+    let Some((wire, read)) = crate::zone_check::read_back_unchanged(&built, identity, claim) else {
         return fault();
     };
-    let Ok((read, read_identity)) = fsl_replay::ZoneCertificate::from_wire(&wire, claim.clone())
-    else {
-        return fault();
-    };
-    // Equal by wire spelling: a read transition equals its original only by
-    // spelling (`same_source_transition`), never structurally.
-    // The decoded witness (start, path and divergent target) is the one built:
-    // the wire carries no target, so a changed target would show only here.
-    if read_identity != identity
-        || read.admitted != built.admitted
-        || read.to_wire(read_identity.clone()).ok().as_ref() != Some(&wire)
-    {
-        return fault();
-    }
     let verdict = fsl_replay::check_zone_certificate(
         fsl_replay::ZoneCertificateRequest {
             simulation,

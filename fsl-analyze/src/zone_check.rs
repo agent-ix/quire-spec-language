@@ -39,7 +39,7 @@ pub use refine::{
 pub mod manifest;
 pub use dbm::{Bound, Dbm, DbmError};
 pub use scale::{scale_constants, ScaledConstants};
-pub use task_certificate::{task_product_certificate, TaskCertificateRefusal};
+pub use task_certificate::{read_back_unchanged, task_product_certificate, TaskCertificateRefusal};
 pub use task_symbolic::{
     explore as explore_task_symbolic, SymbolicEdge, SymbolicGraph, SymbolicIdentity, SymbolicStop,
     SymbolicVertex,

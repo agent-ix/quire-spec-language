@@ -1023,12 +1023,11 @@ fn a_small_max_check_work_settles_limit_reached() {
     assert!(item.get("certificate").is_none(), "{item}");
 }
 
-/// FR-418: the symbolic pass never gates a refutation. A refutable set stops
-/// the pass at its first reachable miss, builds no certificate, and the
-/// concrete search refutes it with a replayed counterexample.
+/// FR-418: a concrete refutation bypasses the symbolic pass and carries its
+/// replayed counterexample.
 #[trace("TC-371")]
 #[test]
-fn a_refutable_set_refutes_promptly_through_the_symbolic_pass() {
+fn a_refutable_set_refutes_before_the_symbolic_pass() {
     let run = run(
         "task-product-refutable-through-symbolic-pass",
         &["command"],
