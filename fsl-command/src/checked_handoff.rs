@@ -759,29 +759,7 @@ fn acquire_evidence(
         }
     }
     let mut artifacts: BTreeMap<String, DependencyArtifact> = BTreeMap::new();
-    let mut pending: Vec<_> = root
-        .direct_dependency_selections()
-        .rev()
-        .map(|(identity, _)| (identity.as_str().to_owned(), false))
-        .collect();
-    while let Some((identity, expanded)) = pending.pop() {
-        if artifacts.contains_key(&identity) {
-            continue;
-        }
-        let dependency = held.get(&identity).ok_or_else(|| Error::Dependency {
-            identity: identity.clone(),
-            detail: "selected dependency was not retained".to_owned(),
-        })?;
-        if !expanded {
-            pending.push((identity.clone(), true));
-            pending.extend(
-                dependency
-                    .direct_dependency_selections()
-                    .rev()
-                    .map(|(child, _)| (child.as_str().to_owned(), false)),
-            );
-            continue;
-        }
+    for (identity, dependency) in held {
         let emission = dependency
             .remembered_emission()
             .ok_or_else(|| Error::Dependency {
@@ -789,14 +767,20 @@ fn acquire_evidence(
                 detail: "the checked acquisition retained no library emission".to_owned(),
             })?
             .clone();
-        let mut own = emission.evidence().clone();
-        supply_documents(&mut own, &documents, &identity)?;
-        insert_direct_dependencies(dependency, &artifacts, &mut own)?;
-        let package = Arc::from(admit(read_checked_package(
-            emission.package().bytes(),
-            READ_LIMITS,
-            &own,
-        ))?);
+        let selected = fsl_semantics::library::LibraryName::new(&identity).map_err(|error| {
+            Error::Dependency {
+                identity: identity.clone(),
+                detail: error.to_string(),
+            }
+        })?;
+        let package = compiled
+            .checked
+            .admitted_libraries()
+            .shared_package(&selected)
+            .ok_or_else(|| Error::Dependency {
+                identity: identity.clone(),
+                detail: "the checked acquisition retained no library admission".to_owned(),
+            })?;
         artifacts.insert(identity, DependencyArtifact { emission, package });
     }
     insert_direct_dependencies(root, &artifacts, &mut evidence)?;

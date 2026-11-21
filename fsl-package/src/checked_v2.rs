@@ -1479,6 +1479,11 @@ fn reader_node_keys(package: &CheckedPackageV2) -> Result<BTreeSet<NodeKey>, Wir
 pub struct AdmittedPackages(BTreeMap<LibraryName, Arc<CheckedPackageV2>>);
 
 impl AdmittedPackages {
+    /// Share an already authenticated library without re-reading or copying
+    /// its graph. Handoff persistence retains this same acquisition.
+    pub fn shared_package(&self, name: &LibraryName) -> Option<Arc<CheckedPackageV2>> {
+        self.0.get(name).map(Arc::clone)
+    }
     /// The package a [`read_import_view`] call admitted at `name`.
     pub fn package(&self, name: &LibraryName) -> Option<&CheckedPackageV2> {
         self.0.get(name).map(Arc::as_ref)

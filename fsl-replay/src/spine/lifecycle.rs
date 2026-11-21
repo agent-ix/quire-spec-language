@@ -956,6 +956,7 @@ pub struct CheckedUnit {
     /// The v2 bytes each resolved library was admitted from, emitted once
     /// during S4 for its import view and retained here by library identity.
     library_packages: Arc<BTreeMap<LibraryName, pkg::EmittedPackage>>,
+    library_admissions: Arc<AdmittedPackages>,
     protocol_results: Vec<super::ProtocolResult>,
     profile_uses: Vec<super::ProfileUseResult>,
     protocol_failure: Option<ProtocolFailure>,
@@ -1032,6 +1033,11 @@ impl CheckedUnit {
     /// The compile limits and check-stage usage that produced this unit.
     pub fn build_provenance(&self) -> BuildProvenance {
         self.build_provenance
+    }
+
+    /// The libraries authenticated during this same source acquisition.
+    pub fn admitted_libraries(&self) -> &AdmittedPackages {
+        &self.library_admissions
     }
 
     /// The retained v2 bytes of every resolved library, shared not copied.
@@ -2116,6 +2122,7 @@ pub(crate) fn check_units_with_options(
             library_names.push(name);
             libraries.extend(library.sources.iter().cloned());
         }
+        let library_admissions = Arc::new(resolution.admitted);
         let mut checked_units = Vec::with_capacity(sources.len());
         for ((parsed, source), (resolved_libraries, subject_libraries)) in admitted
             .units()
@@ -2173,6 +2180,7 @@ pub(crate) fn check_units_with_options(
                 libraries: libraries.clone(),
                 library_names: library_names.clone(),
                 library_packages: Arc::new(library_packages.clone()),
+                library_admissions: Arc::clone(&library_admissions),
                 protocol_results,
                 profile_uses: Vec::new(),
                 protocol_failure,
@@ -2583,6 +2591,7 @@ fn check_with_context_and_temporal_selections(
             libraries,
             library_names,
             library_packages: Arc::new(library_packages),
+            library_admissions: Arc::new(resolution.admitted),
             protocol_results,
             profile_uses: Vec::new(),
             protocol_failure,
