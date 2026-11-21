@@ -256,19 +256,21 @@ fn release_acquire_races_and_selections() {
 #[trace("TC-1591", "FR-631-AC-2")]
 #[trace("TC-1591", "FR-631-AC-3")]
 #[test]
-#[ignore = "QSL-2128: hyperproperty items are not reachable through fsl analyze yet"]
 fn copy_swap_and_witness_budget() {
-    use crate::hyper_world::{non_interference, opaque, request_files, Vault};
-    let declaration = format!("{}\n{}", non_interference(""), opaque(""));
-    let (unit, model, snapshot) = request_files(Vault::Secure, false, (1, 0), &declaration);
+    use crate::hyper_world::{
+        non_interference, request_files_over_starts, Vault, EQUAL_INPUTS, STARTS,
+    };
+    let declaration = format!("{}\nhyper Opaque using inf over behaviours (v: V::Vault) forall trace a of V exists trace b of V {{ always holds(v.l @ a = v.l @ b) }}", non_interference(EQUAL_INPUTS));
+    let (unit, model, snapshots) =
+        request_files_over_starts(Vault::Secure, false, &STARTS, &declaration);
     let ws = Workspace::new("cov-hyper");
     let run = analyze(&crate::analyze_cli_support::request_over(
         &ws,
         &unit,
         &model,
-        &[snapshot],
+        &snapshots,
         json!({"items": [
-            {"claim": "NonInterference", "reductions": {"symmetry": "declared"}},
+            {"claim": "NonInterference"},
             {"claim": "Opaque", "temporal": {"limits": {"max_witness_set": 1}}},
         ]}),
     ));

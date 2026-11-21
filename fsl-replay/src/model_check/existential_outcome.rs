@@ -5,8 +5,8 @@
 //!
 //! The shapes are FR-168's [`StateGraphOutcome`](crate::StateGraphOutcome)
 //! with a lasso for a witness: [`ModelLasso`] is FR-170's `WitnessPath::Lasso`.
-//! A `Witnessed` outcome carries no product-closure certificate yet: FR-163's
-//! certificate and its core checker are not built, so it settles no `proved`.
+//! A `Witnessed` instance carries the positive product's closure certificate;
+//! settlement checks it and replays each witness before certifying a proof.
 
 use std::collections::BTreeSet;
 
@@ -71,6 +71,8 @@ pub enum ExistentialOutcome {
 /// One instance of an HP-5 item with its decision.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ExistentialInstanceOutcome {
+    /// The complete positive product of a fully explored witnessed outcome.
+    pub certificate: Option<crate::ProductClosureCertificate>,
     /// The instance: each object parameter of the clause and the key it is
     /// bound to, in parameter order.
     pub instance: Vec<(String, String)>,

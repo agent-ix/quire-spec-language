@@ -1459,3 +1459,467 @@ fn an_invariant_proof_is_certified_under_the_invariant_root() {
         "{refused:?}"
     );
 }
+
+#[trace(
+    "TC-645",
+    "TC-646",
+    "FR-163-AC-1",
+    "FR-163-AC-2",
+    "FR-163-AC-4",
+    "FR-163-AC-5"
+)]
+#[test]
+fn hyper_product_certificate_is_recomputed_and_rejects_tampering() {
+    use crate::hyper_world::{non_interference, Vault, World, EQUAL_INPUTS, STARTS};
+    use filament_exact::Cancel;
+    use fsl_replay::{
+        check_product_closure, CertificateLocus, CertificateMember, CertificateRule, HyperOutcome,
+        ModelCheckLimits, ProductClosureRequest, TemporalCertificateCheck,
+    };
+    let world = World::new(
+        Vault::Secure,
+        false,
+        &STARTS,
+        &non_interference(EQUAL_INPUTS),
+    );
+    let cancel = Cancel::new();
+    let outcome = world
+        .run(ModelCheckLimits::default(), &cancel)
+        .expect("secure product search");
+    let HyperOutcome::HoldsReduced { certificates, .. } = outcome else {
+        panic!("secure copy-swap proof");
+    };
+    let subjects = vec![world.subject()];
+    let request = ProductClosureRequest {
+        package: &world.package,
+        clause: &world.clause,
+        subjects: &subjects,
+        meter: crate::counter::UNLIMITED,
+    };
+    let checked = |proof: &fsl_replay::ProductClosureCertificate, limits: &ModelCheckLimits| {
+        check_product_closure(&request, proof, limits, &cancel).expect("core check")
+    };
+    let proof = certificates.first().expect("one instance certificate");
+    assert_eq!(proof.closure.len(), 6);
+    let repeated = world
+        .run(ModelCheckLimits::default(), &cancel)
+        .expect("repeat search");
+    assert_eq!(
+        certificates,
+        match repeated {
+            HyperOutcome::HoldsReduced { certificates, .. } => certificates,
+            other => panic!("repeat proof: {other:?}"),
+        }
+    );
+    let limits = ModelCheckLimits::default();
+    assert_eq!(checked(proof, &limits), TemporalCertificateCheck::Accepted);
+    assert_eq!(checked(proof, &limits), TemporalCertificateCheck::Accepted);
+    let mut malformed = proof.clone();
+    malformed.components = None;
+    assert!(
+        matches!(checked(&malformed, &limits), TemporalCertificateCheck::Rejected(rejection)
+        if rejection.rule == CertificateRule::Malformed
+            && rejection.at == CertificateLocus::CertificateMember(CertificateMember::Components))
+    );
+    let mut duplicate = proof.clone();
+    duplicate.closure.insert(0, duplicate.closure[0].clone());
+    assert!(
+        matches!(checked(&duplicate, &limits), TemporalCertificateCheck::Rejected(rejection)
+        if rejection.rule == CertificateRule::Malformed)
+    );
+    let mut unsorted = proof.clone();
+    unsorted.closure.swap(0, 1);
+    assert_eq!(
+        checked(&unsorted, &limits),
+        TemporalCertificateCheck::Rejected(fsl_replay::CertificateRejection {
+            rule: CertificateRule::Malformed,
+            at: CertificateLocus::HyperProductState(unsorted.closure[1].0.clone()),
+        })
+    );
+    let components = proof.components.as_ref().expect("universal partition");
+    assert!(proof.closure.windows(2).all(|pair| pair[0] < pair[1]));
+    assert!(components
+        .iter()
+        .all(|component| component.states.windows(2).all(|pair| pair[0] < pair[1])));
+    let mut overlapping = proof.clone();
+    overlapping.components.as_mut().expect("partition")[0]
+        .states
+        .push(components[0].states[0].clone());
+    assert!(
+        matches!(checked(&overlapping, &limits), TemporalCertificateCheck::Rejected(rejection)
+        if rejection.rule == CertificateRule::NotPartition)
+    );
+    let mut bad_witness = proof.clone();
+    for component in bad_witness.components.as_mut().expect("partition") {
+        component.witness = fsl_replay::ComponentWitness::MissingAcceptance { set: u32::MAX };
+    }
+    assert!(
+        matches!(checked(&bad_witness, &limits), TemporalCertificateCheck::Rejected(rejection)
+        if rejection.rule == CertificateRule::WitnessFails)
+    );
+    let mut backward = proof.clone();
+    // Each secure SCC contains the two public outputs. Splitting its cycle
+    // into singleton components makes a backward edge unavoidable.
+    backward.components = Some(
+        proof
+            .closure
+            .iter()
+            .map(|state| fsl_replay::Component {
+                states: vec![state.clone()],
+                witness: fsl_replay::ComponentWitness::Trivial,
+            })
+            .collect(),
+    );
+    assert!(
+        matches!(checked(&backward, &limits), TemporalCertificateCheck::Rejected(rejection)
+        if rejection.rule == CertificateRule::BackwardEdge)
+    );
+    let mut alternative_order = proof.clone();
+    alternative_order
+        .components
+        .as_mut()
+        .expect("partition")
+        .reverse();
+    assert_eq!(
+        checked(&alternative_order, &limits),
+        TemporalCertificateCheck::Accepted
+    );
+    // Removing a reached non-initial state must fail closure before the
+    // component partition is examined.
+    let mut successor_missing = false;
+    for index in 0..proof.closure.len() {
+        let mut missing = proof.clone();
+        missing.closure.remove(index);
+        if matches!(checked(&missing, &limits), TemporalCertificateCheck::Rejected(rejection)
+            if rejection.rule == CertificateRule::SuccessorMissing)
+        {
+            successor_missing = true;
+        }
+    }
+    assert!(
+        successor_missing,
+        "a non-initial member must be required by closure"
+    );
+    let mut missing = proof.clone();
+    missing.closure.clear();
+    assert!(
+        matches!(checked(&missing, &limits), TemporalCertificateCheck::Rejected(rejection)
+        if rejection.rule == CertificateRule::InitialMissing)
+    );
+    let tight = ModelCheckLimits {
+        limits: fsl_eval::simulation::Limits {
+            max_states: 1,
+            ..limits.limits
+        },
+        ..limits
+    };
+    assert_eq!(
+        checked(proof, &tight),
+        TemporalCertificateCheck::Stopped(fsl_replay::IncompleteCause::LimitReached {
+            limit: fsl_replay::ModelCheckLimit::MaxStates,
+            value: 1,
+        })
+    );
+}
+
+/// Missing component structure has its own locus even when no state key is
+/// supplied. A zero recomputation budget must not hide that malformed shape.
+#[trace("TC-646", "FR-163-AC-5")]
+#[test]
+fn hyper_product_missing_components_precedes_recomputation_for_both_forms() {
+    use crate::hyper_world::{non_interference, opaque, Vault, World, EQUAL_INPUTS, STARTS};
+    use fsl_replay::{
+        check_product_closure, CertificateMember, HyperOutcome, ProductClosureRequest,
+    };
+
+    for declaration in [non_interference(EQUAL_INPUTS), opaque("")] {
+        let world = World::new(Vault::Secure, false, &STARTS, &declaration);
+        let cancel = Cancel::new();
+        let outcome = world
+            .run(ModelCheckLimits::default(), &cancel)
+            .expect("proof");
+        let certificates = match outcome {
+            HyperOutcome::Holds { certificates, .. }
+            | HyperOutcome::HoldsReduced { certificates, .. } => certificates,
+            other => panic!("holding world: {other:?}"),
+        };
+        let subjects = [world.subject()];
+        let request = ProductClosureRequest {
+            package: &world.package,
+            clause: &world.clause,
+            subjects: &subjects,
+            meter: UNLIMITED,
+        };
+        let mut proof = certificates.into_iter().next().expect("one binding");
+        proof.components = None;
+        let limits = ModelCheckLimits {
+            limits: fsl_eval::simulation::Limits {
+                max_states: 0,
+                max_transitions: 0,
+            },
+            ..ModelCheckLimits::default()
+        };
+        for empty in [false, true] {
+            if empty {
+                proof.closure.clear();
+            }
+            assert_eq!(
+                check_product_closure(&request, &proof, &limits, &cancel).expect("core check"),
+                TemporalCertificateCheck::Rejected(CertificateRejection {
+                    rule: CertificateRule::Malformed,
+                    at: CertificateLocus::CertificateMember(CertificateMember::Components),
+                }),
+                "form {:?}, empty closure {empty}",
+                proof.form
+            );
+        }
+    }
+}
+
+/// A forged engine proof and a checker budget stop must reach settlement as
+/// inconclusive and incomplete respectively; neither may retain certification.
+#[trace("TC-646", "FR-163-AC-2", "FR-163-AC-4", "FR-182-AC-1")]
+#[test]
+fn hyper_product_rejection_and_checker_stop_never_settle_certified() {
+    use crate::hyper_world::{non_interference, Vault, World, EQUAL_INPUTS, STARTS};
+    use fsl_replay::{settle_hyper_check, HyperOutcome, ProductClosureRequest};
+
+    let world = World::new(
+        Vault::Secure,
+        false,
+        &STARTS,
+        &non_interference(EQUAL_INPUTS),
+    );
+    let cancel = Cancel::new();
+    let outcome = world
+        .run(ModelCheckLimits::default(), &cancel)
+        .expect("proof");
+    let subjects = [world.subject()];
+    let request = ProductClosureRequest {
+        package: &world.package,
+        clause: &world.clause,
+        subjects: &subjects,
+        meter: UNLIMITED,
+    };
+    let settle = |outcome: &HyperOutcome, limits: &ModelCheckLimits| {
+        settle_hyper_check(outcome, limits, &[], Some(&request), &cancel, |_| {
+            panic!("a holding outcome has no counterexample to replay")
+        })
+        .expect("settled core check")
+    };
+    let limits = ModelCheckLimits::default();
+    let mut forged = outcome.clone();
+    let certificates = match &mut forged {
+        HyperOutcome::HoldsReduced { certificates, .. } => certificates,
+        other => panic!("copy-swap proof: {other:?}"),
+    };
+    certificates[0].closure.clear();
+    let record = settle(&forged, &limits);
+    assert!(matches!(
+        record.value,
+        TerminalValue::Inconclusive(InconclusiveCause::CertificateRejected {
+            rule: CertificateRule::InitialMissing,
+            ..
+        })
+    ));
+    assert_eq!(record.label, ResultLabel::Inconclusive);
+    assert!(record.certificates.is_empty());
+    let tight = ModelCheckLimits {
+        limits: fsl_eval::simulation::Limits {
+            max_states: 1,
+            ..limits.limits
+        },
+        ..limits
+    };
+    let record = settle(&outcome, &tight);
+    assert_eq!(
+        record.value,
+        TerminalValue::Incomplete(IncompleteCause::LimitReached {
+            limit: ModelCheckLimit::MaxStates,
+            value: 1,
+        })
+    );
+    assert_eq!(record.label, ResultLabel::Failed);
+    assert_eq!(record.execution, Execution::ResourceIncomplete);
+    assert!(record.certificates.is_empty());
+}
+
+/// Closure failure precedes a rejecting monitor member, even when that
+/// rejecting member is initial and is visited before the missing successor.
+#[trace("TC-646", "FR-163-AC-2")]
+#[test]
+fn hyper_product_closure_is_checked_before_a_projected_violation() {
+    use crate::hyper_world::{instance, Vault, World};
+    use fsl_analyze::model_check::retain;
+    use fsl_eval::hyper::{
+        CheckedHyperLetters, CheckedStepMatch, ProjectedInputs, ProjectedProduct,
+    };
+    use fsl_replay::{
+        check_product_closure, product_state_key, ProductClosureCertificate, ProductClosureRequest,
+    };
+
+    let declaration = crate::hyper_projected::aligned(&[])
+        .replace("v.l", "v.h")
+        .replace("v.h @ a = v.h @ b", "v.h @ a != v.h @ b");
+    let world = World::busy(Vault::Busy, &crate::hyper_projected::IDLE, &declaration);
+    let subject = world.subject();
+    let system = ModelSystem::new(subject.simulation.clone()).expect("subject");
+    let systems = vec![&system; world.clause.quantifiers().len()];
+    let letters =
+        CheckedHyperLetters::new(&world.package, &world.clause, systems.clone()).expect("letters");
+    let matcher = CheckedStepMatch::new(&world.package, &world.clause);
+    let cancel = Cancel::new();
+    let instance = instance();
+    let limits = ModelCheckLimits::default();
+    let mut product = ProjectedProduct::new(ProjectedInputs {
+        systems,
+        instance: &instance,
+        body: world.clause.body(),
+        profile: world.clause.profile(),
+        align_skip: world.clause.align_skip(),
+        letters: &letters,
+        matcher: Some(&matcher),
+        max_automaton_states: limits.max_automaton_states,
+        meter: UNLIMITED,
+        cancel: &cancel,
+    })
+    .expect("projected product");
+    product.start().expect("initial letters");
+    let explored = retain(
+        &product,
+        limits.limits,
+        fsl_foundation::IdentityLimits::default(),
+        None,
+        || false,
+    )
+    .expect("retained product");
+    let mut closure = explored
+        .graph
+        .states()
+        .iter()
+        .map(|member| product_state_key(&product.key(&member.state)).expect("key"))
+        .collect::<Vec<_>>();
+    closure.sort();
+    let mut proof = ProductClosureCertificate {
+        form: fsl_semantics::check::HyperForm::ProjectionAligned,
+        instance: instance
+            .iter()
+            .map(|binding| (binding.parameter.clone(), binding.instance.key.clone()))
+            .collect(),
+        reduction: None,
+        closure,
+        components: None,
+    };
+    let subjects = [subject];
+    let request = ProductClosureRequest {
+        package: &world.package,
+        clause: &world.clause,
+        subjects: &subjects,
+        meter: UNLIMITED,
+    };
+    assert!(
+        matches!(check_product_closure(&request, &proof, &limits, &cancel).expect("check"),
+        TemporalCertificateCheck::Rejected(rejection) if rejection.rule == CertificateRule::ViolatingMember)
+    );
+    let initial = product
+        .initial()
+        .iter()
+        .map(|state| product_state_key(&product.key(state)).expect("initial key"))
+        .collect::<std::collections::BTreeSet<_>>();
+    assert!(
+        proof.closure.len() > initial.len(),
+        "the product has non-initial successors"
+    );
+    proof.closure.retain(|key| initial.contains(key));
+    assert!(
+        matches!(check_product_closure(&request, &proof, &limits, &cancel).expect("check"),
+        TemporalCertificateCheck::Rejected(rejection) if rejection.rule == CertificateRule::SuccessorMissing)
+    );
+}
+
+/// HP-3's empty universal tuple is real data, independent of whether its
+/// existential witness set is populated or empty.
+#[trace("TC-646", "FR-163-AC-7")]
+#[test]
+fn hyper_product_zero_universal_keys_preserve_their_witness_sets() {
+    use crate::hyper_world::{Vault, World, STARTS};
+    use fsl_eval::hyper::Property;
+    use fsl_eval::simulation::StateKey;
+    use fsl_replay::ProductStateKey;
+
+    let declaration = "hyper Hidden using inf over behaviours (v: V::Vault) \
+        exists trace b of V exists trace c of V \
+        match { b.step.Vault::step.i = c.step.Vault::step.i } \
+        { holds(v.h @ b != v.h @ c) and always holds(v.l @ b = v.l @ c) }";
+    for (vault, empty) in [(Vault::Secure, false), (Vault::Leaky, true)] {
+        let world = World::new(vault, false, &STARTS, declaration);
+        let explored = world.explore_witness();
+        let member = explored
+            .graph
+            .states()
+            .iter()
+            .find(|member| {
+                matches!(&member.state.property, Property::Witnesses(set)
+                if set.members().is_empty() == empty)
+            })
+            .expect("the product reaches the expected witness set");
+        assert!(member.state.components.is_empty());
+        let key = ProductStateKey(StateKey::from_canonical_bytes(member.key.clone()));
+        let bytes = serde_json::to_vec(&key).expect("serialize actual product key");
+        let read: serde_json::Value = serde_json::from_slice(&bytes).expect("read key document");
+        assert_eq!(read["states"], serde_json::json!([]));
+        let witnesses = read["witness_set"].as_array().expect("present witness set");
+        assert_eq!(witnesses.is_empty(), empty);
+        assert!(read.get("automaton_state").is_none());
+        for witness in witnesses {
+            assert_eq!(witness["states"].as_array().map(Vec::len), Some(2));
+            assert!(witness["automaton_state"]
+                .as_str()
+                .is_some_and(|key| !key.is_empty()));
+        }
+    }
+}
+
+/// A secure search's component witnesses cannot certify the leaking
+/// product, even if every leaking state and successor is supplied.
+#[trace("TC-646", "FR-163-AC-3")]
+#[test]
+fn hyper_product_leaky_closure_rejects_the_secure_partition() {
+    use crate::hyper_world::{non_interference, Vault, World, EQUAL_INPUTS, STARTS};
+    use fsl_eval::simulation::StateKey;
+    use fsl_replay::{check_product_closure, HyperOutcome, ProductClosureRequest, ProductStateKey};
+
+    let declaration = non_interference(EQUAL_INPUTS);
+    let secure = World::new(Vault::Secure, false, &STARTS, &declaration);
+    let limits = ModelCheckLimits::default();
+    let cancel = Cancel::new();
+    let HyperOutcome::HoldsReduced {
+        mut certificates, ..
+    } = secure.run(limits, &cancel).expect("secure proof")
+    else {
+        panic!("secure copy-swap proof");
+    };
+    let mut proof = certificates.pop().expect("one binding");
+    let leaky = World::new(Vault::Leaky, false, &STARTS, &declaration);
+    let explored = leaky.explore();
+    proof.reduction = None;
+    proof.closure = explored
+        .graph
+        .states()
+        .iter()
+        .map(|member| ProductStateKey(StateKey::from_canonical_bytes(member.key.clone())))
+        .collect();
+    proof.closure.sort();
+    assert!(proof.closure.len() > secure.explore().graph.states().len());
+    let subjects = [leaky.subject()];
+    let request = ProductClosureRequest {
+        package: &leaky.package,
+        clause: &leaky.clause,
+        subjects: &subjects,
+        meter: UNLIMITED,
+    };
+    assert!(
+        matches!(check_product_closure(&request, &proof, &limits, &cancel).expect("core check"),
+        TemporalCertificateCheck::Rejected(rejection) if rejection.rule == CertificateRule::NotPartition)
+    );
+}

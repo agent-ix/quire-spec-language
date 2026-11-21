@@ -24,16 +24,16 @@ use fsl_eval::hyper::{
 use fsl_eval::simulation::model::ModelSimState;
 use fsl_eval::temporal::{AtomReading, UndefinedCause};
 use fsl_replay::{
-    HyperCounterexampleKind, HyperLocus, HyperOutcome, HyperStep, IncompleteCause, ModelCheckLimit,
-    ModelCheckLimits, ModelTraceRefusal, ModelTraceSettlement, ModelTraceValue, ReachedLimit,
-    ReplayRefusal, UndecidedCause, DEFAULT_MAX_RELATION_TUPLES, DEFAULT_MAX_WITNESS_SET,
+    DEFAULT_MAX_RELATION_TUPLES, DEFAULT_MAX_WITNESS_SET, HyperCounterexampleKind, HyperLocus,
+    HyperOutcome, HyperStep, IncompleteCause, ModelCheckLimit, ModelCheckLimits, ModelTraceRefusal,
+    ModelTraceSettlement, ModelTraceValue, ReachedLimit, ReplayRefusal, UndecidedCause,
 };
 use fsl_semantics::check::FormulaNodeId;
 use ix_trace_rs::trace;
 
 use crate::counter::ZERO;
 use crate::hyper::{input, inputs, positions, refuted};
-use crate::hyper_world::{assert_hyper_division_refused, high, low, opaque, Vault, World, STARTS};
+use crate::hyper_world::{STARTS, Vault, World, assert_hyper_division_refused, high, low, opaque};
 
 /// The clause of FR-177's third criterion: two existential variables and no universal one.
 const TWO_EXISTENTIAL: &str = "hyper Hidden using inf over behaviours (v: V::Vault) \
@@ -111,9 +111,11 @@ fn the_leaky_vault_exhausts_the_witness_set_at_position_one() {
         empty, 4,
         "after one step every member has left the automaton"
     );
-    assert!(states
-        .iter()
-        .all(|state| state.depth == 0 || members(&state.state).is_empty()));
+    assert!(
+        states
+            .iter()
+            .all(|state| state.depth == 0 || members(&state.state).is_empty())
+    );
 
     let outcome = run(&world, ModelCheckLimits::default());
     let HyperOutcome::Violated { stats, .. } = &outcome else {
@@ -214,7 +216,7 @@ fn the_secure_vault_keeps_a_singleton_witness_set_over_four_states() {
     assert_eq!(seen, [(0, 0), (0, 1), (1, 0), (1, 1)]);
 
     let outcome = run(&world, ModelCheckLimits::default());
-    let HyperOutcome::Holds { stats } = outcome else {
+    let HyperOutcome::Holds { stats, .. } = outcome else {
         panic!("expected the secure vault to hold, got {outcome:?}");
     };
     assert_eq!(stats.product_states, 4);
@@ -242,19 +244,28 @@ fn a_clause_with_no_universal_variable_holds_exactly_when_the_witness_set_never_
         })
         .collect();
     assert_eq!(sizes, [2, 4]);
+    let HyperOutcome::Holds {
+        stats,
+        certificates,
+    } = run(&secure, ModelCheckLimits::default())
+    else {
+        panic!("the secure witness product holds");
+    };
+    assert!(
+        !certificates.is_empty(),
+        "a proof carries its closed product"
+    );
     assert_eq!(
-        run(&secure, ModelCheckLimits::default()),
-        HyperOutcome::Holds {
-            stats: fsl_replay::RunStats {
-                product_states: 2,
-                product_edges: 2,
-                stutter_edges: 0,
-                automaton_states: 2,
-                depth: 1,
-                bound_limited: 0,
-                message_bound_limited: 0,
-                instance_limited: 0,
-            }
+        stats,
+        fsl_replay::RunStats {
+            product_states: 2,
+            product_edges: 2,
+            stutter_edges: 0,
+            automaton_states: 2,
+            depth: 1,
+            bound_limited: 0,
+            message_bound_limited: 0,
+            instance_limited: 0,
         }
     );
 
@@ -612,10 +623,12 @@ fn a_letter_with_no_value_at_position_zero_ends_the_item_with_empty_paths() {
     assert_eq!(undefined.position, 0);
     assert_eq!(counterexample.trace_position, 0);
     assert_eq!(counterexample.traces.len(), 2);
-    assert!(counterexample
-        .traces
-        .iter()
-        .all(|trace| trace.steps.is_empty()));
+    assert!(
+        counterexample
+            .traces
+            .iter()
+            .all(|trace| trace.steps.is_empty())
+    );
     assert_eq!(counterexample.traces[0].initial, 0);
     assert_eq!(
         counterexample.traces[1].initial, 1,
@@ -980,11 +993,13 @@ fn two_universal_variables_each_have_a_trace_in_the_counterexample() {
     assert_eq!(counterexample.traces[0].steps.len(), 1);
     assert_eq!(counterexample.traces[1].steps.len(), 1);
     let explored = world.explore_witness();
-    assert!(explored
-        .graph
-        .states()
-        .iter()
-        .all(|state| state.state.components.len() == 2));
+    assert!(
+        explored
+            .graph
+            .states()
+            .iter()
+            .all(|state| state.state.components.len() == 2)
+    );
 }
 
 /// `max_automaton_states` bounds the safety automaton of the witness product:

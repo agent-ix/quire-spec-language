@@ -38,10 +38,8 @@
 //! path are all at its end and repeat the terminal state, so dropping them
 //! leaves the same infinite behaviour.
 //!
-//! Not built here, and absent rather than approximated: the product-closure
-//! certificate a `Witnessed` outcome carries (FR-163), the replay of a witness
-//! lasso and of a trap (FR-170, FR-181 Replay) and the settlement of the
-//! outcome (FR-169, FR-182).
+//! A witnessed instance carries its retained product's closure certificate;
+//! the core checks closure and replays witnesses during settlement.
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
@@ -143,6 +141,7 @@ pub fn check_single_existential(
             instances: bindings
                 .iter()
                 .map(|binding| ExistentialInstanceOutcome {
+                    certificate: None,
                     instance: named(binding),
                     outcome: ExistentialOutcome::NoInitialState,
                     sampled: Vec::new(),
@@ -265,6 +264,7 @@ impl<'a> Run<'_, 'a> {
                     instances: bindings
                         .iter()
                         .map(|binding| ExistentialInstanceOutcome {
+                            certificate: None,
                             instance: named(binding),
                             outcome: ExistentialOutcome::NoDecision {
                                 end: halt.end(),
@@ -310,7 +310,51 @@ impl<'a> Run<'_, 'a> {
                     .decide(&sampled.witnesses)?
                 }
             };
+            let certificate = if matches!(outcome, ExistentialOutcome::Witnessed { .. }) {
+                let Explored::Product(product, _) = &explored else {
+                    return Err(fault("a-witnessed-instance-has-a-product"));
+                };
+                let members = product
+                    .graph
+                    .states()
+                    .iter()
+                    .map(|member| {
+                        let key =
+                            fsl_replay::product_state_key(&product.product.key(&member.state))
+                                .map_err(|_| fault("HP-5-certificate-key"))?;
+                        Ok((key, member.state.clone(), member.findings.clone()))
+                    })
+                    .collect::<Result<Vec<_>, ModelCheckRefusal>>()?;
+                let edges = product
+                    .graph
+                    .edges()
+                    .iter()
+                    .map(|edge| {
+                        (
+                            edge.source.index(),
+                            edge.target.index(),
+                            edge.transition.clone(),
+                        )
+                    })
+                    .collect::<Vec<_>>();
+                Some(
+                    fsl_replay::product_certificate(fsl_replay::ProductEvidence {
+                        clause: self.request.clause,
+                        systems: &[&self.system],
+                        instance: binding,
+                        members: &members,
+                        edges: &edges,
+                        automaton: &product.product.automaton(),
+                        reduction: None,
+                        cancel: self.cancel,
+                    })
+                    .map_err(|_| fault("HP-5-certificate"))?,
+                )
+            } else {
+                None
+            };
             instances.push(ExistentialInstanceOutcome {
+                certificate,
                 instance: named(binding),
                 outcome,
                 sampled: sampled.witnesses,
@@ -535,7 +579,7 @@ impl<'a> Run<'_, 'a> {
         match outcome {
             TemporalOutcome::Holds => {}
             TemporalOutcome::Violated { .. } | TemporalOutcome::Undefined(_) => {
-                return Ok(Ok(None))
+                return Ok(Ok(None));
             }
             TemporalOutcome::Incomplete(incomplete) => {
                 return Ok(Err(cancelled(self.cancel).unwrap_or_else(|| {
@@ -659,7 +703,7 @@ impl<'a> Run<'_, 'a> {
             Err(fsl_eval::automaton::AutomatonError::StateLimit { limit }) => {
                 return Ok(Explored::Halted(
                     stopped(ModelCheckLimit::MaxAutomatonStates, limit).end(),
-                ))
+                ));
             }
             Err(other) => return Err(HyperRefusal::Automaton(other).into()),
         };
@@ -825,7 +869,7 @@ impl<'a> Decision<'_, '_, 'a> {
                     return Ok(ExistentialOutcome::NoDecision {
                         end,
                         open: self.open_causes(),
-                    })
+                    });
                 }
             }
         } else {
@@ -850,7 +894,7 @@ impl<'a> Decision<'_, '_, 'a> {
                     return Ok(ExistentialOutcome::NoDecision {
                         end,
                         open: self.open_causes(),
-                    })
+                    });
                 }
             }
         }
@@ -1309,6 +1353,7 @@ fn decide_closed(
                 instances: bindings
                     .iter()
                     .map(|binding| ExistentialInstanceOutcome {
+                        certificate: None,
                         instance: named(binding),
                         outcome: ExistentialOutcome::NoDecision {
                             end: end.clone(),
@@ -1415,6 +1460,7 @@ fn decide_closed(
             (None, None) => ExistentialOutcome::ClosedWitnessed { paths },
         };
         outcomes.push(ExistentialInstanceOutcome {
+            certificate: None,
             instance: named(binding),
             outcome,
             sampled: Vec::new(),

@@ -27,7 +27,7 @@ use std::collections::BTreeSet;
 use filament_checked::key::DeclarationKey;
 use filament_semantic_value::catalog::InternalFault;
 use fsl_foundation::IdentityLimits;
-use fsl_semantics::check::{CopyGenerator, CopyGroup, FormulaNodeId};
+use fsl_semantics::check::{CheckedHyperClause, CopyGenerator, CopyGroup, FormulaNodeId};
 
 use crate::automaton::AutomatonError;
 use crate::hyper::product::{Halt, HyperKey, HyperProduct, HyperState, Property};
@@ -40,6 +40,40 @@ pub fn copy_population() -> DeclarationKey {
     DeclarationKey {
         package: "fsl/copy-swap".to_owned(),
         node: "ix://fsl/copy-swap/trace-variables".to_owned(),
+    }
+}
+
+/// The compiler's copy group restricted to classes without fairness.
+/// A fair variable must retain its own slot throughout a concrete behaviour.
+pub fn fairness_preserving_copy_group(clause: &CheckedHyperClause) -> CopyGroup {
+    let group = clause.copy_group();
+    let quantifiers = clause.quantifiers();
+    let fair = |name: &str| {
+        quantifiers
+            .iter()
+            .any(|quantifier| quantifier.variable == name && !quantifier.fairness.is_empty())
+    };
+    let classes: Vec<Vec<String>> = group
+        .classes
+        .iter()
+        .filter(|class| !class.iter().any(|name| fair(name)))
+        .cloned()
+        .collect();
+    let kept = |position: usize| {
+        quantifiers.get(position).is_some_and(|quantifier| {
+            classes
+                .iter()
+                .any(|class| class.contains(&quantifier.variable))
+        })
+    };
+    CopyGroup {
+        generators: group
+            .generators
+            .iter()
+            .filter(|generator| kept(generator.first))
+            .cloned()
+            .collect(),
+        classes,
     }
 }
 
@@ -227,7 +261,7 @@ impl HyperProduct<'_, '_> {
                 partner: partner.clone(),
             },
             Property::Witnesses(_) | Property::Rejected | Property::MatchUndefined { .. } => {
-                return Err(self.fault("a-self-composition-state-has-a-self-composition-property"))
+                return Err(self.fault("a-self-composition-state-has-a-self-composition-property"));
             }
         };
         let property_key = self.property_key(&property);

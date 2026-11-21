@@ -13,9 +13,8 @@
 //! counterexamples and checking a supplied FR-183 match witness itself.
 //!
 //! A `Holds` or `HoldsReduced` outcome settles `proved` only after FR-163's product-closure
-//! certificate checker accepts its certificate. Neither the certificate nor
-//! the checker is built, so the map refuses them rather than settle a
-//! `proved` no checker stands behind.
+//! certificate checker accepts every binding's certificate using the original
+//! checked request, independently of the engine's search.
 
 use crate::bounds::{BoundExceeded, ReplayLimits};
 use crate::execute::ReplayRefusal;
@@ -70,6 +69,10 @@ pub struct UsedLimit {
 /// One hyper item's terminal record (FR-182 Outputs).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HyperRecord {
+    /// The product certificates accepted for a certified proof.
+    pub certificates: Vec<crate::ProductClosureCertificate>,
+    /// Explicit-state exploration counts, absent for a solver settlement.
+    pub exploration: Option<crate::RunStats>,
     /// The terminal value.
     pub value: TerminalValue,
     /// Its FSpec FR-360 result label.
@@ -110,11 +113,12 @@ pub fn settle_hyper_form(form: &HyperForm) -> Option<TerminalValue> {
 /// Why a hyper outcome settles no record.
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum HyperSettleRefusal {
-    /// A `Holds` outcome settles `proved` only after FR-163's product-closure
-    /// certificate checker accepts its certificate, and the certificate and
-    /// the checker are not built.
-    #[error("a hyper `Holds` settles only after FR-163's product-closure checker accepts its certificate, which is not built")]
-    ProductClosureCheckerNotBuilt,
+    /// A holding result needs the original request for core certificate checking.
+    #[error("a hyper proof needs its original product-closure request")]
+    CertificateRequestMissing,
+    /// The core could not reconstruct the original proof request.
+    #[error(transparent)]
+    Certificate(#[from] crate::ProductClosureRefusal),
     /// A reduction whose preservation row reads "no" for a hyper form settles
     /// `ReductionNotPreserving` naming that form (ADR-023 section 5), and the
     /// cause's `form` member is a `PropertyForm`, which has no hyper member.
@@ -122,7 +126,9 @@ pub enum HyperSettleRefusal {
     /// Deferred: QSL-929. FR-182's V-6 row says this outcome is inconclusive
     /// `ReductionNotPreserving`; representing it needs an owner decision on the
     /// external `PropertyForm` type, so the refusal stands until then.
-    #[error("a hyper `ReductionNotPreserving` names a hyper form, which the cause's `PropertyForm` member cannot hold")]
+    #[error(
+        "a hyper `ReductionNotPreserving` names a hyper form, which the cause's `PropertyForm` member cannot hold"
+    )]
     ReductionFormNotRepresentable,
     /// An HP-2 SMT outcome whose product identity is not the item's is no
     /// evidence for the item (FR-182).
@@ -196,12 +202,14 @@ impl ProductMember {
 ///
 /// # Errors
 ///
-/// [`HyperSettleRefusal`] for a `Holds` or `HoldsReduced` outcome, or a
-/// reduction a hyper form's row refuses.
+/// [`HyperSettleRefusal`] when a holding outcome lacks its original request,
+/// reconstruction fails, or a reduction cannot be represented.
 pub fn settle_hyper_check(
     outcome: &HyperOutcome,
     limits: &ModelCheckLimits,
     requested: &[ModelCheckLimit],
+    certificate: Option<&crate::ProductClosureRequest<'_>>,
+    cancel: &Cancel,
     replay: impl FnOnce(&HyperCounterexample) -> Result<ModelTraceSettlement, ReplayRefusal>,
 ) -> Result<HyperRecord, HyperSettleRefusal> {
     let mut counterexample = None;
@@ -209,15 +217,55 @@ pub fn settle_hyper_check(
     let mut covers = None;
     let mut count = None;
     let row = match outcome {
-        HyperOutcome::Holds { .. } | HyperOutcome::HoldsReduced { .. } => {
-            return Err(HyperSettleRefusal::ProductClosureCheckerNotBuilt)
+        HyperOutcome::Holds { certificates, .. }
+        | HyperOutcome::HoldsReduced { certificates, .. } => {
+            let request = certificate.ok_or(HyperSettleRefusal::CertificateRequestMissing)?;
+            crate::certificate::product::complete_scope(request, certificates)?;
+            if certificates.is_empty() {
+                return Err(crate::ProductClosureRefusal::Input("empty-certificates").into());
+            }
+            let mut stopped = None;
+            for proof in certificates {
+                match crate::check_product_closure(request, proof, limits, cancel)? {
+                    crate::TemporalCertificateCheck::Accepted => {}
+                    crate::TemporalCertificateCheck::Rejected(rejection) => {
+                        stopped = Some(Row::inconclusive(InconclusiveCause::CertificateRejected {
+                            rule: rejection.rule,
+                            at: rejection.at,
+                        }));
+                        break;
+                    }
+                    crate::TemporalCertificateCheck::Stopped(cause) => {
+                        stopped = Some(Row::stopped_run(cause, None));
+                        break;
+                    }
+                    _ => {
+                        return Err(crate::ProductClosureRefusal::Recompute(
+                            "unexpected-check-result",
+                        )
+                        .into());
+                    }
+                }
+            }
+            stopped.unwrap_or_else(|| {
+                Row::proof(
+                    match outcome {
+                        HyperOutcome::HoldsReduced { reductions, .. } => ProofBasis::Reduced {
+                            reductions: reductions.clone(),
+                        },
+                        _ => ProofBasis::Exhaustive,
+                    },
+                    Certification::Certified,
+                    SettlementBasis::ClosedScope,
+                )
+            })
         }
         HyperOutcome::HoldsClosed { .. } => {
             Row::proved(ProofBasis::Exhaustive, SettlementBasis::ClosedScope)
         }
         HyperOutcome::Reduction { cause, .. } => match cause {
             HyperReductionCause::NotPreserving { .. } => {
-                return Err(HyperSettleRefusal::ReductionFormNotRepresentable)
+                return Err(HyperSettleRefusal::ReductionFormNotRepresentable);
             }
             HyperReductionCause::Unsupported { reduction } => {
                 Row::unsupported(UnavailabilityCause::UnsupportedReduction {
@@ -277,6 +325,16 @@ pub fn settle_hyper_check(
         }
     };
     Ok(HyperRecord {
+        certificates: if matches!(row.value, TerminalValue::Proved { .. }) {
+            match outcome {
+                HyperOutcome::Holds { certificates, .. }
+                | HyperOutcome::HoldsReduced { certificates, .. } => certificates.clone(),
+                _ => Vec::new(),
+            }
+        } else {
+            Vec::new()
+        },
+        exploration: Some(outcome.stats()),
         value: row.value,
         label: row.label,
         basis: row.basis,
@@ -425,6 +483,8 @@ pub fn settle_hyper_smt(
         }
     };
     Ok(HyperRecord {
+        certificates: Vec::new(),
+        exploration: None,
         value: row.value,
         label: row.label,
         basis: row.basis,
@@ -451,7 +511,7 @@ fn inductive_row(
     for subject in item.subjects {
         match ModelSystem::new(subject.simulation.clone()) {
             Ok(system) if system.initial().is_empty() => {
-                return Row::inconclusive(InconclusiveCause::NoInitialState)
+                return Row::inconclusive(InconclusiveCause::NoInitialState);
             }
             Ok(_) => {}
             Err(_) => return Row::failed(),

@@ -9,14 +9,14 @@
 //! emit a hyper clause), so FR-183-AC-2 and AC-5 are not claimed.
 
 use filament_exact::{Cancel, Meter, Undefined};
-use fsl_eval::simulation::model::{ModelSimState, ModelSystem};
 use fsl_eval::simulation::TransitionSystem;
+use fsl_eval::simulation::model::{ModelSimState, ModelSystem};
 use fsl_eval::temporal::UndefinedCause;
 use fsl_replay::{
-    settle_hyper_check, DisagreementCause, HyperCounterexample, HyperCounterexampleKind,
-    HyperLocus, HyperOutcome, HyperStep, InconclusiveCause, ModelCheckLimit, ModelCheckLimits,
-    ModelStep, ModelTraceRefusal, ModelTraceSettlement, ModelTraceValue, ReachedLimit,
-    ReplayRefusal, RunStats, StepMark, TerminalValue,
+    DisagreementCause, HyperCounterexample, HyperCounterexampleKind, HyperLocus, HyperOutcome,
+    HyperStep, InconclusiveCause, ModelCheckLimit, ModelCheckLimits, ModelStep, ModelTraceRefusal,
+    ModelTraceSettlement, ModelTraceValue, ReachedLimit, ReplayRefusal, RunStats, StepMark,
+    TerminalValue, settle_hyper_check,
 };
 use ix_trace_rs::trace;
 
@@ -26,7 +26,7 @@ use crate::hyper_witness::{
     KERNEL_MOD_FUNCTION,
 };
 use crate::hyper_world::{
-    busy_of, high, low, non_interference, opaque, Vault, World, EQUAL_INPUTS, STARTS,
+    EQUAL_INPUTS, STARTS, Vault, World, busy_of, high, low, non_interference, opaque,
 };
 
 mod certificate_boundary_cases;
@@ -537,6 +537,8 @@ fn a_witness_set_emptied_by_a_refused_match_reproduces_nothing() {
         },
         &ModelCheckLimits::default(),
         &[],
+        None,
+        &Cancel::new(),
         |counterexample| {
             secure.replay_through(
                 counterexample,

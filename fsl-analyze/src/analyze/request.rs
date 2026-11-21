@@ -287,6 +287,8 @@ pub struct TemporalItem {
     pub max_depth: Option<usize>,
     /// The model search and automaton budgets.
     pub limits: fsl_replay::ModelCheckLimits,
+    /// Model-check budgets explicitly supplied by the caller.
+    pub requested_limits: Vec<fsl_replay::ModelCheckLimit>,
     /// The most successor candidates one expansion enumerates.
     pub max_candidates: u64,
     /// The qualified checker's SMT encoding budgets.
@@ -343,6 +345,7 @@ impl Default for TemporalItem {
             stutter_closure: None,
             max_depth: None,
             limits: fsl_replay::ModelCheckLimits::default(),
+            requested_limits: Vec::new(),
             max_candidates: super::clause_item::DEFAULT_MAX_CANDIDATES,
             smt_encoding: None,
             reductions: fsl_route::reductions::Reductions::default(),

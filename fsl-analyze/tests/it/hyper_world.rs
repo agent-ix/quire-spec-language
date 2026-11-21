@@ -20,40 +20,40 @@ use filament_exact::{Cancel, Meter, ScalarLimits, Value};
 use filament_semantic_value::catalog::InternalFault;
 use filament_semantic_value::checking::CheckingLimits;
 use fsl_analyze::model_check::{
-    alias_provisions, alias_system, check_hyper, check_single_existential, retain,
     HyperCheckRequest, ModelCheckRefusal, RetainedGraph, SingleExistentialRequest,
-    SingleExistentialRun,
+    SingleExistentialRun, alias_provisions, alias_system, check_hyper, check_single_existential,
+    retain,
 };
-use fsl_eval::fairness::{analyze, EdgeLabel, Graph, Identity, Outcome as FairnessOutcome, Vertex};
+use fsl_eval::fairness::{EdgeLabel, Graph, Identity, Outcome as FairnessOutcome, Vertex, analyze};
 use fsl_eval::hyper::{
     BodySense, CheckedHyperLetters, CheckedStepMatch, HyperFinding, HyperInputs, HyperLetters,
     HyperProduct, HyperState, HyperTransition, MatchIncomplete, MatchReading, ParameterBinding,
     Property, StepLabel, StepMatch, WitnessInputs, WitnessProduct,
 };
 use fsl_eval::model_subject::{AtomStop, ModelInstance, ModelSubject};
+use fsl_eval::simulation::Limits;
 use fsl_eval::simulation::model::{
     ExpansionLimits, ModelSimState, ModelSimulationRequest, ModelSystem, PopulationUniverse,
 };
-use fsl_eval::simulation::Limits;
 use fsl_eval::temporal::AtomReading;
-use fsl_foundation::diagnostic::StageFailure;
 use fsl_foundation::IdentityLimits;
 use fsl_foundation::SourceIdentity;
+use fsl_foundation::diagnostic::StageFailure;
 use fsl_package::CheckedPackage;
 use fsl_replay::{
-    replay_hyper_trace_tuple, HyperCounterexample, HyperOutcome, HyperReplay, ModelCheckLimits,
-    ModelTraceSettlement, ReplayRefusal, DEFAULT_MAX_WITNESS_SET,
+    DEFAULT_MAX_WITNESS_SET, HyperCounterexample, HyperOutcome, HyperReplay, ModelCheckLimits,
+    ModelTraceSettlement, ReplayRefusal, replay_hyper_trace_tuple,
 };
 use fsl_route::reductions::Reductions;
 use fsl_semantics::check::{
-    check_hyper_clauses, CheckCause, CheckedHyper, CheckedHyperClause, FormulaNode, FormulaNodeId,
-    PackageDeclarations,
+    CheckCause, CheckedHyper, CheckedHyperClause, FormulaNode, FormulaNodeId, PackageDeclarations,
+    check_hyper_clauses,
 };
 use fsl_semantics::model::accounting::ModelNormalizationLimits;
 use fsl_semantics::model::intake::{admit_unit, meaning, package_input};
 use fsl_semantics::model::observation::{DocumentRef, ObservationLimits};
-use fsl_semantics::value::{admit_integer_division, DefinitionRole};
-use serde_json::{json, Value as Json};
+use fsl_semantics::value::{DefinitionRole, admit_integer_division};
+use serde_json::{Value as Json, json};
 
 use crate::counter::UNLIMITED;
 
@@ -103,7 +103,9 @@ impl Vault {
             return text.to_owned();
         }
         let step = match self {
-            Self::Leaky => "post Step using v on V::Vault::step { (i = self.h and self.l = 0) or (i != self.h and self.l = 1) }\n",
+            Self::Leaky => {
+                "post Step using v on V::Vault::step { (i = self.h and self.l = 0) or (i != self.h and self.l = 1) }\n"
+            }
             Self::Secure => "post Step using v on V::Vault::step { self.l = i }\n",
             Self::Terminal => {
                 "pre Fresh using v on V::Vault::step { self.l = 0 }\n\
@@ -1290,6 +1292,36 @@ pub(crate) fn request_files(
     let mut snapshots = fsl_semantics::model::observation::DocumentProvision::new();
     snapshot(&mut snapshots, "s0", &[(KEY, start)], None, None);
     let bytes = snapshots.into_values().next().expect("one snapshot");
+    (text, document, bytes)
+}
+
+/// A command subject with distinct snapshots for each initial high/low pair.
+pub(crate) fn request_files_over_starts(
+    vault: Vault,
+    reset: bool,
+    starts: &[(i64, i64)],
+    declaration: &str,
+) -> (String, Vec<u8>, Vec<Vec<u8>>) {
+    let document = document(vault.busy(), reset);
+    let text = unit_text(None, vault, reset, &format!("{declaration}\n"));
+    let mut snapshots = fsl_semantics::model::observation::DocumentProvision::new();
+    let references = starts
+        .iter()
+        .enumerate()
+        .map(|(index, start)| {
+            snapshot(
+                &mut snapshots,
+                &format!("s{index}"),
+                &[(KEY, *start)],
+                vault.busy().then_some(0),
+                None,
+            )
+        })
+        .collect::<Vec<_>>();
+    let bytes = references
+        .iter()
+        .map(|reference| snapshots.get(reference).expect("initial snapshot").clone())
+        .collect();
     (text, document, bytes)
 }
 

@@ -7,15 +7,15 @@
 
 use filament_exact::Meter;
 use fsl_eval::hyper::{ComponentStep, HyperTransition, ParameterBinding};
-use fsl_eval::temporal::{evaluate_projected_prefix, TemporalOutcome};
+use fsl_eval::temporal::{TemporalOutcome, evaluate_projected_prefix};
 use fsl_replay::{
     BoundCovers, HyperCounterexample, HyperCounterexampleKind, HyperOutcome, ModelCheckLimit,
     StepMark,
 };
 
 use super::{
-    exhausted, fault, tree_path, widen, ModelCheckRefusal, Positions, ProductStateId, RetainedEdge,
-    Run, Totals,
+    ModelCheckRefusal, Positions, ProductStateId, RetainedEdge, Run, Totals, exhausted, fault,
+    tree_path, widen,
 };
 
 impl Run<'_, '_> {
@@ -42,6 +42,7 @@ impl Run<'_, '_> {
                 stats: totals.stats(),
             }),
             (None, _, _) => Ok(HyperOutcome::Holds {
+                certificates: self.certificates(&ranked.explored)?,
                 stats: totals.stats(),
             }),
         }

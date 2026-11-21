@@ -57,7 +57,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use filament_exact::Cancel;
 use fsl_eval::fairness::{
-    is_live, Constraint, EdgeLabel, FairnessError, Graph, Identity, Obligation, Strength, Vertex,
+    Constraint, EdgeLabel, FairnessError, Graph, Identity, Obligation, Strength, Vertex, is_live,
 };
 
 use crate::certificate::closure::{
@@ -69,11 +69,11 @@ use crate::proof_result::IncompleteCause;
 /// One component of a component certificate: its product states and the
 /// reason no fair accepting cycle stays inside it.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Component {
+pub struct Component<K = ProductStateRef> {
     /// The component's product states.
-    pub states: Vec<ProductStateRef>,
+    pub states: Vec<K>,
     /// Why no fair accepting cycle stays inside it.
-    pub witness: ComponentWitness,
+    pub witness: ComponentWitness<K>,
 }
 
 /// FR-339's component certificate: the closure of a liveness (TP-4) proof
@@ -97,7 +97,7 @@ pub enum ProofCertificate {
 
 /// FR-339's component witness.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum ComponentWitness {
+pub enum ComponentWitness<K = ProductStateRef> {
     /// One state with no edge to itself: the component holds no cycle.
     Trivial,
     /// No state of the component lies in acceptance set `set`.
@@ -119,7 +119,7 @@ pub enum ComponentWitness {
         /// The indices of every failing visibility constraint.
         constraints: Vec<u32>,
         /// The refinement's components, in topological order.
-        sub: Vec<Component>,
+        sub: Vec<Component<K>>,
     },
     /// Every strong constraint in `constraints` is taken by no edge with
     /// both ends in the component, and `sub` partitions the component's
@@ -128,7 +128,7 @@ pub enum ComponentWitness {
         /// The indices of every failing strong constraint.
         constraints: Vec<u32>,
         /// The refinement's components, in topological order.
-        sub: Vec<Component>,
+        sub: Vec<Component<K>>,
     },
 }
 
@@ -151,16 +151,20 @@ pub(crate) enum ProductGraphError {
 /// product states, in the order the checker reached them, the edges it
 /// computed between them, each state's enabled set and the acceptance sets.
 #[derive(Clone, Debug, Default)]
-pub(crate) struct ProductGraph {
+pub(crate) struct ProductGraph<K = ProductStateRef> {
     graph: Graph,
-    states: Vec<ProductStateRef>,
-    vertices: BTreeMap<ProductStateRef, Vertex>,
+    states: Vec<K>,
+    vertices: BTreeMap<K, Vertex>,
 }
 
-impl ProductGraph {
+impl<K: Clone + Ord> ProductGraph<K> {
     /// An empty product graph.
     pub(crate) fn new() -> Self {
-        Self::default()
+        Self {
+            graph: Graph::new(),
+            states: Vec::new(),
+            vertices: BTreeMap::new(),
+        }
     }
 
     /// Add the reached product state `state`, at which exactly the
@@ -168,7 +172,7 @@ impl ProductGraph {
     /// model state's enabled set).
     pub(crate) fn add_state(
         &mut self,
-        state: ProductStateRef,
+        state: K,
         enabled: impl IntoIterator<Item = Identity>,
     ) -> Result<Vertex, ProductGraphError> {
         if self.vertices.contains_key(&state) {
@@ -200,7 +204,7 @@ impl ProductGraph {
         Ok(self.graph.add_acceptance_set(members)?)
     }
 
-    fn state(&self, vertex: Vertex) -> Option<&ProductStateRef> {
+    fn state(&self, vertex: Vertex) -> Option<&K> {
         self.states.get(vertex.index())
     }
 }
@@ -215,11 +219,22 @@ type Partition = (BTreeMap<Vertex, usize>, Vec<Vec<Vertex>>);
 /// One level of components to check: the states they must partition, the
 /// edge identities enclosing visibility refinements removed, the
 /// components, and the locus of an empty component.
-struct Level<'c> {
+struct Level<'c, K> {
     scope: BTreeSet<Vertex>,
     removed: BTreeSet<Identity>,
-    components: &'c [Component],
-    fallback: ProductStateRef,
+    components: &'c [Component<K>],
+    fallback: K,
+}
+
+/// The certificate key's rejection locus, independent of the graph's domain.
+pub(crate) trait CertificateState: Clone + Ord {
+    fn locus(self) -> CertificateLocus;
+}
+
+impl CertificateState for ProductStateRef {
+    fn locus(self) -> CertificateLocus {
+        CertificateLocus::ProductState(self)
+    }
 }
 
 /// The product graph holds no state. A closure the checker reached always
@@ -232,9 +247,9 @@ pub(crate) struct EmptyProduct;
 /// `product` under the clause's resolved `constraints`, polling `cancel` at
 /// every component, listed state and computed edge. It charges no budget
 /// (see the module doc).
-pub(crate) fn check_partition(
-    product: &ProductGraph,
-    components: &[Component],
+pub(crate) fn check_partition<K: CertificateState>(
+    product: &ProductGraph<K>,
+    components: &[Component<K>],
     constraints: &[Constraint],
     cancel: &Cancel,
 ) -> Result<TemporalCertificateCheck, EmptyProduct> {
@@ -262,13 +277,13 @@ pub(crate) fn check_partition(
     Ok(TemporalCertificateCheck::Accepted)
 }
 
-struct Checker<'p> {
-    product: &'p ProductGraph,
+struct Checker<'p, K> {
+    product: &'p ProductGraph<K>,
     constraints: &'p [Constraint],
     cancel: &'p Cancel,
 }
 
-impl<'p> Checker<'p> {
+impl<'p, K: CertificateState> Checker<'p, K> {
     fn poll(&self) -> Step<()> {
         if self.cancel.poll() {
             if let Some(source) = self.cancel.cause() {
@@ -282,7 +297,7 @@ impl<'p> Checker<'p> {
 
     /// Check one level; the `sub` levels of its refining witnesses, in
     /// listed order.
-    fn level<'c>(&self, level: &Level<'c>) -> Step<Vec<Level<'c>>> {
+    fn level<'c>(&self, level: &Level<'c, K>) -> Step<Vec<Level<'c, K>>> {
         let (owner, members) = self.partition(level)?;
         self.edges(level, &members, &owner)?;
         let mut sub = Vec::new();
@@ -298,7 +313,7 @@ impl<'p> Checker<'p> {
     /// The component that owns each state of the scope, and each
     /// component's vertices, in listed order; `NotPartition` when the
     /// components do not partition the scope.
-    fn partition(&self, level: &Level<'_>) -> Step<Partition> {
+    fn partition(&self, level: &Level<'_, K>) -> Step<Partition> {
         let mut owner = BTreeMap::new();
         let mut members = Vec::with_capacity(level.components.len());
         for (index, component) in level.components.iter().enumerate() {
@@ -342,7 +357,7 @@ impl<'p> Checker<'p> {
     /// states of the scope, that goes to an earlier component.
     fn edges(
         &self,
-        level: &Level<'_>,
+        level: &Level<'_, K>,
         members: &[Vec<Vertex>],
         owner: &BTreeMap<Vertex, usize>,
     ) -> Step<()> {
@@ -369,10 +384,10 @@ impl<'p> Checker<'p> {
     /// one.
     fn witness<'c>(
         &self,
-        component: &'c Component,
+        component: &'c Component<K>,
         members: &[Vertex],
-        level: &Level<'_>,
-    ) -> Step<Option<Level<'c>>> {
+        level: &Level<'_, K>,
+    ) -> Step<Option<Level<'c, K>>> {
         // The partition check rejected an empty component before this.
         let first = component.states.first().unwrap_or(&level.fallback).clone();
         let fails = || reject(CertificateRule::WitnessFails, first.clone());
@@ -457,11 +472,7 @@ impl<'p> Checker<'p> {
                 }));
             }
         };
-        if holds {
-            Ok(None)
-        } else {
-            Err(fails())
-        }
+        if holds { Ok(None) } else { Err(fails()) }
     }
 
     fn constraint(&self, at: u32) -> Option<&'p Constraint> {
@@ -505,10 +516,10 @@ fn index(at: u32) -> Option<usize> {
     usize::try_from(at).ok()
 }
 
-fn reject(rule: CertificateRule, at: ProductStateRef) -> TemporalCertificateCheck {
+fn reject<K: CertificateState>(rule: CertificateRule, at: K) -> TemporalCertificateCheck {
     TemporalCertificateCheck::Rejected(CertificateRejection {
         rule,
-        at: CertificateLocus::ProductState(at),
+        at: at.locus(),
     })
 }
 

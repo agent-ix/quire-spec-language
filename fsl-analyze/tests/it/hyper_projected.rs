@@ -15,8 +15,8 @@ use filament_checked::key::DeclarationKey;
 use filament_exact::{Cancel, Charge, ChargePoint, Identifier, Meter, Undefined};
 use fsl_analyze::model_check::ModelCheckRefusal;
 use fsl_eval::hyper::{HyperLetters, MatchReading, ParameterBinding, StepLabel, StepMatch};
-use fsl_eval::simulation::model::{ModelSimState, ModelSystem};
 use fsl_eval::simulation::Limits;
+use fsl_eval::simulation::model::{ModelSimState, ModelSystem};
 use fsl_eval::temporal::AtomReading;
 use fsl_replay::{
     BoundCovers, Code, HyperCounterexample, HyperCounterexampleKind, HyperOutcome, HyperStep,
@@ -29,10 +29,10 @@ use std::cell::RefCell;
 
 use crate::counter::ZERO;
 
-use crate::hyper::{input, positions, refuted, Exhausted, Refusing};
+use crate::hyper::{Exhausted, Refusing, input, positions, refuted};
 use crate::hyper_world::{
-    assert_hyper_division_refused_in, busy_of, high, input_of, key as hyper_key, low,
-    non_interference, Vault, World, KEY,
+    KEY, Vault, World, assert_hyper_division_refused_in, busy_of, high, input_of, key as hyper_key,
+    low, non_interference,
 };
 use fsl_eval::temporal::UndefinedCause;
 
@@ -123,7 +123,7 @@ fn the_vault_is_refuted_in_lockstep_and_held_on_its_projection() {
     ));
 
     let aligned = World::busy(Vault::Busy, &IDLE, &aligned(&[]));
-    let HyperOutcome::Holds { stats } = run(&aligned) else {
+    let HyperOutcome::Holds { stats, .. } = run(&aligned) else {
         panic!("expected the projection to hold");
     };
     assert_eq!(stats.product_states, 18);

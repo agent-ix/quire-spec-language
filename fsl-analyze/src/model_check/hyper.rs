@@ -110,25 +110,25 @@ use filament_semantic_value::fairness::FairnessGranularity;
 use filament_semantic_value::model_transition::ModelTransition;
 use fsl_eval::automaton::{AutomatonError, PropertyAutomaton};
 use fsl_eval::fairness::{
-    analyze, Analysis, Constraint, EdgeLabel, FairnessError, Graph, Identity, Strength, Vertex,
+    Analysis, Constraint, EdgeLabel, FairnessError, Graph, Identity, Strength, Vertex, analyze,
 };
 use fsl_eval::hyper::{
-    cartesian, copy_symmetry, BodySense, ComponentStep, CopySwapInputs, Halt, HyperFinding,
-    HyperInputs, HyperLetters, HyperProduct, HyperState, HyperTransition, ParameterBinding,
-    Partner, PartnerStep, ProjectedInputs, ProjectedProduct, Property, StepMatch, WitnessInputs,
-    WitnessProduct,
+    BodySense, ComponentStep, CopySwapInputs, Halt, HyperFinding, HyperInputs, HyperLetters,
+    HyperProduct, HyperState, HyperTransition, ParameterBinding, Partner, PartnerStep,
+    ProjectedInputs, ProjectedProduct, Property, StepMatch, WitnessInputs, WitnessProduct,
+    cartesian, copy_symmetry,
 };
 use fsl_eval::model_subject::ModelSubject;
 use fsl_eval::simulation::model::{
-    check_model_bounds, ModelFinding, ModelKey, ModelSimState, ModelSystem,
+    ModelFinding, ModelKey, ModelSimState, ModelSystem, check_model_bounds,
 };
 use fsl_eval::simulation::{
     Expansion, ExpansionLimit, ExpansionStop, Limit, Limits, Outcome, SymmetryGroup,
     TransitionSystem,
 };
 use fsl_eval::temporal::{
-    evaluate_tuple, AtomReading, ComponentPosition, ComponentTrace, LetterStop, TemporalOutcome,
-    TemporalPosition, TupleLetters,
+    AtomReading, ComponentPosition, ComponentTrace, LetterStop, TemporalOutcome, TemporalPosition,
+    TupleLetters, evaluate_tuple,
 };
 use fsl_foundation::IdentityLimits;
 use fsl_replay::{
@@ -139,14 +139,14 @@ use fsl_replay::{
 };
 use fsl_semantics::check::{CheckedHyperClause, CopyGroup, FormulaNodeId, HyperForm};
 
-use super::check::{atom_refusal, fault, not_simulated, widen, ModelCheckRefusal, BOUND_POSITIONS};
-use super::fair_walk::{tree_path, FairModel};
+use super::check::{BOUND_POSITIONS, ModelCheckRefusal, atom_refusal, fault, not_simulated, widen};
+use super::fair_walk::{FairModel, tree_path};
 use super::graph::{
-    retain, retain_reduced, GraphExploration, ProductStateId, RetainedEdge, RetainedGraph,
+    GraphExploration, ProductStateId, RetainedEdge, RetainedGraph, retain, retain_reduced,
 };
 use super::reduce;
 use fsl_route::reductions::Reductions;
-use lift::{through, Lifted};
+use lift::{Lifted, through};
 
 mod alias;
 mod projected;
@@ -154,7 +154,7 @@ mod single;
 
 pub use alias::{alias_provisions, alias_system};
 
-pub use single::{check_single_existential, SingleExistentialRequest, SingleExistentialRun};
+pub use single::{SingleExistentialRequest, SingleExistentialRun, check_single_existential};
 
 /// The refusal that an atom's recorded stop settles, as the temporal check
 /// maps a letter stop (FR-487): the product records an exhausted meter as its
@@ -198,7 +198,9 @@ pub struct HyperCheckRequest<'a> {
 #[derive(Debug, thiserror::Error)]
 pub enum HyperRefusal {
     /// The clause is not an HP-2, HP-3 or HP-6 clause.
-    #[error("EN-1 decides a universal (HP-2), forall-exists safety (HP-3) or projection-aligned (HP-6) hyperproperty here, not {form:?}")]
+    #[error(
+        "EN-1 decides a universal (HP-2), forall-exists safety (HP-3) or projection-aligned (HP-6) hyperproperty here, not {form:?}"
+    )]
     FormNotDecided {
         /// The clause's form.
         form: Option<HyperForm>,
@@ -329,7 +331,7 @@ pub fn check_hyper(
     } else {
         instances
     };
-    let copy = unfair_classes(clause);
+    let copy = fsl_eval::hyper::fairness_preserving_copy_group(clause);
     let run = Run {
         request: &request,
         systems,
@@ -404,44 +406,6 @@ fn orbit_representatives(
             })
         })
         .collect()
-}
-
-/// The classes of `clause`'s copy group that EN-1 reduces by: those whose
-/// variables have an empty fairness set. A fairness constraint is read on the
-/// stored state's slot of its variable, but the quotient moves a concrete copy
-/// between slots wherever an edge swaps them, so a slot's enabled and taken
-/// steps are not one behaviour's and the quotient would decide fair cycles
-/// wrongly. A class with fairness is stored whole and named no reduction.
-fn unfair_classes(clause: &CheckedHyperClause) -> CopyGroup {
-    let group = clause.copy_group();
-    let quantifiers = clause.quantifiers();
-    let fair = |name: &str| {
-        quantifiers
-            .iter()
-            .any(|quantifier| quantifier.variable == name && !quantifier.fairness.is_empty())
-    };
-    let classes: Vec<Vec<String>> = group
-        .classes
-        .iter()
-        .filter(|class| !class.iter().any(|name| fair(name)))
-        .cloned()
-        .collect();
-    let kept = |position: usize| {
-        quantifiers.get(position).is_some_and(|quantifier| {
-            classes
-                .iter()
-                .any(|class| class.contains(&quantifier.variable))
-        })
-    };
-    CopyGroup {
-        generators: group
-            .generators
-            .iter()
-            .filter(|generator| kept(generator.first))
-            .cloned()
-            .collect(),
-        classes,
-    }
 }
 
 /// The instances of the clause's object parameters: one binding of each
@@ -592,6 +556,13 @@ enum Built<'r, 's> {
 }
 
 impl Built<'_, '_> {
+    fn key(&self, state: &HyperState) -> fsl_eval::hyper::HyperKey {
+        match self {
+            Self::Universal(product) => product.key(state),
+            Self::Witness(product) => product.key(state),
+            Self::Projected(product) => product.key(state),
+        }
+    }
     fn take_halt(&self) -> Option<Halt> {
         match self {
             Self::Universal(product) => product.take_halt(),
@@ -785,6 +756,54 @@ struct Run<'r, 'a> {
 }
 
 impl<'a> Run<'_, 'a> {
+    fn certificates(
+        &self,
+        explored: &[Explored<'_, '_>],
+    ) -> Result<Vec<fsl_replay::ProductClosureCertificate>, ModelCheckRefusal> {
+        let systems = self
+            .slots
+            .iter()
+            .map(|slot| &self.systems[*slot])
+            .collect::<Vec<_>>();
+        explored
+            .iter()
+            .map(|run| {
+                let members = run
+                    .graph
+                    .states()
+                    .iter()
+                    .map(|member| {
+                        let key = fsl_replay::product_state_key(&run.product.key(&member.state))
+                            .map_err(|_| fault("hyper-product-certificate-key"))?;
+                        Ok((key, member.state.clone(), member.findings.clone()))
+                    })
+                    .collect::<Result<Vec<_>, ModelCheckRefusal>>()?;
+                let edges = run
+                    .graph
+                    .edges()
+                    .iter()
+                    .map(|edge| {
+                        (
+                            edge.source.index(),
+                            edge.target.index(),
+                            edge.transition.clone(),
+                        )
+                    })
+                    .collect::<Vec<_>>();
+                fsl_replay::product_certificate(fsl_replay::ProductEvidence {
+                    clause: self.request.clause,
+                    systems: &systems,
+                    instance: run.instance,
+                    members: &members,
+                    edges: &edges,
+                    automaton: &run.product.automaton(),
+                    reduction: run.reduced.then(|| self.copy.clone()),
+                    cancel: self.cancel,
+                })
+                .map_err(|_| fault("hyper-product-certificate"))
+            })
+            .collect()
+    }
     fn decide(
         &self,
         instances: &[Vec<ParameterBinding>],
@@ -1275,10 +1294,12 @@ impl<'a> Run<'_, 'a> {
         Ok(
             if reductions.is_empty() && self.request.reductions.constraint.is_none() {
                 HyperOutcome::Holds {
+                    certificates: self.certificates(explored)?,
                     stats: totals.stats(),
                 }
             } else {
                 HyperOutcome::HoldsReduced {
+                    certificates: self.certificates(explored)?,
                     reductions,
                     stats: totals.stats(),
                 }
@@ -1504,7 +1525,7 @@ impl<'a> Run<'_, 'a> {
                     ModelCheckLimit::MaxAutomatonStates,
                     limit,
                     totals,
-                )))
+                )));
             }
             Err(other) => return Err(HyperRefusal::Automaton(other).into()),
         };
@@ -1530,10 +1551,10 @@ impl<'a> Run<'_, 'a> {
     ) -> Result<GraphExploration<HyperState, HyperTransition, HyperFinding>, ModelCheckRefusal>
     where
         P: TransitionSystem<
-            State = HyperState,
-            TransitionId = HyperTransition,
-            Finding = HyperFinding,
-        >,
+                State = HyperState,
+                TransitionId = HyperTransition,
+                Finding = HyperFinding,
+            >,
     {
         let retained = retain_reduced(
             product,

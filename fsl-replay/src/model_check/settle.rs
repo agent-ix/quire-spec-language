@@ -29,8 +29,8 @@ use crate::model_check::counterexample::TemporalCounterexample;
 use crate::model_check::limits::{ModelCheckLimit, ModelCheckLimits, ReachedLimit};
 use crate::model_check::outcome::{MemoryCause, ModelCheckOutcome, ReductionCause, RunStats};
 use crate::model_check::replay::{
-    no_value_cause, ModelTraceRefusal, ModelTraceReplayResult, ModelTraceSettlement,
-    StrongFairnessHint,
+    ModelTraceRefusal, ModelTraceReplayResult, ModelTraceSettlement, StrongFairnessHint,
+    no_value_cause,
 };
 use crate::proof_result::{
     Certification, IncompleteCause, InconclusiveCause, InstanceBound, MemoryBound,
@@ -199,6 +199,8 @@ pub struct ModelCheckRecord<T: SubjectTransition = ModelTransition> {
 /// A qualified-core certificate checker of an EN-1 proof (FR-282).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CertificateChecker {
+    /// The independent hyper product-closure and component checker.
+    ProductClosure,
     /// The EN-1 closure checker of a safety claim (ADR-018 PC-3).
     Closure,
     /// The SCC and ranking checker of a liveness claim (ADR-018 PC-4).
@@ -213,6 +215,7 @@ impl CertificateChecker {
     /// The checker's FR-621 `certificate.checker` spelling.
     pub const fn as_str(self) -> &'static str {
         match self {
+            Self::ProductClosure => "product-closure",
             Self::Closure => "en-1-closure",
             Self::Component => "scc-ranking",
             Self::Zone => "zone-certificate",
