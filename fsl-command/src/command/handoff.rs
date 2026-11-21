@@ -426,3 +426,118 @@ pub(super) fn admit(
         dependencies,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{checked_handoff, emit_checked_v2};
+    use ix_trace_rs::trace;
+
+    fn chain(directory: &Path) {
+        let header = "language \"ix:native\" edition \"1-draft\"; profile v = \"filament.value.complete/v1\";";
+        for (file, body) in [
+            ("a.native", "function answer using v(): Integer pure { 42 }"),
+            (
+                "z.native",
+                "import \"test/a\" as a; function answer using v(): Integer pure { a::answer() }",
+            ),
+            (
+                "unit.native",
+                "import \"test/z\" as z; function answer using v(): Integer pure { z::answer() }",
+            ),
+        ] {
+            std::fs::write(directory.join(file), format!("{header}\n{body}\n")).unwrap();
+        }
+        checked_handoff::write(
+            &checked_handoff::CheckedHandoffRequest {
+                emit: emit_checked_v2::Request {
+                    source: directory.join("unit.native"),
+                    package_name: "root".to_owned(),
+                    models: vec![],
+                    libraries: vec![
+                        ("test/a".to_owned(), directory.join("a.native")),
+                        ("test/z".to_owned(), directory.join("z.native")),
+                    ],
+                    execution_points: None,
+                    temporal_selections: vec![],
+                    out: None,
+                },
+                corpus: checked_handoff::Corpus::None,
+                native_join: fsl_package::NativeJoinLimits::new(1 << 40, 1 << 24),
+            },
+            &directory.join("handoff"),
+        )
+        .unwrap();
+    }
+
+    fn load(
+        directory: &Path,
+        limits: fsl_package::V2ReadLimits,
+    ) -> Result<filament_contract_model::NativeJoinCharge> {
+        let mut intake = super::super::intake_with_bytes(
+            directory,
+            super::super::FileCounts {
+                programs: 2,
+                ..Default::default()
+            },
+            1 << 28,
+        )?;
+        let bytes = read_file(&mut intake, "handoff", "checked-package.json", false)?;
+        let mut loaded = admit(&mut intake, "handoff", bytes, &BTreeMap::new(), limits)?;
+        let _view = fsl_package::BarePackage::new(&loaded.package)
+            .with_dependency_artifacts(&loaded.dependencies, &mut loaded.budget)
+            .and_then(|package| {
+                package.with_supply(
+                    fsl_package::BareSupply {
+                        identities: &loaded.identities,
+                        equality: loaded.equality.as_ref(),
+                    },
+                    &mut loaded.budget,
+                )
+            })
+            .map_err(|error| RunCause::AnalyzePackage {
+                code: fsl_foundation::Code::StageLimitExceeded,
+                cause: None,
+                pointer: None,
+                message: format!("{error:?}"),
+            })?;
+        Ok(loaded.budget.consumed())
+    }
+
+    #[test]
+    #[trace("FR-850-AC-15", "TC-2410")]
+    fn strict_reads_and_own_witness_joins_share_exact_closure_allowances() {
+        let directory = tempfile::tempdir().unwrap();
+        chain(directory.path());
+        let mut limits = fsl_package::V2ReadLimits::bounded(1 << 40);
+        limits.work = 1 << 40;
+        let measured =
+            load(directory.path(), limits).expect("measure complete root and dependency admission");
+        assert!(measured.work > 0 && measured.storage > 0);
+        limits.work = measured.work;
+        limits.storage = measured.storage;
+        assert_eq!(load(directory.path(), limits).unwrap(), measured);
+        for shortened in [
+            fsl_package::V2ReadLimits {
+                work: measured.work - 1,
+                ..limits
+            },
+            fsl_package::V2ReadLimits {
+                storage: measured.storage - 1,
+                ..limits
+            },
+        ] {
+            let refusal = load(directory.path(), shortened)
+                .expect_err("one-short cumulative allowance must stop the pass");
+            assert_eq!(
+                refusal.code(),
+                fsl_foundation::Code::StageLimitExceeded,
+                "{refusal}"
+            );
+            assert!(
+                refusal.to_string().contains("i2.") || refusal.to_string().contains("I2"),
+                "the original setting is retained: {refusal}"
+            );
+        }
+    }
+}
