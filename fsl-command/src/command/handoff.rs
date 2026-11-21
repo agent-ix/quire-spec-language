@@ -139,7 +139,7 @@ fn identities(
         }) {
             return RunCause::AnalyzePackage {
                 code: fsl_foundation::Code::StageLimitExceeded,
-                cause: Some("insufficient-next-charge".to_owned()),
+                cause: Some(denial.limit.kind().catalog_cause().to_owned()),
                 pointer: None,
                 message: format!("{file}: {denial:?}"),
             };
@@ -167,23 +167,43 @@ struct Pending {
 // Lock inspection schedules strict admission only. No graph or semantic value
 // is derived here; every package is subsequently validated by the IR reader.
 fn edges(bytes: &[u8]) -> Vec<String> {
-    serde_json::from_slice::<serde_json::Value>(bytes)
-        .ok()
-        .and_then(|value| {
-            value
-                .get("lock")?
-                .get("dependency_selections")?
-                .as_array()
-                .cloned()
-        })
-        .unwrap_or_default()
+    use quire_canonical::Node;
+    let Ok(document) = quire_canonical::read(bytes, u64::try_from(bytes.len()).unwrap_or(u64::MAX))
+    else {
+        return Vec::new();
+    };
+    let Some(lock) = member(document.root(), "lock") else {
+        return Vec::new();
+    };
+    let Some(selections) = member(lock, "dependency_selections") else {
+        return Vec::new();
+    };
+    let Node::Array(selections) = selections.node() else {
+        return Vec::new();
+    };
+    selections
         .into_iter()
         .filter_map(|row| {
-            row.get("identity")
-                .and_then(serde_json::Value::as_str)
-                .map(str::to_owned)
+            let identity = member(row, "identity")?;
+            let Node::String(identity) = identity.node() else {
+                return None;
+            };
+            Some(identity.to_owned())
         })
         .collect()
+}
+
+fn member<'document>(
+    value: quire_canonical::NodeRef<'document>,
+    name: &str,
+) -> Option<quire_canonical::NodeRef<'document>> {
+    let quire_canonical::Node::Object(members) = value.node() else {
+        return None;
+    };
+    members
+        .into_iter()
+        .find(|(key, _)| *key == name)
+        .map(|(_, value)| value)
 }
 
 pub(super) fn admit(

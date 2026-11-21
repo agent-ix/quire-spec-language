@@ -854,7 +854,9 @@ pub(super) fn execute(prepared: PreparedPackageRun) -> Result<RunResult> {
                 .map_or_else(|| "i2.work_units".to_owned(), |setting| setting.to_string());
             RunCause::AnalyzePackage {
                 code: fsl_foundation::Code::StageLimitExceeded,
-                cause: None,
+                cause: failure
+                    .limit()
+                    .map(|limit| limit.kind().catalog_cause().to_owned()),
                 pointer: None,
                 message: format!("stage_limit_exceeded: {setting}: {failure:?}"),
             }
