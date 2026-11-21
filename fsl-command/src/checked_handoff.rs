@@ -50,8 +50,8 @@ mod inventory;
 mod selection;
 mod tree;
 
-use std::path::Path;
 use std::collections::BTreeMap;
+use std::path::Path;
 use std::sync::Arc;
 
 use filament_contract_model::{
@@ -89,7 +89,8 @@ struct DependencyRow<'a> {
 }
 
 fn json_file(value: &impl serde::Serialize, what: &'static str) -> Result<Vec<u8>, Error> {
-    let mut bytes = serde_json::to_vec_pretty(value).map_err(|source| Error::Encode { what, source })?;
+    let mut bytes =
+        serde_json::to_vec_pretty(value).map_err(|source| Error::Encode { what, source })?;
     bytes.push(b'\n');
     Ok(bytes)
 }
@@ -419,16 +420,43 @@ fn write_compiled(
     let mut budget = request.native_join.budget();
     let manifest = DependencyManifest {
         format: DEPENDENCIES_FORMAT,
-        dependencies: dependencies.keys().enumerate().map(|(index, identity)| {
-            DependencyRow { identity, directory: format!("dependencies/{index}") }
-        }).collect(),
+        dependencies: dependencies
+            .keys()
+            .enumerate()
+            .map(|(index, identity)| DependencyRow {
+                identity,
+                directory: format!("dependencies/{index}"),
+            })
+            .collect(),
     };
-    files.insert("dependencies.json", json_file(&manifest, "dependencies.json")?)?;
+    files.insert(
+        "dependencies.json",
+        json_file(&manifest, "dependencies.json")?,
+    )?;
     for (index, (_, dependency)) in dependencies.iter().enumerate() {
         let directory = format!("dependencies/{index}");
-        files.insert(&format!("{directory}/checked-package.json"), dependency.emission.package().bytes().to_vec())?;
-        files.insert(&format!("{directory}/identities.json"), emission_identity_file(&dependency.emission, &dependency.package, &mut budget, request.native_join)?)?;
-        files.insert(&format!("{directory}/equality.json"), emission_equality_file(&dependency.emission, &dependency.package, &mut budget, request.native_join)?)?;
+        files.insert(
+            &format!("{directory}/checked-package.json"),
+            dependency.emission.package().bytes().to_vec(),
+        )?;
+        files.insert(
+            &format!("{directory}/identities.json"),
+            emission_identity_file(
+                &dependency.emission,
+                &dependency.package,
+                &mut budget,
+                request.native_join,
+            )?,
+        )?;
+        files.insert(
+            &format!("{directory}/equality.json"),
+            emission_equality_file(
+                &dependency.emission,
+                &dependency.package,
+                &mut budget,
+                request.native_join,
+            )?,
+        )?;
     }
     files.insert(
         "identities.json",
@@ -663,13 +691,13 @@ fn emission_equality_file(
 ) -> Result<Vec<u8>, Error> {
     let unnameable = |what: String| Error::Unnameable { what };
     emission
-    .equality_witness(package, budget)
-    .map_err(|error| match limits.refusal(error, budget) {
-        Some(denial) => Error::NativeJoinExhausted(Box::new(denial)),
-        None => unnameable("equality adapter refused without a resource denial".to_owned()),
-    })?
-    .to_bytes(package)
-    .map_err(|refused| unnameable(format!("equality file: {refused}")))
+        .equality_witness(package, budget)
+        .map_err(|error| match limits.refusal(error, budget) {
+            Some(denial) => Error::NativeJoinExhausted(Box::new(denial)),
+            None => unnameable("equality adapter refused without a resource denial".to_owned()),
+        })?
+        .to_bytes(package)
+        .map_err(|refused| unnameable(format!("equality file: {refused}")))
 }
 
 /// The exact input bytes under `sources/` and `models/`.
@@ -707,7 +735,9 @@ fn read_evidence(compiled: &Compiled) -> Result<CheckedPackageEvidence, Error> {
     acquire_evidence(compiled).map(|(evidence, _)| evidence)
 }
 
-fn acquire_evidence(compiled: &Compiled) -> Result<(CheckedPackageEvidence, BTreeMap<String, DependencyArtifact>), Error> {
+fn acquire_evidence(
+    compiled: &Compiled,
+) -> Result<(CheckedPackageEvidence, BTreeMap<String, DependencyArtifact>), Error> {
     let documents =
         fsl_semantics::model::intake::package_input(compiled.models.iter().map(Vec::as_slice))
             .map_err(|refused| Error::Unnameable {
@@ -720,36 +750,77 @@ fn acquire_evidence(compiled: &Compiled) -> Result<(CheckedPackageEvidence, BTre
     let mut pending = vec![root];
     while let Some(package) = pending.pop() {
         for (identity, dependency) in package.dependencies() {
-            if held.insert(identity.as_str().to_owned(), dependency.as_ref()).is_none() {
+            if held
+                .insert(identity.as_str().to_owned(), dependency.as_ref())
+                .is_none()
+            {
                 pending.push(dependency);
             }
         }
     }
     let mut artifacts: BTreeMap<String, DependencyArtifact> = BTreeMap::new();
-    let mut pending: Vec<_> = root.direct_dependency_selections().rev().map(|(identity, _)| (identity.as_str().to_owned(), false)).collect();
+    let mut pending: Vec<_> = root
+        .direct_dependency_selections()
+        .rev()
+        .map(|(identity, _)| (identity.as_str().to_owned(), false))
+        .collect();
     while let Some((identity, expanded)) = pending.pop() {
-        if artifacts.contains_key(&identity) { continue; }
-        let dependency = held.get(&identity).ok_or_else(|| Error::Dependency { identity: identity.clone(), detail: "selected dependency was not retained".to_owned() })?;
-        if !expanded {
-            pending.push((identity.clone(), true));
-            pending.extend(dependency.direct_dependency_selections().rev().map(|(child, _)| (child.as_str().to_owned(), false)));
+        if artifacts.contains_key(&identity) {
             continue;
         }
-        let emission = fsl_package::emit_checked(dependency, compiled.emit).map_err(|refused| Error::Dependency { identity: identity.clone(), detail: refused.to_string() })?;
+        let dependency = held.get(&identity).ok_or_else(|| Error::Dependency {
+            identity: identity.clone(),
+            detail: "selected dependency was not retained".to_owned(),
+        })?;
+        if !expanded {
+            pending.push((identity.clone(), true));
+            pending.extend(
+                dependency
+                    .direct_dependency_selections()
+                    .rev()
+                    .map(|(child, _)| (child.as_str().to_owned(), false)),
+            );
+            continue;
+        }
+        let emission = dependency
+            .remembered_emission()
+            .ok_or_else(|| Error::Dependency {
+                identity: identity.clone(),
+                detail: "the checked acquisition retained no library emission".to_owned(),
+            })?
+            .clone();
         let mut own = emission.evidence().clone();
         supply_documents(&mut own, &documents, &identity)?;
         insert_direct_dependencies(dependency, &artifacts, &mut own)?;
-        let package = Arc::from(admit(read_checked_package(emission.package().bytes(), READ_LIMITS, &own))?);
+        let package = Arc::from(admit(read_checked_package(
+            emission.package().bytes(),
+            READ_LIMITS,
+            &own,
+        ))?);
         artifacts.insert(identity, DependencyArtifact { emission, package });
     }
     insert_direct_dependencies(root, &artifacts, &mut evidence)?;
     Ok((evidence, artifacts))
 }
 
-fn insert_direct_dependencies(package: &fsl_package::CheckedPackage, artifacts: &BTreeMap<String, DependencyArtifact>, evidence: &mut CheckedPackageEvidence) -> Result<(), Error> {
+fn insert_direct_dependencies(
+    package: &fsl_package::CheckedPackage,
+    artifacts: &BTreeMap<String, DependencyArtifact>,
+    evidence: &mut CheckedPackageEvidence,
+) -> Result<(), Error> {
     for (identity, _) in package.direct_dependency_selections() {
-        let artifact = artifacts.get(identity.as_str()).ok_or_else(|| Error::Dependency { identity: identity.as_str().to_owned(), detail: "selected dependency was not admitted".to_owned() })?;
-        evidence.insert_dependency_package(identity.as_str(), Arc::clone(&artifact.package)).map_err(|conflict| Error::Dependency { identity: identity.as_str().to_owned(), detail: format!("{conflict:?}") })?;
+        let artifact = artifacts
+            .get(identity.as_str())
+            .ok_or_else(|| Error::Dependency {
+                identity: identity.as_str().to_owned(),
+                detail: "selected dependency was not admitted".to_owned(),
+            })?;
+        evidence
+            .insert_dependency_package(identity.as_str(), Arc::clone(&artifact.package))
+            .map_err(|conflict| Error::Dependency {
+                identity: identity.as_str().to_owned(),
+                detail: format!("{conflict:?}"),
+            })?;
     }
     Ok(())
 }
@@ -769,4 +840,3 @@ fn supply_documents(
     }
     Ok(())
 }
-

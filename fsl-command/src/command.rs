@@ -3,8 +3,10 @@
 
 mod analyze;
 mod clause;
+mod dependency_manifest;
 mod export;
 mod flow;
+mod handoff;
 mod items;
 mod model_based_test;
 pub mod monitor;
@@ -1638,6 +1640,7 @@ struct Intake<'a> {
     dependent_limit: Option<DependentLimit>,
     prefetched_observations: std::collections::BTreeMap<String, Vec<u8>>,
     sources: Vec<Source>,
+    additional_files: usize,
 }
 
 #[derive(Clone, Copy)]
@@ -1647,6 +1650,18 @@ enum DependentLimit {
 }
 
 impl Intake<'_> {
+    fn additional_file(&mut self) -> Result<()> {
+        if self.additional_files == 0 {
+            return Err(RunCause::Limit(LimitKind::SelectedFiles {
+                category: FileCategory::Program,
+                requested: 1,
+                remaining: 0,
+                maximum: FILES,
+            }));
+        }
+        self.additional_files -= 1;
+        Ok(())
+    }
     fn file(&mut self, path: &str, ceiling: usize) -> Result<Vec<u8>> {
         if let Some(bytes) = self.prefetched_observations.remove(path) {
             return Ok(bytes);
@@ -3820,8 +3835,11 @@ fn check_file_count(counts: FileCounts) -> Result<()> {
 }
 
 fn intake(directory: &Path, counts: FileCounts) -> Result<Intake<'_>> {
+    let additional_files =
+        FILES - counts.programs - counts.models - counts.observations - counts.extensions;
     check_file_count(counts)?;
     Ok(Intake {
+        additional_files,
         directory,
         remaining: TOTAL_BYTES,
         maximum: TOTAL_BYTES,
@@ -3832,8 +3850,11 @@ fn intake(directory: &Path, counts: FileCounts) -> Result<Intake<'_>> {
 }
 
 fn intake_with_bytes(directory: &Path, counts: FileCounts, maximum: usize) -> Result<Intake<'_>> {
+    let additional_files =
+        FILES - counts.programs - counts.models - counts.observations - counts.extensions;
     check_file_count(counts)?;
     Ok(Intake {
+        additional_files,
         directory,
         remaining: maximum,
         maximum,
@@ -3848,8 +3869,11 @@ fn intake_with_fixed_bytes(
     counts: FileCounts,
     maximum: usize,
 ) -> Result<Intake<'_>> {
+    let additional_files =
+        FILES - counts.programs - counts.models - counts.observations - counts.extensions;
     check_file_count(counts)?;
     Ok(Intake {
+        additional_files,
         directory,
         remaining: maximum,
         maximum,

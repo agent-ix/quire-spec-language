@@ -667,7 +667,7 @@ impl CheckedPackage {
 
     /// This package's emission, if it has been emitted.
     #[cfg(feature = "std")]
-    pub(crate) fn remembered_emission(&self) -> Option<&Emission> {
+    pub fn remembered_emission(&self) -> Option<&Emission> {
         self.emission.get()
     }
 
@@ -717,7 +717,7 @@ impl CheckedPackage {
     /// Directness comes from the authored imports, independent of which
     /// equal-package path first populated the resolved closure.
     #[cfg(feature = "std")]
-    pub(crate) fn direct_dependency_selections(
+    pub fn direct_dependency_selections(
         &self,
     ) -> impl DoubleEndedIterator<Item = (&LibraryName, &ResolvedDependency)> {
         self.selections

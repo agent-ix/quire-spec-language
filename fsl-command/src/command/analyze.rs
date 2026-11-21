@@ -225,6 +225,7 @@ fn run_package(
         package_bytes,
         identity_bytes,
         equality_bytes,
+        dependencies,
     } = admitted;
     let package = fsl_package::BarePackage::new(&admitted)
         .with_supply(
@@ -744,74 +745,18 @@ fn admit_package<'d>(
     )?;
     let limits =
         fsl_package::V2ReadLimits::bounded(fsl_replay::spine::I2_NATIVE_JOIN_STORAGE_DEFAULT);
-    let admitted =
-        fsl_package::admit_checked_package(&bytes, &supplied, limits).map_err(package_refusal)?;
-    for identity in supplied.keys() {
-        if !admitted
-            .selected_model_packages()
-            .any(|recorded| recorded == identity)
-        {
-            return Err(conflicting_model(identity));
-        }
-    }
-    // FR-850 "Admission": the handoff's identity rows are required, its
-    // equality rows read when the producer wrote them (FR-531).
-    if !directory.join(&handoff).join(IDENTITIES_FILE).is_file() {
-        return Err(witness_refusal(
-            IDENTITIES_FILE,
-            "missing-file",
-            "the handoff directory holds no identity file",
-        ));
-    }
-    let identity_bytes = intake.file(&format!("{handoff}/{IDENTITIES_FILE}"), intake.remaining)?;
-    // One native budget for the pass: the identity read, then the supply's
-    // join (FR-531 "One join, then borrowing").
-    let mut budget = limits.native_join_limits().budget();
-    let identities = fsl_package::ReadIdentityRows::read(&identity_bytes, &admitted, &mut budget)
-        .map_err(|refusal| {
-        let cause = match &refusal {
-            fsl_package::IdentityFileRefusal::Malformed { .. } => "malformed-file",
-            fsl_package::IdentityFileRefusal::Format(_) => "unknown-format",
-            fsl_package::IdentityFileRefusal::Unjoined { .. } => "unjoined-row",
-            fsl_package::IdentityFileRefusal::Native(_)
-            | fsl_package::IdentityFileRefusal::Rows(_)
-            | fsl_package::IdentityFileRefusal::SourceObject(_)
-            | fsl_package::IdentityFileRefusal::SourceOperation(_) => "native-witness",
-        };
-        witness_refusal(IDENTITIES_FILE, cause, &refusal.to_string())
-    })?;
-    let (equality, equality_bytes) = if directory.join(&handoff).join(EQUALITY_FILE).is_file() {
-        let equality_bytes =
-            intake.file(&format!("{handoff}/{EQUALITY_FILE}"), intake.remaining)?;
-        let rows =
-            fsl_package::ReadEqualityRows::read(&equality_bytes, &admitted).map_err(|refusal| {
-                witness_refusal(EQUALITY_FILE, "refused-file", &refusal.to_string())
-            })?;
-        (Some(rows), Some(equality_bytes))
-    } else if admitted
-        .checked_term_data()
-        .is_some_and(|data| !data.equality_decisions.is_empty())
-    {
-        // FR-850 "Admission": a package holding equality applications is
-        // read with the producer's equality rows, so their file is required.
-        return Err(witness_refusal(
-            EQUALITY_FILE,
-            "missing-file",
-            "the handoff directory holds no equality file for the package's equality applications",
-        ));
-    } else {
-        (None, None)
-    };
+    let loaded = super::handoff::admit(&mut intake, &handoff, bytes, &supplied, limits)?;
     Ok((
         AdmittedHandoff {
-            package: admitted,
-            identities,
-            equality,
-            budget,
+            package: loaded.package,
+            identities: loaded.identities,
+            equality: loaded.equality,
+            budget: loaded.budget,
             supplied,
-            package_bytes: bytes,
-            identity_bytes,
-            equality_bytes,
+            package_bytes: loaded.bytes,
+            identity_bytes: loaded.identity_bytes,
+            equality_bytes: loaded.equality_bytes,
+            dependencies: loaded.dependencies,
         },
         intake,
     ))
@@ -825,6 +770,7 @@ const EQUALITY_FILE: &str = "equality.json";
 /// The admitted handoff of a `package` request: the package the strict
 /// reader admitted, its identity rows and its equality rows when present.
 struct AdmittedHandoff {
+    dependencies: Vec<fsl_package::DependencyArtifact>,
     package: filament_contract_model::CheckedPackageV2,
     identities: fsl_package::ReadIdentityRows,
     equality: Option<fsl_package::ReadEqualityRows>,
