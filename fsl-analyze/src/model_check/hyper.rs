@@ -59,7 +59,7 @@
 //! the least member of its orbit, so each unordered pair of runs is stored
 //! once. A counterexample found on the quotient is lifted back to the concrete
 //! tuple of behaviours it stands for before it is returned (`lift`). A class
-//! of copies that carry fairness is not swapped (`unfair_classes`). A request
+//! of copies that carry fairness is not swapped (`fairness_preserving_copy_group`). A request
 //! that selects a reduction is settled against ADR-023 §5's rows before any
 //! state is expanded (`reductions`).
 //! An HP-6 clause is explored as a [`ProjectedProduct`]: a state is the tuple

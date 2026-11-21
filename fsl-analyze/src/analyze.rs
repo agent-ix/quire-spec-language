@@ -98,6 +98,7 @@ pub(crate) use derived_item::{derived_target, NoLetters};
 pub use exact::{exact_probabilistic_item, ExactProbabilityEvidence};
 #[cfg(feature = "test-support")]
 pub use exact::{exact_probabilistic_item_tampered, exact_probabilistic_item_witness_tampered};
+pub use invariant_item::{PackageInvariantSubject, PackageItemInputs};
 pub(crate) use items::admission;
 pub use items::{
     derived_model_item, derived_protocol_item, derived_zone_item, hyper_form_item, model_item,
@@ -105,6 +106,7 @@ pub use items::{
     ModelItem, ProtocolItem, ProtocolReplayFn, RefinementReplayFn, TimedItem, TimedRefinementItem,
 };
 pub use simulation_item::{SimulationItem, SimulationMode, SimulationSelection};
+pub use state_graph_item::PackageStateGraphSubject;
 
 use crate::provider::{
     ExternalProvider, ProviderOptions, ProviderRegistrationCause, ProviderRegistrationRefusal,
