@@ -270,6 +270,7 @@ fn run_package(
         package: &package,
         package_bytes: &package_bytes,
         supply: fsl_replay::HandoffSupply {
+            dependencies: &dependencies,
             identities: &identity_bytes,
             equality: equality_bytes.as_deref(),
         },

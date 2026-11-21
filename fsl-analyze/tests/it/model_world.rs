@@ -615,6 +615,7 @@ impl WorldHandoff {
     /// The handoff's identity and equality file bytes.
     pub(crate) fn supply(&self) -> fsl_replay::HandoffSupply<'_> {
         fsl_replay::HandoffSupply {
+            dependencies: &[],
             identities: &self.identity_bytes,
             equality: Some(&self.equality_bytes),
         }

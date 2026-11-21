@@ -942,13 +942,16 @@ fn run_package_synthesis(
         )
     });
     let bare = fsl_package::BarePackage::new(&admitted.package)
-        .with_supply(
-            fsl_package::BareSupply {
-                identities: &identities,
-                equality: admitted.equality.as_ref(),
-            },
-            &mut budget,
-        )
+        .with_dependency_artifacts(&admitted.dependencies, &mut budget)
+        .and_then(|package| {
+            package.with_supply(
+                fsl_package::BareSupply {
+                    identities: &identities,
+                    equality: admitted.equality.as_ref(),
+                },
+                &mut budget,
+            )
+        })
         .map_err(|failure| {
             refused(
                 "/request/synthesis",

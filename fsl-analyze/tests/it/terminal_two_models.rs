@@ -304,6 +304,7 @@ impl Handoff {
 
     fn supply(&self) -> fsl_replay::HandoffSupply<'_> {
         fsl_replay::HandoffSupply {
+            dependencies: &[],
             identities: &self.identity_bytes,
             equality: Some(&self.equality_bytes),
         }

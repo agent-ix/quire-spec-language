@@ -559,6 +559,7 @@ fn a_package_route_refutation_replays_from_the_handoff_as_the_source_refutation(
         &input,
         &bytes,
         fsl_replay::HandoffSupply {
+            dependencies: &[],
             identities: &identity_bytes,
             equality: Some(&equality_bytes),
         },
@@ -627,6 +628,7 @@ fn over_package_route(
         &input,
         &bytes,
         fsl_replay::HandoffSupply {
+            dependencies: &[],
             identities: &identity_bytes,
             equality: Some(&equality_bytes),
         },

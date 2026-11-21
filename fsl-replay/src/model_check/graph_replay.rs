@@ -361,10 +361,16 @@ pub fn replay_model_graph_from_package(
             .map_err(|refusal| ReplayRefusal::DomainPackages(Box::new(refusal)))?;
     let read_limits =
         fsl_package::V2ReadLimits::bounded(crate::spine::I2_NATIVE_JOIN_STORAGE_DEFAULT);
-    let admitted =
-        fsl_package::admit_checked_package(request.package().bytes(), &packages, read_limits)
-            .map_err(|_| fault("package-bytes-admit"))?;
-    let mut budget = read_limits.native_join_limits().budget();
+    let mut budget = read_limits
+        .native_join_limits()
+        .budget()
+        .with_read_storage_limit(u64::MAX);
+    let admitted = supply.admit_package(
+        request.package().bytes(),
+        &packages,
+        read_limits,
+        &mut budget,
+    )?;
     let identities = fsl_package::ReadIdentityRows::read(supply.identities, &admitted, &mut budget)
         .map_err(|_| fault("handoff-identities-admit"))?;
     let equality = supply
@@ -373,13 +379,16 @@ pub fn replay_model_graph_from_package(
         .transpose()
         .map_err(|_| fault("handoff-equality-admit"))?;
     let bare = fsl_package::BarePackage::new(&admitted)
-        .with_supply(
-            fsl_package::BareSupply {
-                identities: &identities,
-                equality: equality.as_ref(),
-            },
-            &mut budget,
-        )
+        .with_dependency_artifacts(supply.dependencies, &mut budget)
+        .and_then(|package| {
+            package.with_supply(
+                fsl_package::BareSupply {
+                    identities: &identities,
+                    equality: equality.as_ref(),
+                },
+                &mut budget,
+            )
+        })
         .map_err(|_| fault("handoff-supply-joins"))?;
     let input =
         fsl_eval::simulation::model::PackageModelInput::of(&bare, &packages, caller.spine.model)
