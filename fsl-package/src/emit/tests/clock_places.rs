@@ -403,6 +403,137 @@ fn a_clock_place_reads_back() {
     );
 }
 
+/// Canonical reference fields and their data reads/writes retain the one
+/// clock_reference scalar, including ordinary presence and sequence wrappers.
+#[trace("TC-3084", "FR-1040-AC-8", "FSpec-FR-154-AC-53")]
+#[test]
+fn clock_reference_fields_emit_and_read_back_as_data() {
+    use filament_contract_model::{CheckedCollectionKind, CheckedMemberType};
+
+    let mut document: Value = serde_json::from_slice(&clocked_document_with(false)).expect("JSON");
+    let identity = "ix://example/config-version/ClockRef";
+    document["types"].as_array_mut().expect("types").push(json!({
+        "identity": identity, "displayName": "ClockRef", "kind": "reference",
+        "target": "ix://filament/native/Clock", "roles": [], "constraints": [],
+        "extensions": [], "unknownPolicy": "reject", "origin": {"generated": {
+            "generatorIdentity": identity, "generatorVersion": "1.0.0", "inputIdentities": [identity],
+        }},
+    }));
+    let fields = document["types"][1]["fields"]
+        .as_array_mut()
+        .expect("fields");
+    let template = fields[0].clone();
+    for (name, optional, sequence) in [
+        ("r", false, false),
+        ("optional", true, false),
+        ("refs", false, true),
+    ] {
+        let mut field = template.clone();
+        let key = format!("ix://example/config-version/ConfigVersion/{name}");
+        field["identity"] = json!(key);
+        field["name"] = json!(name);
+        field["typeRef"] = json!(identity);
+        field["presence"] = json!(if optional { "optional" } else { "required" });
+        field["multiplicity"] = if sequence {
+            json!({"lower": 0, "upper": 3, "ordered": true, "unique": false})
+        } else {
+            json!({"lower": 1, "upper": 1, "ordered": false, "unique": true})
+        };
+        field["origin"]["generated"]["generatorIdentity"] = json!(key);
+        field["origin"]["generated"]["inputIdentities"] = json!([key]);
+        fields.push(field);
+    }
+    document["types"][1]["operations"][0]["frame"]["modifies"]
+        .as_array_mut()
+        .expect("frame")
+        .push(json!("ix://example/config-version/ConfigVersion/r"));
+    let document = wire_bytes(&document).expect("JSON");
+    let packages =
+        fsl_semantics::model::intake::package_input([document.as_slice()]).expect("input");
+    let unit = clocked_unit("post Point using v on Config::ConfigVersion::attemptUpdate { self.r = ref(self.x) }\n\
+        invariant Read using v on Config::ConfigVersion at current { present(self.optional) implies value(self.optional) = self.r }\n\
+        invariant Size using v on Config::ConfigVersion at current { size(self.refs) <= 3 }\n");
+    let graph = assemble_with_models(unit.as_bytes(), &packages)
+        .expect("assembles")
+        .check(
+            CheckMode::Linked,
+            CheckingLimits::default(),
+            &fsl_semantics::check::test_support::ZeroRewardEvaluator,
+        )
+        .unwrap_or_else(|refusals| panic!("data fields check: {refusals:?}"));
+    let emission = emit_checked(&CheckedPackage::link(graph)).expect("emits");
+    let wire = wire(&emission);
+    let scalars: Vec<_> = nodes(&wire)
+        .iter()
+        .filter(|node| {
+            node["node_tag"] == "scalar_type" && node["semantic_form"] == "clock_reference"
+        })
+        .collect();
+    let [scalar] = scalars.as_slice() else {
+        panic!("one clock_reference scalar: {scalars:?}")
+    };
+    let refs: Vec<_> = nodes(&wire)
+        .iter()
+        .filter(|node| node["body"]["operation"]["identity"] == "filament.op.clock_reference.ref")
+        .collect();
+    let [reference] = refs.as_slice() else {
+        panic!("one data write reference: {refs:?}")
+    };
+    assert_eq!(reference["semantic_type"], scalar["node_id"]);
+    let mut evidence = CheckedPackageEvidence::new();
+    for feature in wire["lock"]["required_features"]
+        .as_array()
+        .expect("features")
+    {
+        evidence.support_feature(feature.as_str().expect("feature"));
+    }
+    evidence
+        .insert_domain_package_document(package_identity(&document), document)
+        .expect("evidence");
+    let admitted = read_checked_package_v2(
+        emission.package.bytes(),
+        library(),
+        V2ReadLimits::fixture(),
+        &evidence,
+    )
+    .unwrap_or_else(|failure| panic!("IR admits the actual emitted field types: {failure:?}"))
+    .into_value()
+    .admitted;
+    let object = admitted
+        .graph()
+        .nodes
+        .iter()
+        .find(|node| node.semantic_form.as_ref() == "object_type")
+        .expect("object node");
+    let fields = admitted
+        .model_object_fields(&object.node_id)
+        .expect("typed fields");
+    assert_eq!(
+        fields.field("r").expect("r").member_type(),
+        Some(&CheckedMemberType::ClockReference)
+    );
+    assert_eq!(
+        fields.field("optional").expect("optional").member_type(),
+        Some(&CheckedMemberType::Option(Box::new(
+            CheckedMemberType::ClockReference
+        )))
+    );
+    assert_eq!(
+        fields.field("refs").expect("refs").member_type(),
+        Some(&CheckedMemberType::Collection {
+            kind: CheckedCollectionKind::Sequence,
+            element: Box::new(CheckedMemberType::ClockReference),
+            bounds: Some((0, 3)),
+        })
+    );
+    assert_eq!(
+        CheckedTimedModel::from_admitted(&admitted).expect("timed readback")[0]
+            .clock_places
+            .len(),
+        1
+    );
+}
+
 /// Clock tuple positions and union payloads retain their checked resolved rows.
 #[trace(
     "TC-1860",

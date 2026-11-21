@@ -5959,6 +5959,12 @@ fn read_type_node(
             }
         }
         let target = ctx.str_field("target")?;
+        if semantic.and_then(|document| document.resolve(target)).is_some_and(|resolved| {
+            matches!(resolved, agent_ix_semantic_ir::rules::Resolved::Node(definition)
+                if definition.get("kind").and_then(agent_ix_semantic_ir::json::Json::as_str) == Some("reference"))
+        }) {
+            return Err(ctx.malformed_in("target", "a clock reference target is not another reference type").into());
+        }
         let target = read_value_type_ref(package, &ctx, target, true)?;
         return Ok(vec![DomainPackageRecord::AliasType(AliasTypeRecord {
             key,
