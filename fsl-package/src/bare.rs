@@ -541,17 +541,7 @@ impl<'p> BarePackage<'p> {
     /// distinct values that share a name are both listed. The root package is
     /// not listed.
     pub fn dependencies(&self) -> Vec<&'p CheckedPackageV2> {
-        let mut closure: Vec<&'p CheckedPackageV2> = Vec::new();
-        let mut queue: std::collections::VecDeque<&'p CheckedPackageV2> =
-            self.package.direct_dependencies().collect();
-        while let Some(next) = queue.pop_front() {
-            if closure.iter().any(|held| std::ptr::eq(*held, next)) {
-                continue;
-            }
-            closure.push(next);
-            queue.extend(next.direct_dependencies());
-        }
-        closure
+        crate::analysis_view::closure(self.package)
     }
 }
 

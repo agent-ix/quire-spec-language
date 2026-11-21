@@ -329,11 +329,13 @@ pub(crate) fn own_claim_row(rows: &[ClaimNameRow], name: &str) -> Option<ClaimOc
     })
 }
 
-fn closure(package: &CheckedPackageV2) -> DependencyClosure<'_> {
+/// Walk each retained package once, preserving nearest-first lock order.
+pub(crate) fn closure(package: &CheckedPackageV2) -> DependencyClosure<'_> {
     let mut closure: DependencyClosure<'_> = Vec::new();
+    let mut seen = std::collections::HashSet::new();
     let mut queue: VecDeque<&CheckedPackageV2> = package.direct_dependencies().collect();
     while let Some(next) = queue.pop_front() {
-        if closure.iter().any(|held| std::ptr::eq(*held, next)) {
+        if !seen.insert(std::ptr::from_ref(next)) {
             continue;
         }
         closure.push(next);
