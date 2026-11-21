@@ -6770,6 +6770,12 @@ pub fn read_domain_package(
         .filter_map(refusal_node)
         .map(str::to_owned)
         .collect();
+    let shared_constraint_keywords: Vec<_> = intake_refusals.iter().filter_map(|refusal| {
+        let ModelRefusalCause::IntakeMalformedDeclaration { node, member, .. } = &refusal.cause else { return None };
+        let [crate::model::refusal::MemberSegment::Name(constraints), crate::model::refusal::MemberSegment::Index(index), crate::model::refusal::MemberSegment::Name(keyword)] = member.segments() else { return None };
+        (member.root() == MemberRoot::TypeDefinition && constraints == "constraints" && keyword == "keyword")
+            .then(|| (node.clone(), member.clone(), *index))
+    }).collect();
     let semantic = agent_ix_semantic_ir::rules::Document::read(&document.bundle);
     let (records, reader_refusals) = read_nodes_partial(
         &selection.identity,
@@ -6779,6 +6785,39 @@ pub fn read_domain_package(
     );
     let mut reported = std::collections::BTreeSet::new();
     for refusal in reader_refusals {
+        // FR-056 keeps the shared reader's diagnostic when both readers
+        // identify the same constraint keyword. The shared reader owns the
+        // type; the local reader may name that constraint's own identity.
+        let shared_keyword = match &refusal.cause {
+            ModelRefusalCause::IntakeMalformedDeclaration { node, member, .. } => {
+                shared_constraint_keywords
+                    .iter()
+                    .any(|(owner, shared_member, index)| {
+                        member == shared_member
+                            && document
+                                .tree
+                                .get("types")
+                                .and_then(Value::as_array)
+                                .into_iter()
+                                .flatten()
+                                .any(|definition| {
+                                    definition.get("identity").and_then(Value::as_str)
+                                        == Some(owner.as_str())
+                                        && definition
+                                            .get("constraints")
+                                            .and_then(Value::as_array)
+                                            .and_then(|constraints| constraints.get(*index))
+                                            .and_then(|constraint| constraint.get("identity"))
+                                            .and_then(Value::as_str)
+                                            == Some(node.as_str())
+                                })
+                    })
+            }
+            _ => false,
+        };
+        if shared_keyword {
+            continue;
+        }
         // A node read once per path that reaches it (an alias chain over a
         // Decimal reaches it again) repeats one refusal.
         if let Some(node) = refusal_node(&refusal) {

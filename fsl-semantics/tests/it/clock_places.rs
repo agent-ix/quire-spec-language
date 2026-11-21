@@ -4573,7 +4573,20 @@ fn native_target_constraint_refusals_name_the_keyword() {
         else {
             panic!("{native}: {refusal:?}")
         };
-        assert_eq!(node, &format!("{watch}/constraints/{keyword}"));
+        let expected_node = if native == "Clock" {
+            watch.clone()
+        } else {
+            format!("{watch}/constraints/{keyword}")
+        };
+        assert_eq!(node, &expected_node);
+        if native == "Clock" {
+            assert!(
+                refusals[0]
+                    .detail
+                    .contains("agent-ix.semantic-ir.CONSTRAINT_NOT_APPLICABLE"),
+                "{refusal:?}"
+            );
+        }
         assert_eq!(
             member,
             &"TypeDefinition.constraints[0].keyword"
