@@ -914,18 +914,23 @@ impl ItemSelection {
     /// Whether the item carries a member whose in-process route `analyze`
     /// does not build yet, so the item settles `unsupported` on its own.
     fn unrouted(&self) -> bool {
-        self.unrouted_routing_options(false)
+        self.unrouted_routing_options(false, false)
     }
 
     /// [`Self::unrouted`] for an item whose `options` are negotiated against
     /// its candidates' published values (FR-243, FR-635) when it names no
     /// backend, as a temporal claim's `method` is; `options_negotiated`
     /// false sends an option only to the backend the item names (FR-967).
-    fn unrouted_routing_options(&self, options_negotiated: bool) -> bool {
+    fn unrouted_routing_options(
+        &self,
+        options_negotiated: bool,
+        reads_witness_sampling: bool,
+    ) -> bool {
         self.unrouted_members(options_negotiated)
-            || self.temporal.as_ref().is_some_and(|temporal| {
-                temporal.witness_samples.is_some() || temporal.seed.is_some()
-            })
+            || (!reads_witness_sampling
+                && self.temporal.as_ref().is_some_and(|temporal| {
+                    temporal.witness_samples.is_some() || temporal.seed.is_some()
+                }))
     }
 
     /// [`Self::unrouted`] without the witness sampling members, which a
@@ -2113,7 +2118,7 @@ fn resolve_one(
                 }
             }
             (Some(_), _) if protocol_analysis_kind => {
-                return invalid_member(index, name, "temporal.subject.protocol");
+                return invalid_member(index, name, "temporal.subject.protocol")
             }
             (Some(_), _) => return invalid_value(index, name, "temporal.subject.protocol"),
             (None, _) => None,
@@ -2192,6 +2197,13 @@ fn resolve_one(
         None
     };
     let claim_reads_time = claim_timed(package, &claim, binding);
+    let single_existential = package.graph().hyper_clauses().iter().any(|clause| {
+        clause.assembled_occurrence() == Some(&claim)
+            && matches!(
+                clause.form(),
+                Some(fsl_semantics::check::HyperForm::SingleExistential)
+            )
+    });
     let item = ClaimItem {
         request_index: index,
         claim,
@@ -2241,9 +2253,12 @@ fn resolve_one(
                 hybrid: None,
                 ..selection.clone()
             }
-            .unrouted_routing_options(true)
+            .unrouted_routing_options(true, false)
         } else {
-            selection.unrouted_routing_options(kind == Capability::TemporalSatisfaction)
+            selection.unrouted_routing_options(
+                kind == Capability::TemporalSatisfaction,
+                single_existential,
+            )
         } || (selection.reductions.is_some() && kind != Capability::TemporalSatisfaction)
             || reads_no_clocks(claim_reads_time, &temporal)
             || (!protocol_bound
@@ -2863,6 +2878,23 @@ fn temporal_settings(selection: &TemporalSelection) -> TemporalItem {
         ..TemporalItem::default()
     };
     if let Some(limits) = &selection.limits {
+        use fsl_replay::ModelCheckLimit;
+        item.requested_limits = [
+            (limits.max_states, ModelCheckLimit::MaxStates),
+            (limits.max_transitions, ModelCheckLimit::MaxTransitions),
+            (
+                limits.max_automaton_states,
+                ModelCheckLimit::MaxAutomatonStates,
+            ),
+            (limits.max_witness_set, ModelCheckLimit::MaxWitnessSet),
+            (
+                limits.max_relation_tuples,
+                ModelCheckLimit::MaxRelationTuples,
+            ),
+        ]
+        .into_iter()
+        .filter_map(|(value, limit)| value.map(|_| limit))
+        .collect();
         let set = |value: Option<NonZeroU64>, slot: &mut u64| {
             if let Some(value) = value {
                 *slot = value.get();

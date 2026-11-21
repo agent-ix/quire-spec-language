@@ -357,17 +357,19 @@ fn a_nested_reference_row_checks_and_proves() {
 /// for the leaky one with a two-trace counterexample.
 #[trace("TC-1591", "FR-631-AC-1")]
 #[test]
-#[ignore = "QSL-2128: hyperproperty items are not reachable through fsl analyze yet"]
 fn non_interference_proves_and_refutes() {
-    use crate::hyper_world::{non_interference, request_files, Vault};
+    use crate::hyper_world::{
+        EQUAL_INPUTS, STARTS, Vault, non_interference, request_files_over_starts,
+    };
     for (vault, expected) in [(Vault::Secure, "proved"), (Vault::Leaky, "refuted")] {
-        let (unit, model, snapshot) = request_files(vault, false, (1, 0), &non_interference(""));
+        let (unit, model, snapshots) =
+            request_files_over_starts(vault, false, &STARTS, &non_interference(EQUAL_INPUTS));
         let ws = Workspace::new(&format!("family-hyper-{expected}"));
         let run = analyze(&request_over(
             &ws,
             &unit,
             &model,
-            &[snapshot],
+            &snapshots,
             json!({"items": [{"claim": "NonInterference"}]}),
         ));
         let item = run.item(0);
@@ -1105,7 +1107,7 @@ fn a_two_model_hyper_counterexample_replays_through_the_engine() {
         replay_hyper_trace_tuple(&replay, counterexample),
         Ok(fsl_replay::ModelTraceSettlement::Reproduced { .. })
     ));
-    let record = settle_hyper_check(&outcome, &limits, &[], |counterexample| {
+    let record = settle_hyper_check(&outcome, &limits, &[], None, &cancel, |counterexample| {
         replay_hyper_trace_tuple(&replay, counterexample)
     })
     .expect("the replayed counterexample settles");

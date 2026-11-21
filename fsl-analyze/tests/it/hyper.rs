@@ -165,7 +165,7 @@ pub(crate) fn positions(
 /// the engine stores the quotient by the swap (FR-174): the same verdict over
 /// fewer states.
 #[trace("TC-1264", "FR-487-AC-6")]
-#[trace("TC-601")]
+#[trace("TC-601", "FR-176-AC-1")]
 #[test]
 fn the_leaky_vault_is_refuted_by_the_lockstep_counterexample_of_section_8_1() {
     let world = World::new(
@@ -219,7 +219,7 @@ fn the_leaky_vault_is_refuted_by_the_lockstep_counterexample_of_section_8_1() {
 /// state), and the item holds; the engine stores the 6 states of the quotient
 /// by the swap of `a` and `b` (FR-174).
 #[trace("TC-1264", "FR-487-AC-6")]
-#[trace("TC-601")]
+#[trace("TC-601", "FR-176-AC-1")]
 #[test]
 fn the_secure_vault_holds_over_eight_product_states() {
     let world = World::new(

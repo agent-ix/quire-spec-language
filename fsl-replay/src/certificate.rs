@@ -56,6 +56,10 @@ impl Serialize for QueryPart {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum CertificateRule {
+    /// A hyper product member has an undefined letter or match.
+    UndefinedMember,
+    /// A hyper product member violates the checked form.
+    ViolatingMember,
     /// A probability value fails its recomputed Bellman condition (FR-201).
     InequalityFails,
     /// The probability at the initial state misses the claim bound (FR-201).
@@ -125,6 +129,8 @@ pub enum CertificateRule {
 #[non_exhaustive]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CertificateLocus {
+    /// The complete canonical hyper product key, including its witness set.
+    HyperProductState(StateKey),
     /// The complete probabilistic product identity at which a rule failed
     /// (FR-201), transported as base64url canonical octets.
     ProbabilityProductState(crate::ProbabilityProductKey),
@@ -196,6 +202,9 @@ impl Serialize for CertificateLocus {
                 object.end()
             }
             Self::ProductState(state) => state.serialize(serializer),
+            Self::HyperProductState(state) => product::product_key_wire(state)
+                .map_err(serde::ser::Error::custom)?
+                .serialize(serializer),
             Self::ModelState(state) => {
                 use base64::Engine as _;
                 base64::engine::general_purpose::URL_SAFE_NO_PAD
@@ -268,6 +277,7 @@ mod alethe;
 mod check;
 pub mod closed_form;
 pub mod closure;
+pub mod product;
 mod recording;
 pub mod scc;
 pub mod simulation;

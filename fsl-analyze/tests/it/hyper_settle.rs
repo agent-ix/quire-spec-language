@@ -55,9 +55,23 @@ fn settle_under(
     limits: &ModelCheckLimits,
     requested: &[ModelCheckLimit],
 ) -> HyperRecord {
-    settle_hyper_check(outcome, limits, requested, |counterexample| {
-        world.replay_under(counterexample, limits.max_witness_set)
-    })
+    let subjects = (0..world.clause.aliases().len())
+        .map(|_| world.subject())
+        .collect::<Vec<_>>();
+    let certificate = fsl_replay::ProductClosureRequest {
+        package: &world.package,
+        clause: &world.clause,
+        subjects: &subjects,
+        meter: crate::counter::UNLIMITED,
+    };
+    settle_hyper_check(
+        outcome,
+        limits,
+        requested,
+        Some(&certificate),
+        &Cancel::new(),
+        |counterexample| world.replay_under(counterexample, limits.max_witness_set),
+    )
     .expect("the outcome settles")
 }
 
@@ -186,6 +200,8 @@ fn a_refutation_that_does_not_replay_settles_with_no_counterexample() {
         },
         &ModelCheckLimits::default(),
         &[],
+        None,
+        &Cancel::new(),
         |counterexample| world.replay(counterexample),
     )
     .expect("settles");
@@ -199,6 +215,8 @@ fn a_refutation_that_does_not_replay_settles_with_no_counterexample() {
         &outcome,
         &ModelCheckLimits::default(),
         &[],
+        None,
+        &Cancel::new(),
         |_: &HyperCounterexample| -> Result<ModelTraceSettlement, ReplayRefusal> {
             Err(ReplayRefusal::Fault(InternalFault::new(
                 "test",
@@ -514,12 +532,17 @@ fn a_holds_outcome_settles_no_record_until_the_product_closure_checker_exists() 
     let outcome = run(&secure, ModelCheckLimits::default());
     // FR-174-AC-7: a run that proves its claim reports `HoldsReduced`.
     assert!(matches!(outcome, HyperOutcome::HoldsReduced { .. }));
-    let result = settle_hyper_check(&outcome, &ModelCheckLimits::default(), &[], |_| {
-        panic!("a holds outcome replays nothing")
-    });
+    let result = settle_hyper_check(
+        &outcome,
+        &ModelCheckLimits::default(),
+        &[],
+        None,
+        &Cancel::new(),
+        |_| panic!("a holds outcome replays nothing"),
+    );
     assert_eq!(
         result,
-        Err(fsl_replay::HyperSettleRefusal::ProductClosureCheckerNotBuilt)
+        Err(fsl_replay::HyperSettleRefusal::CertificateRequestMissing)
     );
 }
 
@@ -528,14 +551,20 @@ fn a_holds_outcome_settles_no_record_until_the_product_closure_checker_exists() 
 #[test]
 fn a_plain_holds_outcome_settles_no_record_until_the_product_closure_checker_exists() {
     let outcome = HyperOutcome::Holds {
+        certificates: Vec::new(),
         stats: RunStats::default(),
     };
-    let result = settle_hyper_check(&outcome, &ModelCheckLimits::default(), &[], |_| {
-        panic!("a holds outcome replays nothing")
-    });
+    let result = settle_hyper_check(
+        &outcome,
+        &ModelCheckLimits::default(),
+        &[],
+        None,
+        &Cancel::new(),
+        |_| panic!("a holds outcome replays nothing"),
+    );
     assert_eq!(
         result,
-        Err(fsl_replay::HyperSettleRefusal::ProductClosureCheckerNotBuilt)
+        Err(fsl_replay::HyperSettleRefusal::CertificateRequestMissing)
     );
 }
 
@@ -549,9 +578,14 @@ fn a_plain_holds_outcome_settles_no_record_until_the_product_closure_checker_exi
 #[test]
 fn a_reduction_outcome_settles_by_its_cause_and_a_reduced_hold_waits_for_the_checker() {
     let settle = |outcome: &HyperOutcome| {
-        settle_hyper_check(outcome, &ModelCheckLimits::default(), &[], |_| {
-            panic!("a reduction outcome replays nothing")
-        })
+        settle_hyper_check(
+            outcome,
+            &ModelCheckLimits::default(),
+            &[],
+            None,
+            &Cancel::new(),
+            |_| panic!("a reduction outcome replays nothing"),
+        )
     };
     let record = settle(&HyperOutcome::Reduction {
         cause: HyperReductionCause::Unsupported {
@@ -581,13 +615,11 @@ fn a_reduction_outcome_settles_by_its_cause_and_a_reduced_hold_waits_for_the_che
     );
 
     let reduced = settle(&HyperOutcome::HoldsReduced {
+        certificates: Vec::new(),
         reductions: Vec::new(),
         stats: RunStats::default(),
     });
-    assert_eq!(
-        reduced,
-        Err(HyperSettleRefusal::ProductClosureCheckerNotBuilt)
-    );
+    assert_eq!(reduced, Err(HyperSettleRefusal::CertificateRequestMissing));
 }
 
 /// Each clause S3 classifies `Other` settles `unsupported`,
@@ -824,4 +856,50 @@ fn an_empty_universe_settles_no_instance_and_a_missing_one_requires_a_bound() {
         power.run_selecting(Reductions::default()),
         Err(ModelCheckRefusal::RequiresBound(_))
     ));
+}
+
+/// FR-182: a step-relation proof has no FR-163 `Det` certificate behind it, so
+/// it settles `incomplete` with no proof or counterexample.
+#[trace("TC-607", "FR-182")]
+#[test]
+fn a_step_relation_proof_is_never_certified_without_a_checked_certificate() {
+    let outcome = HyperOutcome::HoldsUnchecked {
+        stats: RunStats::default(),
+    };
+    let record = settle_hyper_check(
+        &outcome,
+        &ModelCheckLimits::default(),
+        &[],
+        None,
+        &Cancel::new(),
+        |_| panic!("a holds outcome replays nothing"),
+    )
+    .expect("an unchecked holding outcome settles");
+    assert_eq!(
+        record.value,
+        TerminalValue::Incomplete(IncompleteCause::CertificateUnchecked)
+    );
+    assert!(record.certificates.is_empty());
+    assert!(record.counterexample.is_none());
+    assert_eq!(record.value.category(), Category::Incomplete);
+}
+
+/// FR-182: an undecided relation run settles inconclusive, never `failed`.
+#[trace("TC-607", "FR-182")]
+#[test]
+fn an_undecided_relation_run_settles_inconclusive_not_failed() {
+    let outcome = HyperOutcome::Undecided {
+        cause: UndecidedCause::UndecidedSuccessor,
+        stats: RunStats::default(),
+    };
+    let record = settle_hyper_check(
+        &outcome,
+        &ModelCheckLimits::default(),
+        &[],
+        None,
+        &Cancel::new(),
+        |_| panic!("an undecided outcome replays nothing"),
+    )
+    .expect("an undecided outcome settles");
+    assert_eq!(record.label, ResultLabel::Inconclusive);
 }

@@ -4,10 +4,9 @@
 //!
 //! It is FR-126's [`ModelCheckOutcome`](crate::ModelCheckOutcome) for a hyper
 //! item: `Violated` carries a [`HyperCounterexample`], and `Undecided` the two
-//! causes FR-182 adds, `MatchUndetermined` and `VacuousMatch`. A `Holds`
-//! carries no certificate yet: FR-163's product-closure certificate and its
-//! core checker are not built, so a hyper `Holds` settles no `proved`
-//! ([`settle_hyper_check`](crate::settle_hyper_check) refuses it).
+//! causes FR-182 adds, `MatchUndetermined` and `VacuousMatch`. Holding outcomes
+//! carry product-closure certificates for independent core checking before
+//! [`settle_hyper_check`](crate::settle_hyper_check) certifies a proof.
 
 use fsl_semantics::check::HyperForm;
 
@@ -77,16 +76,20 @@ pub enum BoundCovers {
 pub enum HyperOutcome {
     /// Every reachable product state was examined and no fair accepting
     /// cycle (HP-2) or fair cycle with an empty witness set (HP-3) exists
-    /// (V-1), whatever certificate FR-163 will require.
+    /// (V-1), with each binding's FR-163 certificate.
     Holds {
+        /// Each object binding's independently checkable closed product.
+        certificates: Vec<crate::ProductClosureCertificate>,
         /// The run's counts.
         stats: RunStats,
     },
     /// Every reachable state of the product reduced by the copy group, and by
     /// the selected key symmetry, was examined and no violation exists (V-1
-    /// under ADR-023 CS-5). It carries no certificate, as [`Self::Holds`]
-    /// does not.
+    /// under ADR-023 CS-5). Copy-swap alone carries each binding's FR-163
+    /// certificate; a key symmetry has no core checker and stays uncertified.
     HoldsReduced {
+        /// Each object binding's independently checkable reduced product.
+        certificates: Vec<crate::ProductClosureCertificate>,
         /// The applied reductions: a key symmetry, then the copy group's swap.
         reductions: Vec<AppliedReduction>,
         /// The run's counts.
@@ -97,6 +100,14 @@ pub enum HyperOutcome {
     /// form"): the decision scope is complete and closed, so no product-closure
     /// certificate stands between the run and its proof.
     HoldsClosed {
+        /// The run's counts.
+        stats: RunStats,
+    },
+    /// A step relation (FR-179) held on every tuple of the reachable transitions
+    /// the run read. The tuple enumeration is exhaustive, but no FR-163 `Det`
+    /// certificate stands behind it and no core checker accepts one, so FR-182
+    /// settles it `incomplete` with `certificate-unchecked`.
+    HoldsUnchecked {
         /// The run's counts.
         stats: RunStats,
     },
@@ -151,8 +162,9 @@ impl HyperOutcome {
     /// The run's counts.
     pub fn stats(&self) -> RunStats {
         match self {
-            Self::Holds { stats }
-            | Self::HoldsClosed { stats }
+            Self::Holds { stats, .. }
+            | Self::HoldsClosed { stats, .. }
+            | Self::HoldsUnchecked { stats, .. }
             | Self::HoldsReduced { stats, .. }
             | Self::Reduction { stats, .. }
             | Self::Violated { stats, .. }

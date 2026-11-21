@@ -66,7 +66,10 @@ fn the_swap_halves_the_pair_product_and_keeps_both_verdicts() {
     let explored = secure.explore();
     assert_eq!(explored.graph.states().len(), 8);
     assert_eq!(explored.accepting_components(), 0);
-    let HyperOutcome::HoldsReduced { reductions, stats } = run(&secure) else {
+    let HyperOutcome::HoldsReduced {
+        reductions, stats, ..
+    } = run(&secure)
+    else {
         panic!("expected the secure vault to hold under the swap");
     };
     assert_eq!(reductions, [swapped()]);
@@ -103,7 +106,7 @@ fn an_asymmetric_clause_is_stored_unreduced() {
     );
     let world = World::new(Vault::Secure, false, &STARTS, &clause);
     assert!(world.clause.copy_group().classes.is_empty());
-    let HyperOutcome::Holds { stats } = run(&world) else {
+    let HyperOutcome::Holds { stats, .. } = run(&world) else {
         panic!("expected the clause to hold with no reduction");
     };
     assert_eq!(stats.product_states, 8);
@@ -136,7 +139,10 @@ fn assert_a_swap_that_permutes_the_automaton_s_states_halves_the_product() {
     );
     assert_eq!(world.clause.copy_group().generators.len(), 1);
     assert_eq!(world.explore().graph.states().len(), 8);
-    let HyperOutcome::HoldsReduced { reductions, stats } = run(&world) else {
+    let HyperOutcome::HoldsReduced {
+        reductions, stats, ..
+    } = run(&world)
+    else {
         panic!("expected the item to hold under the swap");
     };
     assert_eq!(reductions, [swapped()]);
@@ -238,7 +244,10 @@ fn three_copies_store_one_state_for_each_multiset_of_secrets() {
         [["a", "b", "c"].map(str::to_owned).to_vec()]
     );
     assert_eq!(secure.explore().graph.states().len(), 16);
-    let HyperOutcome::HoldsReduced { reductions, stats } = run(&secure) else {
+    let HyperOutcome::HoldsReduced {
+        reductions, stats, ..
+    } = run(&secure)
+    else {
         panic!("expected the secure vault to hold under the swaps");
     };
     assert_eq!(stats.product_states, 8);
@@ -896,7 +905,10 @@ fn assert_only_the_classes_without_fairness_are_swapped() {
         [["a", "b"], ["c", "d"]].map(|class| class.map(str::to_owned).to_vec())
     );
     let unreduced = world.explore().graph.states().len();
-    let HyperOutcome::HoldsReduced { reductions, stats } = run(&world) else {
+    let HyperOutcome::HoldsReduced {
+        reductions, stats, ..
+    } = run(&world)
+    else {
         panic!("expected the item to hold under the swap of c and d");
     };
     assert_eq!(
@@ -1069,7 +1081,10 @@ fn the_swap_renames_the_memory_of_past_operators() {
     );
     assert_eq!(world.clause.copy_group().generators.len(), 1);
     let unreduced = world.explore().graph.states().len();
-    let HyperOutcome::HoldsReduced { reductions, stats } = run(&world) else {
+    let HyperOutcome::HoldsReduced {
+        reductions, stats, ..
+    } = run(&world)
+    else {
         panic!("expected the item to hold under the swap");
     };
     assert_eq!(reductions, [swapped()]);
@@ -1098,7 +1113,10 @@ fn the_swap_renames_the_counters_of_interval_operators() {
     );
     assert_eq!(world.clause.copy_group().generators.len(), 1);
     let unreduced = world.explore().graph.states().len();
-    let HyperOutcome::HoldsReduced { reductions, stats } = run(&world) else {
+    let HyperOutcome::HoldsReduced {
+        reductions, stats, ..
+    } = run(&world)
+    else {
         panic!("expected the item to hold under the swap");
     };
     assert_eq!(reductions, [swapped()]);
@@ -1176,7 +1194,7 @@ fn a_projected_clause_is_stored_unreduced() {
     let world = World::busy(Vault::Busy, &IDLE, &aligned(&[]));
     assert_eq!(world.clause.form(), Some(&HyperForm::ProjectionAligned));
     assert!(!world.clause.copy_group().classes.is_empty());
-    let HyperOutcome::Holds { stats } = run(&world) else {
+    let HyperOutcome::Holds { stats, .. } = run(&world) else {
         panic!("expected the projection to hold, stored whole");
     };
     assert_eq!(stats.product_states, 18);

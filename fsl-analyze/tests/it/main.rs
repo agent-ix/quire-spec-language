@@ -60,6 +60,7 @@ mod hyper_replay;
 mod hyper_settle;
 mod hyper_single;
 mod hyper_swap;
+mod hyper_wire;
 mod hyper_witness;
 mod hyper_world;
 mod invariant_item;

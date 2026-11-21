@@ -59,7 +59,7 @@
 //! the least member of its orbit, so each unordered pair of runs is stored
 //! once. A counterexample found on the quotient is lifted back to the concrete
 //! tuple of behaviours it stands for before it is returned (`lift`). A class
-//! of copies that carry fairness is not swapped (`unfair_classes`). A request
+//! of copies that carry fairness is not swapped (`fairness_preserving_copy_group`). A request
 //! that selects a reduction is settled against ADR-023 §5's rows before any
 //! state is expanded (`reductions`).
 //! An HP-6 clause is explored as a [`ProjectedProduct`]: a state is the tuple
@@ -329,7 +329,7 @@ pub fn check_hyper(
     } else {
         instances
     };
-    let copy = unfair_classes(clause);
+    let copy = fsl_eval::hyper::fairness_preserving_copy_group(clause);
     let run = Run {
         request: &request,
         systems,
@@ -404,44 +404,6 @@ fn orbit_representatives(
             })
         })
         .collect()
-}
-
-/// The classes of `clause`'s copy group that EN-1 reduces by: those whose
-/// variables have an empty fairness set. A fairness constraint is read on the
-/// stored state's slot of its variable, but the quotient moves a concrete copy
-/// between slots wherever an edge swaps them, so a slot's enabled and taken
-/// steps are not one behaviour's and the quotient would decide fair cycles
-/// wrongly. A class with fairness is stored whole and named no reduction.
-fn unfair_classes(clause: &CheckedHyperClause) -> CopyGroup {
-    let group = clause.copy_group();
-    let quantifiers = clause.quantifiers();
-    let fair = |name: &str| {
-        quantifiers
-            .iter()
-            .any(|quantifier| quantifier.variable == name && !quantifier.fairness.is_empty())
-    };
-    let classes: Vec<Vec<String>> = group
-        .classes
-        .iter()
-        .filter(|class| !class.iter().any(|name| fair(name)))
-        .cloned()
-        .collect();
-    let kept = |position: usize| {
-        quantifiers.get(position).is_some_and(|quantifier| {
-            classes
-                .iter()
-                .any(|class| class.contains(&quantifier.variable))
-        })
-    };
-    CopyGroup {
-        generators: group
-            .generators
-            .iter()
-            .filter(|generator| kept(generator.first))
-            .cloned()
-            .collect(),
-        classes,
-    }
 }
 
 /// The instances of the clause's object parameters: one binding of each
@@ -592,6 +554,13 @@ enum Built<'r, 's> {
 }
 
 impl Built<'_, '_> {
+    fn key(&self, state: &HyperState) -> fsl_eval::hyper::HyperKey {
+        match self {
+            Self::Universal(product) => product.key(state),
+            Self::Witness(product) => product.key(state),
+            Self::Projected(product) => product.key(state),
+        }
+    }
     fn take_halt(&self) -> Option<Halt> {
         match self {
             Self::Universal(product) => product.take_halt(),
@@ -785,6 +754,59 @@ struct Run<'r, 'a> {
 }
 
 impl<'a> Run<'_, 'a> {
+    fn certificates(
+        &self,
+        explored: &[Explored<'_, '_>],
+    ) -> Result<Vec<fsl_replay::ProductClosureCertificate>, ModelCheckRefusal> {
+        // FR-174's key-symmetry proof is uncertified: FR-163's certificate
+        // reconstructs copy-swap products, not key orbits or their stabilisers.
+        if self.symmetric {
+            return Ok(Vec::new());
+        }
+        let systems = self
+            .slots
+            .iter()
+            .map(|slot| &self.systems[*slot])
+            .collect::<Vec<_>>();
+        explored
+            .iter()
+            .map(|run| {
+                let members = run
+                    .graph
+                    .states()
+                    .iter()
+                    .map(|member| {
+                        let key = fsl_replay::product_state_key(&run.product.key(&member.state))
+                            .map_err(|_| fault("hyper-product-certificate-key"))?;
+                        Ok((key, member.state.clone(), member.findings.clone()))
+                    })
+                    .collect::<Result<Vec<_>, ModelCheckRefusal>>()?;
+                let edges = run
+                    .graph
+                    .edges()
+                    .iter()
+                    .map(|edge| {
+                        (
+                            edge.source.index(),
+                            edge.target.index(),
+                            edge.transition.clone(),
+                        )
+                    })
+                    .collect::<Vec<_>>();
+                fsl_replay::product_certificate(fsl_replay::ProductEvidence {
+                    clause: self.request.clause,
+                    systems: &systems,
+                    instance: run.instance,
+                    members: &members,
+                    edges: &edges,
+                    automaton: &run.product.automaton(),
+                    reduction: run.reduced.then(|| self.copy.clone()),
+                    cancel: self.cancel,
+                })
+                .map_err(|_| fault("hyper-product-certificate"))
+            })
+            .collect()
+    }
     fn decide(
         &self,
         instances: &[Vec<ParameterBinding>],
@@ -1275,10 +1297,12 @@ impl<'a> Run<'_, 'a> {
         Ok(
             if reductions.is_empty() && self.request.reductions.constraint.is_none() {
                 HyperOutcome::Holds {
+                    certificates: self.certificates(explored)?,
                     stats: totals.stats(),
                 }
             } else {
                 HyperOutcome::HoldsReduced {
+                    certificates: self.certificates(explored)?,
                     reductions,
                     stats: totals.stats(),
                 }

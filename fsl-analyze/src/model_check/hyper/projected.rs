@@ -42,6 +42,7 @@ impl Run<'_, '_> {
                 stats: totals.stats(),
             }),
             (None, _, _) => Ok(HyperOutcome::Holds {
+                certificates: self.certificates(&ranked.explored)?,
                 stats: totals.stats(),
             }),
         }

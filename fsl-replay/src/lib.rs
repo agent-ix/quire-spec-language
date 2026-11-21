@@ -168,6 +168,11 @@ pub use certificate::closure::{
     check_protocol_components, CertificateRejection, CertificateRequest, ClosureCertificate,
     ClosureRefusal, ProductStateRef, ProtocolCertificateRequest, TemporalCertificateCheck,
 };
+pub use certificate::product::{
+    check_product_closure, product_certificate, product_state_key, HyperProductMember,
+    ProductClosureCertificate, ProductClosureRefusal, ProductClosureRequest, ProductEvidence,
+    ProductStateKey,
+};
 pub use certificate::scc::{Component, ComponentCertificate, ComponentWitness, ProofCertificate};
 pub use certificate::simulation::{
     check_simulation_certificate, CertifiedEdge, CertifiedPosition, EvaluationOutcome, FailedStep,
@@ -275,6 +280,7 @@ pub use model_check::counterexample::{
     UndefinedEvaluation, UndefinedLocus, UndefinedSite,
 };
 pub use model_check::existential_outcome::{ExistentialInstanceOutcome, ExistentialOutcome};
+pub use model_check::existential_settle::{settle_existential, ExistentialRecord};
 pub use model_check::finite_hyper_replay::{
     replay_finite_hyper_refutation, reproduce_finite_hyper_refutation,
     ReproducedFiniteHyperRefutation,

@@ -214,7 +214,7 @@ fn the_secure_vault_keeps_a_singleton_witness_set_over_four_states() {
     assert_eq!(seen, [(0, 0), (0, 1), (1, 0), (1, 1)]);
 
     let outcome = run(&world, ModelCheckLimits::default());
-    let HyperOutcome::Holds { stats } = outcome else {
+    let HyperOutcome::Holds { stats, .. } = outcome else {
         panic!("expected the secure vault to hold, got {outcome:?}");
     };
     assert_eq!(stats.product_states, 4);
@@ -242,19 +242,28 @@ fn a_clause_with_no_universal_variable_holds_exactly_when_the_witness_set_never_
         })
         .collect();
     assert_eq!(sizes, [2, 4]);
+    let HyperOutcome::Holds {
+        stats,
+        certificates,
+    } = run(&secure, ModelCheckLimits::default())
+    else {
+        panic!("the secure witness product holds");
+    };
+    assert!(
+        !certificates.is_empty(),
+        "a proof carries its closed product"
+    );
     assert_eq!(
-        run(&secure, ModelCheckLimits::default()),
-        HyperOutcome::Holds {
-            stats: fsl_replay::RunStats {
-                product_states: 2,
-                product_edges: 2,
-                stutter_edges: 0,
-                automaton_states: 2,
-                depth: 1,
-                bound_limited: 0,
-                message_bound_limited: 0,
-                instance_limited: 0,
-            }
+        stats,
+        fsl_replay::RunStats {
+            product_states: 2,
+            product_edges: 2,
+            stutter_edges: 0,
+            automaton_states: 2,
+            depth: 1,
+            bound_limited: 0,
+            message_bound_limited: 0,
+            instance_limited: 0,
         }
     );
 

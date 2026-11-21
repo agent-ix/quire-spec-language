@@ -85,7 +85,7 @@ fn interference_over(vault: Vault, keys: &[&str]) -> World {
 
 fn product_states(outcome: &HyperOutcome) -> u64 {
     match outcome {
-        HyperOutcome::Holds { stats } | HyperOutcome::HoldsReduced { stats, .. } => {
+        HyperOutcome::Holds { stats, .. } | HyperOutcome::HoldsReduced { stats, .. } => {
             stats.product_states
         }
         other => panic!("expected a holding outcome, got {other:?}"),
@@ -108,6 +108,26 @@ fn a_key_symmetry_keeps_the_verdict_with_fewer_states() {
         "{reductions:?}"
     );
     assert!(product_states(&reduced) < product_states(&unreduced));
+    let settled = fsl_replay::settle_hyper_check(
+        &reduced,
+        &ModelCheckLimits::default(),
+        &[],
+        None,
+        &Cancel::new(),
+        |_| panic!("a holding symmetry result replays nothing"),
+    )
+    .expect("FR-174's key-symmetry row needs no core certificate");
+    assert_eq!(
+        settled.value,
+        fsl_replay::TerminalValue::Proved {
+            basis: fsl_replay::ProofBasis::Reduced {
+                reductions: reductions.clone(),
+            },
+            certification: fsl_replay::Certification::Uncertified,
+        }
+    );
+    assert!(settled.certificates.is_empty());
+    assert!(settled.counterexample.is_none());
 
     let leaky = interference(Vault::Leaky);
     let counterexample = refuted(leaky.run_selecting(symmetry()).expect("not refused"));
@@ -132,6 +152,32 @@ fn a_state_constraint_reduces_and_holds_reduced() {
         matches!(&reductions[..], [AppliedReduction::CopySwap { .. }]),
         "{reductions:?}"
     );
+    let subjects = (0..secure.clause.aliases().len())
+        .map(|_| secure.subject())
+        .collect::<Vec<_>>();
+    let request = fsl_replay::ProductClosureRequest {
+        package: &secure.package,
+        clause: &secure.clause,
+        subjects: &subjects,
+        meter: crate::counter::UNLIMITED,
+    };
+    let settled = fsl_replay::settle_hyper_check(
+        &low,
+        &ModelCheckLimits::default(),
+        &[],
+        Some(&request),
+        &Cancel::new(),
+        |_| panic!("a holding constrained result replays nothing"),
+    )
+    .expect("a constraint with no cut has a closed copy-swap certificate");
+    assert!(matches!(
+        settled.value,
+        fsl_replay::TerminalValue::Proved {
+            certification: fsl_replay::Certification::Certified,
+            ..
+        }
+    ));
+    assert!(!settled.certificates.is_empty());
     let zero = secure
         .run_selecting(with_constraint(Reductions::default(), "Zero"))
         .expect("not refused");

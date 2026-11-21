@@ -537,6 +537,8 @@ fn a_witness_set_emptied_by_a_refused_match_reproduces_nothing() {
         },
         &ModelCheckLimits::default(),
         &[],
+        None,
+        &Cancel::new(),
         |counterexample| {
             secure.replay_through(
                 counterexample,

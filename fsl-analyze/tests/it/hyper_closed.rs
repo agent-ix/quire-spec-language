@@ -41,6 +41,8 @@ fn settled(world: &World, outcome: &HyperOutcome) -> (ResultLabel, TerminalValue
         outcome,
         &ModelCheckLimits::default(),
         &[],
+        None,
+        &Cancel::new(),
         |counterexample| world.replay(counterexample),
     )
     .expect("the outcome settles");

@@ -123,7 +123,7 @@ fn the_vault_is_refuted_in_lockstep_and_held_on_its_projection() {
     ));
 
     let aligned = World::busy(Vault::Busy, &IDLE, &aligned(&[]));
-    let HyperOutcome::Holds { stats } = run(&aligned) else {
+    let HyperOutcome::Holds { stats, .. } = run(&aligned) else {
         panic!("expected the projection to hold");
     };
     assert_eq!(stats.product_states, 18);

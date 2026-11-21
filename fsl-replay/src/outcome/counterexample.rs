@@ -1999,14 +1999,21 @@ fn graph_witness(
     path: &crate::model_check::state_graph::WitnessPath,
     source: &crate::model_check::state_graph::WitnessSource,
 ) -> Result<Json, CounterexampleWireError> {
-    let crate::model_check::state_graph::WitnessPath::Path(path) = path else {
-        return Err(CounterexampleWireError::Unspelled("lasso witness"));
+    let (path, loop_entry) = match path {
+        crate::model_check::state_graph::WitnessPath::Path(path) => (model_path(path)?, None),
+        crate::model_check::state_graph::WitnessPath::Lasso(lasso) => {
+            (model_path(&lasso.path)?, Some(lasso.loop_entry))
+        }
     };
-    Ok(json!({
-        "path": model_path(path)?,
+    let mut wire = json!({
+        "path": path,
         "source": serde_json::to_value(source)
             .map_err(|_| CounterexampleWireError::Unspelled("witness source"))?,
-    }))
+    });
+    if let Some(entry) = loop_entry {
+        wire["loop_entry"] = json!(entry.to_string());
+    }
+    Ok(wire)
 }
 
 /// FSpec FR-393's spelling of the state-graph `evidence` of the instance
@@ -2017,8 +2024,7 @@ fn graph_witness(
 ///
 /// # Errors
 ///
-/// [`CounterexampleWireError`] for a lasso witness, which no state-graph
-/// claim yields, and for a state or transition with no spelling.
+/// [`CounterexampleWireError`] for a state or transition with no spelling.
 pub fn graph_evidence_wire(
     evidence: &crate::model_check::state_graph::GraphEvidence,
     form: crate::model_check::state_graph::StateGraphPropertyForm,

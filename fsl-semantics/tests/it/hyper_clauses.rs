@@ -596,7 +596,7 @@ fn the_adr_clauses_classify_into_their_forms() {
 
 /// Each clause outside the admitted forms is `Other` and names the rule that
 /// placed it there.
-#[trace("TC-598")]
+#[trace("TC-598", "FR-173-AC-2")]
 #[test]
 fn a_clause_outside_the_admitted_forms_names_its_rule() {
     let opaque_with = |prefix: &str, body: &str| {
