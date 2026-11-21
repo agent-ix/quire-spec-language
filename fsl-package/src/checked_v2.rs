@@ -1384,12 +1384,23 @@ impl AdmittedPackageRead<'_> {
                     Code::UnsupportedExactType => fault(),
                 }
             })?;
+        let mut held = BTreeMap::new();
+        hold_closure(self.source, &mut held);
+        let dependencies = held
+            .iter()
+            .map(|(identity, source)| {
+                let admitted = self.dependencies.package(identity).ok_or_else(fault)?;
+                let emission = source.remembered_emission().ok_or_else(fault)?;
+                Ok((admitted, emission))
+            })
+            .collect::<Result<Vec<_>, ViewFailure>>()?;
         let slots = project_package(
             &self.read.admitted,
             &self.emission,
             self.emission.package.name(),
             self.slot_requests(),
             identities,
+            &dependencies,
             &mut budget,
         )
         .map_err(|refusal| match refusal {
@@ -1547,12 +1558,20 @@ impl ClosureReader<'_> {
         package: &CheckedPackage,
         identity: LibraryName,
     ) -> Result<V2Read, ImportViewRefusal> {
-        let emission =
-            emit_checked(package, self.emit).map_err(|refusal| ImportViewRefusal::Emission {
-                package: identity.clone(),
-                refusal: Some(Box::new(refusal)),
-            })?;
-        self.read_emitted(package, &emission, identity)
+        let fresh;
+        let emission = match package.remembered_emission() {
+            Some(emission) => emission,
+            None => {
+                fresh = emit_checked(package, self.emit).map_err(|refusal| {
+                    ImportViewRefusal::Emission {
+                        package: identity.clone(),
+                        refusal: Some(Box::new(refusal)),
+                    }
+                })?;
+                &fresh
+            }
+        };
+        self.read_emitted(package, emission, identity)
     }
 
     /// `package`'s `emission`, read under `identity`, with its closure's

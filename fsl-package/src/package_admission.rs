@@ -20,7 +20,7 @@ use crate::checked_v2::{ImportViewRefusal, V2ReadLimits, V2ReadRefusal};
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PackageAdmissionRefusal {
     /// Original cumulative read-budget denial, when admission exhausted it.
-    pub limit: Option<fsl_foundation::diagnostic::LimitExceeded>,
+    pub limit: Option<Box<fsl_foundation::diagnostic::LimitExceeded>>,
     /// The catalogued code: `missing_import` where no document is supplied
     /// under a selected domain package identity, `resource_exhausted` where
     /// a read ceiling was reached, `stage_limit_exceeded` for a shared-budget
@@ -114,11 +114,11 @@ pub fn admit_checked_package_with_evidence(
 ) -> Result<CheckedPackageV2, PackageAdmissionRefusal> {
     use filament_contract_model::CheckedPackageBudgetedDispatchResult as Read;
     let denial = |limit, actual, pointer| PackageAdmissionRefusal {
-        limit: Some(fsl_foundation::diagnostic::LimitExceeded::new(
+        limit: Some(Box::new(fsl_foundation::diagnostic::LimitExceeded::new(
             fsl_foundation::Setting::I2WorkUnits,
             limit,
             actual,
-        )),
+        ))),
         code: Code::StageLimitExceeded,
         cause: Some("insufficient-next-charge".to_owned()),
         pointer,

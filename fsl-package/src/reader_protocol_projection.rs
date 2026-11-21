@@ -625,8 +625,45 @@ pub(crate) fn project_package(
     package: &str,
     requests: Vec<SlotRequest>,
     identities: filament_contract_model::SelectedExactIdentities,
+    dependencies: &[(&CheckedPackageV2, &crate::Emission)],
     budget: &mut filament_contract_model::NativeJoinBudget,
 ) -> Result<ReaderProtocolSlots, PackageRefusal> {
+    use crate::checked_v2::EvaluationWitnessSupplier;
+    let mut index = source_index(admitted, emission, identities, budget)?;
+    for (admitted, emission) in dependencies {
+        let supplied = crate::checked_v2::SourceWitnessSupplier::new(emission)
+            .supply(admitted, budget)
+            .map_err(|failure| match failure {
+                crate::checked_v2::WitnessSupplyFailure::Exhausted(native) => {
+                    PackageRefusal::Exhausted((*native).into())
+                }
+                crate::checked_v2::WitnessSupplyFailure::Rows(rows) => {
+                    PackageRefusal::Exhausted(rows.into())
+                }
+                crate::checked_v2::WitnessSupplyFailure::Fault => {
+                    PackageRefusal::Fault(fault("dependency-emission-witness-is-admitted"))
+                }
+            })?;
+        let identities = supplied
+            .identities
+            .ok_or_else(|| {
+                PackageRefusal::Fault(fault("dependency-emission-holds-identity-witness"))
+            })?
+            .validate_and_rebind(admitted, budget)
+            .map_err(|error| PackageRefusal::Exhausted(error.into()))?;
+        index
+            .dependencies
+            .push(source_index(admitted, emission, identities, budget)?);
+    }
+    project_index(&index, admitted, package, requests)
+}
+
+fn source_index<'wire>(
+    admitted: &'wire CheckedPackageV2,
+    emission: &crate::Emission,
+    identities: filament_contract_model::SelectedExactIdentities,
+    budget: &mut filament_contract_model::NativeJoinBudget,
+) -> Result<WireIndex<'wire>, PackageRefusal> {
     let mut projections = BTreeMap::new();
     for node in &admitted.resolved_graph().nodes {
         let projection = admitted.project_exact_type(&node.node_id, &identities, budget);
@@ -640,20 +677,28 @@ pub(crate) fn project_package(
     let equality =
         admit_equality_decisions(admitted, ProjectionSource::Source { emission }, budget)
             .map_err(PackageRefusal::Exhausted)?;
-    let index = WireIndex::new(
+    WireIndex::new(
         std::borrow::Cow::Owned(equality),
         std::borrow::Cow::Owned(identities),
         admitted,
         std::borrow::Cow::Owned(projections),
     )
-    .map_err(PackageRefusal::Fault)?;
+    .map_err(PackageRefusal::Fault)
+}
+
+fn project_index(
+    index: &WireIndex<'_>,
+    admitted: &CheckedPackageV2,
+    package: &str,
+    requests: Vec<SlotRequest>,
+) -> Result<ReaderProtocolSlots, PackageRefusal> {
     let rows = OriginRows::new(admitted);
     let mut slots = BTreeMap::new();
     let mut refusal: Option<UnsupportedView> = None;
     for request in requests {
         let slot = match index.project_slot(&request) {
             Ok(mut projection) => {
-                let found = rows.pair(&mut projection, &request.origin, package, &index)?;
+                let found = rows.pair(&mut projection, &request.origin, package, index)?;
                 refusal = first_refusal(refusal, found);
                 ReaderSlot::Projected(projection)
             }

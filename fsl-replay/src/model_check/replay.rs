@@ -820,7 +820,7 @@ impl HandoffSupply<'_> {
         fsl_package::admit_checked_package_with_budget(bytes, documents, &evidence, limits, budget)
             .map_err(|refusal| match refusal.limit {
                 Some(limit) => ReplayRefusal::Recompile {
-                    refusal: Box::new(crate::spine::CompileRefusal::Limit(limit)),
+                    refusal: Box::new(crate::spine::CompileRefusal::Limit(*limit)),
                     pointer: refusal.pointer,
                 },
                 None => ReplayRefusal::PackageRead(crate::execute::PackageReadRefusal::Malformed),

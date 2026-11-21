@@ -794,3 +794,62 @@ fn every_raw_manifest_member_refusal_keeps_its_exact_pointer_before_analysis() {
         "the unchanged positive control completes: {outcome}"
     );
 }
+
+#[test]
+#[trace("FR-517-AC-2", "FR-850-AC-12", "TC-1312", "TC-2410")]
+fn source_protocol_projection_uses_each_imported_librarys_retained_witnesses() {
+    use fsl_command::{checked_handoff, emit_checked_v2};
+    let directory = tempfile::tempdir().unwrap();
+    let recipe = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .join("examples/checked-handoff");
+    let request = checked_handoff::CheckedHandoffRequest {
+        emit: emit_checked_v2::Request {
+            source: recipe.join("unit-event-position.native"),
+            package_name: "recipe".to_owned(),
+            models: vec![recipe.join("model.semantic-ir.json")],
+            libraries: vec![(
+                "agent-ix/checked-handoff-library".to_owned(),
+                recipe.join("library.native"),
+            )],
+            execution_points: None,
+            temporal_selections: ["Full", "Partial", "Due", "DueLate"]
+                .into_iter()
+                .map(|clause| emit_checked_v2::ClockSelection {
+                    clause: clause.to_owned(),
+                    clock: filament_contract_model::ClockConfiguration::EventPosition {
+                        sequence_authority: "events-authority".into(),
+                    },
+                })
+                .collect(),
+            out: None,
+        },
+        corpus: checked_handoff::Corpus::None,
+        native_join: fsl_package::NativeJoinLimits::new(1 << 40, 1 << 28),
+    };
+    let handoff = directory.path().join("handoff");
+    checked_handoff::write(&request, &handoff)
+        .expect("the real recipe writes its dependency artifacts");
+    let compiled = checked_handoff::compile(&handoff)
+        .expect("the explicit source entry recompiles the same recipe");
+    let emission = compiled
+        .checked()
+        .remembered_emission()
+        .expect("source acquisition retains its final emission");
+    let read = fsl_package::read_evaluation_emission(
+        compiled.checked(),
+        emission,
+        fsl_semantics::library::LibraryName::of_package(compiled.admitted()),
+        compiled.packages(),
+        fsl_package::V2ReadLimits::bounded(1 << 28),
+        compiled.emit_limits(),
+        fsl_package::SourceWitnessSupplier::new(emission),
+    )
+    .expect("the same admitted closure supplies the source evaluation view");
+    let view = read
+        .evaluation_view()
+        .expect("imported predicates in effect and finish slots project through their own package");
+    assert!(view.is_reader_backed());
+    assert!(view.is_for_package(compiled.checked()));
+}
