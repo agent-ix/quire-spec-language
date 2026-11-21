@@ -764,8 +764,6 @@ fn admit_package<'d>(
 
 /// The FR-517 files a `package` selection reads from its handoff directory.
 const PACKAGE_FILE: &str = "checked-package.json";
-const IDENTITIES_FILE: &str = "identities.json";
-const EQUALITY_FILE: &str = "equality.json";
 
 /// The admitted handoff of a `package` request: the package the strict
 /// reader admitted, its identity rows and its equality rows when present.
@@ -814,44 +812,6 @@ fn witness_refusal(file: &str, cause: &str, detail: &str) -> RunCause {
         cause: Some(cause.to_owned()),
         pointer: None,
         message: format!("invalid_package/{cause}: {file}: {detail}"),
-    }
-}
-
-fn conflicting_model(identity: &str) -> RunCause {
-    RunCause::AnalyzePackage {
-        code: fsl_foundation::Code::InvalidPackage,
-        cause: Some("conflicting-definition".to_owned()),
-        pointer: None,
-        message: format!(
-            "invalid_package/conflicting-definition: the models entry {identity} is not a domain \
-             package the package records, or repeats one"
-        ),
-    }
-}
-
-/// The request-stage refusal of a package the strict reader refused.
-fn package_refusal(refusal: fsl_package::PackageAdmissionRefusal) -> RunCause {
-    let fsl_package::PackageAdmissionRefusal {
-        code,
-        cause,
-        pointer,
-        identity,
-        ..
-    } = refusal;
-    let named = match (&identity, &pointer) {
-        (Some(identity), _) => format!(": no models entry supplies {identity}"),
-        (None, Some(pointer)) => format!(" at {pointer}"),
-        (None, None) => String::new(),
-    };
-    let label = match &cause {
-        Some(cause) => format!("{}/{cause}", code.as_str()),
-        None => code.as_str().to_owned(),
-    };
-    RunCause::AnalyzePackage {
-        code,
-        cause,
-        pointer,
-        message: format!("{label}{named}"),
     }
 }
 

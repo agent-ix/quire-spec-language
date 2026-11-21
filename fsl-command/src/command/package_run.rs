@@ -16,8 +16,6 @@ use super::{output, wire, FileCounts, Result, RunCause, RunResult};
 
 /// The FR-517 files a `{directory}` selection reads.
 const PACKAGE_FILE: &str = "checked-package.json";
-const IDENTITIES_FILE: &str = "identities.json";
-const EQUALITY_FILE: &str = "equality.json";
 
 /// The contract version the package route runs (FR-1039).
 const CONTRACT_VERSION: &str = "filament.checked-package/v2";
@@ -809,47 +807,6 @@ fn read_equality_file(
                 ),
             }
         })
-}
-
-/// The handoff directory's identity rows, and its equality rows when the
-/// producer wrote them (FR-850 "Admission", FR-531).
-fn read_witness(
-    directory: &Path,
-    intake: &mut super::Intake<'_>,
-    handoff: &str,
-    package: &filament_contract_model::CheckedPackageV2,
-    budget: &mut filament_contract_model::NativeJoinBudget,
-) -> Result<(
-    Option<fsl_package::ReadIdentityRows>,
-    Option<fsl_package::ReadEqualityRows>,
-)> {
-    let witness = |file: &str, detail: String| RunCause::AnalyzePackage {
-        code: fsl_foundation::Code::InvalidPackage,
-        cause: Some("native-witness".to_owned()),
-        pointer: Some("/request/package/directory".to_owned()),
-        message: format!("invalid_package/native-witness: {file}: {detail}"),
-    };
-    let identities_path = format!("{handoff}/{IDENTITIES_FILE}");
-    if !directory.join(&identities_path).is_file() {
-        return Err(invalid(
-            "package",
-            format!("the handoff directory {handoff} holds no {IDENTITIES_FILE}"),
-        ));
-    }
-    let identity_bytes = intake.file(&identities_path, intake.remaining)?;
-    let identities = fsl_package::ReadIdentityRows::read(&identity_bytes, package, budget)
-        .map_err(|refusal| witness(IDENTITIES_FILE, refusal.to_string()))?;
-    let equality_path = format!("{handoff}/{EQUALITY_FILE}");
-    let equality = if directory.join(&equality_path).is_file() {
-        let equality_bytes = intake.file(&equality_path, intake.remaining)?;
-        Some(
-            fsl_package::ReadEqualityRows::read(&equality_bytes, package)
-                .map_err(|refusal| witness(EQUALITY_FILE, refusal.to_string()))?,
-        )
-    } else {
-        None
-    };
-    Ok((Some(identities), equality))
 }
 
 /// Run a prepared package call (FR-945): build the bare package over the

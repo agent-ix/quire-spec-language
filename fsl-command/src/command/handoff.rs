@@ -125,6 +125,25 @@ fn identities(
     file: &str,
 ) -> Result<fsl_package::ReadIdentityRows> {
     fsl_package::ReadIdentityRows::read(bytes, package, budget).map_err(|error| {
+        let native = match &error {
+            fsl_package::IdentityFileRefusal::Native(native) => {
+                Some(fsl_package::NativeJoinFailure::from((**native).clone()))
+            }
+            fsl_package::IdentityFileRefusal::Rows(rows) => {
+                Some(fsl_package::NativeJoinFailure::from(rows.clone()))
+            }
+            _ => None,
+        };
+        if let Some(denial) = native.and_then(|native| {
+            fsl_package::NativeJoinLimits::from_budget(budget).refusal(native, budget)
+        }) {
+            return RunCause::AnalyzePackage {
+                code: fsl_foundation::Code::StageLimitExceeded,
+                cause: Some("insufficient-next-charge".to_owned()),
+                pointer: None,
+                message: format!("{file}: {denial:?}"),
+            };
+        }
         let cause = match &error {
             fsl_package::IdentityFileRefusal::Malformed { .. } => "malformed-file",
             fsl_package::IdentityFileRefusal::Format(_) => "unknown-format",
@@ -240,21 +259,31 @@ pub(super) fn admit(
     }
     let mut admitted = BTreeMap::new();
     let mut dependencies = Vec::new();
+    let mut remaining = BTreeMap::new();
+    let mut importers: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    let mut ready = BTreeSet::new();
+    for (identity, package) in &pending {
+        let mut count = 0_usize;
+        for edge in &package.edges {
+            if pending.contains_key(edge) {
+                count += 1;
+                importers
+                    .entry(edge.clone())
+                    .or_default()
+                    .push(identity.clone());
+            }
+        }
+        remaining.insert(identity.clone(), count);
+        if count == 0 {
+            ready.insert(identity.clone());
+        }
+    }
     let mut budget = limits
         .native_join_limits()
         .budget()
         .with_read_storage_limit(limits.storage);
     while !pending.is_empty() {
-        let ready = pending
-            .iter()
-            .find(|(_, package)| {
-                package
-                    .edges
-                    .iter()
-                    .all(|edge| admitted.contains_key(edge) || !pending.contains_key(edge))
-            })
-            .map(|(identity, _)| identity.clone());
-        let Some(identity) = ready else {
+        let Some(identity) = ready.pop_first() else {
             return Err(refusal(
                 "dependencies.json",
                 "definition-cycle",
@@ -300,6 +329,14 @@ pub(super) fn admit(
             .map_err(|error| refusal(&equality_file, "refused-file", None, error))?;
         let read = Arc::new(read);
         admitted.insert(identity.clone(), Arc::clone(&read));
+        for importer in importers.get(&identity).into_iter().flatten() {
+            if let Some(count) = remaining.get_mut(importer) {
+                *count -= 1;
+                if *count == 0 {
+                    ready.insert(importer.clone());
+                }
+            }
+        }
         dependencies.push(fsl_package::DependencyArtifact {
             identity,
             package: read,
