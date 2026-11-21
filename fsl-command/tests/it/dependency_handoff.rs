@@ -367,7 +367,7 @@ fn a_domain_document_selected_only_by_a_library_is_bound_to_that_library() {
     );
     let mut changed: Value =
         serde_json::from_slice(&std::fs::read(directory.join("counter.json")).unwrap()).unwrap();
-    changed["package"]["version"] = json!("foreign");
+    changed["types"][1]["fields"][0]["typeRef"] = json!("ix://test/counter/Absent");
     std::fs::write(
         directory.join("counter.json"),
         serde_json::to_vec(&changed).unwrap(),
