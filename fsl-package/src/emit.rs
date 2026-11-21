@@ -8935,7 +8935,9 @@ fn claim_name_rows(
             .filter(|node| {
                 CheckedNodeTag::from_wire(&node.node_tag)
                     .and_then(|tag| CheckedNodeKind::decode(tag, &node.semantic_form))
-                    == Some(CheckedNodeKind::Claim(filament_contract_model::ClaimForm::Hyperproperty))
+                    == Some(CheckedNodeKind::Claim(
+                        filament_contract_model::ClaimForm::Hyperproperty,
+                    ))
             })
             .map(|_| declaration_region.source.clone());
         rows.push(filament_contract_model::ClaimNameRow {
