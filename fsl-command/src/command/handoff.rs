@@ -48,7 +48,22 @@ pub(super) fn read_file(
             "backslash in artifact path",
         ));
     }
-    let selected = Path::new(directory).join(relative);
+    let mut base = std::path::PathBuf::new();
+    for component in Path::new(directory).components() {
+        match component {
+            Component::CurDir => {}
+            Component::Normal(component) => base.push(component),
+            _ => {
+                return Err(refusal(
+                    relative,
+                    "invalid-value",
+                    None,
+                    "nonconfined handoff directory",
+                ))
+            }
+        }
+    }
+    let selected = base.join(relative);
     let mut current = intake.directory.to_path_buf();
     for component in selected.components() {
         let Component::Normal(component) = component else {
