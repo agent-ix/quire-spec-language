@@ -192,6 +192,37 @@ without `open` has extent `closed`. The document's `contractVersion` is
 The compiled bytes SHALL be a function of the model unit's source bytes and
 source identity alone: compiling one source twice gives equal bytes.
 
+### Systems declarations and endpoint qualifiers
+
+When compiling a `connection C p.outlet -> q.inlet;` or its `<->` form,
+the compiler SHALL resolve `p` and `q` as Parts and `outlet` and `inlet` as
+Ports of this model unit, checking that each Port's declared owning Part is
+the Part written before its dot. The qualifier is an ownership assertion;
+it does not create a nested declaration identity. The compiled connection's
+ends name the Ports' own `ix://<domain>/<port name>` identities. `->` writes
+`source-to-target`, and `<->` writes `bidirectional`; each end has
+multiplicity `[1, 1]`, unordered and unique.
+
+If a qualifier or Port name is absent, then the compiler SHALL refuse
+`missing_declaration`/`missing-name` at that name. If a qualifier names a
+declaration other than a Part, or an end names a declaration other than a
+Port, then the compiler SHALL refuse `invalid_model_binding`/`wrong-export`
+at that name, retaining required and actual kinds. If a Port belongs to a
+different Part than the written qualifier, then the compiler SHALL refuse
+`invalid_model_binding`/`malformed-declaration` at the qualifier, retaining
+the Port and the written and declared owning Part keys, with no document.
+
+The model-unit compiler SHALL preserve the Part's owner, declared type and
+multiplicity, and the Port's owner, direction, interface type and
+multiplicity, for the unchanged classification and connection admission
+rules of [FR-086](FR-086-bind-systems-model-references.md). A consuming unit
+selects the compiled model with `model M = "<domain>";` and names its Ports
+and Connections as `M::outlet` and `M::C`, under
+[FR-103](FR-103-admit-model-operations-and-frames-on-the-spine.md) and
+[FR-897](FR-897-carry-a-protocol-channel-over-a-systems-connection.md).
+This adds no systems declarations to a consuming unit's grammar and no
+specialization or effective-identity rule.
+
 ### Refusals
 
 The compiler SHALL check the model unit before it writes a document, and SHALL
@@ -321,6 +352,8 @@ checked package (FR-810).
 | FR-710-AC-8 | `check_outcome` over AC-7's program with the model selection `("example/shop", shop.fsl)` returns category success at `last_stage` S4, equal in category, diagnostics and stage to the same check with the compiled document file; with the selection `("example/other", shop.fsl)` over a program selecting `example/other` it refuses `invalid_model_binding`/`wrong-model-selection`; `check_outcome` over `shop.fsl` itself returns category success at `last_stage` `I1`, and over the AC-4 unit with `Ghost` the `missing_declaration`/`missing-name` refusal at `Ghost`. | Test (TC-2998) |
 | FR-710-AC-9 | A `native-compile/1` request whose `program` is the AC-1 model unit returns the bytes `compile_model_unit` gives as the outcome's package bytes, `artifacts` staying `[]`, and with `output` `{"package": "shop.semantic-ir.json"}` writes exactly those bytes to that file; the same request carrying `models` `[]`, a `libraries` entry, or `clocks`, each refuses `invalid-request` naming that member, exit 20, with no package bytes and no file written. | Test (TC-2998) |
 | FR-710-AC-10 | A model unit uses each contextual word of the Grammar section as an identifier: as a record field, a parameter and an expression operand, and inside model-unit bodies beside the declaration or clause it names (an event field `occurs` next to its `occurs` clause, a machine field `states`, a process field `step` next to a `step` declaration, an `object store`, a `machine process`, ports named `out` and `inout`); it parses admitted and renders back to the same bytes. | Test (TC-1942) |
+| FR-710-AC-11 | TC-3013's source model compiles and its selected model records retain Parts `SysPump` and `SysTank`, their owner `Sys`, declared types and multiplicity, Ports `PumpOut` and `TankIn` with their owning Parts, directions, interface `Flow` and multiplicity, and Connection `Pipe` whose ends are those two Port keys, with source-to-target direction and `[1, 1]` unordered unique end multiplicities. Replacing `->` with `<->` and both Port directions with `inout` produces a bidirectional Connection admitted by FR-086. | Test |
+| FR-710-AC-12 | In TC-3013's source model, replacing `SysPump.PumpOut` by `Missing.PumpOut` or `SysPump.Missing` refuses `missing_declaration`/`missing-name` at `Missing`; `Sys.PumpOut` refuses `invalid_model_binding`/`wrong-export` at `Sys` requiring Part; `SysPump.Flow` refuses the same at `Flow` requiring Port; and `SysTank.PumpOut` refuses `invalid_model_binding`/`malformed-declaration` at `SysTank`, retaining `PumpOut`, written owner `SysTank` and declared owner `SysPump`. The equivalent mutations of the target end refuse at that end. Each refusal is located in the model source and produces no document. | Test |
 
 ## Dependencies
 
