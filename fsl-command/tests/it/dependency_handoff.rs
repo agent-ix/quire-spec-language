@@ -22,12 +22,12 @@ fn prepare(directory: &Path, diamond: bool) -> Value {
             (
                 "test/a",
                 "a.native",
-                "record A { value: Integer; } function answer using v(): Integer pure { if 1 = 1 then 42 else 41 }".to_owned(),
+                "record A { level: Integer; } function answer using v(): Integer pure { if 1 = 1 then 42 else 41 }".to_owned(),
             ),
             (
                 "test/z",
                 "z.native",
-                "import \"test/a\" as a; record Z { value: Integer; } function answer using v(): Integer pure { if 2 = 2 then a::answer() else 41 }"
+                "import \"test/a\" as a; record Z { level: Integer; } function answer using v(): Integer pure { if 2 = 2 then a::answer() else 41 }"
                     .to_owned(),
             ),
         ]

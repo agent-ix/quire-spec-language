@@ -260,6 +260,10 @@ fn the_directory_holds_the_outputs_table() {
         paths,
         [
             "checked-package.json",
+            "dependencies.json",
+            "dependencies/0/checked-package.json",
+            "dependencies/0/equality.json",
+            "dependencies/0/identities.json",
             "equality.json",
             "identities.json",
             "inventory.json",
