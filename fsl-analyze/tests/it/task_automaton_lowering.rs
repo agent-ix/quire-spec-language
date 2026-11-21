@@ -863,3 +863,24 @@ fn a_closed_search_without_a_certificate_settles_certificate_unchecked() {
     .unwrap_or_else(|refusal| panic!("the planner reader refused {refusal:?}: {item}"));
     assert!(read.task_search.is_none());
 }
+
+/// FR-418 (U6): a dual-WCET set has no certificate the checker can check, so
+/// the EN-6 settle path never states `proved` for it; it ends `incomplete`.
+#[trace("TC-704")]
+#[test]
+fn a_dual_wcet_set_settles_incomplete_never_proved() {
+    let declarations = format!(
+        "taskset Mixed {{ task h periodic 10 ms deadline 10 ms bcet 3 ms wcet 2 ms priority 1 hi wcet_hi 3 ms; }}\n\
+         schedulable MixedFp on Mixed under fixed_priority;\n{}",
+        sources("Mixed", &["h"])
+    );
+    let run = run(
+        "task-product-dual-wcet",
+        &["h"],
+        &declarations,
+        json!([{"claim": "MixedFp", "backend": "en-6"}]),
+    );
+    let item = run.item(0);
+    assert_eq!(label(&item), "incomplete", "{item}");
+    assert_ne!(item["record"]["result"], "proved", "{item}");
+}
