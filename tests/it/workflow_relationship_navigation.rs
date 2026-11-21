@@ -104,7 +104,7 @@ fn workflow_model() -> Value {
         ty["relationships"] = json!([]);
         ty
     };
-    types[order_index] = order;
+    types[order_index] = order.clone();
     types.extend([
         workflow_type("Shipment", SHIPMENT),
         workflow_type("PaymentAttempt", PAYMENT_ATTEMPT),
