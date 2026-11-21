@@ -827,6 +827,7 @@ pub(crate) fn admit_equality_decisions(
 }
 
 struct WireIndex<'wire> {
+    dependencies: Vec<WireIndex<'wire>>,
     populations: Option<&'wire crate::bare::BarePackage<'wire>>,
     equality: std::borrow::Cow<'wire, EqualityDecisions>,
     projections: std::borrow::Cow<'wire, ExactProjections>,
@@ -872,6 +873,7 @@ impl<'wire> WireIndex<'wire> {
             ids.insert(key, &node.node_id);
         }
         Ok(Self {
+            dependencies: Vec::new(),
             populations: None,
             equality,
             projections,
@@ -1008,6 +1010,8 @@ impl<'wire> WireIndex<'wire> {
             local_keys.insert(binder.clone(), slot);
         }
         let mut builder = ReaderBuilder {
+            root_index: self,
+            owner: 0,
             index: self,
             nodes: Vec::new(),
             functions: Vec::new(),
@@ -1021,6 +1025,7 @@ impl<'wire> WireIndex<'wire> {
         };
         builder.read_functions(root)?;
         let root_index = builder.project_tree(NodeRequest {
+            owner: 0,
             id: root.clone(),
             context: Context::Root,
             locals: std::rc::Rc::new(locals),
@@ -1035,6 +1040,9 @@ impl<'wire> WireIndex<'wire> {
             locals: local_keys,
         };
         projection.locate_function_bodies(self.admitted)?;
+        for dependency in &self.dependencies {
+            projection.locate_function_bodies(dependency.admitted)?;
+        }
         Ok(projection)
     }
 
@@ -1044,6 +1052,8 @@ impl<'wire> WireIndex<'wire> {
     ) -> Result<ReaderProtocolProjection, BuildError> {
         let selected_function_node = Some(self.key(root).map_err(BuildError::Fault)?);
         let mut builder = ReaderBuilder {
+            root_index: self,
+            owner: 0,
             index: self,
             nodes: Vec::new(),
             functions: Vec::new(),
@@ -1058,7 +1068,7 @@ impl<'wire> WireIndex<'wire> {
         builder.read_functions(root)?;
         let selected = *builder
             .function_indexes
-            .get(root)
+            .get(&(0, root.clone()))
             .ok_or_else(|| fault("reader-selected-function-is-in-function-table"))?;
         let function = builder
             .functions
@@ -1076,6 +1086,9 @@ impl<'wire> WireIndex<'wire> {
             locals: BTreeMap::new(),
         };
         projection.locate_function_bodies(self.admitted)?;
+        for dependency in &self.dependencies {
+            projection.locate_function_bodies(dependency.admitted)?;
+        }
         Ok(projection)
     }
 }
@@ -1275,15 +1288,26 @@ impl<'wire> BareWalker<'wire> {
         identities: &'wire filament_contract_model::SelectedExactIdentities,
         equality: &'wire EqualityDecisions,
         projections: &'wire ExactProjections,
+        dependencies: &'wire [crate::BarePackage<'wire>],
     ) -> Result<Self, InternalFault> {
-        Ok(Self {
-            index: WireIndex::new(
-                std::borrow::Cow::Borrowed(equality),
+        let mut index = WireIndex::new(
+            std::borrow::Cow::Borrowed(equality),
+            std::borrow::Cow::Borrowed(identities),
+            admitted,
+            std::borrow::Cow::Borrowed(projections),
+        )?;
+        for dependency in dependencies {
+            let identities = dependency
+                .identities()
+                .ok_or_else(|| fault("dependency-identity-witness-is-admitted"))?;
+            index.dependencies.push(WireIndex::new(
+                std::borrow::Cow::Borrowed(dependency.equality_decisions()),
                 std::borrow::Cow::Borrowed(identities),
-                admitted,
-                std::borrow::Cow::Borrowed(projections),
-            )?,
-        })
+                dependency.package(),
+                std::borrow::Cow::Borrowed(dependency.exact_type_projections()),
+            )?);
+        }
+        Ok(Self { index })
     }
 
     /// The pure function `function` selects, when the package holds it.
@@ -1580,13 +1604,15 @@ enum Context {
 }
 
 struct ReaderBuilder<'index, 'wire> {
+    root_index: &'index WireIndex<'wire>,
+    owner: usize,
     index: &'index WireIndex<'wire>,
     nodes: Vec<ReaderProjectedNode>,
     functions: Vec<ReaderFunction>,
-    function_indexes: BTreeMap<CheckedNodeId, usize>,
+    function_indexes: BTreeMap<(usize, CheckedNodeId), usize>,
     /// The binder of each `let` or query scope read so far, which a node
     /// projected again does not look up again.
-    binders: BTreeMap<CheckedNodeId, Option<CheckedNodeId>>,
+    binders: BTreeMap<(usize, CheckedNodeId), Option<CheckedNodeId>>,
     root_slots: usize,
     /// [`SlotRequest::level_offset`].
     level_offset: usize,
@@ -1601,6 +1627,7 @@ struct ReaderBuilder<'index, 'wire> {
 
 /// A node to project: where it lives and the locals its subtree reads.
 struct NodeRequest {
+    owner: usize,
     id: CheckedNodeId,
     context: Context,
     locals: std::rc::Rc<BTreeMap<CheckedNodeId, usize>>,
@@ -1640,92 +1667,146 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
             .ok_or_else(|| fault("reader-expression-child-is-admitted"))
     }
 
+    fn select_owner(&mut self, owner: usize) -> Result<(), BuildError> {
+        self.index = if owner == 0 {
+            self.root_index
+        } else {
+            self.root_index
+                .dependencies
+                .get(owner - 1)
+                .ok_or_else(|| fault("reader-function-owner-is-retained"))?
+        };
+        self.owner = owner;
+        Ok(())
+    }
+
+    fn callee(&self, term: &CheckedTerm) -> Result<(usize, CheckedNodeId), BuildError> {
+        match term {
+            CheckedTerm::Reference { target } => Ok((self.owner, target.clone())),
+            CheckedTerm::DependencyReference { package, node } => {
+                let (position, owner) = self
+                    .root_index
+                    .dependencies
+                    .iter()
+                    .enumerate()
+                    .find(|(_, owner)| owner.admitted.name() == package.as_ref())
+                    .ok_or_else(|| fault("reader-selected-library-is-retained"))?;
+                let key = fsl_semantics::check::wire_id::node_key(node)
+                    .map_err(|_| fault("reader-library-function-has-structural-key"))?;
+                let target = owner
+                    .ids
+                    .get(&key)
+                    .ok_or_else(|| fault("reader-library-function-is-admitted"))?;
+                Ok((position + 1, (*target).clone()))
+            }
+            _ => Err(fault("reader-call-has-callee").into()),
+        }
+    }
+
     fn read_functions(&mut self, root: &CheckedNodeId) -> Result<(), BuildError> {
         let mut reachable = BTreeSet::new();
-        let mut pending = vec![root.clone()];
-        while let Some(id) = pending.pop() {
-            if !reachable.insert(id.clone()) {
+        let mut pending = vec![(0, root.clone())];
+        let mut declarations = Vec::new();
+        while let Some((owner, id)) = pending.pop() {
+            if !reachable.insert((owner, id.clone())) {
                 continue;
             }
+            self.select_owner(owner)?;
             let node = self
                 .index
                 .node(&id)
                 .ok_or_else(|| fault("reader-reachable-node-is-admitted"))?;
-            pending.extend(node.body.reference_targets().into_iter().cloned());
+            pending.extend(
+                node.body
+                    .reference_targets()
+                    .into_iter()
+                    .cloned()
+                    .map(|id| (owner, id)),
+            );
+            if let CheckedTerm::Application {
+                operation,
+                arguments,
+            } = &node.body
+            {
+                if operation.identity() == Some("filament.op.function.call") {
+                    let callee = arguments
+                        .first()
+                        .ok_or_else(|| fault("reader-call-has-callee"))?;
+                    pending.push(self.callee(callee)?);
+                }
+            }
+            if has_form(node, WireTag::Function, WireForm::PureFunction) {
+                declarations.push((owner, id));
+            }
         }
-        let declarations = reachable
-            .iter()
-            .filter_map(|id| self.index.node(id))
-            .filter(|node| has_form(node, WireTag::Function, WireForm::PureFunction))
-            .map(|node| -> Result<_, BuildError> {
-                let (parameters, body) = function_parts(&node.body)
-                    .ok_or_else(|| fault("reader-pure-function-has-checked-body"))?;
-                let parameter_ids = parameters
-                    .iter()
-                    .map(|parameter| match parameter {
-                        CheckedTerm::Reference { target } => Ok(target.clone()),
-                        _ => Err(fault("reader-function-parameter-has-checked-identity")),
-                    })
-                    .collect::<Result<Vec<_>, _>>()?;
-                let body = match body {
-                    CheckedTerm::Reference { target } => target.clone(),
-                    _ => {
-                        return Err(BuildError::Fault(fault(
-                            "reader-function-body-has-checked-identity",
-                        )));
-                    }
+        // Assign every function index before walking any body, including local
+        // recursion and a dependency reached from several imported functions.
+        for (owner, id) in &declarations {
+            self.select_owner(*owner)?;
+            let node = self
+                .index
+                .node(id)
+                .ok_or_else(|| fault("reader-function-is-admitted"))?;
+            let (parameters, body) = function_parts(&node.body)
+                .ok_or_else(|| fault("reader-pure-function-has-checked-body"))?;
+            let mut parameter_ids = Vec::new();
+            let mut projected = Vec::new();
+            for parameter in parameters {
+                let CheckedTerm::Reference { target } = parameter else {
+                    return Err(fault("reader-function-parameter-has-checked-identity").into());
                 };
-                let name = function_label(node)
-                    .ok_or_else(|| fault("reader-function-name-is-admitted"))?;
-                let parameters = parameter_ids
-                    .iter()
-                    .map(|id| {
-                        let parameter = self
-                            .index
-                            .node(id)
-                            .ok_or_else(|| fault("reader-function-parameter-is-admitted"))?;
-                        let name = parameter_name(&parameter.body)
-                            .map(str::to_owned)
-                            .ok_or_else(|| fault("reader-function-parameter-name-is-admitted"))?;
-                        let value_type = self.value_type(id)?;
-                        Ok(ReaderProtocolParameter {
-                            name,
-                            node: self.index.key(id)?,
-                            value_type,
-                        })
-                    })
-                    .collect::<Result<Vec<_>, BuildError>>()?;
-                Ok((node.node_id.clone(), name, parameter_ids, parameters, body))
-            })
-            .collect::<Result<Vec<_>, BuildError>>()?;
-
-        for (node, name, parameter_ids, parameters, _) in &declarations {
+                let parameter = self
+                    .index
+                    .node(target)
+                    .ok_or_else(|| fault("reader-function-parameter-is-admitted"))?;
+                let name = parameter_name(&parameter.body)
+                    .ok_or_else(|| fault("reader-function-parameter-name-is-admitted"))?;
+                projected.push(ReaderProtocolParameter {
+                    name: name.to_owned(),
+                    node: self.index.key(target)?,
+                    value_type: self.value_type(target)?,
+                });
+                parameter_ids.push(target.clone());
+            }
+            let CheckedTerm::Reference { .. } = body else {
+                return Err(fault("reader-function-body-has-checked-identity").into());
+            };
             let index = self.functions.len();
-            self.function_indexes.insert(node.clone(), index);
+            self.function_indexes.insert((*owner, id.clone()), index);
             self.functions.push(ReaderFunction {
-                node: node.clone(),
-                name: name.clone(),
-                key: self.index.key(node)?,
+                node: id.clone(),
+                name: function_label(node)
+                    .ok_or_else(|| fault("reader-function-name-is-admitted"))?,
+                key: self.index.key(id)?,
                 body: usize::MAX,
                 slots: parameter_ids.len(),
-                parameters: parameters
-                    .iter()
-                    .map(|parameter| ReaderProtocolParameter {
-                        name: parameter.name.clone(),
-                        node: parameter.node.clone(),
-                        value_type: parameter.value_type.clone(),
-                    })
-                    .collect(),
+                parameters: projected,
                 result_type: None,
             });
         }
-        for (index, (_, _, parameter_ids, _, body)) in declarations.iter().enumerate() {
-            let locals = parameter_ids
+        for (index, (owner, id)) in declarations.iter().enumerate() {
+            self.select_owner(*owner)?;
+            let node = self
+                .index
+                .node(id)
+                .ok_or_else(|| fault("reader-function-is-admitted"))?;
+            let (parameters, body) = function_parts(&node.body)
+                .ok_or_else(|| fault("reader-pure-function-has-checked-body"))?;
+            let CheckedTerm::Reference { target: body } = body else {
+                return Err(fault("reader-function-body-has-checked-identity").into());
+            };
+            let locals = parameters
                 .iter()
                 .enumerate()
-                .map(|(slot, id)| (id.clone(), slot))
-                .collect::<BTreeMap<_, _>>();
+                .map(|(slot, parameter)| {
+                    let CheckedTerm::Reference { target } = parameter else {
+                        return Err(fault("reader-function-parameter-has-checked-identity"));
+                    };
+                    Ok((target.clone(), slot))
+                })
+                .collect::<Result<BTreeMap<_, _>, _>>()?;
             let body = self.project_tree(NodeRequest {
+                owner: *owner,
                 id: body.clone(),
                 context: Context::Function(index),
                 locals: std::rc::Rc::new(locals),
@@ -1739,6 +1820,7 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
                     .clone(),
             );
         }
+        self.select_owner(0)?;
         Ok(())
     }
 
@@ -1820,6 +1902,7 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
         self.suspended = vec![(
             ordinal,
             NodeRequest {
+                owner: self.owner,
                 id: id.clone(),
                 context,
                 locals: std::rc::Rc::new(locals.clone()),
@@ -1854,6 +1937,7 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
                 missing.push((
                     ordinal,
                     NodeRequest {
+                        owner: self.owner,
                         id: target.clone(),
                         context,
                         locals: std::rc::Rc::clone(locals),
@@ -1888,6 +1972,7 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
         let mut frame = self.enter(root);
         loop {
             let request = std::rc::Rc::clone(&frame.request);
+            self.select_owner(request.owner)?;
             self.set_slots(request.context, frame.entered);
             self.ordinal = 0;
             let added = self.nodes.len();
@@ -2281,11 +2366,11 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
             Some("filament.op.function.call") => {
                 let callee = arguments
                     .first()
-                    .and_then(reference_target)
                     .ok_or_else(|| fault("reader-call-has-callee"))?;
+                let callee = self.callee(callee)?;
                 let function = self
                     .function_indexes
-                    .get(callee)
+                    .get(&callee)
                     .copied()
                     .ok_or_else(|| fault("reader-call-callee-is-admitted"))?;
                 let children = self.project_arguments(id, arguments.get(1..), context, locals)?;
@@ -3101,11 +3186,12 @@ impl<'wire> ReaderBuilder<'_, 'wire> {
         slot: usize,
         context: Context,
     ) -> Result<Option<CheckedNodeId>, BuildError> {
-        if let Some(binder) = self.binders.get(id) {
+        if let Some(binder) = self.binders.get(&(self.owner, id.clone())) {
             return Ok(binder.clone());
         }
         let binder = self.binder_node(name, scope, slot, context)?;
-        self.binders.insert(id.clone(), binder.clone());
+        self.binders
+            .insert((self.owner, id.clone()), binder.clone());
         Ok(binder)
     }
 

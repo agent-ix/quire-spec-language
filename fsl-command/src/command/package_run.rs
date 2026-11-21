@@ -838,13 +838,16 @@ pub(super) fn execute(prepared: PreparedPackageRun) -> Result<RunResult> {
         )
     });
     let bare = fsl_package::BarePackage::new(&package)
-        .with_supply(
-            fsl_package::BareSupply {
-                identities: &identities,
-                equality: equality.as_ref(),
-            },
-            &mut budget,
-        )
+        .with_dependency_artifacts(&dependencies, &mut budget)
+        .and_then(|package| {
+            package.with_supply(
+                fsl_package::BareSupply {
+                    identities: &identities,
+                    equality: equality.as_ref(),
+                },
+                &mut budget,
+            )
+        })
         .map_err(|failure| {
             let setting = failure
                 .setting()

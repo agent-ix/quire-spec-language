@@ -85,6 +85,7 @@ impl BarePackage<'_> {
             identities,
             self.equality_decisions(),
             self.exact_type_projections(),
+            self.dependency_views(),
         )
         .map_err(crate::protocol_selection::SlotSelectionFailure::Fault)?
         .with_populations(self);

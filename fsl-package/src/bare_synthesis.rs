@@ -143,6 +143,7 @@ impl BarePackage<'_> {
             identities,
             self.equality_decisions(),
             self.exact_type_projections(),
+            self.dependency_views(),
         )
         .map_err(SlotSelectionFailure::Fault)?;
         let owner = ExpressionOwner::Expression;

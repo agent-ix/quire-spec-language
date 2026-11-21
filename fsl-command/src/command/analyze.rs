@@ -228,13 +228,16 @@ fn run_package(
         dependencies,
     } = admitted;
     let package = fsl_package::BarePackage::new(&admitted)
-        .with_supply(
-            fsl_package::BareSupply {
-                identities: &identities,
-                equality: equality.as_ref(),
-            },
-            &mut budget,
-        )
+        .with_dependency_artifacts(&dependencies, &mut budget)
+        .and_then(|package| {
+            package.with_supply(
+                fsl_package::BareSupply {
+                    identities: &identities,
+                    equality: equality.as_ref(),
+                },
+                &mut budget,
+            )
+        })
         .map_err(|failure| {
             // FR-531 "Denial is its own typed refusal": a denied identity
             // join names the `i2.*` setting, never a witness defect.

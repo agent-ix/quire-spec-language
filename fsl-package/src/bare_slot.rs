@@ -18,20 +18,20 @@ use filament_contract_model::{
 use filament_exact::{NodeKey, ValueType};
 use filament_semantic_value::catalog::InternalFault;
 use filament_semantic_value::declaration::{CompositeShape, TypeEnvironment};
-use fsl_semantics::check::{ProtocolSite, RelatedSide, protocol_site};
+use fsl_semantics::check::{protocol_site, ProtocolSite, RelatedSide};
 
 use crate::bare::{BarePackage, IdentityWitnessRefusal};
 use crate::checked_v2::wire_graph;
 use crate::equality_file::EqualityWitnessRefusal;
 use crate::protocol_selection::{ProtocolSlotDescriptor, SlotSelectionFailure};
 use crate::protocol_view::{
-    ControlOperation, argument, control_operation, group_member, integer, reference, text,
+    argument, control_operation, group_member, integer, reference, text, ControlOperation,
 };
 use crate::reader_protocol_projection::{
     node_value_type, BareWalker, FunctionSelector, ReaderProtocolProjection, TypeError, TypeReader,
     UnsupportedView, WalkFailure,
 };
-use crate::wire_form::{WireTag, has_tag};
+use crate::wire_form::{has_tag, WireTag};
 
 type Node = CheckedSemanticNodeV2;
 
@@ -517,6 +517,7 @@ impl<'p> BarePackage<'p> {
             identities,
             self.equality_decisions(),
             self.exact_type_projections(),
+            self.dependency_views(),
         )
         .map_err(SlotSelectionFailure::Fault)?;
         let reader = TypeReader {
@@ -710,6 +711,7 @@ impl<'p> BarePackage<'p> {
             identities,
             self.equality_decisions(),
             self.exact_type_projections(),
+            self.dependency_views(),
         )
         .map_err(SlotSelectionFailure::Fault)?;
         let binders: Vec<NodeKey> = slot
@@ -777,6 +779,7 @@ impl<'p> BarePackage<'p> {
             identities,
             self.equality_decisions(),
             self.exact_type_projections(),
+            self.dependency_views(),
         )
         .map_err(SlotSelectionFailure::Fault)?;
         if let Some(result) =
