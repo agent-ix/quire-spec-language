@@ -30,7 +30,7 @@ pub struct PackageAdmissionRefusal {
     pub cause: Option<String>,
     /// The RFC 6901 pointer the reader names, absent for a byte-stream defect.
     pub pointer: Option<String>,
-    /// The domain package identity a `missing-selection` refusal is for.
+    /// The domain or library identity a `missing-selection` refusal names.
     pub identity: Option<String>,
 }
 

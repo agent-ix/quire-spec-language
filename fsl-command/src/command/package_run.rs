@@ -111,6 +111,18 @@ fn package_refusal(refusal: fsl_package::PackageAdmissionRefusal) -> RunCause {
         None => code.as_str().to_owned(),
     };
     if let Some(identity) = identity {
+        if let Some(pointer) = pointer
+            .as_deref()
+            .filter(|pointer| pointer.starts_with("/lock/dependency_selections/"))
+        {
+            let pointer = format!("/request/package{pointer}");
+            return RunCause::AnalyzePackage {
+                code,
+                cause,
+                pointer: Some(pointer.clone()),
+                message: format!("{label} at {pointer}: no artifact evidence supplies {identity}"),
+            };
+        }
         // FR-1039: a recorded model selection with no `models` entry.
         return RunCause::AnalyzePackage {
             code,

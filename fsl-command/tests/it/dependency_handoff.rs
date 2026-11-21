@@ -121,6 +121,12 @@ fn transitive_library_calls_run_with_only_handoff_artifacts() {
         exit, 20,
         "bare files cannot discover neighboring dependency evidence: {result}"
     );
+    assert_eq!(result["code"], "missing_import", "{result}");
+    assert_eq!(result["cause"], "missing-selection", "{result}");
+    assert_eq!(
+        result["details"]["path"], "/request/package/lock/dependency_selections/0",
+        "{result}"
+    );
 }
 
 #[test]
